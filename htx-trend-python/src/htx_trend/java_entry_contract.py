@@ -39,12 +39,17 @@ class JavaEntryConfig:
     min_score_gap: Decimal = Decimal("12")
     box_window_bars: int = 32
     fib_source_lookback_bars: int = 8
+    # Keep Java's TRENDING_UP / TRENDING_DOWN entry precondition by default.  Disabling this is
+    # only for an explicit ablation/gray release; all structure and policy gates remain active.
+    combination_require_trending_regime: bool = True
 
     @classmethod
     def from_env(cls) -> "JavaEntryConfig":
         """Read the same HTX_TREND_ENSEMBLE_* knobs as Java application.yml."""
         def integer(name: str, default: int) -> int: return int(environ.get(name, str(default)))
         def decimal(name: str, default: Decimal) -> Decimal: return Decimal(environ.get(name, str(default)))
+        def boolean(name: str, default: bool) -> bool:
+            return environ.get(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
         return cls(integer("HTX_TREND_ENSEMBLE_FAST_EMA_PERIOD", 20),
                    integer("HTX_TREND_ENSEMBLE_MEDIUM_EMA_PERIOD", 60),
                    integer("HTX_TREND_ENSEMBLE_SLOW_EMA_PERIOD", 120),
@@ -54,7 +59,8 @@ class JavaEntryConfig:
                    integer("HTX_TREND_ENSEMBLE_VOLUME_LOOKBACK", 20), decimal("HTX_TREND_ENSEMBLE_MIN_ATR_PCT", Decimal("0.0010")),
                    decimal("HTX_TREND_ENSEMBLE_MIN_ADX", Decimal("16")), decimal("HTX_TREND_ENSEMBLE_MIN_MOMENTUM_PCT", Decimal("0.0015")),
                    decimal("HTX_TREND_ENSEMBLE_MIN_VOLUME_RATIO", Decimal("1.10")), decimal("HTX_TREND_ENSEMBLE_ENTRY_SCORE_THRESHOLD", Decimal("60")),
-                   decimal("HTX_TREND_ENSEMBLE_MIN_SCORE_GAP", Decimal("12")))
+                   decimal("HTX_TREND_ENSEMBLE_MIN_SCORE_GAP", Decimal("12")), 32, 8,
+                   boolean("HTX_TREND_COMBINATION_REQUIRE_TRENDING_REGIME", True))
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +108,9 @@ def evaluate(candles: Sequence[Candle], config: JavaEntryConfig = JavaEntryConfi
 def candidates(candles: Sequence[Candle], signal: JavaTrendSignal,
                config: JavaEntryConfig = JavaEntryConfig(), period: str = "15min") -> tuple[ModelCandidate, ...]:
     """Port Java combination candidates and their canonical policy evidence."""
-    if period != "15min" or signal.side is TrendSide.FLAT or signal.indicators is None or signal.regime not in {"TRENDING_UP", "TRENDING_DOWN"}:
+    if period != "15min" or signal.side is TrendSide.FLAT or signal.indicators is None:
+        return ()
+    if config.combination_require_trending_regime and signal.regime not in {"TRENDING_UP", "TRENDING_DOWN"}:
         return ()
     ordered = tuple(sorted(candles, key=lambda candle: candle.open_time))
     box = max(2, config.box_window_bars)

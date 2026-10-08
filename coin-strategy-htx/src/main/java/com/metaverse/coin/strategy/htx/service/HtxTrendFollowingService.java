@@ -810,8 +810,12 @@ public class HtxTrendFollowingService {
         }
         HtxTrendEnsembleSignalCalculator.TrendCandidateSignal ensemble = ensembleCalculator.evaluate(snapshot.entryCandles(),
                 ensembleProperties, properties.getPeriod(), Instant.now().getEpochSecond());
-        HtxTrendCombinationService.Selection selection = combinationService.select(contractCode, properties.getPeriod(),
-                snapshot.entryCandles(), ensemble, marketEntryRank(marketBreadth, marketAnchor));
+        HtxTrendCombinationService.MarketEntryRank rank = marketEntryRank(marketBreadth, marketAnchor);
+        // Retain the established invocation when the default guard is enabled, including test and
+        // integration compatibility.  The extended contract is entered only for explicit ablation.
+        HtxTrendCombinationService.Selection selection = properties.isCombinationRequireTrendingRegime()
+                ? combinationService.select(contractCode, properties.getPeriod(), snapshot.entryCandles(), ensemble, rank)
+                : combinationService.select(contractCode, properties.getPeriod(), snapshot.entryCandles(), ensemble, rank, false);
         // Compatibility for existing integrations that still implement the pre-ranking selection contract.
         if (selection == null) {
             selection = combinationService.select(contractCode, properties.getPeriod(), snapshot.entryCandles(), ensemble);

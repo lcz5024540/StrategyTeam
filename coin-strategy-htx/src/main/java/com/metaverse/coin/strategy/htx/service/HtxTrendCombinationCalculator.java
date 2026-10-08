@@ -22,6 +22,18 @@ public class HtxTrendCombinationCalculator {
     public List<CombinationCandidate> evaluate(List<HtxSwapKline> rawCandles,
                                                TrendCandidateSignal signal,
                                                int boxWindowBars) {
+        return evaluate(rawCandles, signal, boxWindowBars, true);
+    }
+
+    /**
+     * Default operation requires a TRENDING_UP / TRENDING_DOWN regime.  The false path is an
+     * explicit research switch: it retains every other model, structure and policy gate so an
+     * ablation cannot accidentally change the rest of the entry contract.
+     */
+    public List<CombinationCandidate> evaluate(List<HtxSwapKline> rawCandles,
+                                               TrendCandidateSignal signal,
+                                               int boxWindowBars,
+                                               boolean requireTrendingRegime) {
         if (rawCandles == null || signal == null || signal.direction() == Direction.FLAT
                 || signal.closePrice() == null || signal.atr() == null || signal.atr().signum() <= 0) {
             return List.of();
@@ -37,7 +49,7 @@ public class HtxTrendCombinationCalculator {
         int last = candles.size() - 1;
         Structure structure = structure(candles, last, boxWindow, signal);
         MarketState marketState = marketState(signal.regime(), signal.atrPct());
-        if (marketState.blocked()) {
+        if (requireTrendingRegime && marketState.blocked()) {
             return List.of();
         }
         List<CombinationCandidate> candidates = new ArrayList<>();
@@ -50,33 +62,33 @@ public class HtxTrendCombinationCalculator {
         if (boxBreakout && donchianBreakout) {
             addCandidate(candidates, candidate("DONCHIAN_BREAKOUT", "BOX_BREAKOUT", signal, structure, marketState,
                     priorBreakout, candles.get(last), false, boxWindow, baseScore.add(new BigDecimal("15")),
-                    "fresh channel breakout confirmed by box"));
+                    "fresh channel breakout confirmed by box", requireTrendingRegime));
         }
         if (donchianBreakout && !boxBreakout) {
             addCandidate(candidates, candidate("DONCHIAN_BREAKOUT", "TREND_CONTEXT", signal, structure, marketState,
                     priorBreakout, candles.get(last), false, boxWindow, baseScore.add(new BigDecimal("12")),
-                    "fresh channel breakout aligned with trend context"));
+                    "fresh channel breakout aligned with trend context", requireTrendingRegime));
         }
         if ((boxBreakout || priorBreakout.boxBreakout()) && fibonacciRetest) {
             addCandidate(candidates, candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT", signal, structure, marketState,
                     priorBreakout, candles.get(last), true, boxWindow, baseScore.add(new BigDecimal("10")),
-                    "Fibonacci retest confirmed by prior box breakout"));
+                    "Fibonacci retest confirmed by prior box breakout", requireTrendingRegime));
         }
         if ((donchianBreakout || priorBreakout.donchianBreakout()) && fibonacciRetest) {
             addCandidate(candidates, candidate("FIB_PULLBACK_CONTINUATION", "DONCHIAN_BREAKOUT", signal, structure, marketState,
                     priorBreakout, candles.get(last), true, boxWindow, baseScore.add(new BigDecimal("10")),
-                    "Fibonacci retest confirmed by prior channel breakout"));
+                    "Fibonacci retest confirmed by prior channel breakout", requireTrendingRegime));
         }
         if ((boxBreakout || priorBreakout.boxBreakout()) && (donchianBreakout || priorBreakout.donchianBreakout())
                 && fibonacciRetest) {
             addCandidate(candidates, candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT,DONCHIAN_BREAKOUT", signal,
                     structure, marketState, priorBreakout, candles.get(last), true, boxWindow, baseScore.add(new BigDecimal("20")),
-                    "Fibonacci retest confirmed by box and channel"));
+                    "Fibonacci retest confirmed by box and channel", requireTrendingRegime));
         }
         if (emaMomentumContinuation(signal)) {
             addCandidate(candidates, candidate("EMA_VWAP_MOMENTUM_CONTINUATION", "EMA_STACK,MOMENTUM", signal,
                     structure, marketState, priorBreakout, candles.get(last), false, boxWindow, baseScore.add(new BigDecimal("12")),
-                    "EMA stack and momentum continuation"));
+                    "EMA stack and momentum continuation", requireTrendingRegime));
         }
         return candidates.stream().sorted(Comparator.comparing(CombinationCandidate::score).reversed()).toList();
     }
@@ -90,9 +102,10 @@ public class HtxTrendCombinationCalculator {
     private CombinationCandidate candidate(String primaryModel, String confirmationModels,
                                            TrendCandidateSignal signal, Structure structure, MarketState marketState,
                                            BreakoutEvidence priorBreakout, HtxSwapKline entryCandle, boolean emaReclaimConfirmed,
-                                           int boxWindowBars, BigDecimal score, String hypothesis) {
+                                           int boxWindowBars, BigDecimal score, String hypothesis,
+                                           boolean requireTrendingRegime) {
         HtxTrendModelContract contract = HtxTrendModelContract.fromCode(primaryModel);
-        if (!contract.appliesTo(signal.regime(), signal.period())) {
+        if (!contract.appliesTo(signal.regime(), signal.period(), requireTrendingRegime)) {
             return null;
         }
         BigDecimal invalidation = invalidation(contract, signal, structure);

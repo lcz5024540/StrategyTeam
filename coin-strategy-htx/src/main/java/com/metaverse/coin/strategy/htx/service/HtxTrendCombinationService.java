@@ -46,6 +46,16 @@ public class HtxTrendCombinationService {
     /** Market state adjusts cross-symbol candidate order; it never overrides a model's own policy threshold. */
     public Selection select(String contractCode, String period, List<HtxSwapKline> candles,
                             TrendCandidateSignal signal, MarketEntryRank marketRank) {
+        return select(contractCode, period, candles, signal, marketRank, true);
+    }
+
+    /**
+     * The default preserves the trending-regime precondition.  A caller may disable it only via
+     * the explicit HTX trend configuration switch for controlled ablation/gray-release work.
+     */
+    public Selection select(String contractCode, String period, List<HtxSwapKline> candles,
+                            TrendCandidateSignal signal, MarketEntryRank marketRank,
+                            boolean requireTrendingRegime) {
         recordModelCoverage(contractCode, period, candles, signal);
         List<HtxTrendStrategyPolicyEntity> policies = policyService.enabledPolicies();
         if (policies.isEmpty()) {
@@ -53,7 +63,8 @@ public class HtxTrendCombinationService {
         }
         List<CombinationCandidate> candidates = calculator.evaluate(candles, signal,
                 policies.stream().map(HtxTrendStrategyPolicyEntity::getBoxWindowBars)
-                        .filter(value -> value != null && value > 1).findFirst().orElse(32));
+                        .filter(value -> value != null && value > 1).findFirst().orElse(32),
+                requireTrendingRegime);
         if (candidates.isEmpty()) {
             return reject(contractCode, period, signal, HtxTrendCombinationGateReason.classifyNoCandidate(signal));
         }

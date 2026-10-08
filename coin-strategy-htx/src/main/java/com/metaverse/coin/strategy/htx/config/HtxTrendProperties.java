@@ -26,6 +26,14 @@ public class HtxTrendProperties {
     /** When enabled, only a database-backed combined candidate may submit a new live entry. */
     private boolean combinationEntryEnabled = false;
 
+    /**
+     * Keep the ensemble TRENDING_UP / TRENDING_DOWN regime as the default combination-entry
+     * precondition.  This is intentionally a research/gray-release switch: setting it false
+     * only lets a non-trending regime reach the remaining structure, policy and execution gates;
+     * it must never silently become the production default.
+     */
+    private boolean combinationRequireTrendingRegime = true;
+
     /** Legacy single USDT-margined perpetual contract, used when {@link #contractCodes} is empty. */
     private String contractCode = "XAUT-USDT";
 

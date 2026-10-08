@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 
 from htx_trend.java_entry_contract import JavaEntryConfig, JavaTrendSignal, candidates, evaluate
@@ -114,3 +115,24 @@ def test_java_fibonacci_contract_preserves_prior_breakout_and_all_policy_confirm
         assert item.target_low == Decimal("126.440")
         assert item.target_high == Decimal("133.360")
         assert _at_18(item.expected_r) == Decimal("2.320895522388059701")
+
+
+def test_combination_trending_regime_precondition_is_retained_by_default_and_explicitly_switchable() -> None:
+    """The ablation switch bypasses only the regime condition, matching Java's contract."""
+    factor = IndicatorSnapshot(
+        Decimal("106"), Decimal("104"), Decimal("102"), Decimal("2"), Decimal("0.01"), Decimal("30"),
+        Decimal("0.02"), Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"))
+    trending_signal = JavaTrendSignal(TrendSide.LONG, 40, Decimal("114"), factor, Decimal("120"), Decimal("99"), "test",
+                                       "TRENDING_UP", Decimal("90"), Decimal("90"), Decimal("0"), Decimal("90"), Decimal("1.5"))
+    candles = [Candle(index, Decimal("100"), Decimal("110"), Decimal("101"), Decimal("105"), amount=Decimal("1"))
+               for index in range(32)]
+    candles.append(Candle(32, Decimal("106"), Decimal("121"), Decimal("107"), Decimal("120"), amount=Decimal("1")))
+    candles.extend(Candle(index, Decimal("116"), Decimal("120"), Decimal("112"), Decimal("116"), amount=Decimal("1"))
+                   for index in range(33, 40))
+    candles.append(Candle(40, Decimal("115"), Decimal("117"), Decimal("113"), Decimal("114"), amount=Decimal("1")))
+    range_signal = replace(trending_signal, regime="RANGE")
+
+    assert candidates(tuple(candles), range_signal, JavaEntryConfig(box_window_bars=32)) == ()
+    allowed = candidates(tuple(candles), range_signal,
+                         JavaEntryConfig(box_window_bars=32, combination_require_trending_regime=False))
+    assert any(item.model is ModelCode.FIB_PULLBACK_CONTINUATION for item in allowed)

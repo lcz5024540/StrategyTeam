@@ -80,6 +80,16 @@ class HtxTrendCombinationCalculatorTest {
     }
 
     @Test
+    void trendingRegimePreconditionIsRetainedByDefaultAndCanBeExplicitlyDisabledForAblation() {
+        List<HtxSwapKline> candles = risingRange(40);
+        candles.add(candle(40, "108", "112", "107", "111"));
+        TrendCandidateSignal rangeSignal = signal(Direction.LONG, Regime.RANGE, "111", "110", "90");
+
+        assertEquals(List.of(), calculator.evaluate(candles, rangeSignal, 32));
+        assertFalse(calculator.evaluate(candles, rangeSignal, 32, false).isEmpty());
+    }
+
+    @Test
     void fibonacciRetestRetainsThePriorBreakoutAndImpulseEvidence() {
         List<HtxSwapKline> candles = risingRange(32);
         candles.add(candle(32, "106", "121", "107", "120"));

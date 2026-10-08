@@ -69,7 +69,16 @@ public enum HtxTrendModelContract {
     }
 
     public boolean appliesTo(Regime regime, String period) {
-        return entryRole == EntryRole.EXECUTABLE_CANDIDATE && applicableRegimes.contains(regime)
+        return appliesTo(regime, period, true);
+    }
+
+    /**
+     * The regime requirement is normally mandatory.  The explicit false path exists only for
+     * controlled ablation/gray-release research and still preserves model role and timeframe.
+     */
+    public boolean appliesTo(Regime regime, String period, boolean requireTrendingRegime) {
+        return entryRole == EntryRole.EXECUTABLE_CANDIDATE
+                && (!requireTrendingRegime || applicableRegimes.contains(regime))
                 && timeframeProfile.equals(HtxTrendTimeframeProfile.fromPeriod(period).name());
     }
 
