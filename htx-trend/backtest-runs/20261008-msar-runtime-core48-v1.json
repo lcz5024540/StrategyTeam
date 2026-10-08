@@ -1,0 +1,173 @@
+{
+  "schema": "htx-trend-msar-regime-report-v1",
+  "datasetKey": "research:386b5e01033c3dffbf84ac33f3cbd49f",
+  "modelName": "MARKOV_SWITCHING_AR",
+  "modelVersion": "msar-market-context-v1",
+  "decisionBoundary": "RESEARCH",
+  "datasetManifestSha256": "3839da54df649aa3101bbfefb9006b37a97e6cd5236875be7b4f747eb035eaf2",
+  "config": {
+    "states": 2,
+    "max_iterations": 120,
+    "convergence_tolerance": 1e-07,
+    "minimum_variance": 1e-08,
+    "transition_pseudocount": 0.001,
+    "initial_stay_probability": 0.85,
+    "min_source_bars": 128
+  },
+  "periods": [
+    {
+      "period": "4hour",
+      "decision": "NEEDS_CALIBRATION",
+      "sourceBars": 205,
+      "folds": [
+        {
+          "name": "VALIDATION",
+          "trainingBars": 102,
+          "evaluationBars": 51,
+          "fit": {
+            "iterations": 49,
+            "converged": true,
+            "logLikelihood": 311.0287556691923
+          },
+          "stateMapping": {
+            "1": "HIGH_VOL_TRANSITION",
+            "0": "STABLE_CONTEXT"
+          },
+          "stateShares": {
+            "HIGH_VOL_TRANSITION": 0.98,
+            "STABLE_CONTEXT": 0.02
+          },
+          "stateCounts": {
+            "HIGH_VOL_TRANSITION": 49,
+            "STABLE_CONTEXT": 1
+          },
+          "stateParameters": {
+            "STABLE_CONTEXT": {
+              "intercept": -0.00939954593496496,
+              "ar1": -0.18864416180942756,
+              "standardDeviation": 0.0053551594489633795
+            },
+            "HIGH_VOL_TRANSITION": {
+              "intercept": 0.004286099922366084,
+              "ar1": -0.21521325381355302,
+              "standardDeviation": 0.011312161205273537
+            }
+          },
+          "decision": "NEEDS_CALIBRATION"
+        },
+        {
+          "name": "OUT_OF_SAMPLE",
+          "trainingBars": 153,
+          "evaluationBars": 51,
+          "fit": {
+            "iterations": 120,
+            "converged": false,
+            "logLikelihood": 442.95180334733095
+          },
+          "stateMapping": {
+            "0": "HIGH_VOL_TRANSITION",
+            "1": "STABLE_CONTEXT"
+          },
+          "stateShares": {
+            "HIGH_VOL_TRANSITION": 0.04,
+            "STABLE_CONTEXT": 0.96
+          },
+          "stateCounts": {
+            "HIGH_VOL_TRANSITION": 2,
+            "STABLE_CONTEXT": 48
+          },
+          "stateParameters": {
+            "HIGH_VOL_TRANSITION": {
+              "intercept": 0.0020375691938450406,
+              "ar1": 0.20692319389044259,
+              "standardDeviation": 0.03182021910516232
+            },
+            "STABLE_CONTEXT": {
+              "intercept": 0.0015962763356394973,
+              "ar1": -0.10299992116452569,
+              "standardDeviation": 0.011793164611176896
+            }
+          },
+          "decision": "NEEDS_CALIBRATION"
+        }
+      ]
+    },
+    {
+      "period": "1day",
+      "decision": "PASS",
+      "sourceBars": 168,
+      "folds": [
+        {
+          "name": "VALIDATION",
+          "trainingBars": 83,
+          "evaluationBars": 42,
+          "fit": {
+            "iterations": 99,
+            "converged": true,
+            "logLikelihood": 177.09892368231405
+          },
+          "stateMapping": {
+            "0": "HIGH_VOL_TRANSITION",
+            "1": "STABLE_CONTEXT"
+          },
+          "stateShares": {
+            "HIGH_VOL_TRANSITION": 0.3902439024390244,
+            "STABLE_CONTEXT": 0.6097560975609756
+          },
+          "stateCounts": {
+            "HIGH_VOL_TRANSITION": 16,
+            "STABLE_CONTEXT": 25
+          },
+          "stateParameters": {
+            "HIGH_VOL_TRANSITION": {
+              "intercept": -0.014128226897736436,
+              "ar1": -0.009175633165698367,
+              "standardDeviation": 0.03768658634963862
+            },
+            "STABLE_CONTEXT": {
+              "intercept": 0.010559797774165392,
+              "ar1": -0.03933971161976611,
+              "standardDeviation": 0.012916128549402616
+            }
+          },
+          "decision": "PASS"
+        },
+        {
+          "name": "OUT_OF_SAMPLE",
+          "trainingBars": 125,
+          "evaluationBars": 42,
+          "fit": {
+            "iterations": 86,
+            "converged": true,
+            "logLikelihood": 277.6560567386978
+          },
+          "stateMapping": {
+            "0": "HIGH_VOL_TRANSITION",
+            "1": "STABLE_CONTEXT"
+          },
+          "stateShares": {
+            "HIGH_VOL_TRANSITION": 0.1951219512195122,
+            "STABLE_CONTEXT": 0.8048780487804879
+          },
+          "stateCounts": {
+            "HIGH_VOL_TRANSITION": 8,
+            "STABLE_CONTEXT": 33
+          },
+          "stateParameters": {
+            "HIGH_VOL_TRANSITION": {
+              "intercept": -0.009280614621749096,
+              "ar1": 0.558596573243993,
+              "standardDeviation": 0.052038860497613096
+            },
+            "STABLE_CONTEXT": {
+              "intercept": 0.0016196916937021224,
+              "ar1": -0.08205278320445004,
+              "standardDeviation": 0.018454463773713185
+            }
+          },
+          "decision": "PASS"
+        }
+      ]
+    }
+  ]
+}
