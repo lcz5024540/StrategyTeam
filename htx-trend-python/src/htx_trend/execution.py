@@ -54,6 +54,9 @@ class ExecutionConfig:
     max_fib_entry_range_atr: Decimal = Decimal("2.50")
     max_atr_pct: Decimal = Decimal("0.0500")
     require_execution_facts: bool = False
+    java_market_order_compatibility: bool = True
+    margin_safety_ratio: Decimal = Decimal("1.20")
+    min_available_margin: Decimal = Decimal("20")
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,20 +148,25 @@ def cooldown(candidate: ModelCandidate, prior: PriorTrade | None, *, now_epoch: 
     return CooldownDecision(remaining == 0, f"{category} cooldown", remaining)
 
 
-def price_plan(candidate: ModelCandidate, *, atr: Decimal, fee_rate: Decimal | None = None,
+def price_plan(candidate: ModelCandidate, *, atr: Decimal, execution_price: Decimal | None = None, fee_rate: Decimal | None = None,
                config: ExecutionConfig = ExecutionConfig()) -> PricePlan:
-    style = (ExecutionStyle.PASSIVE_LIMIT if candidate.model is ModelCode.FIB_PULLBACK_CONTINUATION
+    # Java's current production trend path uses a V5 market order for every
+    # model.  Passive Fibonacci probing is an experiment and must be selected
+    # explicitly rather than silently changing parity.
+    style = (ExecutionStyle.IOC_OR_MARKET if config.java_market_order_compatibility
+             else ExecutionStyle.PASSIVE_LIMIT if candidate.model is ModelCode.FIB_PULLBACK_CONTINUATION
              else ExecutionStyle.CONDITIONAL_OR_MARKET if candidate.model is ModelCode.DONCHIAN_BREAKOUT
              else ExecutionStyle.IOC_OR_MARKET)
+    desired = execution_price or candidate.entry_price
     adverse = atr * config.slippage_atr_fraction
-    worst = candidate.entry_price + adverse if candidate.side is TrendSide.LONG else candidate.entry_price - adverse
+    worst = desired + adverse if candidate.side is TrendSide.LONG else desired - adverse
     target = candidate.target_low
     gross_reward = target - worst if candidate.side is TrendSide.LONG else worst - target
     risk = worst - candidate.invalidation_price if candidate.side is TrendSide.LONG else candidate.invalidation_price - worst
     round_trip_cost = worst * (fee_rate if fee_rate is not None else config.fee_rate) * Decimal("2") + adverse
     net_reward = gross_reward - round_trip_cost
     expected_net_r = net_reward / risk if risk > ZERO else ZERO
-    return PricePlan(style, candidate.entry_price, worst, candidate.invalidation_price, candidate.target_low,
+    return PricePlan(style, desired, worst, candidate.invalidation_price, candidate.target_low,
                      candidate.target_high, expected_net_r)
 
 
@@ -191,7 +199,12 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
     structure only after an actual fill.
     """
     context = market_context or MarketContext.neutral()
-    state = candidate_state or CandidateTrendState.from_candidate(candidate.score, candidate.expected_r, context)
+    # A real execution adapter supplies the Java-equivalent factor state.  The
+    # paper harness deliberately preserves its old, explicit relaxed behavior
+    # when that snapshot is absent; it must never be mistaken for LIVE parity.
+    state = candidate_state or (CandidateTrendState.from_candidate(candidate.score, candidate.expected_r, context, candidate.side)
+                                if config.require_execution_facts else CandidateTrendState(
+                                    candidate.score, candidate.expected_r > ZERO, False, "paper state not calibrated"))
     facts = execution_facts or ExecutionFacts()
 
     # MODE is intentionally an adapter concern.  A caller that reaches this
@@ -261,7 +274,7 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
             return GateResult(False, "COST", f"adverse funding {side_cost} above {config.max_adverse_funding_rate}")
     if config.require_execution_facts and facts.actual_taker_fee_rate is None:
         return GateResult(False, "COST", "actual account fee rate unavailable")
-    planned_price = price_plan(candidate, atr=atr, fee_rate=facts.actual_taker_fee_rate, config=config)
+    planned_price = price_plan(candidate, atr=atr, execution_price=fill, fee_rate=facts.actual_taker_fee_rate, config=config)
     if planned_price.expected_net_r < config.min_net_r:
         return GateResult(False, "COST", f"expected net R {planned_price.expected_net_r} below {config.min_net_r}", planned_price)
     planned_size = size_plan(candidate, contract, planned_price, config=config)
@@ -271,7 +284,9 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
         return GateResult(False, "DEPTH_LIQUIDITY", "top book depth below planned-order multiplier", planned_price, planned_size)
     if config.require_execution_facts and facts.executable_depth_contracts is None:
         return GateResult(False, "DEPTH_LIQUIDITY", "executable multi-level depth unavailable", planned_price, planned_size)
-    required_margin = planned_size.notional / facts.leverage if facts.leverage is not None and facts.leverage > ZERO else planned_size.notional
+    required_margin = (planned_size.notional / facts.leverage * config.margin_safety_ratio
+                       if facts.leverage is not None and facts.leverage > ZERO else planned_size.notional)
+    required_margin = max(required_margin, config.min_available_margin)
     if facts.available_margin_usdt is not None and required_margin > facts.available_margin_usdt:
         return GateResult(False, "MARGIN_RISK", "available margin below required entry margin", planned_price, planned_size)
     if facts.risk_capacity_usdt is not None and facts.reserved_notional_usdt + planned_size.notional > facts.risk_capacity_usdt:

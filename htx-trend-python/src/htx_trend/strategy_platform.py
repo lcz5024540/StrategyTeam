@@ -20,6 +20,7 @@ import uuid
 
 from .market_data import HtxMarketData
 from .models import TrendConfig, TrendSide, evaluate_signal, market_breadth, model_candidates, route_candidates
+from .policy import StrategyPolicy, select_policy
 from .mysql_store import HtxTrendMySqlRepository, RuntimeInstance
 from .strategy_context import MarketContext, MarketRegime
 
@@ -185,7 +186,18 @@ class TrendObservationWorker:
         factor_id = self._repository.record_factor_snapshot(snapshot_key=snapshot_key, contract_code=result.contract,
             period=self._config.entry_period, bar_time=signal.bar_time, market_regime=signal.higher_timeframe_side.value, factors=values)
         route = route_candidates(result.model_candidates, market_context=context)
+        policies = tuple(StrategyPolicy(value.policy_code, value.policy_version, value.primary_model, value.confirmation_models,
+                                        value.base_notional_usdt, value.max_notional_usdt, value.score_threshold, value.box_window_bars)
+                         for value in self._repository.enabled_strategy_policies())
+        selections = select_policy(route.ranked, policies, context)
+        selected_by_candidate = {item.candidate: item for item in selections}
         for item in route.ranked:
+            selection = selected_by_candidate.get(item)
+            gate_result = "POLICY_PASSED" if selection else "POLICY_NOT_MATCHED"
+            gate_reason = (f"policy={selection.policy.policy_code}@{selection.policy.policy_version}; "
+                           f"baseScore={selection.base_score}; effectiveScore={selection.effective_score}; "
+                           f"plannedNotional={selection.planned_notional_usdt}" if selection
+                           else "no enabled Java-compatible policy matches model, confirmation evidence and score")
             self._repository.record_candidate(contract_code=result.contract, period=self._config.entry_period, bar_time=item.bar_time,
                 direction=item.side.value, regime=context.regime.value, score=item.score, close_price=item.entry_price,
                 factors={**values, "structure_key": item.structure_key,
@@ -193,9 +205,14 @@ class TrendObservationWorker:
                          "conflict_evidence": list(item.conflict_evidence), "route": route.reason},
                 reason="; ".join(item.evidence), model=item.model.value, run_id=run_id,
                 factor_snapshot_id=factor_id, invalidation_price=item.invalidation_price, target_low=item.target_low,
-                target_high=item.target_high, expected_r=item.expected_r, shadow=True)
+                target_high=item.target_high, expected_r=item.expected_r, shadow=True,
+                confirmation_models=selection.confirmation_models if selection else None,
+                policy_version=selection.policy.policy_version if selection else None,
+                gate_result=gate_result, gate_reason=gate_reason,
+                sizing_multiplier=selection.sizing_multiplier if selection else None,
+                planned_notional_usdt=selection.planned_notional_usdt if selection else None)
             self._repository.mark_candidate_execution_gate(run_id, result.contract, item.model.value, "OBSERVE_ONLY",
-                                                            "Python observer records model route only; real execution preflight not entered")
+                                                            f"{gate_reason}; real account, book, fee, margin and order preflight not entered")
         return len(result.model_candidates)
 
 

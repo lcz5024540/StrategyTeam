@@ -3,7 +3,7 @@ from decimal import Decimal
 from htx_trend.execution import ExecutionConfig, ExecutionFacts, PriorTrade, cooldown, evaluate_gate, price_plan
 from htx_trend.market_data import Candle, ContractSpec, FundingRate, TopOfBook
 from htx_trend.models import ModelCandidate, ModelCode, PriceStructure, TrendSide
-from htx_trend.strategy_context import FibonacciQuality, MarketContext
+from htx_trend.strategy_context import FibonacciQuality, MarketContext, MarketRegime, evaluate_candidate_state
 
 
 def candidate(score: str = "95") -> ModelCandidate:
@@ -20,9 +20,9 @@ def inputs():
                 prior_trade=None, config=ExecutionConfig(min_score=Decimal("70"), min_net_r=Decimal("0"), min_notional=Decimal("1"), target_notional=Decimal("100"), max_notional=Decimal("100")))
 
 
-def test_fib_uses_passive_price_plan_and_cost_adjusted_reward() -> None:
+def test_java_compatible_price_plan_uses_market_style_and_cost_adjusted_reward() -> None:
     plan = price_plan(candidate(), atr=Decimal("2"), config=ExecutionConfig())
-    assert plan.style.value == "PASSIVE_LIMIT"
+    assert plan.style.value == "IOC_OR_MARKET"
     assert plan.worst_acceptable_entry > plan.desired_entry
     assert plan.expected_net_r > 0
 
@@ -68,3 +68,15 @@ def test_strict_live_preflight_requires_account_fee_depth_and_margin_facts() -> 
                                                          available_margin_usdt=Decimal("100"), leverage=Decimal("5")),
                            **{**inputs(), "config": strict})
     assert result.allowed
+
+
+def test_candidate_state_ports_java_counter_market_qualification() -> None:
+    opposed = MarketContext(MarketRegime.BROAD_DOWN, TrendSide.SHORT, Decimal("0.9"), TrendSide.SHORT, TrendSide.SHORT)
+    rejected = evaluate_candidate_state(Decimal("95"), Decimal("2"), Decimal("70"), TrendSide.LONG,
+                                        Decimal("101"), Decimal("100"), Decimal("30"), opposed, True)
+    assert not rejected.tradable
+    from htx_trend.strategy_context import EntryStateConfig
+    qualified = evaluate_candidate_state(Decimal("95"), Decimal("2"), Decimal("70"), TrendSide.LONG,
+                                         Decimal("101"), Decimal("100"), Decimal("30"), opposed, True,
+                                         EntryStateConfig(counter_enabled=True))
+    assert qualified.tradable and "COUNTER_QUALIFIED" in qualified.reason

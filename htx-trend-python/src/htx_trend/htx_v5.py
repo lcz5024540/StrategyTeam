@@ -106,6 +106,24 @@ class HtxV5Client:
         response = self._public_get("/linear-swap-api/v1/swap_funding_rate", {"contract_code": contract_code})
         return self._data_object(response)
 
+    def swap_fee(self, contract_code: str) -> list[dict[str, Any]]:
+        """Read the account-specific contract fee profile used by Java.
+
+        HTX exposes this as a signed V1 POST even while order placement uses
+        V5.  It is read-only and is deliberately available when live mutation
+        authority is disabled.
+        """
+        return self._data_list(self._signed("POST", "/linear-swap-api/v1/swap_fee", body={
+            "contract_code": contract_code, "business_type": "swap",
+        }))
+
+    def swap_account_info(self, contract_code: str) -> list[dict[str, Any]]:
+        """Read isolated margin facts for the Java-compatible margin gate."""
+        response = self._signed("POST", "/linear-swap-api/v1/swap_account_info", body={
+            "contract_code": contract_code,
+        })
+        return self._data_list(response)
+
     def balance(self) -> dict[str, Any]:
         return self._data_object(self._signed("GET", "/v5/account/balance"))
 

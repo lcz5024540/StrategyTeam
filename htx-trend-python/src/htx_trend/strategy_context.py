@@ -61,11 +61,58 @@ class CandidateTrendState:
     reason: str
 
     @classmethod
-    def from_candidate(cls, score: Decimal, expected_r: Decimal, context: MarketContext) -> "CandidateTrendState":
-        strong = score >= Decimal("90") and expected_r >= Decimal("1")
-        tradable = score >= Decimal("70") and expected_r > ZERO
-        reason = f"score={score}; expected_r={expected_r}; regime={context.regime.value}"
-        return cls(score, tradable, strong, reason)
+    def from_candidate(cls, score: Decimal, expected_r: Decimal, context: MarketContext,
+                       side: TrendSide = TrendSide.LONG) -> "CandidateTrendState":
+        # Compatibility fallback for call sites that do not yet carry the
+        # factor snapshot.  Real execution uses ``evaluate_candidate_state``.
+        return evaluate_candidate_state(score, expected_r, score, side, Decimal("2") if side is TrendSide.LONG else Decimal("1"), Decimal("1") if side is TrendSide.LONG else Decimal("2"),
+                                        Decimal("100"), context, False)
+
+
+@dataclass(frozen=True, slots=True)
+class EntryStateConfig:
+    """Default values mirror ``HtxTrendProperties`` in the Java strategy."""
+
+    min_trend_score: Decimal = Decimal("75")
+    strong_trend_score: Decimal = Decimal("88")
+    min_expected_r: Decimal = Decimal("1.25")
+    strong_expected_r: Decimal = Decimal("1.75")
+    min_momentum_score: Decimal = Decimal("60")
+    counter_enabled: bool = False
+    counter_min_model_score: Decimal = Decimal("88")
+    counter_min_expected_r: Decimal = Decimal("2.00")
+    counter_min_momentum_score: Decimal = Decimal("65")
+    counter_min_adx: Decimal = Decimal("25")
+
+
+def evaluate_candidate_state(model_score: Decimal, expected_r: Decimal, momentum_score: Decimal, side: TrendSide,
+                             ema_fast: Decimal, ema_slow: Decimal, adx: Decimal, context: MarketContext,
+                             has_independent_structure: bool, config: EntryStateConfig = EntryStateConfig()) -> CandidateTrendState:
+    """Port of Java ``HtxTrendStateEvaluator`` and counter-market gate."""
+    ema_aligned = (side is TrendSide.LONG and ema_fast > ema_slow) or (side is TrendSide.SHORT and ema_fast < ema_slow)
+    broad_aligned = context.aligned(side)
+    broad_opposed = context.opposed(side)
+    counter_qualified = broad_opposed and config.counter_enabled and all((
+        model_score >= config.counter_min_model_score, expected_r >= config.counter_min_expected_r,
+        momentum_score >= config.counter_min_momentum_score, adx >= config.counter_min_adx,
+        ema_aligned, has_independent_structure,
+    ))
+    expected_adjustment = Decimal("8") if expected_r >= config.min_expected_r else Decimal("-25")
+    momentum_adjustment = Decimal("5") if momentum_score >= config.min_momentum_score else Decimal("-15")
+    ema_adjustment = Decimal("5") if ema_aligned else Decimal("-25")
+    breadth_adjustment = Decimal("8") if broad_aligned else Decimal("-40") if broad_opposed else ZERO
+    raw = model_score + expected_adjustment + momentum_adjustment + ema_adjustment + breadth_adjustment
+    score = min(Decimal("100"), max(ZERO, raw))
+    eligibility = (min(Decimal("100"), max(ZERO, model_score + expected_adjustment + momentum_adjustment + ema_adjustment))
+                   if broad_opposed and counter_qualified else score)
+    tradable = (ema_aligned and (not broad_opposed or counter_qualified) and expected_r >= config.min_expected_r
+                and momentum_score >= config.min_momentum_score and eligibility >= config.min_trend_score)
+    strong = tradable and not broad_opposed and score >= config.strong_trend_score and expected_r >= config.strong_expected_r and broad_aligned
+    regime = "STRONG" if strong else "COUNTER_QUALIFIED" if tradable and broad_opposed else "QUALIFIED" if tradable else "WEAK"
+    reason = (f"regime={regime}; model={model_score}; expected_r={expected_r}; momentum={momentum_score}; "
+              f"ema_aligned={ema_aligned}; breadth={context.regime.value}; raw={raw}; score={eligibility}; "
+              f"counter_qualified={counter_qualified}")
+    return CandidateTrendState(eligibility, tradable, strong, reason)
 
 
 @dataclass(frozen=True, slots=True)

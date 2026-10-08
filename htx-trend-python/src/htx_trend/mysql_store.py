@@ -108,6 +108,18 @@ class RiskReservationTotals:
 
 
 @dataclass(frozen=True, slots=True)
+class StrategyPolicyRecord:
+    policy_code: str
+    policy_version: str
+    primary_model: str
+    confirmation_models: str
+    base_notional_usdt: Decimal
+    max_notional_usdt: Decimal
+    score_threshold: Decimal
+    box_window_bars: int
+
+
+@dataclass(frozen=True, slots=True)
 class PositionIntent:
     """The minimum immutable identity needed before a live trend order is sent."""
     position_key: str
@@ -131,6 +143,15 @@ class PositionIntent:
     strategy_family: str = "TREND"
     strategy_name: str = "HTX_TREND_V1"
     source_position_id: int | None = None
+    confirmation_models: str | None = None
+    policy_version: str | None = None
+    entry_hypothesis: str | None = None
+    sizing_multiplier: Decimal | None = None
+    sizing_reason: str | None = None
+    entry_fee_rate: Decimal | None = None
+    estimated_entry_fee: Decimal | None = None
+    estimated_close_fee: Decimal | None = None
+    expected_net_after_fees: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +174,12 @@ class TrendOrderIntent:
     timeframe_profile: str = "INTRADAY_15M"
     strategy_family: str = "TREND"
     strategy_name: str = "HTX_TREND_V1"
+    sizing_multiplier: Decimal | None = None
+    sizing_reason: str | None = None
+    entry_gate_reason: str | None = None
+    fee_rate_used: Decimal | None = None
+    estimated_open_fee: Decimal | None = None
+    estimated_close_fee: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,6 +232,15 @@ class HtxTrendMySqlRepository:
                          "WHERE enabled=1 AND trend_enabled=1 ORDER BY sort_order,id")
         return [TradeAccount(int(row["id"]), row["account_label"], row["account_role"], bool(row["trend_enabled"]),
                              bool(row["mirror_enabled"]), row["base_url"]) for row in rows]
+
+    def enabled_strategy_policies(self) -> list[StrategyPolicyRecord]:
+        rows = self._all("""SELECT policy_code,policy_version,primary_model,confirmation_models,base_notional_usdt,
+          max_notional_usdt,score_threshold,box_window_bars FROM htx_trend_strategy_policy
+          WHERE enabled=1 ORDER BY updated_at DESC,id DESC""", ())
+        return [StrategyPolicyRecord(str(row["policy_code"]), str(row["policy_version"]),
+                str(row["primary_model"]), str(row["confirmation_models"]),
+                Decimal(str(row["base_notional_usdt"])), Decimal(str(row["max_notional_usdt"])),
+                Decimal(str(row["score_threshold"])), int(row["box_window_bars"])) for row in rows]
 
     def runtime_instance(self, instance_key: str) -> RuntimeInstance | None:
         row = self._one("""SELECT instance_key,strategy_family,strategy_name,account_id,account_label,execution_mode,
@@ -294,30 +330,39 @@ class HtxTrendMySqlRepository:
         return int(row["count"]) if row else 0
 
     def record_position_intent(self, intent: PositionIntent) -> int:
-        self._write("""INSERT IGNORE INTO htx_trend_position(source_position_id,position_key,run_id,contract_code,status,side,
+        values = ",".join(["%s"] * 4 + ["'PENDING_OPEN'"] + ["%s"] * 29)
+        self._write(f"""INSERT IGNORE INTO htx_trend_position(source_position_id,position_key,run_id,contract_code,status,side,
           contract_size,contract_volume,remaining_contract_volume,leverage,entry_signal,account_id,account_label,strategy_family,
-          strategy_name,model_name,entry_gate_reason,primary_model,timeframe_profile,market_regime,factor_snapshot_id,
-          invalidation_price,target_zone_low,target_zone_high,expected_r_multiple)
-          VALUES(%s,%s,%s,%s,'PENDING_OPEN',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+          strategy_name,model_name,entry_gate_reason,primary_model,confirmation_models,policy_version,timeframe_profile,market_regime,
+          factor_snapshot_id,entry_hypothesis,invalidation_price,target_zone_low,target_zone_high,expected_r_multiple,
+          sizing_multiplier,sizing_reason,entry_fee_rate,estimated_entry_fee,estimated_close_fee,expected_net_after_fees)
+          VALUES({values})""",
           (intent.source_position_id,intent.position_key,intent.run_id,intent.contract_code,intent.side,intent.contract_size,
            intent.contract_volume,intent.contract_volume,intent.leverage,_clip(intent.entry_signal,512),intent.account.account_id,
            intent.account.account_label,intent.strategy_family,intent.strategy_name,intent.primary_model,
-           _clip(intent.entry_gate_reason,1024),intent.primary_model,intent.timeframe_profile,intent.market_regime,
-           intent.factor_snapshot_id,intent.invalidation_price,intent.target_zone_low,intent.target_zone_high,intent.expected_r_multiple))
+           _clip(intent.entry_gate_reason,1024),intent.primary_model,intent.confirmation_models,intent.policy_version,
+           intent.timeframe_profile,intent.market_regime,intent.factor_snapshot_id,_clip(intent.entry_hypothesis,1024) if intent.entry_hypothesis else None,
+           intent.invalidation_price,intent.target_zone_low,intent.target_zone_high,intent.expected_r_multiple,
+           intent.sizing_multiplier,_clip(intent.sizing_reason,512) if intent.sizing_reason else None,intent.entry_fee_rate,
+           intent.estimated_entry_fee,intent.estimated_close_fee,intent.expected_net_after_fees))
         row = self._one("SELECT id FROM htx_trend_position WHERE position_key=%s", (intent.position_key,))
         if row is None:
             raise RuntimeError("position intent was not persisted")
         return int(row["id"])
 
     def record_order_intent(self, intent: TrendOrderIntent) -> int:
-        self._write("""INSERT IGNORE INTO htx_trend_order(position_id,position_key,run_id,contract_code,leg,trend_side,order_side,
+        values = ",".join(["%s"] * 11 + ["'INTENT'"] + ["%s"] * 14)
+        self._write(f"""INSERT IGNORE INTO htx_trend_order(position_id,position_key,run_id,contract_code,leg,trend_side,order_side,
           position_side,reduce_only,client_order_id,request_volume,status,reason,account_id,account_label,strategy_family,
-          strategy_name,model_name,factor_snapshot_id,timeframe_profile)
-          VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'INTENT',%s,%s,%s,%s,%s,%s,%s,%s)""",
+          strategy_name,model_name,factor_snapshot_id,timeframe_profile,fee_rate_used,estimated_open_fee,estimated_close_fee,
+          sizing_multiplier,sizing_reason,entry_gate_reason)
+          VALUES({values})""",
           (intent.position_id,intent.position_key,intent.run_id,intent.contract_code,intent.leg,intent.trend_side,intent.order_side,
            intent.position_side,intent.reduce_only,intent.client_order_id,intent.request_volume,_clip(intent.reason,512),
            intent.account.account_id,intent.account.account_label,intent.strategy_family,intent.strategy_name,intent.primary_model,
-           intent.factor_snapshot_id,intent.timeframe_profile))
+           intent.factor_snapshot_id,intent.timeframe_profile,intent.fee_rate_used,intent.estimated_open_fee,intent.estimated_close_fee,
+           intent.sizing_multiplier,_clip(intent.sizing_reason,512) if intent.sizing_reason else None,
+           _clip(intent.entry_gate_reason,1024) if intent.entry_gate_reason else None))
         row = self._one("SELECT id FROM htx_trend_order WHERE client_order_id=%s", (intent.client_order_id,))
         if row is None:
             raise RuntimeError("order intent was not persisted")
@@ -328,6 +373,29 @@ class HtxTrendMySqlRepository:
         self._write("""UPDATE htx_trend_order SET status='ACCEPTED',exchange_order_id=%s,exchange_client_order_id=%s,message=%s,
           updated_at=CURRENT_TIMESTAMP(3) WHERE position_id=%s AND leg=%s AND client_order_id=%s""",
           (exchange_order_id,exchange_client_order_id,_clip(message,512),position_id,leg,client_order_id))
+
+    def mark_order_rejected(self, *, position_id: int, leg: str, client_order_id: str, message: str) -> None:
+        self._write("""UPDATE htx_trend_order SET status='REJECTED',message=%s,updated_at=CURRENT_TIMESTAMP(3)
+          WHERE position_id=%s AND leg=%s AND client_order_id=%s""", (_clip(message,512),position_id,leg,client_order_id))
+
+    def mark_position_status(self, *, position_id: int, status: str, message: str) -> None:
+        self._write("UPDATE htx_trend_position SET status=%s,message=%s,updated_at=CURRENT_TIMESTAMP(3) WHERE id=%s",
+                    (status,_clip(message,1024),position_id))
+
+    def pending_orders(self, *, account_id: int) -> list[dict[str, Any]]:
+        """Recovery input only; no worker changes a row without exchange confirmation."""
+        return self._all("""SELECT o.id,o.position_id,o.position_key,o.run_id,o.contract_code,o.leg,o.trend_side,o.order_side,
+          o.position_side,o.reduce_only,o.client_order_id,o.exchange_order_id,o.request_volume,o.status,o.account_id,
+          o.account_label,o.strategy_family,o.strategy_name,o.model_name,o.factor_snapshot_id,o.timeframe_profile
+          ,p.contract_size FROM htx_trend_order o JOIN htx_trend_position p ON p.id=o.position_id
+          WHERE o.account_id=%s AND o.status IN ('INTENT','ACCEPTED','PARTIALLY_FILLED')
+          ORDER BY o.created_at""", (account_id,))
+
+    def mirror_position(self, *, source_position_id: int, account_id: int) -> dict[str, Any] | None:
+        return self._one("""SELECT id,position_key,contract_code,side,remaining_contract_volume,contract_size,status
+          FROM htx_trend_position WHERE source_position_id=%s AND account_id=%s
+          AND status IN ('PENDING_OPEN','OPEN_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT') ORDER BY id DESC LIMIT 1""",
+                         (source_position_id,account_id))
 
     def reconcile_order(self, *, position_id: int, leg: str, client_order_id: str, status: str, exchange_order_id: int | None,
                         exchange_client_order_id: int | None, exchange_state: str | None, filled_contracts: Decimal,
@@ -371,17 +439,25 @@ class HtxTrendMySqlRepository:
     def record_candidate(self, *, contract_code: str, period: str, bar_time: int, direction: str, regime: str,
                          score: Decimal, close_price: Decimal, factors: dict[str, Decimal], reason: str, model: str,
                          run_id: str, factor_snapshot_id: int | None, invalidation_price: Decimal, target_low: Decimal,
-                         target_high: Decimal, expected_r: Decimal, shadow: bool = True) -> None:
+                         target_high: Decimal, expected_r: Decimal, shadow: bool = True,
+                         confirmation_models: str | None = None, policy_version: str | None = None,
+                         gate_result: str | None = None, gate_reason: str | None = None,
+                         sizing_multiplier: Decimal | None = None, planned_notional_usdt: Decimal | None = None) -> None:
         self._write("""INSERT INTO htx_trend_candidate_signal(contract_code,period,bar_time,direction,regime,signal_score,close_price,
-          ema_fast,ema_medium,ema_slow,atr,atr_pct,adx,momentum_pct,entry_reason,shadow,model_version,primary_model,run_id,
-          factor_snapshot_id,invalidation_price,target_zone_low,target_zone_high,expected_r_multiple)
-          VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-          ON DUPLICATE KEY UPDATE signal_score=VALUES(signal_score),entry_reason=VALUES(entry_reason),run_id=VALUES(run_id),
-          factor_snapshot_id=VALUES(factor_snapshot_id),invalidation_price=VALUES(invalidation_price),target_zone_low=VALUES(target_zone_low),
-          target_zone_high=VALUES(target_zone_high),expected_r_multiple=VALUES(expected_r_multiple)""",
+          ema_fast,ema_medium,ema_slow,atr,atr_pct,adx,momentum_pct,entry_reason,shadow,model_version,primary_model,confirmation_models,
+          policy_version,run_id,factor_snapshot_id,invalidation_price,target_zone_low,target_zone_high,expected_r_multiple,gate_result,
+          gate_reason,sizing_multiplier,planned_notional_usdt)
+          VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+          ON DUPLICATE KEY UPDATE signal_score=VALUES(signal_score),entry_reason=VALUES(entry_reason),confirmation_models=VALUES(confirmation_models),
+          policy_version=VALUES(policy_version),run_id=VALUES(run_id),factor_snapshot_id=VALUES(factor_snapshot_id),
+          invalidation_price=VALUES(invalidation_price),target_zone_low=VALUES(target_zone_low),target_zone_high=VALUES(target_zone_high),
+          expected_r_multiple=VALUES(expected_r_multiple),gate_result=VALUES(gate_result),gate_reason=VALUES(gate_reason),
+          sizing_multiplier=VALUES(sizing_multiplier),planned_notional_usdt=VALUES(planned_notional_usdt)""",
           (contract_code,period,bar_time,direction,regime,score,close_price,factors.get("ema_fast"),factors.get("ema_medium"),
            factors.get("ema_slow"),factors.get("atr"),factors.get("atr_pct"),factors.get("adx"),factors.get("roc"),
-           _clip(reason,512),shadow,f"python-trend-v1:{model}",model,run_id,factor_snapshot_id,invalidation_price,target_low,target_high,expected_r))
+           _clip(reason,512),shadow,f"python-trend-v1:{model}",model,confirmation_models,policy_version,run_id,factor_snapshot_id,
+           invalidation_price,target_low,target_high,expected_r,gate_result,_clip(gate_reason,1024) if gate_reason else None,
+           sizing_multiplier,planned_notional_usdt))
 
     def mark_candidate_execution_gate(self, run_id: str, contract_code: str, primary_model: str, result: str, reason: str) -> None:
         self._write("""UPDATE htx_trend_candidate_signal SET execution_gate_result=%s,execution_gate_reason=%s,

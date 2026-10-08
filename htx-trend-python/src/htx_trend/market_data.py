@@ -121,6 +121,26 @@ class TopOfBook:
 
 
 @dataclass(frozen=True, slots=True)
+class OrderBook:
+    """Normalized book snapshot.  Quantity is contract volume, as HTX returns."""
+
+    bids: tuple[tuple[Decimal, Decimal], ...]
+    asks: tuple[tuple[Decimal, Decimal], ...]
+
+    @property
+    def top(self) -> TopOfBook:
+        if not self.bids or not self.asks:
+            raise ValueError("order book has no bid or ask")
+        bid, bid_size = self.bids[0]
+        ask, ask_size = self.asks[0]
+        return TopOfBook(bid, ask, bid_size, ask_size)
+
+    def executable_contracts(self, side: str, levels: int = 5) -> Decimal:
+        selected = self.asks if side.upper() == "LONG" else self.bids
+        return sum((size for _, size in selected[:max(1, levels)]), Decimal("0"))
+
+
+@dataclass(frozen=True, slots=True)
 class ContractSpec:
     contract_code: str
     contract_size: Decimal
@@ -151,19 +171,25 @@ class HtxMarketData:
         return KlineWindow(contract_code, period, candles[-size:], size)
 
     def top_of_book(self, contract_code: str) -> TopOfBook:
+        return self.order_book(contract_code).top
+
+    def order_book(self, contract_code: str) -> OrderBook:
         payload = self._client.depth(contract_code, 0)
         bids, asks = payload.get("bids"), payload.get("asks")
         if not isinstance(bids, list) or not isinstance(asks, list) or not bids or not asks:
             raise ValueError(f"HTX depth has no best bid/ask for {contract_code}")
-        def level(value: object) -> tuple[Decimal, Decimal | None]:
+        def level(value: object) -> tuple[Decimal, Decimal]:
             if not isinstance(value, list) or not value:
                 raise ValueError(f"HTX malformed depth level for {contract_code}")
-            return Decimal(str(value[0])), None if len(value) < 2 else Decimal(str(value[1]))
-        bid, bid_size = level(bids[0])
-        ask, ask_size = level(asks[0])
+            if len(value) < 2:
+                raise ValueError(f"HTX depth level lacks volume for {contract_code}")
+            return Decimal(str(value[0])), Decimal(str(value[1]))
+        normalized_bids, normalized_asks = tuple(level(item) for item in bids), tuple(level(item) for item in asks)
+        bid, _ = normalized_bids[0]
+        ask, _ = normalized_asks[0]
         if bid <= 0 or ask <= 0 or bid > ask:
             raise ValueError(f"HTX invalid best bid/ask for {contract_code}")
-        return TopOfBook(bid, ask, bid_size, ask_size)
+        return OrderBook(normalized_bids, normalized_asks)
 
     def contract_spec(self, contract_code: str) -> ContractSpec:
         values = self._client.contract_info(contract_code)
