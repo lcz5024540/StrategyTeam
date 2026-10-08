@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS trend_fill (
   FOREIGN KEY(order_id) REFERENCES trend_order(order_id),
   FOREIGN KEY(account_id) REFERENCES trend_account(account_id)
 );
+CREATE TABLE IF NOT EXISTS trend_position_context (
+  position_id TEXT PRIMARY KEY, context_json TEXT NOT NULL, updated_at TEXT NOT NULL,
+  FOREIGN KEY(position_id) REFERENCES trend_position(position_id)
+);
 CREATE TABLE IF NOT EXISTS trend_decision (
   decision_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, position_id TEXT,
   run_id TEXT NOT NULL, decision_kind TEXT NOT NULL, payload_json TEXT NOT NULL, recorded_at TEXT NOT NULL

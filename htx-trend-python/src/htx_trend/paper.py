@@ -57,3 +57,19 @@ class PaperExchange:
         if request.limit_price is not None and candle.low <= request.limit_price <= candle.high:
             return request.limit_price
         return None
+
+    def reduce_position(self, position: Position, *, quantity: int, exit_price: Decimal, contract_size: Decimal,
+                        when: datetime, run_id: str, parent_order_id: str | None = None) -> Order:
+        if quantity < 1 or quantity > position.quantity:
+            raise ValueError("paper reduce quantity is outside current position")
+        side = "SELL" if position.side == "LONG" else "BUY"
+        request = PaperOrder(position.account_id, position.contract_code, position.side, side, quantity, "MARKET", when,
+                             f"paper-close-{run_id}-{position.position_id}-{quantity}", position_id=position.position_id,
+                             parent_order_id=parent_order_id, strategy_run_id=run_id)
+        candle = Candle(int(when.timestamp()), exit_price, exit_price, exit_price, exit_price)
+        order = self.submit(request, candle)
+        gross = (exit_price - position.entry_price) * contract_size * quantity if position.side == "LONG" else (position.entry_price - exit_price) * contract_size * quantity
+        fee = exit_price * Decimal(quantity) * self._fee_rate
+        accumulated = position.realized_pnl + gross - fee
+        self._ledger.reduce_position(position.position_id, position.quantity - quantity, accumulated, when)
+        return order

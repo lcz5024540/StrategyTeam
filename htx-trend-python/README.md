@@ -13,3 +13,10 @@ python -m venv .venv
 ```
 
 迁移路线见 [`../docs/architecture-refactor/HTX_TREND_PYTHON_MIGRATION_V1.md`](../docs/architecture-refactor/HTX_TREND_PYTHON_MIGRATION_V1.md)。
+
+
+## 迁移完成后的验证入口
+
+Python 不会启动即建表：需要在纸面环境中显式执行 `htx-trend init-ledger --database /path/paper.sqlite --schema sql/schema.sql`。运行时 K 线证据可用 `htx-trend replay --evidence /path/evidence --output /path/report.json` 生成完整性报告。Java 与 Python 决策导出为同一 JSON 后，可用 `htx-trend compare --java java.json --python python.json` 输出逐字段差异。
+
+这些命令只用于回放、纸面与差异验证。真实 HTX 执行必须同时在 `HtxV5Client` 和 `LiveAuthority` 显式开启，并且只允许批准的单一账户；当前没有部署或启用该路径。

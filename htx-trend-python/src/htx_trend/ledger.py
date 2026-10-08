@@ -119,6 +119,36 @@ class TrendLedger:
                                  (str(realized_pnl), _time(when), position_id))
         self._connection.commit()
 
+    def reduce_position(self, position_id: str, remaining_quantity: int, realized_pnl: Decimal, when: datetime) -> None:
+        if remaining_quantity < 0:
+            raise ValueError("remaining quantity cannot be negative")
+        if remaining_quantity == 0:
+            self.close_position(position_id, realized_pnl, when)
+            return
+        self._connection.execute("UPDATE trend_position SET quantity=?,realized_pnl=? WHERE position_id=? AND status='OPEN'",
+                                 (remaining_quantity, str(realized_pnl), position_id))
+        self._connection.commit()
+
+    def save_position_context(self, position_id: str, context: dict) -> None:
+        self._connection.execute("INSERT INTO trend_position_context(position_id,context_json,updated_at) VALUES(?,?,?) "
+                                 "ON CONFLICT(position_id) DO UPDATE SET context_json=excluded.context_json,updated_at=excluded.updated_at",
+                                 (position_id, json.dumps(context, default=str, sort_keys=True), _time(datetime.now(UTC))))
+        self._connection.commit()
+
+    def position_context(self, position_id: str) -> dict:
+        row = self._connection.execute("SELECT context_json FROM trend_position_context WHERE position_id=?", (position_id,)).fetchone()
+        if row is None: raise KeyError(f"missing position context {position_id}")
+        return json.loads(row["context_json"])
+
+    def position(self, position_id: str) -> Position:
+        row = self._connection.execute("SELECT * FROM trend_position WHERE position_id=?", (position_id,)).fetchone()
+        if row is None: raise KeyError(f"missing position {position_id}")
+        return _position(row)
+
+    def mirrored_positions(self, parent_position_id: str) -> list[Position]:
+        rows = self._connection.execute("SELECT * FROM trend_position WHERE parent_position_id=? AND status='OPEN'", (parent_position_id,)).fetchall()
+        return [_position(row) for row in rows]
+
     def decision(self, account_id: str, run_id: str, decision_kind: str, payload: dict, *, position_id: str | None = None) -> None:
         self._connection.execute("INSERT INTO trend_decision VALUES(?,?,?,?,?,?,?)", (str(uuid.uuid4()), account_id,
                                  position_id, run_id, decision_kind, json.dumps(payload, default=str, sort_keys=True), _time(datetime.now(UTC))))

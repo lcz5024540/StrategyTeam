@@ -35,3 +35,27 @@ def test_primary_scan_can_mirror_only_a_filled_primary_paper_trade(tmp_path) -> 
     assert result.paper_order_id is not None
     assert len(ledger.active_positions("main")) == len(ledger.active_positions("trademax")) == 1
     ledger.close()
+
+
+def test_v4_paper_exit_closes_primary_and_mirror_from_same_decision(tmp_path) -> None:
+    database, schema = tmp_path / "exit.sqlite", Path(__file__).parents[1] / "sql" / "schema.sql"
+    TrendLedger.initialize(database, schema)
+    ledger = TrendLedger(database)
+    ledger.account(Account("main", "Main", "PAPER")); ledger.account(Account("trademax", "TradeX", "PAPER"))
+    exchange = PaperExchange(ledger)
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    primary = exchange.open_position("main", "BTC-USDT", "LONG", 2, Decimal("100"), now, "open")
+    mirror = exchange.open_position("trademax", "BTC-USDT", "LONG", 2, Decimal("100"), now, "open", primary.position_id)
+    context = {"model": "FIB_PULLBACK_CONTINUATION", "contract_size": "1", "initial_stop": "95", "invalidation": "94",
+               "structure_target": "110", "entry_fee": "0.08", "highest": "106", "lowest": "99", "protection": "101",
+               "trailing_armed_at": now.isoformat(), "trailing_arm_reason": "RISK_REWARD_MILESTONE", "max_favorable_r": "1.2"}
+    ledger.save_position_context(primary.position_id, context); ledger.save_position_context(mirror.position_id, {**context, "model": "MIRROR"})
+    runtime = PaperTrendRuntime(ledger, exchange, account_id="main", mirror_account_id="trademax")
+    from htx_trend.models import TrendSide
+    decision = runtime.manage(run_id="close", position_id=primary.position_id, reference_price=Decimal("94"),
+                              highest_price=Decimal("106"), lowest_price=Decimal("94"), atr=Decimal("2"),
+                              signal_side=TrendSide.SHORT, ema_fast=Decimal("99"), ema_slow=Decimal("101"),
+                              major_timeframe_opposition=1, market_context_opposes=True, at=now)
+    assert decision.action.value == "FULL_CLOSE"
+    assert ledger.position(primary.position_id).status == ledger.position(mirror.position_id).status == "CLOSED"
+    ledger.close()

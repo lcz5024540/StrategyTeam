@@ -232,3 +232,47 @@ def _target_remaining(remaining: int, reward: Decimal, risk: Decimal, adverse: D
     if remaining <= 1 or reward <= ZERO or risk <= ZERO: return 0
     ratio = reward / (reward + risk) * (Decimal("1") - min(Decimal("1"), adverse / favorable if favorable > ZERO else Decimal("1")))
     return min(remaining - 1, max(0, int((Decimal(remaining) * ratio).to_integral_value(rounding=ROUND_DOWN))))
+
+
+def decide(input_: ExitInput, *, legacy_trailing_atr_multiplier: Decimal = Decimal("2"),
+           legacy_trailing_activation_r: Decimal = Decimal("1")) -> ExitDecision:
+    """Route the established FIB v4 engine or Java-compatible legacy model exits."""
+    if input_.primary_model is ModelCode.FIB_PULLBACK_CONTINUATION:
+        return decide_v4(input_)
+    return decide_legacy(input_, trailing_atr_multiplier=legacy_trailing_atr_multiplier,
+                         trailing_activation_r=legacy_trailing_activation_r)
+
+
+def decide_legacy(input_: ExitInput, *, trailing_atr_multiplier: Decimal, trailing_activation_r: Decimal) -> ExitDecision:
+    """Compatibility policy for Donchian/EMA positions while only FIB owns v4.
+
+    This keeps each non-Fibonacci position protectable without pretending its
+    exit provenance is FIB v4. It has the same hard-priority ordering used by
+    Java: model invalidation/initial stop, opposite trend, then armed ATR trail.
+    """
+    if not _valid(input_):
+        return _decision(input_, ExitPhase.THESIS_INTACT, ExitAction.HOLD, None, input_.protection_price, ZERO,
+                         input_.trailing_armed_at, input_.trailing_arm_reason, "legacy-unsupported-or-incomplete")
+    risk = abs(input_.entry_price - input_.initial_stop_price)
+    favorable = _favorable(input_)
+    max_r = max(favorable / risk, input_.max_favorable_r or ZERO)
+    if _crossed(input_.side, input_.reference_price, input_.invalidation_price) or _crossed(input_.side, input_.reference_price, input_.initial_stop_price):
+        return _decision(input_, ExitPhase.INVALIDATED, ExitAction.FULL_CLOSE, 0, input_.protection_price, max_r,
+                         input_.trailing_armed_at, input_.trailing_arm_reason, "legacy-model-or-initial-stop-invalidated")
+    if _opposite(input_):
+        return _decision(input_, ExitPhase.REVERSAL_CONFIRMED, ExitAction.FULL_CLOSE, 0, input_.protection_price, max_r,
+                         input_.trailing_armed_at, input_.trailing_arm_reason, "legacy-opposite-trend-signal")
+    arm = input_.trailing_armed_at
+    if arm is None and max_r >= trailing_activation_r:
+        arm = input_.evaluated_at
+    distance = input_.atr * trailing_atr_multiplier
+    trail = input_.highest_price - distance if input_.side is TrendSide.LONG else input_.lowest_price + distance
+    protection = _tighten(input_.side, input_.protection_price, trail) if arm is not None else input_.protection_price
+    if arm is not None and _crossed(input_.side, input_.reference_price, protection):
+        return _decision(input_, ExitPhase.REVERSAL_CONFIRMED, ExitAction.FULL_CLOSE, 0, protection, max_r, arm,
+                         input_.trailing_arm_reason or "LEGACY_ATR_MILESTONE", "legacy-atr-trailing-stop")
+    state = evaluate_holding(input_)
+    return _decision(input_, ExitPhase.RUNNER if arm else ExitPhase.THESIS_INTACT,
+                     ExitAction.ARM_TRAILING if arm else ExitAction.HOLD, None, protection, max_r, arm,
+                     input_.trailing_arm_reason or ("LEGACY_ATR_MILESTONE" if arm else None), "legacy-hold", state,
+                     favorable, _adverse_from_best(input_))
