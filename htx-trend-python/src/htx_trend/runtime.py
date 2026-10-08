@@ -10,11 +10,12 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Sequence
 
-from .execution import ExecutionConfig, GateResult, PriorTrade, evaluate_gate
+from .execution import ExecutionConfig, ExecutionFacts, GateResult, PriorTrade, evaluate_gate
 from .exits import ExitInput, ExitAction, decide
 from .ledger import TrendLedger
 from .market_data import ContractSpec, FundingRate, KlineWindow, TopOfBook
-from .models import ModelCandidate, ModelCode, TrendConfig, TrendSide, candidates, evaluate_signal
+from .models import ModelCandidate, ModelCode, TrendConfig, TrendSide, evaluate_signal, model_candidates, route_candidates
+from .strategy_context import FibonacciQuality, MarketContext
 from .paper import PaperExchange, PaperOrder
 
 
@@ -37,21 +38,31 @@ class PaperTrendRuntime:
 
     def scan(self, *, run_id: str, entry_window: KlineWindow, trend_window: KlineWindow, now_epoch: int,
              at: datetime, book: TopOfBook, contract: ContractSpec, funding: FundingRate | None,
-             prior_trade: PriorTrade | None = None) -> ScanOutcome:
+             prior_trade: PriorTrade | None = None, market_context: MarketContext | None = None,
+             execution_facts: ExecutionFacts | None = None,
+             claimed_structure_keys: frozenset[str] = frozenset()) -> ScanOutcome:
         signal = evaluate_signal(entry_window.candles, trend_window.candles, self._trend_config)
-        output = candidates(entry_window.candles, signal, self._trend_config)
+        context = market_context or MarketContext.neutral()
+        output = model_candidates(entry_window.candles, trend_window.candles, self._trend_config)
+        route = route_candidates(output, market_context=context)
         gates = tuple(evaluate_gate(item, period=entry_window.period, now_epoch=now_epoch,
                                     atr=signal.indicators.atr if signal.indicators else Decimal("0"), order_book=book,
                                     contract=contract, funding=funding, recent_candles=entry_window.candles,
-                                    prior_trade=prior_trade, config=self._execution_config) for item in output)
+                                    prior_trade=prior_trade, market_context=context, execution_facts=execution_facts,
+                                    claimed_structure_keys=claimed_structure_keys,
+                                    fibonacci_quality=(FibonacciQuality.from_candles(entry_window.candles, item.side,
+                                        signal.indicators.atr, signal.indicators.ema_fast) if item.model is ModelCode.FIB_PULLBACK_CONTINUATION
+                                                       and signal.indicators is not None else None),
+                                    config=self._execution_config) for item in output)
         self._ledger.decision(self._account_id, run_id, "ENTRY_SCAN", {
             "signal": signal.reason, "side": signal.side.value,
             "candidates": [item.model.value for item in output], "gates": [item.reason for item in gates],
+            "primary_model": route.primary.model.value if route.primary else None, "route": route.reason,
         })
-        selected = next((item for item, gate in zip(output, gates) if gate.allowed), None)
+        selected = next((item for item in route.ranked if gates[output.index(item)].allowed), None)
         if selected is None:
             return ScanOutcome(run_id, output, gates, None, None)
-        gate = next(item for item in gates if item.allowed)
+        gate = gates[output.index(selected)]
         assert gate.price_plan is not None and gate.size_plan is not None
         order_type = "LIMIT" if gate.price_plan.style.value == "PASSIVE_LIMIT" else "MARKET"
         request = PaperOrder(self._account_id, entry_window.contract_code, selected.side.value,
@@ -66,6 +77,7 @@ class PaperTrendRuntime:
             position = self._exchange.open_position(self._account_id, entry_window.contract_code, selected.side.value,
                                                     gate.size_plan.contracts, entry_price, at, run_id)
             self._ledger.save_position_context(position.position_id, {"model": selected.model.value,
+                "structure_key": selected.structure_key, "confirmation_models": [item.value for item in selected.confirmation_models],
                 "initial_stop": str(selected.invalidation_price), "invalidation": str(selected.invalidation_price),
                 "structure_target": str(selected.target_low), "contract_size": str(contract.contract_size),
                 "entry_fee": str(entry_price * Decimal(gate.size_plan.contracts) * Decimal("0.0004")),

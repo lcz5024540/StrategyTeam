@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable
 import json
 
-from .models import TrendConfig, candidates, evaluate_signal
+from .models import TrendConfig, evaluate_signal, model_candidates, route_candidates
 from .replay import ReplaySnapshot
 
 
@@ -44,9 +44,11 @@ def replay_report(snapshots: Iterable[ReplaySnapshot], config: TrendConfig = Tre
             continue
         complete += 1
         signal = evaluate_signal(item.window.candles, item.window.candles, config)
-        choices = candidates(item.window.candles, signal, config)
-        rows.append(ReplayRow(item.key, item.window.contract_code, item.window.period, "COMPLETE", signal.side.value,
-                              tuple(choice.model.value for choice in choices), signal.reason))
+        choices = model_candidates(item.window.candles, item.window.candles, config)
+        route = route_candidates(choices)
+        rows.append(ReplayRow(item.key, item.window.contract_code, item.window.period, "COMPLETE",
+                              route.primary.side.value if route.primary else signal.side.value,
+                              tuple(choice.model.value for choice in choices), route.reason))
     return ReplayReport("htx-trend-python-replay-v1", len(rows), complete, insufficient, tuple(rows))
 
 

@@ -13,6 +13,7 @@ from typing import Sequence
 
 from .market_data import Candle, ContractSpec, FundingRate, TopOfBook, period_seconds
 from .models import ModelCandidate, ModelCode, TrendSide
+from .strategy_context import CandidateTrendState, FibonacciQuality, MarketContext
 
 ZERO = Decimal("0")
 
@@ -44,6 +45,15 @@ class ExecutionConfig:
     profit_threshold: Decimal = Decimal("1")
     strong_score: Decimal = Decimal("90")
     extreme_score: Decimal = Decimal("98")
+    signal_freshness_seconds: int = 600
+    max_entry_chase_atr_multiplier: Decimal = Decimal("0.20")
+    min_depth_multiple: Decimal = Decimal("3")
+    min_fib_volume_ratio: Decimal = Decimal("1")
+    min_fib_body_to_range: Decimal = Decimal("0.20")
+    max_fib_counter_wick_to_range: Decimal = Decimal("0.75")
+    max_fib_entry_range_atr: Decimal = Decimal("2.50")
+    max_atr_pct: Decimal = Decimal("0.0500")
+    require_execution_facts: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +100,28 @@ class GateResult:
     size_plan: SizePlan | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ExecutionFacts:
+    """Account and exchange facts supplied by an adapter, never inferred.
+
+    ``None`` means unavailable rather than safe.  Paper/research callers may
+    use the relaxed configuration; a future live adapter must set
+    ``require_execution_facts=True`` and provide every required field.
+    """
+
+    actual_taker_fee_rate: Decimal | None = None
+    same_direction_open_order: bool = False
+    external_position_side: TrendSide | None = None
+    exchange_position_consistent: bool = True
+    executable_depth_contracts: Decimal | None = None
+    available_margin_usdt: Decimal | None = None
+    leverage: Decimal | None = None
+    active_position_count: int | None = None
+    max_active_positions: int | None = None
+    reserved_notional_usdt: Decimal = ZERO
+    risk_capacity_usdt: Decimal | None = None
+
+
 def cooldown(candidate: ModelCandidate, prior: PriorTrade | None, *, now_epoch: int,
              config: ExecutionConfig = ExecutionConfig()) -> CooldownDecision:
     if prior is None:
@@ -113,7 +145,8 @@ def cooldown(candidate: ModelCandidate, prior: PriorTrade | None, *, now_epoch: 
     return CooldownDecision(remaining == 0, f"{category} cooldown", remaining)
 
 
-def price_plan(candidate: ModelCandidate, *, atr: Decimal, config: ExecutionConfig = ExecutionConfig()) -> PricePlan:
+def price_plan(candidate: ModelCandidate, *, atr: Decimal, fee_rate: Decimal | None = None,
+               config: ExecutionConfig = ExecutionConfig()) -> PricePlan:
     style = (ExecutionStyle.PASSIVE_LIMIT if candidate.model is ModelCode.FIB_PULLBACK_CONTINUATION
              else ExecutionStyle.CONDITIONAL_OR_MARKET if candidate.model is ModelCode.DONCHIAN_BREAKOUT
              else ExecutionStyle.IOC_OR_MARKET)
@@ -122,7 +155,7 @@ def price_plan(candidate: ModelCandidate, *, atr: Decimal, config: ExecutionConf
     target = candidate.target_low
     gross_reward = target - worst if candidate.side is TrendSide.LONG else worst - target
     risk = worst - candidate.invalidation_price if candidate.side is TrendSide.LONG else candidate.invalidation_price - worst
-    round_trip_cost = worst * config.fee_rate * Decimal("2") + adverse
+    round_trip_cost = worst * (fee_rate if fee_rate is not None else config.fee_rate) * Decimal("2") + adverse
     net_reward = gross_reward - round_trip_cost
     expected_net_r = net_reward / risk if risk > ZERO else ZERO
     return PricePlan(style, candidate.entry_price, worst, candidate.invalidation_price, candidate.target_low,
@@ -147,29 +180,102 @@ def size_plan(candidate: ModelCandidate, contract: ContractSpec, price: PricePla
 
 def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr: Decimal, order_book: TopOfBook,
                   contract: ContractSpec, funding: FundingRate | None, recent_candles: Sequence[Candle],
-                  prior_trade: PriorTrade | None, config: ExecutionConfig = ExecutionConfig()) -> GateResult:
+                  prior_trade: PriorTrade | None, market_context: MarketContext | None = None,
+                  candidate_state: CandidateTrendState | None = None, fibonacci_quality: FibonacciQuality | None = None,
+                  execution_facts: ExecutionFacts | None = None, claimed_structure_keys: frozenset[str] = frozenset(),
+                  config: ExecutionConfig = ExecutionConfig()) -> GateResult:
+    """Apply the Java-equivalent gate sequence with durable stage semantics.
+
+    The function is pure.  It does not query the exchange or mutate a
+    structure claim; callers persist the returned decision and claim the
+    structure only after an actual fill.
+    """
+    context = market_context or MarketContext.neutral()
+    state = candidate_state or CandidateTrendState.from_candidate(candidate.score, candidate.expected_r, context)
+    facts = execution_facts or ExecutionFacts()
+
+    # MODE is intentionally an adapter concern.  A caller that reaches this
+    # pure policy has already selected PAPER or an explicitly authorised LIVE instance.
     if candidate.score < config.min_score:
         return GateResult(False, "MODEL_POLICY", f"candidate score {candidate.score} below {config.min_score}")
-    if now_epoch > candidate.bar_time + period_seconds(period) * 2:
-        return GateResult(False, "FRESHNESS", "candidate bar expired")
+    # HTX bar ids mark the open.  Java measures freshness from completed-bar
+    # time, therefore the period belongs in this boundary as well.
+    if now_epoch > candidate.bar_time + period_seconds(period) + config.signal_freshness_seconds:
+        return GateResult(False, "DATA_FRESHNESS", f"candidate bar expired; max_age={config.signal_freshness_seconds}s")
+    if candidate.structure_key and candidate.structure_key in claimed_structure_keys:
+        return GateResult(False, "COOLDOWN_STRUCTURE", "identical model structure already claimed")
+    if not state.tradable:
+        return GateResult(False, "MARKET_CONTEXT", f"candidate trend state not tradable; {state.reason}")
+    if context.regime.value in {"CHOP", "LOW_VOL_DEAD"}:
+        return GateResult(False, "MARKET_CONTEXT", f"market regime blocks new trend entry: {context.regime.value}")
+    if context.opposed(candidate.side) and not state.strong:
+        return GateResult(False, "MARKET_CONTEXT", "candidate opposes broad market without strong independent evidence")
+
+    cooldown_result = cooldown(candidate, prior_trade, now_epoch=now_epoch, config=config)
+    if not cooldown_result.allowed:
+        return GateResult(False, "COOLDOWN_STRUCTURE", f"{cooldown_result.reason}; remaining={cooldown_result.remaining_seconds}s")
+
+    if candidate.model is ModelCode.FIB_PULLBACK_CONTINUATION:
+        quality = fibonacci_quality
+        if quality is None and config.require_execution_facts:
+            return GateResult(False, "FIB_QUALITY", "Fibonacci execution quality evidence unavailable")
+        if quality is not None:
+            if not quality.ema_reclaimed:
+                return GateResult(False, "FIB_QUALITY", "Fibonacci retest has not reclaimed EMA structure")
+            if quality.volume_ratio is None and config.require_execution_facts:
+                return GateResult(False, "FIB_QUALITY", "Fibonacci relative turnover unavailable")
+            if quality.volume_ratio is not None and quality.volume_ratio < config.min_fib_volume_ratio:
+                return GateResult(False, "FIB_QUALITY", f"Fibonacci relative volume below threshold ratio={quality.volume_ratio}")
+            if quality.body_to_range is None or quality.body_to_range < config.min_fib_body_to_range:
+                return GateResult(False, "FIB_QUALITY", "Fibonacci retest wick-only body")
+            if quality.counter_wick_to_range is not None and quality.counter_wick_to_range > config.max_fib_counter_wick_to_range:
+                return GateResult(False, "FIB_QUALITY", "Fibonacci retest counter wick too large")
+            if quality.range_to_atr is not None and quality.range_to_atr > config.max_fib_entry_range_atr:
+                return GateResult(False, "FIB_QUALITY", "Fibonacci retest one-bar spike")
+
     if order_book.spread_rate > config.max_spread_rate:
-        return GateResult(False, "EXECUTION", f"spread {order_book.spread_rate} above {config.max_spread_rate}")
+        return GateResult(False, "BOOK_SPREAD", f"spread {order_book.spread_rate} above {config.max_spread_rate}")
+    if atr > ZERO and atr / candidate.entry_price > config.max_atr_pct:
+        return GateResult(False, "BOOK_SPREAD", f"ATR percentage {atr / candidate.entry_price} above {config.max_atr_pct}")
+    if facts.same_direction_open_order:
+        return GateResult(False, "ORDER_POSITION", "same-direction open order already exists")
+    if facts.external_position_side is not None:
+        return GateResult(False, "ORDER_POSITION", f"external {facts.external_position_side.value} position needs manual reconciliation")
+    if not facts.exchange_position_consistent:
+        return GateResult(False, "ORDER_POSITION", "ledger and exchange position state are inconsistent")
+    if facts.active_position_count is not None and facts.max_active_positions is not None and facts.active_position_count >= facts.max_active_positions:
+        return GateResult(False, "MARGIN_RISK", "active position capacity exhausted")
+
+    fill = order_book.ask if candidate.side is TrendSide.LONG else order_book.bid
+    adverse = fill - candidate.entry_price if candidate.side is TrendSide.LONG else candidate.entry_price - fill
+    if atr > ZERO and adverse > atr * config.max_entry_chase_atr_multiplier:
+        return GateResult(False, "CHASE", f"entry price chased signal by {adverse / atr} ATR")
     if config.min_average_turnover > ZERO:
         values = [item.turnover for item in recent_candles[-config.liquidity_lookback:] if item.turnover is not None]
         average = sum(values, ZERO) / Decimal(len(values)) if values else ZERO
         if average < config.min_average_turnover:
-            return GateResult(False, "LIQUIDITY", f"average turnover {average} below {config.min_average_turnover}")
+            return GateResult(False, "DEPTH_LIQUIDITY", f"average turnover {average} below {config.min_average_turnover}")
     if funding is not None:
         side_cost = funding.rate if candidate.side is TrendSide.LONG else -funding.rate
         if side_cost > config.max_adverse_funding_rate:
-            return GateResult(False, "CARRY", f"adverse funding {side_cost} above {config.max_adverse_funding_rate}")
-    cooldown_result = cooldown(candidate, prior_trade, now_epoch=now_epoch, config=config)
-    if not cooldown_result.allowed:
-        return GateResult(False, "COOLDOWN", f"{cooldown_result.reason}; remaining={cooldown_result.remaining_seconds}s")
-    planned_price = price_plan(candidate, atr=atr, config=config)
+            return GateResult(False, "COST", f"adverse funding {side_cost} above {config.max_adverse_funding_rate}")
+    if config.require_execution_facts and facts.actual_taker_fee_rate is None:
+        return GateResult(False, "COST", "actual account fee rate unavailable")
+    planned_price = price_plan(candidate, atr=atr, fee_rate=facts.actual_taker_fee_rate, config=config)
     if planned_price.expected_net_r < config.min_net_r:
-        return GateResult(False, "ECONOMICS", f"expected net R {planned_price.expected_net_r} below {config.min_net_r}", planned_price)
+        return GateResult(False, "COST", f"expected net R {planned_price.expected_net_r} below {config.min_net_r}", planned_price)
     planned_size = size_plan(candidate, contract, planned_price, config=config)
     if planned_size.contracts <= 0:
-        return GateResult(False, "SIZING", planned_size.reason, planned_price, planned_size)
+        return GateResult(False, "MARGIN_RISK", planned_size.reason, planned_price, planned_size)
+    if facts.executable_depth_contracts is not None and facts.executable_depth_contracts < Decimal(planned_size.contracts) * config.min_depth_multiple:
+        return GateResult(False, "DEPTH_LIQUIDITY", "top book depth below planned-order multiplier", planned_price, planned_size)
+    if config.require_execution_facts and facts.executable_depth_contracts is None:
+        return GateResult(False, "DEPTH_LIQUIDITY", "executable multi-level depth unavailable", planned_price, planned_size)
+    required_margin = planned_size.notional / facts.leverage if facts.leverage is not None and facts.leverage > ZERO else planned_size.notional
+    if facts.available_margin_usdt is not None and required_margin > facts.available_margin_usdt:
+        return GateResult(False, "MARGIN_RISK", "available margin below required entry margin", planned_price, planned_size)
+    if facts.risk_capacity_usdt is not None and facts.reserved_notional_usdt + planned_size.notional > facts.risk_capacity_usdt:
+        return GateResult(False, "MARGIN_RISK", "account risk reservation capacity exhausted", planned_price, planned_size)
+    if config.require_execution_facts and (facts.available_margin_usdt is None or facts.leverage is None):
+        return GateResult(False, "MARGIN_RISK", "margin or leverage fact unavailable", planned_price, planned_size)
     return GateResult(True, "READY", cooldown_result.override_reason or "all model, market, cost and risk gates passed", planned_price, planned_size)

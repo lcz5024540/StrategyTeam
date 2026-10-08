@@ -1,8 +1,9 @@
 from decimal import Decimal
 
-from htx_trend.execution import ExecutionConfig, PriorTrade, cooldown, evaluate_gate, price_plan
+from htx_trend.execution import ExecutionConfig, ExecutionFacts, PriorTrade, cooldown, evaluate_gate, price_plan
 from htx_trend.market_data import Candle, ContractSpec, FundingRate, TopOfBook
 from htx_trend.models import ModelCandidate, ModelCode, PriceStructure, TrendSide
+from htx_trend.strategy_context import FibonacciQuality, MarketContext
 
 
 def candidate(score: str = "95") -> ModelCandidate:
@@ -38,3 +39,32 @@ def test_gate_returns_explainable_rejection_and_success() -> None:
     assert not rejected.allowed and rejected.stage == "MODEL_POLICY"
     passed = evaluate_gate(candidate(), **inputs())
     assert passed.allowed and passed.size_plan is not None and passed.size_plan.contracts > 0
+
+
+def test_gate_refuses_reused_structure_before_any_execution_check() -> None:
+    item = candidate()
+    item = ModelCandidate(item.model, item.side, item.bar_time, item.score, item.entry_price, item.invalidation_price,
+                          item.target_low, item.target_high, item.expected_r, item.structure, item.evidence,
+                          item.source_breakout_time, "FIB_PULLBACK_CONTINUATION:LONG:7200:9000")
+    result = evaluate_gate(item, claimed_structure_keys=frozenset({item.structure_key}), **inputs())
+    assert not result.allowed and result.stage == "COOLDOWN_STRUCTURE"
+
+
+def test_fib_quality_blocks_wick_only_spike_even_when_score_is_high() -> None:
+    quality = FibonacciQuality(Decimal("1.2"), Decimal("0.10"), Decimal("0.10"), Decimal("3"), True)
+    result = evaluate_gate(candidate(), fibonacci_quality=quality, **inputs())
+    assert not result.allowed and result.stage == "FIB_QUALITY"
+
+
+def test_strict_live_preflight_requires_account_fee_depth_and_margin_facts() -> None:
+    strict = ExecutionConfig(min_score=Decimal("70"), min_net_r=Decimal("0"), min_notional=Decimal("1"),
+                             target_notional=Decimal("100"), max_notional=Decimal("100"), require_execution_facts=True)
+    result = evaluate_gate(candidate(), **{**inputs(), "config": strict})
+    assert not result.allowed and result.stage == "FIB_QUALITY"
+    quality = FibonacciQuality(Decimal("1.2"), Decimal("0.5"), Decimal("0.1"), Decimal("1"), True)
+    result = evaluate_gate(candidate(), fibonacci_quality=quality,
+                           execution_facts=ExecutionFacts(actual_taker_fee_rate=Decimal("0.0004"),
+                                                         executable_depth_contracts=Decimal("100"),
+                                                         available_margin_usdt=Decimal("100"), leverage=Decimal("5")),
+                           **{**inputs(), "config": strict})
+    assert result.allowed

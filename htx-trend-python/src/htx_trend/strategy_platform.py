@@ -19,8 +19,9 @@ import json
 import uuid
 
 from .market_data import HtxMarketData
-from .models import TrendConfig, candidates, evaluate_signal
+from .models import TrendConfig, TrendSide, evaluate_signal, market_breadth, model_candidates, route_candidates
 from .mysql_store import HtxTrendMySqlRepository, RuntimeInstance
+from .strategy_context import MarketContext, MarketRegime
 
 
 class ExecutionMode(StrEnum):
@@ -135,9 +136,18 @@ class TrendObservationWorker:
                     results.append(future.result())
                 except Exception as error:  # a bad contract must not stop peers
                     failures.append(f"{contract}:{type(error).__name__}")
+        breadth = market_breadth(result.signal for result in results)
+        anchors = {result.contract: result.signal.side for result in results}
+        context = MarketContext(
+            regime=(MarketRegime.BROAD_UP if breadth.side.value == "LONG" else MarketRegime.BROAD_DOWN
+                    if breadth.side.value == "SHORT" else MarketRegime.MIXED),
+            breadth_side=breadth.side, breadth_ratio=breadth.ratio,
+            btc_anchor=anchors.get("BTC-USDT", TrendSide.FLAT),
+            eth_anchor=anchors.get("ETH-USDT", TrendSide.FLAT),
+        )
         candidate_count = 0
         for result in results:
-            candidate_count += self._persist(run_id, result)
+            candidate_count += self._persist(run_id, result, context)
         detail = f"observed={len(results)}/{len(contracts)} candidates={candidate_count}"
         if failures:
             detail += " failures=" + ",".join(failures[:8])
@@ -155,9 +165,9 @@ class TrendObservationWorker:
             funding = self._market.funding_rate(contract).rate
         except Exception:
             funding = None
-        return _TrendObservation(contract, signal, candidates(entry.candles, signal, self._trend_config), funding, book.spread_rate)
+        return _TrendObservation(contract, signal, model_candidates(entry.candles, trend.candles, self._trend_config), funding, book.spread_rate)
 
-    def _persist(self, run_id: str, result: _TrendObservation) -> int:
+    def _persist(self, run_id: str, result: _TrendObservation, context: MarketContext) -> int:
         signal = result.signal
         factors = signal.indicators
         if factors is None or signal.bar_time is None:
@@ -174,14 +184,18 @@ class TrendObservationWorker:
             "period": self._config.entry_period, "bar": signal.bar_time, "factors": values}, default=str, sort_keys=True).encode()).hexdigest()
         factor_id = self._repository.record_factor_snapshot(snapshot_key=snapshot_key, contract_code=result.contract,
             period=self._config.entry_period, bar_time=signal.bar_time, market_regime=signal.higher_timeframe_side.value, factors=values)
-        for item in result.model_candidates:
+        route = route_candidates(result.model_candidates, market_context=context)
+        for item in route.ranked:
             self._repository.record_candidate(contract_code=result.contract, period=self._config.entry_period, bar_time=item.bar_time,
-                direction=item.side.value, regime=signal.higher_timeframe_side.value, score=item.score, close_price=item.entry_price,
-                factors=values, reason="; ".join(item.evidence), model=item.model.value, run_id=run_id,
+                direction=item.side.value, regime=context.regime.value, score=item.score, close_price=item.entry_price,
+                factors={**values, "structure_key": item.structure_key,
+                         "confirmation_models": [peer.value for peer in item.confirmation_models],
+                         "conflict_evidence": list(item.conflict_evidence), "route": route.reason},
+                reason="; ".join(item.evidence), model=item.model.value, run_id=run_id,
                 factor_snapshot_id=factor_id, invalidation_price=item.invalidation_price, target_low=item.target_low,
                 target_high=item.target_high, expected_r=item.expected_r, shadow=True)
             self._repository.mark_candidate_execution_gate(run_id, result.contract, item.model.value, "OBSERVE_ONLY",
-                                                            "Python observer does not evaluate order execution")
+                                                            "Python observer records model route only; real execution preflight not entered")
         return len(result.model_candidates)
 
 
