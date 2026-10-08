@@ -3812,7 +3812,8 @@ public class HtxTrendFollowingService {
         if ("FUNDING_COST".equals(decision.phase())) {
             return EXIT_FUNDING_COST;
         }
-        return "REVERSAL_CONFIRMED".equals(decision.phase()) ? EXIT_TREND_EXHAUSTION : EXIT_TRAILING_STOP;
+        return "REVERSAL_CONFIRMED".equals(decision.phase()) || "THESIS_EXPIRED".equals(decision.phase())
+                ? EXIT_TREND_EXHAUSTION : EXIT_TRAILING_STOP;
     }
 
     private boolean exitEngineLiveFor(HtxTrendPositionEntity position) {

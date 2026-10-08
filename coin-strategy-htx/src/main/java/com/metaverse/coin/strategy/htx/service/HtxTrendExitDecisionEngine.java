@@ -49,7 +49,8 @@ public final class HtxTrendExitDecisionEngine {
         // Once the best observed price has covered both legs, retain that validated progress with a cost-floor
         // trail. This does not take profit merely because a trade turns green: the position can still run, but
         // it cannot turn a positive MFE into an unbounded loss after the trend weakens.
-        boolean netPositiveMfeCostFloor = hasNetPositiveMfeCostFloor(input, favorableMove);
+        BigDecimal minimumNetMfeProfit = minimumNetMfeProfit(input, policy);
+        boolean netPositiveMfeCostFloor = hasNetPositiveMfeCostFloor(input, favorableMove, minimumNetMfeProfit);
         boolean partialQualified = costCovered && favorableMove.compareTo(partialQualificationDistance) >= 0;
         boolean earlyPullback = positive(input.atr())
                 && adverseFromBest.compareTo(input.atr().multiply(policy.pullbackAtrMultiplier())) >= 0;
@@ -121,6 +122,17 @@ public final class HtxTrendExitDecisionEngine {
                 && (!referenceProtectionBreached || newlyArmed)) {
             return new Decision("FUNDING_COST", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
                     armedAt, armReason, "funding-cost-exit: " + input.fundingCostExitReason(),
+                    evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                            effectiveProtection, reversalEvidence, expectedReward));
+        }
+        // A protection price is a price boundary, not proof that a market close can still preserve profit.
+        // The BTC 303 incident armed from a tiny historical MFE, then crossed the boundary after the live
+        // net result had already fallen below round-trip costs. Do not call that a profit-protection exit.
+        // Hard invalidation and the unarmed loss controls above still own genuine risk exits.
+        if (referenceProtectionBreached && trendState == HtxTrendStateEvaluator.HoldingState.WEAKENING
+                && !meetsMinimumNetProfit(input.currentNetPnl(), minimumNetMfeProfit)) {
+            return new Decision("THESIS_EXPIRED", Action.FULL_CLOSE, 0L, effectiveProtection,
+                    computedMaxR, armedAt, armReason, "profit-protection-floor-missed-risk-exit",
                     evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
                             effectiveProtection, reversalEvidence, expectedReward));
         }
@@ -298,6 +310,7 @@ public final class HtxTrendExitDecisionEngine {
                                    BigDecimal profitArmDistance, BigDecimal profitLockPrice, BigDecimal effectiveProtection,
                                    int reversalEvidence, BigDecimal expectedReward, boolean referenceProtectionBreached) {
         BigDecimal protectedRisk = protectedRisk(input, effectiveProtection);
+        BigDecimal minimumNetMfeProfit = minimumNetMfeProfit(input, policy(input.profitProtectionPolicy()));
         return "{\"schema\":\"trend-exit-decision-v4\",\"model\":\"FIB_PULLBACK_CONTINUATION\","
                 + "\"signal\":\"" + input.signalSide().name() + "\",\"dynamicPullback\":" + dynamicPullback
                 + ",\"trendState\":\"" + holdingState(input).name() + "\""
@@ -307,7 +320,9 @@ public final class HtxTrendExitDecisionEngine {
                         favorableMove(input.side(), input.entryPrice(), input.highestPrice(), input.lowestPrice())))
                 + ",\"observedMfeNetPnl\":" + number(input.observedMfeNetPnl())
                 + ",\"netPositiveMfeCostFloor\":" + hasNetPositiveMfeCostFloor(input,
-                        favorableMove(input.side(), input.entryPrice(), input.highestPrice(), input.lowestPrice()))
+                        favorableMove(input.side(), input.entryPrice(), input.highestPrice(), input.lowestPrice()),
+                        minimumNetMfeProfit)
+                + ",\"minimumNetMfeProfit\":" + number(minimumNetMfeProfit)
                 + ",\"profitLockPrice\":" + number(profitLockPrice) + ",\"effectiveProtectionPrice\":"
                 + number(effectiveProtection)
                 + ",\"entryFee\":" + number(input.entryFee()) + ",\"estimatedCloseFee\":"
@@ -359,10 +374,28 @@ public final class HtxTrendExitDecisionEngine {
         return favorableMove.multiply(exposure).subtract(zero(input.entryFee())).subtract(zero(input.estimatedCloseFee()));
     }
 
-    private static boolean hasNetPositiveMfeCostFloor(Input input, BigDecimal favorableMove) {
-        return (positive(input.observedMfeNetPnl())
-                || (positive(input.currentNetPnl()) && positive(netAtFavorablePrice(input, favorableMove))))
+    /**
+     * The persisted MFE and the real-time planner must share one admission floor. A merely positive
+     * post-fee MFE is insufficient: it cannot pay for execution uncertainty when the protection is later hit.
+     */
+    private static boolean hasNetPositiveMfeCostFloor(Input input, BigDecimal favorableMove,
+                                                      BigDecimal minimumNetMfeProfit) {
+        BigDecimal observedMfe = max(zero(input.observedMfeNetPnl()), netAtFavorablePrice(input, favorableMove));
+        return positive(input.currentNetPnl())
+                && observedMfe.compareTo(minimumNetMfeProfit) >= 0
                 && favorableMove.compareTo(allInCostDistance(input)) >= 0;
+    }
+
+    /**
+     * The planner already computes PnL after the actual opening fee and an estimated closing fee. The extra
+     * minimum is therefore a net-profit reserve, expressed as a multiple of the estimated closing fee.
+     */
+    private static BigDecimal minimumNetMfeProfit(Input input, ProfitProtectionPolicy policy) {
+        return zero(input.estimatedCloseFee()).multiply(policy.minNetFeeMultiple());
+    }
+
+    private static boolean meetsMinimumNetProfit(BigDecimal netPnl, BigDecimal minimumNetMfeProfit) {
+        return netPnl != null && netPnl.compareTo(zero(minimumNetMfeProfit)) >= 0;
     }
 
     private static BigDecimal protectionPrice(String side, BigDecimal entryPrice, BigDecimal lockDistance) {

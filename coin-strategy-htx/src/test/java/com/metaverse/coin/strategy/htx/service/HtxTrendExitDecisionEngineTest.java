@@ -215,43 +215,67 @@ class HtxTrendExitDecisionEngineTest {
     @Test
     void netPositiveMfeArmsCostFloorTrailBeforeTheWiderAtrRunnerMilestone() {
         HtxTrendExitDecisionEngine.Decision armed = engine.evaluate(bnbCostFloorInput(
-                new BigDecimal("765.395"), new BigDecimal("765.395"), new BigDecimal("0.1246696"),
+                new BigDecimal("764.900"), new BigDecimal("764.900"), new BigDecimal("0.3721696"),
                 null, null, null));
 
         assertEquals(HtxTrendExitDecisionEngine.Action.ARM_TRAILING, armed.action());
         assertEquals("NET_POSITIVE_MFE_COST_FLOOR", armed.trailingArmReason());
-        assertEquals(0, armed.protectionPrice().compareTo(new BigDecimal("765.6443392")));
-        assertTrue(armed.maxFavorableR().compareTo(new BigDecimal("0.15")) < 0,
+        assertTrue(armed.protectionPrice().compareTo(new BigDecimal("766.257")) < 0,
+                "a short profit lock must remain below entry even after the weakening-trend tightening");
+        assertTrue(armed.maxFavorableR().compareTo(new BigDecimal("0.30")) < 0,
                 "a cost-floor trail must not wait for the wide structural 1R threshold");
         assertTrue(armed.evidenceJson().contains("\"netPositiveMfeCostFloor\":true"));
     }
 
     @Test
-    void weakeningFibTrendClosesWhenPriceReturnsThroughItsArmedCostFloor() {
+    void weakeningFibTrendBecomesARiskExitWhenTheProfitProtectionReserveIsAlreadyLost() {
         HtxTrendExitDecisionEngine.Decision armed = engine.evaluate(bnbCostFloorInput(
-                new BigDecimal("765.395"), new BigDecimal("765.395"), new BigDecimal("0.1246696"),
+                new BigDecimal("764.900"), new BigDecimal("764.900"), new BigDecimal("0.3721696"),
                 null, null, null));
 
         HtxTrendExitDecisionEngine.Decision exited = engine.evaluate(bnbCostFloorInput(
-                new BigDecimal("765.700"), new BigDecimal("765.395"), new BigDecimal("-0.0278314"),
+                new BigDecimal("765.700"), new BigDecimal("764.900"), new BigDecimal("-0.0278314"),
                 armed.trailingArmedAt(), armed.trailingArmReason(), armed.maxFavorableR())
                 .withProtectionBreachBars(1));
 
         assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, exited.action());
-        assertEquals("REVERSAL_CONFIRMED", exited.phase());
-        assertEquals("trend-weakened-protection-breach", exited.reason());
+        assertEquals("THESIS_EXPIRED", exited.phase());
+        assertEquals("profit-protection-floor-missed-risk-exit", exited.reason());
         assertTrue(exited.evidenceJson().contains("\"referenceProtectionBreached\":true"));
     }
 
     @Test
-    void persistedPositiveMfeProtectsAnExistingPositionAfterTheProfitHasAlreadyRetraced() {
+    void persistedMfeNeedsTheSameReserveAsTheRealtimeProfitProtectionPlanner() {
         HtxTrendExitDecisionEngine.Decision exited = engine.evaluate(bnbCostFloorInput(
                 new BigDecimal("765.700"), new BigDecimal("765.395"), new BigDecimal("-0.0278314"),
                 null, null, null).withObservedMfeNetPnl(new BigDecimal("0.1246696")));
 
-        assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, exited.action());
-        assertEquals("trend-weakened-protection-breach", exited.reason());
+        assertEquals(HtxTrendExitDecisionEngine.Action.HOLD, exited.action());
+        assertEquals("THESIS_INTACT", exited.phase());
         assertTrue(exited.evidenceJson().contains("\"observedMfeNetPnl\":0.1246696"));
+    }
+
+    @Test
+    void btc303DoesNotArmFromAMfeThatCannotCoverTheConfiguredNetReserve() {
+        HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(btc303Input(
+                new BigDecimal("83032.7000"), new BigDecimal("83032.7000"), new BigDecimal("0.0592126"),
+                null, null));
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.HOLD, decision.action());
+        assertEquals("PROFIT_AT_RISK", decision.phase());
+        assertEquals(null, decision.trailingArmedAt());
+        assertTrue(decision.evidenceJson().contains("\"minimumNetMfeProfit\":0.332392"));
+    }
+
+    @Test
+    void btc303ProtectionBreachUsesARiskExitAfterTheNetReserveIsLost() {
+        HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(btc303Input(
+                new BigDecimal("83066.0000"), new BigDecimal("83032.7000"), new BigDecimal("-0.1073540"),
+                LocalDateTime.of(2026, 10, 7, 22, 2, 26), "NET_POSITIVE_MFE_COST_FLOOR"));
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, decision.action());
+        assertEquals("THESIS_EXPIRED", decision.phase());
+        assertEquals("profit-protection-floor-missed-risk-exit", decision.reason());
     }
 
     @Test
@@ -276,6 +300,20 @@ class HtxTrendExitDecisionEngineTest {
                 new BigDecimal("0.1532514"), new BigDecimal("0.1530790"), armedAt, armReason, maxFavorableR,
                 LocalDateTime.of(2026, 10, 7, 11, 21), 0, 3, new BigDecimal("1.1493855"))
                 .withAssessmentState("WEAKENING", "TRENDING", "HOLDING:290:1791342000");
+    }
+
+    private static HtxTrendExitDecisionEngine.Input btc303Input(BigDecimal reference, BigDecimal lowest,
+                                                                  BigDecimal currentNetPnl, LocalDateTime armedAt,
+                                                                  String armReason) {
+        return new HtxTrendExitDecisionEngine.Input(HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION,
+                "SHORT", 5L, new BigDecimal("0.001"), new BigDecimal("83111.0000"),
+                new BigDecimal("83722.4000"), new BigDecimal("83722.4002"), new BigDecimal("82290.4792"),
+                reference, new BigDecimal("83044.5292"), new BigDecimal("83111.0000"), lowest,
+                new BigDecimal("149.7201"), TrendSide.FLAT, new BigDecimal("83080"), new BigDecimal("83100"),
+                0, false, currentNetPnl, new BigDecimal("0.166222"), new BigDecimal("0.166196"),
+                armedAt, armReason, new BigDecimal("0.1280667"), LocalDateTime.of(2026, 10, 7, 22, 2, 52),
+                0, 3, new BigDecimal("1.5"))
+                .withAssessmentState("WEAKENING", "TRENDING", "HOLDING:303:1791381600");
     }
 
     private static HtxTrendExitDecisionEngine.Input ltcIntradayInput(BigDecimal reference, BigDecimal highest,

@@ -1310,7 +1310,7 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void liveFibAcuteProfitLockReferenceCrossSubmitsReduceOnlyCloseWithoutCompletedBar() {
+    void liveFibReferenceCrossWithLostNetReserveSubmitsReduceOnlyRiskExitWithoutCompletedBar() {
         properties.setExitEngineEnabled(true);
         properties.setExitEngineLiveEnabled(true);
         givenContractInfo();
@@ -1333,11 +1333,12 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
-        assertTrue(result.message().contains("trend-weakened-protection-breach"));
+        assertTrue(result.message().contains("profit-protection-floor-missed-risk-exit"));
         ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
         verify(recorder).recordExitDecision(decisionCaptor.capture());
         assertEquals("FULL_CLOSE", decisionCaptor.getValue().getSuggestedAction());
         assertEquals("FULL_CLOSE", decisionCaptor.getValue().getExecutedAction());
+        assertEquals("THESIS_EXPIRED", decisionCaptor.getValue().getExitPhase());
         assertTrue(decisionCaptor.getValue().getEvidenceJson()
                 .contains("\"referenceProtectionBreached\":true"));
         assertTrue(decisionCaptor.getValue().getEvidenceJson()
@@ -1347,7 +1348,7 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void liveFibConfirmedProtectionBreachSubmitsReduceOnlyCloseWithoutIndependentReversalGate() {
+    void liveFibConfirmedProtectionBreachWithLostNetReserveSubmitsReduceOnlyRiskExit() {
         properties.setExitEngineEnabled(true);
         properties.setExitEngineLiveEnabled(true);
         givenContractInfo();
@@ -1371,11 +1372,12 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
-        assertTrue(result.message().contains("trend-weakened-protection-breach"));
+        assertTrue(result.message().contains("profit-protection-floor-missed-risk-exit"));
         ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
         verify(recorder).recordExitDecision(decisionCaptor.capture());
         assertEquals("FULL_CLOSE", decisionCaptor.getValue().getSuggestedAction());
         assertEquals("FULL_CLOSE", decisionCaptor.getValue().getExecutedAction());
+        assertEquals("THESIS_EXPIRED", decisionCaptor.getValue().getExitPhase());
         verify(swap).placeOrder(argThat(request -> Boolean.TRUE.equals(request.getReduceOnly())
                 && "sell".equals(request.getSide())));
     }
