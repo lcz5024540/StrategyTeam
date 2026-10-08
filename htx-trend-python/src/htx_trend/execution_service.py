@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from hashlib import sha256
-from typing import Any
+from typing import Any, Callable
 import time
 import uuid
 
@@ -47,16 +47,46 @@ class EntrySubmission:
     reason: str
 
 
+@dataclass(frozen=True, slots=True)
+class ConfirmedEntryFill:
+    position_id: int
+    position_key: str
+    run_id: str | None
+    contract_code: str
+    side: TrendSide
+    filled_contracts: int
+    fill_price: Decimal
+    contract_size: Decimal
+    model: str
+    factor_snapshot_id: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmedReductionFill:
+    position_id: int
+    position_key: str
+    run_id: str | None
+    contract_code: str
+    side: TrendSide
+    filled_contracts: int
+    model: str
+    factor_snapshot_id: int | None
+    full_close: bool
+
+
 class HtxTrendEntryExecutor:
     """One-account trend entry executor with no implicit credentials or DDL."""
 
     def __init__(self, *, repository: HtxTrendMySqlRepository, instance: RuntimeInstance, account: TradeAccount,
                  facts: HtxAccountFactsAdapter, executor: HtxLiveExecutor,
-                 execution: ExecutionConfig = ExecutionConfig(), config: EntryExecutionConfig = EntryExecutionConfig()) -> None:
+                 execution: ExecutionConfig = ExecutionConfig(), config: EntryExecutionConfig = EntryExecutionConfig(),
+                 on_confirmed_entry: Callable[[ConfirmedEntryFill], None] | None = None,
+                 on_confirmed_reduction: Callable[[ConfirmedReductionFill], None] | None = None) -> None:
         if instance.account_id != account.account_id:
             raise ValueError("strategy instance and execution account differ")
         self._repository, self._instance, self._account = repository, instance, account
         self._facts, self._executor, self._execution, self._config = facts, executor, execution, config
+        self._on_confirmed_entry, self._on_confirmed_reduction = on_confirmed_entry, on_confirmed_reduction
 
     def submit(self, *, run_id: str, candidate: ModelCandidate, period: str, atr: Decimal,
                ema_fast: Decimal, ema_slow: Decimal, adx: Decimal, recent_candles, book: OrderBook, contract: ContractSpec,
@@ -188,6 +218,13 @@ class HtxTrendEntryExecutor:
                 contract_code, position_id, None, client_order_id, side, execution_price_usdt=price, entry_price_usdt=price,
                 filled_contracts=filled, contract_size=contract_size,
                 amount_usdt=(price * filled * contract_size if price else None), fee_usdt=fee, reason="exchange confirmed entry fill"))
+            if self._on_confirmed_entry is not None and price is not None and position_key:
+                try:
+                    self._on_confirmed_entry(ConfirmedEntryFill(position_id, position_key, run_id, contract_code,
+                        TrendSide(side) if side else TrendSide.LONG, int(filled), price, contract_size, model, factor_snapshot_id))
+                except Exception:
+                    # A follower must never reverse a primary exchange-confirmed fill.
+                    pass
         elif leg == "ENTRY" and status in {"CANCELLED", "REJECTED"} and filled == 0:
             self._repository.mark_position_status(position_id=position_id, status="REJECTED", message=f"entry terminal without fill state={exchange_state}")
             if position_key:
@@ -206,6 +243,13 @@ class HtxTrendEntryExecutor:
                 filled_contracts=filled, contract_size=contract_size, amount_usdt=(price * filled * contract_size if price else None),
                 fee_usdt=fee, gross_pnl_usdt=realized, net_pnl_after_fee=(realized - fee if realized is not None else None),
                 reason=f"exchange confirmed {leg.lower()} fill"))
+            if self._on_confirmed_reduction is not None and position_key:
+                try:
+                    self._on_confirmed_reduction(ConfirmedReductionFill(position_id, position_key, run_id, contract_code,
+                        TrendSide(side) if side else TrendSide.LONG, int(filled), model, factor_snapshot_id, leg == "CLOSE"))
+                except Exception:
+                    # A follower failure is recorded in its own intent path and cannot undo primary fill.
+                    pass
         return status
 
     def reconcile_pending(self) -> dict[str, str]:

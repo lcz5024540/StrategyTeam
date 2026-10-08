@@ -82,6 +82,15 @@ class RuntimeInstance:
 
 
 @dataclass(frozen=True, slots=True)
+class AccountCredentialRecord:
+    account_id: int
+    account_label: str
+    api_key_cipher: str
+    secret_key_cipher: str
+    base_url: str
+
+
+@dataclass(frozen=True, slots=True)
 class CapitalAllocation:
     account_id: int
     account_label: str
@@ -232,6 +241,20 @@ class HtxTrendMySqlRepository:
                          "WHERE enabled=1 AND trend_enabled=1 ORDER BY sort_order,id")
         return [TradeAccount(int(row["id"]), row["account_label"], row["account_role"], bool(row["trend_enabled"]),
                              bool(row["mirror_enabled"]), row["base_url"]) for row in rows]
+
+    def trade_account(self, account_id: int) -> TradeAccount | None:
+        row = self._one("""SELECT id,account_label,account_role,trend_enabled,mirror_enabled,base_url FROM htx_trade_account
+          WHERE id=%s AND enabled=1 AND trend_enabled=1""", (account_id,))
+        return None if row is None else TradeAccount(int(row["id"]), str(row["account_label"]), str(row["account_role"]),
+                                                     bool(row["trend_enabled"]), bool(row["mirror_enabled"]), str(row["base_url"]))
+
+    def account_credentials(self, account_id: int) -> AccountCredentialRecord | None:
+        row = self._one("""SELECT id,account_label,api_key_cipher,secret_key_cipher,base_url FROM htx_trade_account
+          WHERE id=%s AND enabled=1 AND trend_enabled=1""", (account_id,))
+        if row is None or not row.get("api_key_cipher") or not row.get("secret_key_cipher"):
+            return None
+        return AccountCredentialRecord(int(row["id"]), str(row["account_label"]), str(row["api_key_cipher"]),
+                                       str(row["secret_key_cipher"]), str(row["base_url"]))
 
     def enabled_strategy_policies(self) -> list[StrategyPolicyRecord]:
         rows = self._all("""SELECT policy_code,policy_version,primary_model,confirmation_models,base_notional_usdt,

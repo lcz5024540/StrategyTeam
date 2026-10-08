@@ -82,4 +82,4 @@ P6 的代码与验证工具已完成：提供有界并发的公开行情扫描�
 | 下单价格与订单方式 | 当前 Java 实盘趋势路径为 V5 `market`，Python 因此默认同样使用市价；多头以 ask、空头以 bid 作为追价、最差成交价、扣费后预期 R 与合约张数的事实价格。限价探路仅保留为显式实验开关。 |
 | 订单、成交、对账与镜像 | 维持 `杠杆 → position intent → 风险预留 → order intent → HTX → 回填` 顺序；仅 `state=filled` 或 legacy `status=6` 的真实成交才激活仓位和写账本。重启只查询既有 intent；取消/拒绝且零成交释放预留；部分平仓不释放，完整平仓才释放。镜像仅复制主账户确认成交后的增量，并以 `reduce_only` 跟随确认减仓。 |
 
-Python worker 仍默认 `OBSERVE`，没有在本轮获得生产下单权；因此本次“完成”只表示代码合同和回归测试完成，**不表示已部署、已开启或已实盘验证**。
+Python 现已具备 `LIVE` worker 连接，但它只会读取数据库中 `ENC(...)` 账户凭据并在同时满足 `strategy_runtime_instance.execution_mode=LIVE`、绑定 PRIMARY 账户、`HTX_PYTHON_LIVE_EXECUTION_ENABLED=true` 三项条件时启动；镜像账户只由主账户确认成交回调触发。默认实例仍为 `OBSERVE`，因此本次“完成”只表示代码合同和运行时连接完成，**不表示已部署、已开启或已实盘验证**。
