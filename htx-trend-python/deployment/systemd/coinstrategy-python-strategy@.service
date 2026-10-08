@@ -1,0 +1,15 @@
+[Unit]
+Description=CoinStrategy Python strategy worker (%i)
+After=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/coinstrategy/python
+EnvironmentFile=/etc/coinstrategy/python-%i.env
+ExecStart=/opt/coinstrategy/python/.venv/bin/python -m htx_trend.worker --strategy-instance %i
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
