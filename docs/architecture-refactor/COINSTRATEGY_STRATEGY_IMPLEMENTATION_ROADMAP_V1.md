@@ -22,6 +22,7 @@ tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backt
 | L1 总纲 | [CoinStrategy 策略总纲 v1](COINSTRATEGY_STRATEGY_MASTER_PLAN_V1.md) | 定义趋势 + 套利双引擎、资金分层、统一风控、统一账本。 | 已建立 |
 | L2 标准模板 | [CoinStrategy 策略闭环定义模板 v1](COINSTRATEGY_STRATEGY_CLOSED_LOOP_TEMPLATE_V1.md) | 定义任何策略上线前必须补齐的目标、市场、因子、信号、gate、sizing、执行、持仓、退出、账本、回测和实盘反馈闭环。 | 已建立 |
 | L2 子系统 | [HTX 趋势策略系统 v1](HTX_TREND_STRATEGY_SYSTEM_V1.md) | 定义趋势策略的市场分型、因子、模型、gate、sizing、退出和回测。 | 已建立 |
+| L3 执行计划 | [HTX 趋势指标证据与消融验证 v1](HTX_TREND_INDICATOR_EVIDENCE_AND_ABLATION_V1.md) | 定义 RSI、MACD、量价与 AHR999 的只读证据、消融和灰度边界。 | 执行中 |
 | L3 执行计划 | [HTX 趋势策略开仓与持仓管理重构计划 v1](HTX_TREND_EXECUTION_REFACTOR_PLAN_V1.md) | 将开仓链路、已有仓位管理、冷却解冻、多周期和外部仓位处理拆成分批实施计划。 | 已建立 |
 | L3 执行计划 | [HTX 趋势策略退出系统重构计划 v1](HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1.md) | 将止损、止盈、分批减仓、利润保护、趋势衰竭、时间退出、模型失效和退出质量回测拆成分批实施计划。 | 已建立 |
 | L3 执行计划 | [HTX 趋势策略状态识别与统计模型接入计划 v1](HTX_TREND_REGIME_AND_MODEL_INTEGRATION_PLAN_V1.md) | 将 GHMM 市场状态、变点检测、持仓趋势质量、波动风险、候选质量与灰度边界拆成独立验证阶段。 | 已建立，待实施 |

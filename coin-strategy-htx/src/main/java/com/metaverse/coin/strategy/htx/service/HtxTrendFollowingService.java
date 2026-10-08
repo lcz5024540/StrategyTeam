@@ -110,6 +110,8 @@ public class HtxTrendFollowingService {
     private final HtxTrendExitDecisionEngine exitDecisionEngine = new HtxTrendExitDecisionEngine();
     private final HtxTrendStateEvaluator trendStateEvaluator = new HtxTrendStateEvaluator();
     private final HtxTrendProfitProtectionPlanner profitProtectionPlanner = new HtxTrendProfitProtectionPlanner();
+    /** Read-only technical evidence for post-order multi-timeframe snapshots. */
+    private final HtxTrendIndicatorObservationCalculator indicatorObservationCalculator = new HtxTrendIndicatorObservationCalculator();
     private HtxTrendCombinationService combinationService;
     private HtxTrendPortfolioAllocationAuditService portfolioAllocationAuditService;
     private HtxTradeAccountService tradeAccountService;
@@ -516,6 +518,7 @@ public class HtxTrendFollowingService {
                                                                               MarketBreadthContext marketBreadth,
                                                                               List<String> periods) {
         List<HtxTrendEnsembleSignalCalculator.TrendCandidateSignal> signals = new ArrayList<>(periods.size());
+        Map<String, HtxTrendIndicatorObservationCalculator.Observation> indicatorObservations = new HashMap<>();
         int available = 0;
         int modelCoverageOutcomes = 0;
         List<RuntimeKlineWindow> runtimeWindows = new ArrayList<>(periods.size());
@@ -530,6 +533,7 @@ public class HtxTrendFollowingService {
             HtxTrendEnsembleSignalCalculator.TrendCandidateSignal signal = ensembleCalculator.evaluate(response.payload(),
                     ensembleProperties, period, Instant.now().getEpochSecond());
             signals.add(signal);
+            indicatorObservations.put(period, indicatorObservationCalculator.observe(response.payload(), signal.barTime()));
             runtimeWindows.add(new RuntimeKlineWindow(period, signal.barTime(), response.payload(),
                     Math.max(1, properties.getFactorSnapshotKlineSize())));
             if (signal.barTime() != null && signal.barTime() > 0L) {
@@ -544,7 +548,7 @@ public class HtxTrendFollowingService {
             }
         }
         Long factorSnapshotId = combinationService.recordMultiTimeframeSnapshot(contractCode, properties.getPeriod(), entryBarTime,
-                marketBreadth == null ? "UNKNOWN" : marketBreadth.regime().name(), signals);
+                marketBreadth == null ? "UNKNOWN" : marketBreadth.regime().name(), signals, indicatorObservations);
         for (RuntimeKlineWindow window : runtimeWindows) {
             captureRuntimeKlines("FACTOR_SNAPSHOT", contractCode, window.period(), window.targetBarTime(),
                     window.expectedWindowSize(), null, factorSnapshotId, null, window.candles());

@@ -3,7 +3,7 @@ title: "CoinStrategy 策略未完成任务清单 v1"
 type: strategy-backlog
 status: active
 created: 2026-09-22
-updated: 2026-10-07
+updated: 2026-10-08
 tags: [strategy, trend, execution, observability, backtest, backlog]
 ---
 
@@ -83,6 +83,7 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 | OBS-04A | 已部署，Fibonacci 首样本验收通过；持续积累中 | **新口径方向质量快照闭环**：捕获首个通过组合候选层的新 `run_id`，核验候选、最终 Gate、`trend-directional-quality-v1` 快照和后续订单/未下单结论可互相反查。 | 首笔样本的 `run_id` 一致；快照字段齐全；`account_label=primary` 口径明确；无 `SQLSyntax`/`BadSqlGrammar`；同时建立样本计数，只有达到按方向×模型×分型可比较的最小样本后，才可提出缩仓或禁入建议。不得以 9/18–9/21 缺少最终 Gate、因子快照或 `run_id` 的历史记录替代。 | OBS-04、DL-060 |
 | OBS-05 | 已部署，样本积累中 | **独立模型覆盖与前瞻收益归因**：Donchian、Fibonacci、EMA/VWAP、动量不再只作为总分的一部分。每个稳定 K 线独立记录模型命中，并在 1/4/8/16 根后以同方向收盘收益结算。 | 每条 `trend-model-coverage-outcome-v1` 都关联源 K 线、模型、方向、市场分型、未来收盘价、毛收益、开/平 taker 费率、扣费后净收益和费率来源。按模型×方向×分型×周期汇总足量样本后，才可调整模型路由、阈值、仓位或退出；当前只读，不影响真实交易。 | 多模型覆盖研究 |
 | OBS-06 | 已部署，样本积累中 | **同窗多模型分析**：Donchian、Fibonacci、EMA/VWAP 与动量均基于同一根稳定 K 线及其历史窗口独立计算，不为 K 线指定唯一主模型。每个命中的模型都保留自身结构 ID；Fibonacci 的同一突破—回踩结构共享 `BREAKOUT_RETEST:<barTime>`。 | 写入不可变 `trend-model-analysis-v2`，包含全量命中模型及其结构 ID、背景证据、冲突、风险和 `OBSERVE_ONLY` 边界；`trend-model-coverage-outcome-v2` 同步关联全量模型集合。历史 `trend-model-routing-v1` 仅保留审计，不再作为新版本写入口。旧组合打分、政策、最终 Gate、仓位和 HTX 下单不读取这些快照。按每个模型独立收益与同窗共现关系积累足量样本后，才可讨论真实组合选择。 | 模型生命周期分层 |
+| OBS-07 | 后端完成，待部署与生产样本 | **RSI/MACD/量价因子观察与消融**：运行时多周期快照记录 RSI(14)、MACD(12,26,9)、成交量/成交额相对值、量能变化和影线质量；离线报告按模型×方向×时间切分比较扣费后表现。AHR999 明确保持 `NOT_AVAILABLE`，等待独立、可审计的外部日线数据源。 | 生产首条 `trend-factor-multi-v2` 可反查完整 K 线窗口；消融报告按训练/验证/样本外、模型、方向与市场状态输出 PF、期望、交易数和净收益；任何单项进入真实 Gate 前必须通过样本外和纸面成交。 | [指标证据与消融验证 v1](HTX_TREND_INDICATOR_EVIDENCE_AND_ABLATION_V1.md) |
 | SIG-01 | 已部署，Fibonacci 首样本已验收；其余模型样本积累中 | **TrendState 与模型专属 Alpha 证据**：以方向、分型、趋势强度、结构质量、动量、参与度、衍生品质量、市场一致性、拥挤风险和执行质量描述候选；明确 BOX、Donchian、FIB、动量各自的主要/次要/冲突证据。 | `trend-factor-v3` 快照保留证据组、来源和同源结构关联；FIB 回踩与 BOX/Donchian 确认共享 `BREAKOUT_RETEST:<barTime>`，独立 Alpha 数为 1；本阶段只读，不改变 Gate、仓位或订单。 | 价格执行讨论稿 §1.2 |
 | PLAN-01 | 已部署，首个价格计划已验收 | **统一价格计划**：为通过最终 Gate 的候选生成 `EntryPricePlan` 与 `ExitPricePlan`，替代“直接按 ask/bid 开仓”的模糊传递。 | `trend-price-plan-v1` 按 `run_id` 冻结当前市价执行基线、触发/理想/最差价、失效/初始止损、1R/2R/结构目标、TTL、周期画像、计划风险和扣费后结构目标净 R；最大滑点为 0，明确表示尚未启用限价、重报价或新的 Gate。 | 价格执行讨论稿 §4、§8 |
 | EXT-01 | 已部署，首个 ENTRY_READY 已验收 | **外部信号 outbox 与订阅**：将已经冻结价格计划的事件以 `run_id` 对外提供，不直接把 Dashboard 候选当交易信号。当前仅发布不可变 `signal-outbox-v1:ENTRY_READY`；不暴露账户/交易所密钥，不调用 HTX 下单。 | 后续补齐 `ENTRY_CANCELLED`、`PLAN_EXPIRED`、`EXIT_REDUCE`、`EXIT_CLOSE`、订阅鉴权和审计；不得以 Dashboard 候选替代事件合同。 | 价格执行讨论稿 §9 |

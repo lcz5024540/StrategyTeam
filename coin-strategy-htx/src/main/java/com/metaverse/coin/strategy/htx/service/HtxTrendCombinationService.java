@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 
 /** Resolves the one highest-ranked DB-authorized combination for a symbol and candle. */
 @Service
@@ -287,6 +288,16 @@ public class HtxTrendCombinationService {
      */
     public Long recordMultiTimeframeSnapshot(String contractCode, String entryPeriod, long entryBarTime,
                                              String marketRegime, List<TrendCandidateSignal> timeframeSignals) {
+        return recordMultiTimeframeSnapshot(contractCode, entryPeriod, entryBarTime, marketRegime, timeframeSignals, Map.of());
+    }
+
+    /**
+     * Persists an execution-neutral multi-timeframe evidence snapshot. Indicator observations are
+     * supplied by the post-entry scan and are never read by the live decision path.
+     */
+    public Long recordMultiTimeframeSnapshot(String contractCode, String entryPeriod, long entryBarTime,
+                                             String marketRegime, List<TrendCandidateSignal> timeframeSignals,
+                                             Map<String, HtxTrendIndicatorObservationCalculator.Observation> indicatorObservations) {
         if (contractCode == null || contractCode.isBlank() || entryBarTime <= 0L) {
             return null;
         }
@@ -297,7 +308,7 @@ public class HtxTrendCombinationService {
         snapshot.setPeriod(period);
         snapshot.setBarTime(entryBarTime);
         snapshot.setMarketRegime(marketRegime == null ? "UNKNOWN" : marketRegime);
-        snapshot.setFactorsJson(multiTimeframeSnapshotJson(timeframeSignals));
+        snapshot.setFactorsJson(multiTimeframeSnapshotJson(timeframeSignals, indicatorObservations));
         return combinationRecorder.recordSnapshot(snapshot);
     }
 
@@ -678,8 +689,9 @@ public class HtxTrendCombinationService {
         return "\"status\":" + jsonText(status) + (reason == null ? "" : ",\"reason\":" + jsonText(reason));
     }
 
-    private static String multiTimeframeSnapshotJson(List<TrendCandidateSignal> signals) {
-        StringBuilder json = new StringBuilder("{\"schema\":\"trend-factor-multi-v1\",\"source\":\"htx-completed-kline\",\"timeframes\":{");
+    private static String multiTimeframeSnapshotJson(List<TrendCandidateSignal> signals,
+                                                      Map<String, HtxTrendIndicatorObservationCalculator.Observation> observations) {
+        StringBuilder json = new StringBuilder("{\"schema\":\"trend-factor-multi-v2\",\"readOnly\":true,\"source\":\"htx-completed-kline\",\"macro\":{\"ahr999\":{\"status\":\"NOT_AVAILABLE\",\"reason\":\"canonical AHR999 feed is not configured; HTX price-only data is not treated as AHR999\"}},\"timeframes\":{");
         boolean first = true;
         if (signals != null) {
             for (TrendCandidateSignal signal : signals) {
@@ -691,6 +703,8 @@ public class HtxTrendCombinationService {
                 }
                 first = false;
                 boolean available = signal.barTime() != null && signal.barTime() > 0L;
+                HtxTrendIndicatorObservationCalculator.Observation observation = observations == null
+                        ? null : observations.get(signal.period());
                 json.append(jsonText(signal.period())).append(":{")
                         .append("\"status\":").append(jsonText(available ? "COMPLETE" : "UNAVAILABLE"))
                         .append(",\"barTime\":").append(jsonNumber(signal.barTime()))
@@ -711,11 +725,40 @@ public class HtxTrendCombinationService {
                         .append(",\"volumeRatio\":").append(jsonNumber(signal.volumeRatio())).append('}')
                         .append(",\"donchian\":{\"high\":").append(jsonNumber(signal.breakoutHigh()))
                         .append(",\"low\":").append(jsonNumber(signal.breakoutLow())).append('}')
+                        .append(",\"indicatorObservation\":").append(indicatorObservationJson(observation))
                         .append(",\"reason\":").append(jsonText(available ? signal.entryReason() : signal.invalidationReason()))
                         .append('}');
             }
         }
         return json.append("}}").toString();
+    }
+
+    private static String indicatorObservationJson(HtxTrendIndicatorObservationCalculator.Observation observation) {
+        if (observation == null) {
+            return "{\"status\":\"NOT_CAPTURED\",\"reason\":\"indicator observer did not run\"}";
+        }
+        HtxTrendIndicatorObservationCalculator.RsiObservation rsi = observation.rsi();
+        HtxTrendIndicatorObservationCalculator.MacdObservation macd = observation.macd();
+        HtxTrendIndicatorObservationCalculator.ParticipationObservation participation = observation.participation();
+        HtxTrendIndicatorObservationCalculator.PriceActionObservation action = observation.priceAction();
+        return "{\"schema\":\"trend-indicator-observation-v1\",\"status\":" + jsonText(observation.status())
+                + ",\"reason\":" + jsonText(observation.reason()) + ",\"completedBars\":" + observation.completedBars()
+                + ",\"barTime\":" + jsonNumber(observation.barTime()) + ",\"close\":" + jsonNumber(observation.close())
+                + ",\"rsi\":{\"status\":" + jsonText(rsi.status()) + ",\"value\":" + jsonNumber(rsi.value())
+                + ",\"zone\":" + jsonText(rsi.zone()) + ",\"reason\":" + jsonText(rsi.reason()) + "}"
+                + ",\"macd\":{\"status\":" + jsonText(macd.status()) + ",\"line\":" + jsonNumber(macd.line())
+                + ",\"signal\":" + jsonNumber(macd.signal()) + ",\"histogram\":" + jsonNumber(macd.histogram())
+                + ",\"histogramSlope\":" + jsonNumber(macd.histogramSlope()) + ",\"acceleration\":"
+                + jsonText(macd.acceleration()) + ",\"reason\":" + jsonText(macd.reason()) + "}"
+                + ",\"participation\":{\"status\":" + jsonText(participation.status()) + ",\"volumeRatio\":"
+                + jsonNumber(participation.volumeRatio()) + ",\"turnoverRatio\":" + jsonNumber(participation.turnoverRatio())
+                + ",\"recentToPriorVolumeRatio\":" + jsonNumber(participation.recentToPriorVolumeRatio())
+                + ",\"confirmation\":" + jsonText(participation.confirmation()) + ",\"divergence\":"
+                + jsonText(participation.divergence()) + ",\"reason\":" + jsonText(participation.reason()) + "}"
+                + ",\"priceAction\":{\"status\":" + jsonText(action.status()) + ",\"closeLocation\":"
+                + jsonNumber(action.closeLocation()) + ",\"bodyRatio\":" + jsonNumber(action.bodyRatio())
+                + ",\"upperWickRatio\":" + jsonNumber(action.upperWickRatio()) + ",\"lowerWickRatio\":"
+                + jsonNumber(action.lowerWickRatio()) + ",\"reason\":" + jsonText(action.reason()) + "}}";
     }
 
     private static String entryCostEvidenceJson(EntryCostEvidence evidence) {

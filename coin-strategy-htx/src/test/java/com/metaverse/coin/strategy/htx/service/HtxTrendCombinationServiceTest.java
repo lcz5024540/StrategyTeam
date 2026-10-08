@@ -100,6 +100,40 @@ class HtxTrendCombinationServiceTest {
     }
 
     @Test
+    void multiTimeframeSnapshotPersistsReadOnlyIndicatorEvidenceAndDoesNotPretendPriceDataIsAhr999() {
+        HtxTrendStrategyPolicyService policyService = mock(HtxTrendStrategyPolicyService.class);
+        HtxTrendCombinationRecorder combinationRecorder = mock(HtxTrendCombinationRecorder.class);
+        HtxTrendCandidateSignalRecorder candidateRecorder = mock(HtxTrendCandidateSignalRecorder.class);
+        when(combinationRecorder.recordSnapshot(any())).thenReturn(1L);
+        HtxTrendCombinationService service = new HtxTrendCombinationService(policyService, combinationRecorder,
+                candidateRecorder);
+        HtxTrendIndicatorObservationCalculator.Observation observation = new HtxTrendIndicatorObservationCalculator.Observation(
+                "AVAILABLE", null, 160, 1_790_069_400L, new BigDecimal("100"),
+                new HtxTrendIndicatorObservationCalculator.RsiObservation("AVAILABLE", new BigDecimal("61"), "UP", null),
+                new HtxTrendIndicatorObservationCalculator.MacdObservation("AVAILABLE", new BigDecimal("1"),
+                        new BigDecimal("0.8"), new BigDecimal("0.2"), new BigDecimal("0.1"), "EXPANDING_UP", null),
+                new HtxTrendIndicatorObservationCalculator.ParticipationObservation("AVAILABLE", new BigDecimal("1.4"),
+                        new BigDecimal("1.3"), new BigDecimal("0.8"), "UP_MOVE_CONFIRMED", "NONE", null),
+                new HtxTrendIndicatorObservationCalculator.PriceActionObservation("AVAILABLE", new BigDecimal("0.8"),
+                        new BigDecimal("0.5"), new BigDecimal("0.1"), new BigDecimal("0.1"), null));
+
+        service.recordMultiTimeframeSnapshot("BTC-USDT", "15min", 1_790_069_400L, "BROAD_UP",
+                List.of(signal("15min")), java.util.Map.of("15min", observation));
+
+        ArgumentCaptor<HtxTrendFactorSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendFactorSnapshotEntity.class);
+        verify(combinationRecorder).recordSnapshot(snapshot.capture());
+        JSONObject json = JSON.parseObject(snapshot.getValue().getFactorsJson());
+        assertEquals("trend-factor-multi-v2", json.getString("schema"));
+        assertTrue(json.getBooleanValue("readOnly"));
+        assertEquals("NOT_AVAILABLE", json.getJSONObject("macro").getJSONObject("ahr999").getString("status"));
+        JSONObject indicator = json.getJSONObject("timeframes").getJSONObject("15min").getJSONObject("indicatorObservation");
+        assertEquals("trend-indicator-observation-v1", indicator.getString("schema"));
+        assertEquals(new BigDecimal("61"), indicator.getJSONObject("rsi").getBigDecimal("value"));
+        assertEquals("EXPANDING_UP", indicator.getJSONObject("macd").getString("acceleration"));
+        assertEquals("UP_MOVE_CONFIRMED", indicator.getJSONObject("participation").getString("confirmation"));
+    }
+
+    @Test
     void entryCostEvidencePersistsActualFeesOrderBookAndNetExpectation() {
         HtxTrendStrategyPolicyService policyService = mock(HtxTrendStrategyPolicyService.class);
         HtxTrendCombinationRecorder combinationRecorder = mock(HtxTrendCombinationRecorder.class);
