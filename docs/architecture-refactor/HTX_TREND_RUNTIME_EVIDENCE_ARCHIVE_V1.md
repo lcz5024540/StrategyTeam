@@ -33,11 +33,13 @@ scope: "运行证据的冷归档与未来 Python 研究读取；不改实盘交�
 
 ## 3. 执行合同
 
-1. 每月对早于 90 天前的月份运行一次导出；运行前先指定明确的 `--before` 边界。
+1. 每月对早于 90 天前的月份运行一次导出；运行前必须指定明确的 `--after` 与 `--before` 边界，避免全历史扫描。
 2. 导出程序只调用 MySQL `SELECT`，按表和主键稳定排序；不包含 `DELETE`、`UPDATE`、`TRUNCATE` 或 DDL。
 3. 每张表生成一个 `.jsonl.zst` 文件和一个总清单。清单记录行数、SHA-256、时间边界、表名与生成时间。
 4. 校验文件可解压、每行是 JSON、行数和清单一致后，才视为归档成功。
 5. 删除热数据是另一个人工批准的运维动作：必须先抽样从归档恢复并核对 SHA-256，且另行执行专门 SQL；本工具永远不做删除。
+
+归档前必须单独执行并验收 [2026-10-08b__htx_trend_runtime_evidence_archive_indexes.sql](../../sql/htx/2026-10-08b__htx_trend_runtime_evidence_archive_indexes.sql)。三个追加索引与导出的 `WHERE 时间边界 ORDER BY 时间, id` 完全一致，避免冷归档扫描干扰实盘数据库。
 
 ## 4. 与实盘及 Python 演进的边界
 

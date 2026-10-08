@@ -30,17 +30,19 @@ class RuntimeEvidenceArchiveTest(unittest.TestCase):
 
     def test_queries_are_read_only_and_bound_to_the_archive_table(self):
         table = MODULE.ARCHIVE_TABLES["htx_trend_runtime_kline_snapshot"]
-        query = table.query("2026-07-01 00:00:00.000")
+        query = table.query("2026-07-01 00:00:00.000", "2026-06-01 00:00:00.000")
         self.assertTrue(query.startswith("SELECT JSON_OBJECT"))
         self.assertIn("FROM htx_trend_runtime_kline_snapshot", query)
         self.assertIn("captured_at < '2026-07-01 00:00:00.000'", query)
+        self.assertIn("captured_at >= '2026-06-01 00:00:00.000'", query)
+        self.assertIn("ORDER BY captured_at, id", query)
         self.assertNotIn("DELETE", query)
 
     def test_manifest_binds_row_counts_and_file_checksum(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             data = root / "sample.jsonl.zst"; data.write_bytes(b"compressed-evidence")
-            manifest = MODULE.write_manifest(root, "2026-07-01 00:00:00.000", [{
+            manifest = MODULE.write_manifest(root, "2026-07-01 00:00:00.000", "2026-06-01 00:00:00.000", [{
                 "table": "htx_trend_runtime_kline_candle", "file": data.name, "rows": 2,
                 "sha256": MODULE.sha256(data), "bytes": data.stat().st_size, "compression": "zstd-jsonl"}])
             payload = json.loads(manifest.read_text())
@@ -59,7 +61,7 @@ class RuntimeEvidenceArchiveTest(unittest.TestCase):
                            "HTX_DB_PASSWORD": "not-printed", "PATH": str(root) + os.pathsep + os.environ["PATH"]}
             output = root / "candles.jsonl.zst"
             entry = MODULE.export_table(MODULE.ARCHIVE_TABLES["htx_trend_runtime_kline_candle"],
-                                        "2026-07-01 00:00:00.000", "htx_trade_strategy", output, 1, environment)
+                                        "2026-07-01 00:00:00.000", "2026-06-01 00:00:00.000", "htx_trade_strategy", output, 1, environment)
             payload = subprocess.check_output(["zstd", "--quiet", "--decompress", "--stdout", str(output)], text=True)
             self.assertEqual([{"id": 1, "contract_code": "BTC-USDT"}], [json.loads(payload)])
             self.assertEqual(1, entry["rows"])

@@ -32,10 +32,11 @@ class ArchiveTable:
     timestamp_column: str
     columns: tuple[str, ...]
 
-    def query(self, before: str) -> str:
+    def query(self, before: str, after: str | None = None) -> str:
         pairs = ", ".join(f"'{column}', {column}" for column in self.columns)
+        lower_bound = "" if after is None else f" AND {self.timestamp_column} >= '{after}'"
         return (f"SELECT JSON_OBJECT({pairs}) FROM {self.name} "
-                f"WHERE {self.timestamp_column} < '{before}' ORDER BY id")
+                f"WHERE {self.timestamp_column} < '{before}'{lower_bound} ORDER BY {self.timestamp_column}, id")
 
 
 ARCHIVE_TABLES = {
@@ -74,13 +75,14 @@ def selected_tables(values: Iterable[str]) -> list[ArchiveTable]:
     return [ARCHIVE_TABLES[name] for name in names]
 
 
-def mysql_command(table: ArchiveTable, before: str, database: str, environ: dict[str, str]) -> tuple[list[str], dict[str, str]]:
+def mysql_command(table: ArchiveTable, before: str, after: str | None, database: str,
+                  environ: dict[str, str]) -> tuple[list[str], dict[str, str]]:
     missing = [name for name in DATABASE_ENV if not environ.get(name)]
     if missing:
         raise ValueError("missing database environment: " + ", ".join(missing))
     command = ["mysql", "--batch", "--skip-column-names", "--raw", "--host", environ["HTX_DB_HOST"],
                "--port", environ["HTX_DB_PORT"], "--user", environ["HTX_DB_USERNAME"], database,
-               "--execute", table.query(before)]
+               "--execute", table.query(before, after)]
     child_environ = dict(environ)
     child_environ["MYSQL_PWD"] = environ["HTX_DB_PASSWORD"]
     return command, child_environ
@@ -94,10 +96,10 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def export_table(table: ArchiveTable, before: str, database: str, output: Path, compression_level: int,
+def export_table(table: ArchiveTable, before: str, after: str | None, database: str, output: Path, compression_level: int,
                  environ: dict[str, str] | None = None) -> dict:
     environment = dict(os.environ if environ is None else environ)
-    command, child_environ = mysql_command(table, before, database, environment)
+    command, child_environ = mysql_command(table, before, after, database, environment)
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(prefix=output.name + ".", suffix=".partial", dir=output.parent, delete=False) as temp:
         partial = Path(temp.name)
@@ -136,13 +138,13 @@ def export_table(table: ArchiveTable, before: str, database: str, output: Path, 
                        zstd.stdin if zstd else None, zstd.stderr if zstd else None, output_handle):
             if handle is not None and not handle.closed:
                 handle.close()
-    return {"table": table.name, "before": before, "file": output.name, "rows": count,
+    return {"table": table.name, "after": after, "before": before, "file": output.name, "rows": count,
             "sha256": sha256(output), "bytes": output.stat().st_size, "compression": "zstd-jsonl"}
 
 
-def write_manifest(output_dir: Path, before: str, entries: list[dict]) -> Path:
+def write_manifest(output_dir: Path, before: str, after: str | None, entries: list[dict]) -> Path:
     payload = {"schema": "htx-trend-runtime-evidence-archive-v1", "createdAt": datetime.now(timezone.utc).isoformat(),
-               "beforeUtc": before, "entries": entries,
+               "afterUtc": after, "beforeUtc": before, "entries": entries,
                "archiveChecksum": hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()).hexdigest()}
     target = output_dir / "archive-manifest.json"
     target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -153,24 +155,28 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="empty target directory for this archive batch")
     parser.add_argument("--before", required=True, help="exclusive ISO-8601 cutoff, for example 2026-07-01T00:00:00+08:00")
+    parser.add_argument("--after", help="inclusive ISO-8601 lower boundary; use for monthly or daily batches")
     parser.add_argument("--database", default=DEFAULT_DATABASE)
     parser.add_argument("--table", action="append", choices=sorted(ARCHIVE_TABLES), help="repeat to export selected tables")
     parser.add_argument("--zstd-level", type=int, default=6, choices=range(1, 20))
     parser.add_argument("--dry-run", action="store_true", help="validate inputs and print the read-only export plan")
     args = parser.parse_args()
     before = parse_before(args.before)
+    after = parse_before(args.after) if args.after else None
+    if after is not None and after >= before:
+        raise ValueError("--after must be earlier than --before")
     tables = selected_tables(args.table or [])
     if args.out.exists() and any(args.out.iterdir()):
         raise ValueError("--out must be an empty directory to prevent replacing an existing archive")
-    plan = {"before": before, "database": args.database, "tables": [table.name for table in tables],
+    plan = {"after": after, "before": before, "database": args.database, "tables": [table.name for table in tables],
             "out": str(args.out), "mode": "READ_ONLY_EXPORT"}
     if args.dry_run:
         print(json.dumps(plan, ensure_ascii=False))
         return
     args.out.mkdir(parents=True, exist_ok=False)
-    entries = [export_table(table, before, args.database, args.out / f"{table.name}.jsonl.zst", args.zstd_level)
+    entries = [export_table(table, before, after, args.database, args.out / f"{table.name}.jsonl.zst", args.zstd_level)
                for table in tables]
-    manifest = write_manifest(args.out, before, entries)
+    manifest = write_manifest(args.out, before, after, entries)
     print(json.dumps({**plan, "manifest": str(manifest), "entries": entries}, ensure_ascii=False))
 
 
