@@ -1,0 +1,57 @@
+---
+title: "HTX 趋势策略 Python 迁移计划 v1"
+type: execution-plan
+status: active
+created: 2026-10-08
+tags: [htx, trend, python, migration, execution]
+---
+
+# HTX 趋势策略 Python 迁移计划 v1
+
+## 目标与边界
+
+将当前已部署的 `codex/htx-model-routing@dd2e1417` 中**HTX USDT 合约趋势策略**迁移到独立 Python 运行时。迁移目标是建立可回放、可纸面验证、可与 Java 逐笔比对的 Python 实现，最终再决定切换真实执行。
+
+不迁移：移动网格、现货做市、资金费套利、Polymarket、Web 页面、Java 通用客户端、无关数据库表。Java 服务在 Python 回放、纸面和灰度验收完成前继续是唯一真实交易执行者。
+
+## SDK 决定
+
+已核验 HTX 官方仓库 [`huobiapi/huobi_Python`](https://github.com/huobiapi/huobi_Python)，基线 commit `8a96761845302daf585010784150779da5edc206`。它以现货 V3 为主，合约仅保留旧 `/linear-swap-api/v1/swap_cross_order`，没有当前 Java 趋势系统所需的 V5 仓位、委托、杠杆、撤单和 `reduce_only` 完整接口。
+
+因此 Python 工程不把旧 SDK 当作真实执行依赖，而是实现窄范围 `HtxV5Client`：保留 HTX HMAC-SHA256 规范、当前已验证的 V5 端点和 typed 请求模型。该 client 默认禁止所有变更请求；真实执行必须经后续灰度显式开启。
+
+## 迁移顺序
+
+| 阶段 | 迁移内容 | 验收 | 实盘边界 |
+|---|---|---|---|
+| P0 | Python 工程、官方 SDK 适用性结论、V5 client、密钥与默认禁交易 | 请求签名、端点、`reduce_only`、禁交易单测 | 不部署、不下单 |
+| P1 | K 线、盘口、资金费、合约精度、实时价格输入和运行 K 线归档 | 与 Java 同时点输入逐字段一致 | 只读 |
+| P2 | EMA/ATR/ADX/ROC、Donchian、Fibonacci、市场广度、多周期状态 | 冻结 K 线上的因子和候选逐项对齐 | 回放/纸面 |
+| P3 | 候选排序、模型专属 Gate、冷却解冻、价格计划与仓位 sizing | 同一 `run_id` 的开仓/拒绝原因对齐 | 纸面 |
+| P4 | 持仓趋势判断、MFE/MAE、利润保护、动态减仓、失效与风险退出 | 事故样本和冻结集退出结果可解释 | 纸面 |
+| P5 | 订单、成交、仓位、账户和镜像账本；主账号小仓影子比对 | Java/Python 订单、费用和净 PnL 可对账 | 影子 |
+| P6 | 单账号小仓灰度与回滚 | 扣费后 PF、最大回撤、执行失败率满足阈值 | 独立批准 |
+
+## Java 到 Python 的核心映射
+
+| Java 能力 | Python 目标模块 | 迁移原则 |
+|---|---|---|
+| `HtxUsdtSwapService` / `HtxRestClient` | `htx_trend.htx_v5` | 先保持端点与签名兼容，再逐步补 WSS。 |
+| `HtxTrendEnsembleSignalCalculator` / 指标观察器 | `htx_trend.indicators` | 只用已收盘 K 线，避免前视。 |
+| `HtxTrendCombinationCalculator` / 市场状态 | `htx_trend.models`、`htx_trend.gates` | 模型独立出候选，证据不重复计分。 |
+| `HtxTrendFollowingService` | `htx_trend.runtime` | 拆为扫描、执行预检、订单、持仓管理，禁止再形成单个巨型服务。 |
+| `HtxTrendExitDecisionEngine` | `htx_trend.exits` | 固定 v4 语义，不私自引入 v5。 |
+| `HtxTrendRecorder` | `htx_trend.ledger` | 先复用现有账本语义，后续通过迁移决定独立 schema。 |
+
+## 当前进度
+
+P0 已完成：新建 `htx-trend-python` 独立工程；`HtxV5Client` 已覆盖公开 K 线、盘口、合约信息、资金费，以及私有余额、持仓、开放委托、杠杆、下单、撤单和订单查询接口。签名、公开请求不带密钥、默认阻断订单、以及 V5 `reduce_only` 请求体均有单测。
+
+下一步是 P1：将 Java 运行时 K 线归档和公开行情输入移植到 Python，并以同一个冻结窗口与 Java 逐字段对齐；在此之前不连接生产密钥、不启动 Python 服务、更不改变 Java 的真实执行权。
+
+## 不可变约束
+
+- Python 真实开仓与平仓默认关闭，不能因部署自动变为 live。
+- 每次策略决策必须保留输入 K 线、因子、模型、Gate、价格计划与退出证据。
+- Java 与 Python 不得同时对同一账户、同一策略身份发送订单。
+- 任何切换都先过冻结 K 线回放、纸面执行和单账号小仓灰度；不以单日盈利替代验证。
