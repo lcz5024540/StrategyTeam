@@ -96,9 +96,22 @@ def rsi(candles: Sequence[Candle], period: int = 14) -> Decimal:
 
 def macd(candles: Sequence[Candle], fast: int = 12, slow: int = 26, signal: int = 9) -> tuple[Decimal, Decimal, Decimal]:
     values = [item.close for item in candles]
-    line = ema(values, fast) - ema(values, slow)
-    # Build the same sequence of point-in-time MACD values for a meaningful signal EMA.
-    lines = [ema(values[:index], fast) - ema(values[:index], slow) for index in range(2, len(values) + 1)]
+    if not values:
+        return ZERO, ZERO, ZERO
+    # The previous implementation recomputed every EMA prefix.  EMA is
+    # recursive, so one forward pass produces the identical point-in-time
+    # lines without making each completed-bar strategy evaluation quadratic.
+    fast_multiplier = divide(Decimal("2"), Decimal(fast + 1))
+    slow_multiplier = divide(Decimal("2"), Decimal(slow + 1))
+    fast_value = slow_value = values[0]
+    lines: list[Decimal] = []
+    for index, value in enumerate(values):
+        if index:
+            fast_value = (value - fast_value) * fast_multiplier + fast_value
+            slow_value = (value - slow_value) * slow_multiplier + slow_value
+            lines.append(fast_value.quantize(SCALE, rounding=ROUND_HALF_UP)
+                         - slow_value.quantize(SCALE, rounding=ROUND_HALF_UP))
+    line = fast_value.quantize(SCALE, rounding=ROUND_HALF_UP) - slow_value.quantize(SCALE, rounding=ROUND_HALF_UP)
     signal_line = ema(lines, min(signal, len(lines))) if lines else ZERO
     return line, signal_line, line - signal_line
 

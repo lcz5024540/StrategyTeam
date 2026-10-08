@@ -23,6 +23,15 @@ def test_indicator_functions_are_deterministic_and_non_forward_looking() -> None
     assert snapshot(candles).vwap > 0
 
 
+def test_macd_streaming_implementation_matches_prefix_definition() -> None:
+    candles = [bar(index, 100 + index * 2) for index in range(60)]
+    values = [item.close for item in candles]
+    expected_line = ema(values, 12) - ema(values, 26)
+    expected_lines = [ema(values[:index], 12) - ema(values[:index], 26) for index in range(2, len(values) + 1)]
+    expected_signal = ema(expected_lines, 9)
+    assert macd(candles) == (expected_line, expected_signal, expected_line - expected_signal)
+
+
 def test_donchian_and_momentum_candidates_can_coexist_on_same_window() -> None:
     entry = [bar(index, 100 + index) for index in range(90)]
     entry[-1] = bar(89, 195)
