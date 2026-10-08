@@ -6,7 +6,7 @@ startup.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -93,7 +93,7 @@ class TrendLedger:
         self._connection.commit()
 
     def open_position(self, position: Position) -> None:
-        self._connection.execute("INSERT INTO trend_position VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+        self._connection.execute("INSERT INTO trend_position VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (
             position.position_id, position.account_id, position.contract_code, position.side, position.quantity,
             str(position.entry_price), str(position.realized_pnl), position.status, _time(position.opened_at),
             _time(position.closed_at) if position.closed_at else None, position.parent_position_id, position.strategy_run_id))

@@ -1,7 +1,7 @@
 """Deterministic paper exchange used for replay and shadow validation."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 import uuid
@@ -41,7 +41,7 @@ class PaperExchange:
         fill = Fill(str(uuid.uuid4()), order.order_id, request.account_id, request.quantity, fill_price,
                     fill_price * Decimal(request.quantity) * self._fee_rate, request.created_at)
         self._ledger.record_fill(fill)
-        return Order(**{**order.__dict__, "status": "FILLED", "filled_at": request.created_at})
+        return replace(order, status="FILLED", filled_at=request.created_at)
 
     def open_position(self, account_id: str, contract_code: str, side: str, quantity: int, entry_price: Decimal,
                       when: datetime, run_id: str, parent_position_id: str | None = None) -> Position:
