@@ -3,7 +3,9 @@ package com.metaverse.coin.strategy.htx.persistence;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendExitDecisionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendAssessmentEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionMarkSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendAssessmentMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMarkSnapshotMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendExitDecisionMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendProfitProtectionEventMapper;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendProfitProtectionEventEntity;
@@ -59,6 +61,8 @@ public class HtxTrendRecorder {
     private HtxTrendExitDecisionMapper exitDecisionMapper;
     @Autowired(required = false)
     private HtxTrendAssessmentMapper assessmentMapper;
+    @Autowired(required = false)
+    private HtxTrendPositionMarkSnapshotMapper positionMarkSnapshotMapper;
     @Autowired(required = false)
     private HtxTrendProfitProtectionEventMapper profitProtectionEventMapper;
     @Autowired(required = false)
@@ -394,6 +398,32 @@ public class HtxTrendRecorder {
                     assessment.getAssessmentStage(), assessment.getPositionId(), assessment.getAssessmentKey(),
                     ex.getMessage());
         }
+    }
+
+    /**
+     * Appends one completed-bar mark for later replay.  This is diagnostic evidence only and must never
+     * delay a live protection or exchange reconciliation path.
+     */
+    public void recordPositionMark(HtxTrendPositionMarkSnapshotEntity snapshot) {
+        if (snapshot == null || positionMarkSnapshotMapper == null || snapshot.getSnapshotKey() == null
+                || snapshot.getSnapshotKey().isBlank()) {
+            return;
+        }
+        try {
+            if (positionMarkSnapshotMapper.findBySnapshotKey(snapshot.getSnapshotKey()) != null) {
+                return;
+            }
+            snapshot.setEvidenceJson(clip(snapshot.getEvidenceJson(), 12_000));
+            positionMarkSnapshotMapper.insert(snapshot);
+        } catch (RuntimeException ex) {
+            log.warn("[HTX-TREND-POSITION-MARK] persistence failed positionId={} key={} reason={}",
+                    snapshot.getPositionId(), snapshot.getSnapshotKey(), ex.getMessage());
+        }
+    }
+
+    @Autowired(required = false)
+    void setPositionMarkSnapshotMapper(HtxTrendPositionMarkSnapshotMapper positionMarkSnapshotMapper) {
+        this.positionMarkSnapshotMapper = positionMarkSnapshotMapper;
     }
 
     public boolean assessmentExists(String assessmentKey) {

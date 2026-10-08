@@ -5,6 +5,8 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendCombinationRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendFactorSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionMarkSnapshotEntity;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMarkSnapshotMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
@@ -29,6 +31,25 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.times;
 
 class HtxTrendRecorderTest {
+
+    @Test
+    void positionMarkIsAppendOnlyAndDeduplicatedByCompletedBarKey() {
+        HtxTrendPositionMarkSnapshotMapper markMapper = mock(HtxTrendPositionMarkSnapshotMapper.class);
+        HtxTrendRecorder recorder = new HtxTrendRecorder(mock(HtxTrendPositionMapper.class),
+                mock(HtxTrendOrderMapper.class), mock(HtxTrendSignalMapper.class));
+        recorder.setPositionMarkSnapshotMapper(markMapper);
+        HtxTrendPositionMarkSnapshotEntity mark = new HtxTrendPositionMarkSnapshotEntity();
+        mark.setSnapshotKey("position-mark-v1:100:1790000900");
+        mark.setPositionId(100L);
+        mark.setEvidenceJson("{\"schema\":\"position-mark-v1\"}");
+
+        recorder.recordPositionMark(mark);
+        when(markMapper.findBySnapshotKey(mark.getSnapshotKey())).thenReturn(mark);
+        recorder.recordPositionMark(mark);
+
+        verify(markMapper, times(1)).insert(mark);
+        verify(markMapper, times(2)).findBySnapshotKey(mark.getSnapshotKey());
+    }
 
     @Test
     void finalCloseUsesAllFilledOrderLegsForNetPnlInsteadOfTheLastExitSnapshot() {

@@ -25,6 +25,7 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendExitDecisionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendAssessmentEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionMarkSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendProfitProtectionEventEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendBreadthStats;
@@ -1756,6 +1757,8 @@ public class HtxTrendFollowingService {
         HtxTrendExitDecisionEngine.Decision engineDecision = exitEngineDecision(position, signal, reference, highest, lowest,
                 engineProtectionPrice, exitSnapshot, holdingAssessment);
         recordHoldingAssessment(position, signal, reference, engineProtectionPrice, exitSnapshot, engineDecision, holdingAssessment);
+        recordPositionMarkSnapshot(position, signal, reference, engineProtectionPrice, exitSnapshot, engineDecision,
+                holdingAssessment);
         if (engineDecision != null) {
             if (!exitEngineLiveFor(position)) {
                 persistExitEngineState(position, engineDecision);
@@ -2111,8 +2114,18 @@ public class HtxTrendFollowingService {
         if (!properties.isRuntimeKlineCaptureEnabled() || runtimeKlineRecorder == null || candles == null || candles.isEmpty()) {
             return;
         }
+        long completedBefore = Instant.now().getEpochSecond() - Math.max(0L, properties.getCandleCloseGraceSeconds());
+        List<HtxSwapKline> completedCandles = candles.stream()
+                .filter(candle -> candle != null && candle.getId() != null)
+                .filter(candle -> candle.getId() + periodSeconds(period) <= completedBefore)
+                .sorted(Comparator.comparing(HtxSwapKline::getId))
+                .toList();
+        if (completedCandles.isEmpty()) {
+            return;
+        }
+        Long completedTargetBarTime = completedCandles.get(completedCandles.size() - 1).getId();
         runtimeKlineRecorder.capture(new HtxTrendRuntimeKlineRecorder.CaptureRequest(stage, contractCode, period,
-                targetBarTime, expectedWindowSize, runId, factorSnapshotId, positionId, candles));
+                completedTargetBarTime, expectedWindowSize, runId, factorSnapshotId, positionId, completedCandles));
     }
 
     private void recordSignal(String contractCode, TrendSignal signal) {
@@ -3692,6 +3705,45 @@ public class HtxTrendFollowingService {
         recorder.updateExitEngineState(position.getId(), decision.phase(), decision.trailingArmedAt(),
                 decision.trailingArmReason(), decision.maxFavorableR(), decision.protectionPrice(),
                 HtxTrendExitDecisionEngine.VERSION);
+    }
+
+    /**
+     * Writes one immutable, completed-bar mark-to-market fact for every active position.  It intentionally records
+     * both live and observe-only decisions so later replay can separate model quality from execution policy.
+     */
+    private void recordPositionMarkSnapshot(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,
+                                            BigDecimal protectionPrice, ExitSnapshot snapshot,
+                                            HtxTrendExitDecisionEngine.Decision decision, HoldingAssessment holding) {
+        if (position == null || position.getId() == null || signal == null || signal.barTime() == null
+                || !positive(reference) || snapshot == null) {
+            return;
+        }
+        HtxTrendPositionMarkSnapshotEntity mark = new HtxTrendPositionMarkSnapshotEntity();
+        mark.setSnapshotKey("position-mark-v1:" + position.getId() + ":" + signal.barTime());
+        mark.setPositionId(position.getId());
+        mark.setRunId(position.getRunId());
+        mark.setAccountId(position.getAccountId());
+        mark.setAccountLabel(assessmentAccountLabel(position));
+        mark.setContractCode(position.getContractCode());
+        mark.setSide(position.getSide());
+        mark.setPrimaryModel(position.getPrimaryModel());
+        mark.setTimeframeProfile(position.getTimeframeProfile());
+        mark.setBarTime(signal.barTime());
+        mark.setReferencePrice(reference);
+        mark.setUnrealizedNetPnl(snapshot.currentNet());
+        mark.setMfeNetPnl(snapshot.mfe());
+        mark.setMaeNetPnl(snapshot.mae());
+        mark.setGivebackRate(snapshot.giveback());
+        mark.setProtectionPrice(decision == null ? protectionPrice : decision.protectionPrice());
+        mark.setTrendState(holding == null ? null : holding.state());
+        mark.setExitPhase(decision == null ? position.getExitPhase() : decision.phase());
+        mark.setSuggestedAction(decision == null ? "LEGACY_HOLD" : decision.action().name());
+        mark.setExecutionMode(decision == null ? "LEGACY_PATH"
+                : exitEngineLiveFor(position) ? "EXIT_ENGINE_INPUT" : "OBSERVE_ONLY");
+        mark.setEvidenceJson(decision == null ? "{\"schema\":\"position-mark-v1\",\"signal\":\""
+                + signal.side() + "\",\"reason\":\"" + jsonEscape(signal.reason()) + "\"}"
+                : decision.evidenceJson());
+        recorder.recordPositionMark(mark);
     }
 
     private void recordExitEngineDecision(HtxTrendPositionEntity position, BigDecimal reference, BigDecimal protectionPrice,

@@ -940,6 +940,21 @@ CREATE TABLE IF NOT EXISTS htx_trend_runtime_kline_snapshot (
     KEY idx_htx_trend_runtime_kline_snapshot_run (run_id, factor_snapshot_id, position_id, captured_at)
 );
 
+CREATE TABLE IF NOT EXISTS htx_trend_position_mark_snapshot (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    snapshot_key VARCHAR(192) NOT NULL, position_id BIGINT NOT NULL, run_id VARCHAR(128), account_id BIGINT,
+    account_label VARCHAR(32) NOT NULL DEFAULT 'primary', contract_code VARCHAR(32) NOT NULL, side VARCHAR(8) NOT NULL,
+    primary_model VARCHAR(64), timeframe_profile VARCHAR(32), bar_time BIGINT NOT NULL, reference_price DECIMAL(36,18) NOT NULL,
+    unrealized_net_pnl DECIMAL(36,18), mfe_net_pnl DECIMAL(36,18), mae_net_pnl DECIMAL(36,18), giveback_rate DECIMAL(18,8),
+    protection_price DECIMAL(36,18), trend_state VARCHAR(32), exit_phase VARCHAR(32), suggested_action VARCHAR(32),
+    execution_mode VARCHAR(32) NOT NULL, evidence_json LONGTEXT, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_htx_trend_position_mark_snapshot_key (snapshot_key),
+    KEY idx_htx_trend_position_mark_position_time (position_id, bar_time),
+    KEY idx_htx_trend_position_mark_run_time (run_id, created_at),
+    KEY idx_htx_trend_position_mark_account_time (account_label, created_at)
+) COMMENT='Append-only trend position mark-to-market evidence for replay and attribution';
+
 CREATE TABLE IF NOT EXISTS htx_trend_market_regime_snapshot (
     id BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Surrogate primary key',
     snapshot_key VARCHAR(192) NOT NULL COMMENT 'Immutable state snapshot identity',

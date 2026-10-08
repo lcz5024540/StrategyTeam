@@ -66,6 +66,22 @@ class HtxTrendRuntimeKlineRecorderTest {
         assertTrue(revised.getValue().getSnapshotKey().contains("ENTRY_GATE"));
     }
 
+    @Test void clamps_the_decision_bar_to_the_latest_captured_completed_bar() {
+        HtxTrendRuntimeKlineCandleMapper candleMapper = mock(HtxTrendRuntimeKlineCandleMapper.class);
+        HtxTrendRuntimeKlineSnapshotMapper snapshotMapper = mock(HtxTrendRuntimeKlineSnapshotMapper.class);
+        HtxTrendRuntimeKlineRecorder recorder = new HtxTrendRuntimeKlineRecorder(candleMapper, snapshotMapper);
+        HtxTrendRuntimeKlineRecorder.CaptureRequest request = new HtxTrendRuntimeKlineRecorder.CaptureRequest(
+                "POSITION_MANAGEMENT", "BTC-USDT", "60min", 1_790_007_200L, 2, "run-42", 42L, 9L,
+                List.of(candle(1_790_000_000L, "100"), candle(1_790_003_600L, "101")));
+
+        recorder.capture(request);
+
+        ArgumentCaptor<HtxTrendRuntimeKlineSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendRuntimeKlineSnapshotEntity.class);
+        verify(snapshotMapper).insert(snapshot.capture());
+        assertEquals(1_790_003_600L, snapshot.getValue().getTargetBarTime());
+        assertEquals(1_790_003_600L, snapshot.getValue().getWindowEndBarTime());
+    }
+
     @Test void retries_a_deadlocked_candle_batch_without_losing_the_window_snapshot() {
         HtxTrendRuntimeKlineCandleMapper candleMapper = mock(HtxTrendRuntimeKlineCandleMapper.class);
         HtxTrendRuntimeKlineSnapshotMapper snapshotMapper = mock(HtxTrendRuntimeKlineSnapshotMapper.class);

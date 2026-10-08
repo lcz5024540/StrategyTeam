@@ -62,9 +62,12 @@ public class HtxTrendRuntimeKlineRecorder {
             if (candles.isEmpty()) {
                 return;
             }
-            String windowHash = windowHash(candles);
+            // Callers pass only completed bars.  Clamp the decision identity to the captured window so a
+            // lower-timeframe target cannot falsely label a still-forming higher-timeframe bar as evidence.
+            long lastCapturedBarTime = candles.get(candles.size() - 1).getId();
             long targetBarTime = request.targetBarTime() == null || request.targetBarTime() <= 0L
-                    ? candles.get(candles.size() - 1).getId() : request.targetBarTime();
+                    ? lastCapturedBarTime : Math.min(request.targetBarTime(), lastCapturedBarTime);
+            String windowHash = windowHash(candles);
             String snapshotKey = String.join(":", "runtime-kline-v1", request.captureStage(), request.contractCode(),
                     request.period(), String.valueOf(targetBarTime), windowHash, safeKey(request.runId()),
                     request.positionId() == null ? "-" : String.valueOf(request.positionId()),
