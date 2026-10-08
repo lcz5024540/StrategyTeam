@@ -77,8 +77,21 @@ def test_mysql_repository_writes_parameterized_execution_records_without_ddl() -
 def test_schema_validation_is_read_only() -> None:
     connection = Connection()
     HtxTrendMySqlRepository(connection).validate_runtime_schema()
-    assert len(connection.queries) == 13
+    assert len(connection.queries) == 14
     assert all(query.startswith("SELECT") for query, _ in connection.queries)
+
+
+def test_open_like_and_cooldown_queries_match_java_primary_scope() -> None:
+    connection = Connection(); repository = HtxTrendMySqlRepository(connection)
+    repository.active_position_count(account_id=999)
+    repository.latest_done_trade(account_id=999, contract_code="BTC-USDT")
+    open_like_query, open_like_args = connection.queries[-2]
+    done_query, done_args = connection.queries[-1]
+    assert "source_position_id IS NULL AND account_label='primary'" in open_like_query
+    assert "'UNKNOWN'" in open_like_query
+    assert open_like_args == ()
+    assert "source_position_id IS NULL" in done_query and "account_label='primary'" in done_query
+    assert done_args == ("BTC-USDT",)
 
 
 def test_runtime_lifecycle_is_explicit_and_never_creates_schema() -> None:

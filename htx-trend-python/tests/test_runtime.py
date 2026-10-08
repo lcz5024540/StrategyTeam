@@ -4,7 +4,7 @@ from pathlib import Path
 
 from htx_trend.execution import ExecutionConfig
 from htx_trend.ledger import Account, TrendLedger
-from htx_trend.market_data import Candle, ContractSpec, KlineWindow, TopOfBook
+from htx_trend.market_data import Candle, ContractSpec, FundingRate, KlineWindow, TopOfBook
 from htx_trend.paper import PaperExchange
 from htx_trend.runtime import PaperTrendRuntime
 from htx_trend.models import TrendConfig
@@ -31,7 +31,8 @@ def test_primary_scan_can_mirror_only_a_filled_primary_paper_trade(tmp_path) -> 
     result = runtime.scan(run_id="r1", entry_window=KlineWindow("BTC-USDT", "15min", tuple(entry), len(entry)),
                           trend_window=KlineWindow("BTC-USDT", "60min", tuple(trend), len(trend)), now_epoch=90 * 900,
                           at=datetime(2026, 1, 1, tzinfo=timezone.utc), book=TopOfBook(Decimal("194.99"), Decimal("195.01")),
-                          contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1), funding=None)
+                              contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1),
+                              funding=FundingRate("BTC-USDT", Decimal("0.0001")))
     assert result.paper_order_id is not None
     assert len(ledger.active_positions("main")) == len(ledger.active_positions("trademax")) == 1
     ledger.close()

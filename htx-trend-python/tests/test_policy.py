@@ -36,3 +36,15 @@ def test_ema_policy_uses_same_confirmation_labels_as_java_policy_row() -> None:
     assert confirmation_models(item) == "EMA_STACK,MOMENTUM"
     selected = select_policy((item,), (policy(item.model.value, "EMA_STACK,MOMENTUM", "88"),), MarketContext())
     assert len(selected) == 1
+
+
+def test_java_policy_notional_uses_candidate_market_regime_not_cross_symbol_breadth() -> None:
+    item = candidate(ModelCode.DONCHIAN_BREAKOUT, "95")
+    item = ModelCandidate(item.model, item.side, item.bar_time, item.score, item.entry_price,
+                          item.invalidation_price, item.target_low, item.target_high, item.expected_r,
+                          item.structure, item.evidence, market_regime="BROAD_UP")
+    selection = select_policy((item,), (policy("DONCHIAN_BREAKOUT", "BOX_BREAKOUT"),),
+                              MarketContext(MarketRegime.MIXED))[0]
+    # Java's HtxTrendCombinationService uses candidate.marketRegime here;
+    # global breadth only adjusts ranking and later adaptive sizing.
+    assert selection.sizing_multiplier == Decimal("1.5")

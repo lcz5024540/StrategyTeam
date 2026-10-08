@@ -3,11 +3,11 @@ from decimal import Decimal
 from htx_trend.account_facts import AccountSnapshot
 from htx_trend.execution import ExecutionConfig, ExecutionFacts
 from htx_trend.execution_service import HtxTrendEntryExecutor
-from htx_trend.market_data import Candle, ContractSpec, OrderBook
+from htx_trend.market_data import Candle, ContractSpec, FundingRate, OrderBook
 from htx_trend.mirror import ConfirmedPrimaryFill, HtxTrendMirrorFollower
 from htx_trend.models import ModelCandidate, ModelCode, PriceStructure, TrendSide
 from htx_trend.mysql_store import AccountRiskLimit, CapitalAllocation, RiskReservationTotals, RuntimeInstance, TradeAccount, StrategyPolicyRecord
-from htx_trend.strategy_context import MarketContext
+from htx_trend.strategy_context import MarketContext, MarketRegime
 
 
 def candidate() -> ModelCandidate:
@@ -39,7 +39,9 @@ class Repository:
 
 class Facts:
     def snapshot(self, *_args, **_kwargs):
-        return AccountSnapshot(ExecutionFacts(actual_taker_fee_rate=Decimal("0.0004"), executable_depth_contracts=Decimal("100"),
+        # Java policy-notional sizing requests 100 contracts here; the Java
+        # depth gate requires three times that executable depth.
+        return AccountSnapshot(ExecutionFacts(actual_taker_fee_rate=Decimal("0.0004"), executable_depth_contracts=Decimal("500"),
             available_margin_usdt=Decimal("100"), leverage=Decimal("3"), active_position_count=0, max_active_positions=2,
             risk_capacity_usdt=Decimal("200")), "HTX_ACCOUNT", Decimal("100"), 0, Decimal("0"), Decimal("0"))
 
@@ -62,9 +64,10 @@ def test_entry_writes_intent_reserves_then_submits_java_market_order() -> None:
     bars = (Candle(9_000, Decimal("99"), Decimal("101"), Decimal("98"), Decimal("100"), turnover=Decimal("1000")),)
     result = executor(repo, live).submit(run_id="run", candidate=candidate(), period="15min", atr=Decimal("2"),
         ema_fast=Decimal("101"), ema_slow=Decimal("99"), adx=Decimal("30"), recent_candles=bars, book=OrderBook(((Decimal("99.99"), Decimal("100")),), ((Decimal("100.01"), Decimal("100")),)),
-        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1), funding=None, market_context=MarketContext(), now_epoch=9_500)
+        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1),
+        funding=FundingRate("BTC-USDT", Decimal("0.0001")), market_context=MarketContext(MarketRegime.BROAD_UP, TrendSide.LONG, Decimal("0.8")), now_epoch=10_000)
     assert result.accepted and result.exchange_order_id == 99
-    assert [name for name, _ in repo.calls[:3]] == ["position", "reserve", "order"]
+    assert [name for name, _ in repo.calls[:2]] == ["position", "order"]
     assert live.calls[0][0] == "leverage"
     assert live.calls[1][1].type == "market"
 
@@ -103,7 +106,7 @@ def test_entry_refuses_candidate_without_database_authorized_policy() -> None:
     assert not live.calls
 
 
-def test_reconciliation_releases_risk_only_after_full_close() -> None:
+def test_reconciliation_does_not_apply_python_only_risk_reservation_gate() -> None:
     repo, live = Repository(), Executor()
     executor(repo, live).reconcile(client_order_id="1", contract_code="BTC-USDT", position_id=7, leg="PARTIAL_CLOSE",
                                    factor_snapshot_id=None, model="DONCHIAN_BREAKOUT", contract_size=Decimal("0.01"),
@@ -113,7 +116,7 @@ def test_reconciliation_releases_risk_only_after_full_close() -> None:
     executor(repo, live).reconcile(client_order_id="2", contract_code="BTC-USDT", position_id=7, leg="CLOSE",
                                    factor_snapshot_id=None, model="DONCHIAN_BREAKOUT", contract_size=Decimal("0.01"),
                                    position_key="position-key")
-    assert any(name == "release" for name, _ in repo.calls)
+    assert not any(name == "release" for name, _ in repo.calls)
 
 
 def test_reconcile_pending_queries_existing_intent_without_new_order() -> None:

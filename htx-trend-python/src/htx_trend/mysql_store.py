@@ -117,6 +117,16 @@ class RiskReservationTotals:
 
 
 @dataclass(frozen=True, slots=True)
+class TrendBreadthStats:
+    """The current per-contract signal view used by Java market breadth."""
+    total_count: int
+    long_context_count: int
+    short_context_count: int
+    long_signal_count: int
+    short_signal_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class StrategyPolicyRecord:
     policy_code: str
     policy_version: str
@@ -233,7 +243,7 @@ class HtxTrendMySqlRepository:
         for table in ("strategy_runtime_instance", "strategy_runtime_heartbeat", "strategy_capital_allocation",
                       "htx_trade_account", "htx_trend_signal", "htx_trend_candidate_signal", "htx_trend_factor_snapshot",
                       "htx_trend_position", "htx_trend_order", "htx_trend_exit_decision", "coin_strategy_ledger_event",
-                      "strategy_account_risk_limit", "strategy_risk_reservation"):
+                      "strategy_account_risk_limit", "strategy_risk_reservation", "htx_trend_structure_lifecycle"):
             self._one(f"SELECT 1 AS present FROM {table} LIMIT 1", ())
 
     def enabled_trend_accounts(self) -> list[TradeAccount]:
@@ -264,6 +274,37 @@ class HtxTrendMySqlRepository:
                 str(row["primary_model"]), str(row["confirmation_models"]),
                 Decimal(str(row["base_notional_usdt"])), Decimal(str(row["max_notional_usdt"])),
                 Decimal(str(row["score_threshold"])), int(row["box_window_bars"])) for row in rows]
+
+    def latest_breadth_stats(self, since: datetime) -> TrendBreadthStats:
+        """Port ``HtxTrendSignalMapper.latestBreadthStats`` without runtime DDL.
+
+        The query deliberately selects the latest persisted signal for each
+        contract in the same lookback window.  It must not use the worker's
+        in-memory scan: Java reads the ledger before it starts the next scan.
+        """
+        row = self._one("""SELECT COUNT(*) AS total_count,
+          COALESCE(SUM(CASE WHEN latest.trend_signal = 'LONG'
+              OR latest.reason LIKE '%trend=LONG%' OR latest.reason LIKE '%uptrend%'
+              THEN 1 ELSE 0 END), 0) AS long_context_count,
+          COALESCE(SUM(CASE WHEN latest.trend_signal = 'SHORT'
+              OR latest.reason LIKE '%trend=SHORT%' OR latest.reason LIKE '%downtrend%'
+              THEN 1 ELSE 0 END), 0) AS short_context_count,
+          COALESCE(SUM(CASE WHEN latest.trend_signal = 'LONG' THEN 1 ELSE 0 END), 0) AS long_signal_count,
+          COALESCE(SUM(CASE WHEN latest.trend_signal = 'SHORT' THEN 1 ELSE 0 END), 0) AS short_signal_count
+          FROM (
+            SELECT s.trend_signal, s.reason FROM htx_trend_signal s
+            JOIN (
+              SELECT contract_code, MAX(id) AS max_id FROM htx_trend_signal
+              WHERE created_at >= %s GROUP BY contract_code
+            ) current_signals ON current_signals.max_id = s.id
+          ) latest""", (since,)) or {}
+        return TrendBreadthStats(
+            int(row.get("total_count") or 0),
+            int(row.get("long_context_count") or 0),
+            int(row.get("short_context_count") or 0),
+            int(row.get("long_signal_count") or 0),
+            int(row.get("short_signal_count") or 0),
+        )
 
     def runtime_instance(self, instance_key: str) -> RuntimeInstance | None:
         row = self._one("""SELECT instance_key,strategy_family,strategy_name,account_id,account_label,execution_mode,
@@ -348,12 +389,79 @@ class HtxTrendMySqlRepository:
           updated_at=CURRENT_TIMESTAMP(3) WHERE reservation_key=%s AND status='RESERVED'""", (_clip(reason,512), reservation_key))
 
     def active_position_count(self, *, account_id: int) -> int:
-        row = self._one("""SELECT COUNT(*) AS count FROM htx_trend_position WHERE account_id=%s
-            AND status IN ('PENDING_OPEN','OPEN_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT')""", (account_id,))
+        """Literal Java ``HtxTrendPositionMapper.countOpenLike`` scope.
+
+        Java counts only primary, non-mirrored positions and includes UNKNOWN
+        reconciliation rows.  A missing UNKNOWN here creates a false free slot
+        after an exchange/ledger ambiguity.
+        """
+        row = self._one("""SELECT COUNT(*) AS count FROM htx_trend_position
+            WHERE source_position_id IS NULL AND account_label='primary'
+            AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT','UNKNOWN')""", ())
         return int(row["count"]) if row else 0
 
+    def latest_done_trade(self, *, account_id: int, contract_code: str) -> dict[str, Any] | None:
+        """Literal Java ``findLastDone`` scope for primary trend cooldown."""
+        return self._one("""SELECT id,contract_code,updated_at,realized_profit,entry_fee,close_fee,message
+          FROM htx_trend_position WHERE contract_code=%s AND source_position_id IS NULL
+          AND account_label='primary' AND status='DONE' ORDER BY updated_at DESC,id DESC LIMIT 1""", (contract_code,))
+
+    def claim_entry_cycle(self, *, structure_key: str, contract_code: str, timeframe: str,
+                          direction: str, primary_model: str, breakout_bar_time: int | None,
+                          source_run_id: str) -> bool:
+        """Persist Java's atomic entry-cycle claim before the position intent.
+
+        Only the DB unique key decides ownership, so restarts and concurrent
+        workers cannot submit the same Fibonacci entry cycle twice.
+        """
+        try:
+            with self._connection.cursor() as cursor:
+                inserted = cursor.execute("""INSERT IGNORE INTO htx_trend_structure_lifecycle
+                  (structure_key,contract_code,timeframe,direction,primary_model,breakout_bar_time,state,source_run_id)
+                  VALUES(%s,%s,%s,%s,%s,%s,'DISCOVERED',%s)""",
+                  (structure_key, contract_code, timeframe, direction, primary_model, breakout_bar_time, source_run_id))
+                if inserted == 1:
+                    self._connection.commit()
+                    return True
+                cursor.execute("SELECT state FROM htx_trend_structure_lifecycle WHERE structure_key=%s FOR UPDATE", (structure_key,))
+                existing = cursor.fetchone()
+                if existing is not None and existing["state"] == "ABANDONED":
+                    reclaimed = cursor.execute("""UPDATE htx_trend_structure_lifecycle SET state='DISCOVERED',source_run_id=%s,
+                      entry_position_id=NULL,terminal_reason=NULL,updated_at=CURRENT_TIMESTAMP(3) WHERE structure_key=%s AND state='ABANDONED'""",
+                      (source_run_id, structure_key))
+                    self._connection.commit()
+                    return reclaimed == 1
+            self._connection.commit()
+            return False
+        except Exception:
+            self._connection.rollback()
+            raise
+
+    def attach_entry_cycle_intent(self, *, structure_key: str, source_run_id: str, position_id: int) -> None:
+        self._write("""UPDATE htx_trend_structure_lifecycle SET state='INTENT',entry_position_id=%s,source_run_id=%s,
+          updated_at=CURRENT_TIMESTAMP(3) WHERE structure_key=%s""", (position_id, source_run_id, structure_key))
+
+    def abandon_entry_cycle(self, *, structure_key: str, reason: str) -> None:
+        self._write("""UPDATE htx_trend_structure_lifecycle SET state='ABANDONED',terminal_reason=%s,
+          updated_at=CURRENT_TIMESTAMP(3) WHERE structure_key=%s AND state IN ('DISCOVERED','INTENT')""",
+          (_clip(reason, 512), structure_key))
+
+    def mark_entry_cycle_active(self, *, position_id: int) -> None:
+        self._write("""UPDATE htx_trend_structure_lifecycle SET state='ACTIVE',updated_at=CURRENT_TIMESTAMP(3)
+          WHERE entry_position_id=%s AND state='INTENT'""", (position_id,))
+
+    def mark_entry_cycle_terminal(self, *, position_id: int, reason: str) -> None:
+        # Literal HtxTrendStructureLifecycleService.terminalState mapping.
+        normalized = (reason or "").upper()
+        state = ("INVALIDATED" if "MODEL_INVALIDATION" in normalized or "INITIAL_STOP" in normalized
+                 else "PROFIT_PROTECTED" if "PROFIT" in normalized or "TRAILING" in normalized or "TARGET" in normalized
+                 else "EXHAUSTED")
+        self._write("""UPDATE htx_trend_structure_lifecycle SET state=%s,terminal_reason=%s,
+          updated_at=CURRENT_TIMESTAMP(3) WHERE entry_position_id=%s AND state IN ('INTENT','ACTIVE')""",
+          (state, _clip(reason, 512), position_id))
+
     def record_position_intent(self, intent: PositionIntent) -> int:
-        values = ",".join(["%s"] * 4 + ["'PENDING_OPEN'"] + ["%s"] * 29)
+        values = ",".join(["%s"] * 4 + ["'INTENT'"] + ["%s"] * 29)
         self._write(f"""INSERT IGNORE INTO htx_trend_position(source_position_id,position_key,run_id,contract_code,status,side,
           contract_size,contract_volume,remaining_contract_volume,leverage,entry_signal,account_id,account_label,strategy_family,
           strategy_name,model_name,entry_gate_reason,primary_model,confirmation_models,policy_version,timeframe_profile,market_regime,
@@ -417,7 +525,7 @@ class HtxTrendMySqlRepository:
     def mirror_position(self, *, source_position_id: int, account_id: int) -> dict[str, Any] | None:
         return self._one("""SELECT id,position_key,contract_code,side,remaining_contract_volume,contract_size,status
           FROM htx_trend_position WHERE source_position_id=%s AND account_id=%s
-          AND status IN ('PENDING_OPEN','OPEN_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT') ORDER BY id DESC LIMIT 1""",
+          AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT') ORDER BY id DESC LIMIT 1""",
                          (source_position_id,account_id))
 
     def reconcile_order(self, *, position_id: int, leg: str, client_order_id: str, status: str, exchange_order_id: int | None,

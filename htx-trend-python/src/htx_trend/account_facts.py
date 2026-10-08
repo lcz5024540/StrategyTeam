@@ -19,6 +19,7 @@ class AccountFactConfig:
     depth_levels: int = 5
     margin_safety_ratio: Decimal = Decimal("1.20")
     minimum_available_margin: Decimal = Decimal("20")
+    configured_taker_fee_rate: Decimal = Decimal("0.0004")
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,8 +45,14 @@ class HtxAccountFactsAdapter:
     def snapshot(self, contract_code: str, side: TrendSide, book: OrderBook, *, active_position_count: int,
                  max_active_positions: int, reserved_notional_usdt: Decimal, risk_capacity_usdt: Decimal,
                  known_strategy_side: TrendSide | None = None) -> AccountSnapshot:
-        fees = self._client.swap_fee(contract_code)
-        fee = _taker_fee(fees)
+        # Java's HtxSwapFeeRateResolver preserves execution continuity with a
+        # labelled configured fallback when HTX omits the fee profile.
+        try:
+            fee = _taker_fee(self._client.swap_fee(contract_code))
+            fee_source = "HTX_ACCOUNT"
+        except Exception:
+            fee = self._config.configured_taker_fee_rate
+            fee_source = "CONFIGURED_FALLBACK"
         positions = self._client.positions(contract_code)
         orders = self._client.open_orders(contract_code)
         accounts = self._client.swap_account_info(contract_code)
@@ -59,13 +66,13 @@ class HtxAccountFactsAdapter:
         elif opposite > ZERO:
             external = TrendSide.SHORT if side is TrendSide.LONG else TrendSide.LONG
         margin = _available_margin(accounts)
-        facts = ExecutionFacts(actual_taker_fee_rate=fee, same_direction_open_order=bool(orders),
+        facts = ExecutionFacts(actual_taker_fee_rate=fee, contract_open_order=bool(orders),
             external_position_side=external, exchange_position_consistent=True,
             executable_depth_contracts=book.executable_contracts(side.value, self._config.depth_levels),
             available_margin_usdt=margin, leverage=Decimal(max(1, self._config.leverage)),
             active_position_count=active_position_count, max_active_positions=max_active_positions,
             reserved_notional_usdt=reserved_notional_usdt, risk_capacity_usdt=risk_capacity_usdt)
-        return AccountSnapshot(facts, "HTX_ACCOUNT", margin, len(orders), same, opposite)
+        return AccountSnapshot(facts, fee_source, margin, len(orders), same, opposite)
 
 
 def _decimal(row: dict[str, Any], *names: str) -> Decimal | None:

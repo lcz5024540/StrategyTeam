@@ -112,7 +112,7 @@ class HtxTrendMirrorFollower:
                 raise RuntimeError("HTX accepted mirror response lacks order id")
             self._repository.mark_order_accepted(position_id=position_id, leg="ENTRY", client_order_id=client_order_id,
                 exchange_order_id=order_id, exchange_client_order_id=_client_id(response), message="mirror entry accepted")
-            self._repository.mark_position_status(position_id=position_id, status="OPEN_SENT", message="mirror entry sent")
+            self._repository.mark_position_status(position_id=position_id, status="ENTRY_SENT", message="mirror entry sent")
             return MirrorResult(True, delta, position_id, "mirror entry accepted")
         except Exception as error:
             if position_id is not None:

@@ -49,6 +49,11 @@ def confirmation_models(candidate: ModelCandidate) -> str:
     The mapping intentionally uses evidence owned by the candidate; it does
     not reinterpret an unrelated prior order as confirmation.
     """
+    # A Java-combination candidate carries the exact policy evidence string.
+    # Do not reconstruct it from a lossy Python model label: Java has distinct
+    # DONCHIAN/FIB combinations such as BOX_BREAKOUT,DONCHIAN_BREAKOUT.
+    if candidate.policy_confirmations:
+        return candidate.policy_confirmations
     labels: list[str]
     if candidate.model is ModelCode.DONCHIAN_BREAKOUT:
         labels = ["BOX_BREAKOUT"]
@@ -65,12 +70,27 @@ def confirmation_models(candidate: ModelCandidate) -> str:
 
 
 def market_adjustment(candidate: ModelCandidate, context: MarketContext) -> Decimal:
-    """Equivalent role to Java ``MarketEntryRank``: rank only, never admit."""
-    if context.aligned(candidate.side):
-        return Decimal("4")
-    if context.opposed(candidate.side):
-        return Decimal("-8")
-    return ZERO
+    """Exact Java ``MarketEntryRank`` arithmetic; it ranks but never admits."""
+    # HtxTrendFollowingService constructs MarketEntryRank(8, 12, 2).  The
+    # model weight is part of the Java score contract, including MIXED.
+    weight = (Decimal("1.20") if candidate.model is ModelCode.DONCHIAN_BREAKOUT
+              else Decimal("1") if candidate.model is ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION
+              else Decimal("0.80"))
+    # Java creates an aligned side only when breadth and the separately
+    # calculated BTC/ETH multi-timeframe anchor classify the same direction.
+    anchor_side = (TrendSide.LONG if context.anchor_regime is MarketRegime.BROAD_UP
+                   else TrendSide.SHORT if context.anchor_regime is MarketRegime.BROAD_DOWN
+                   # Compatibility only for callers that build the old five-field
+                   # fact record. The live worker always supplies anchor_regime.
+                   else TrendSide.LONG if context.btc_anchor is TrendSide.LONG and context.eth_anchor is TrendSide.LONG
+                   else TrendSide.SHORT if context.btc_anchor is TrendSide.SHORT and context.eth_anchor is TrendSide.SHORT
+                   else TrendSide.FLAT)
+    aligned_side = context.breadth_side if context.breadth_side is anchor_side else TrendSide.FLAT
+    if aligned_side is TrendSide.FLAT:
+        return -(Decimal("2") * weight)
+    if candidate.side is aligned_side:
+        return Decimal("8") * weight
+    return -(Decimal("12") * weight)
 
 
 def sizing_multiplier(base_score: Decimal, regime: MarketRegime | str) -> Decimal:
@@ -103,7 +123,10 @@ def select_policy(candidates: Iterable[ModelCandidate], policies: Iterable[Strat
                 continue
             adjustment = market_adjustment(candidate, context)
             effective = min(Decimal("100"), max(ZERO, candidate.score + adjustment))
-            multiplier = sizing_multiplier(candidate.score, context.regime)
+            # Java combination sizing is based on the candidate's own local
+            # market state.  Cross-symbol breadth/anchor affects only rank;
+            # it is applied once later by HtxTrendFollowingService.sizingContext.
+            multiplier = sizing_multiplier(candidate.score, candidate.market_regime or context.regime)
             planned = min(policy.max_notional_usdt, policy.base_notional_usdt * multiplier)
             resolved.append(PolicySelection(candidate, policy, candidate.score, adjustment, effective,
                                             multiplier, planned, confirmations))

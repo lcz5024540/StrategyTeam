@@ -8,7 +8,8 @@ from dataclasses import replace
 
 from .account_facts import HtxAccountFactsAdapter
 from .credentials import materialize
-from .execution_service import ConfirmedEntryFill, ConfirmedReductionFill, HtxTrendEntryExecutor
+from .execution import ExecutionConfig
+from .execution_service import ConfirmedEntryFill, ConfirmedReductionFill, EntryExecutionConfig, HtxTrendEntryExecutor
 from .htx_v5 import HtxV5Client
 from .live import HtxLiveExecutor, LiveAuthority
 from .live_worker import LiveTrendWorker, LiveTrendWorkerConfig
@@ -16,14 +17,6 @@ from .market_data import HtxMarketData
 from .mirror import ConfirmedPrimaryFill, ConfirmedPrimaryReduction, HtxTrendMirrorFollower
 from .mysql_store import HtxTrendMySqlRepository, MySqlSettings, RuntimeInstance, connect
 from .strategy_platform import DisabledStrategyWorker, ExecutionMode, StrategySupervisor, TrendObservationWorker, TrendObserverConfig
-
-
-def _contracts_from_env() -> tuple[str, ...]:
-    return tuple(dict.fromkeys(item.strip().upper() for item in os.environ.get("COINSTRATEGY_CONTRACTS", "").split(",") if item.strip()))
-
-
-def _live_enabled() -> bool:
-    return os.environ.get("HTX_PYTHON_LIVE_EXECUTION_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
 
 
 def _account_client(repository: HtxTrendMySqlRepository, account_id: int, *, live: bool) -> HtxV5Client:
@@ -86,13 +79,13 @@ def main() -> None:
         if not instance.enabled:
             raise SystemExit(f"strategy instance is disabled: {args.strategy_instance}")
         family = instance.strategy_family.upper()
-        contracts = _contracts_from_env()
         if family == "TREND" and instance.execution_mode == ExecutionMode.OBSERVE:
+            contracts = tuple(dict.fromkeys(item.strip().upper() for item in os.environ.get("HTX_TREND_CONTRACTS", "").split(",") if item.strip()))
             market_client = HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.huobi.pro"))
             worker = TrendObservationWorker(instance, repository, HtxMarketData(market_client), TrendObserverConfig(contracts))
         elif family == "TREND" and instance.execution_mode == ExecutionMode.LIVE:
-            if not _live_enabled() or instance.account_id is None:
-                raise SystemExit("LIVE requires HTX_PYTHON_LIVE_EXECUTION_ENABLED=true and an account-bound runtime instance")
+            if instance.account_id is None:
+                raise SystemExit("LIVE trend instance requires an account-bound runtime instance")
             account = repository.trade_account(instance.account_id)
             if account is None or account.role != "PRIMARY":
                 raise SystemExit("LIVE trend instance must bind an enabled PRIMARY HTX account")
@@ -100,10 +93,11 @@ def main() -> None:
             market = HtxMarketData(private_client)
             entry_callback, reduction_callback = _mirror_callbacks(repository, instance, market)
             live = HtxLiveExecutor(private_client, LiveAuthority(True, str(account.account_id)), str(account.account_id))
+            entry_config = EntryExecutionConfig.from_env()
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
-                facts=HtxAccountFactsAdapter(private_client), executor=live,
-                on_confirmed_entry=entry_callback, on_confirmed_reduction=reduction_callback)
-            worker = LiveTrendWorker(instance, repository, market, entry, LiveTrendWorkerConfig(contracts))
+                facts=HtxAccountFactsAdapter(private_client), executor=live, execution=ExecutionConfig.from_env(),
+                config=entry_config, on_confirmed_entry=entry_callback, on_confirmed_reduction=reduction_callback)
+            worker = LiveTrendWorker(instance, repository, market, entry, LiveTrendWorkerConfig.from_env())
         elif family in {"CARRY_SINGLE", "CARRY_CROSS"}:
             worker = DisabledStrategyWorker(instance, repository)
         else:

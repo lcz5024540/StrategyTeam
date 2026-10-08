@@ -10,13 +10,14 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
+from os import environ
 from hashlib import sha256
 from typing import Any, Callable
 import time
 import uuid
 
 from .account_facts import HtxAccountFactsAdapter
-from .execution import ExecutionConfig, GateResult, evaluate_gate
+from .execution import ExecutionConfig, GateResult, PriorTrade, evaluate_gate
 from .htx_v5 import SwapOrderRequest
 from .live import HtxLiveExecutor
 from .market_data import ContractSpec, FundingRate, OrderBook
@@ -24,7 +25,8 @@ from .models import ModelCandidate, TrendSide
 from .policy import PolicySelection, StrategyPolicy, select_policy
 from .mysql_store import (HtxTrendMySqlRepository, LedgerEvent, PositionIntent,
                           RuntimeInstance, TradeAccount, TrendOrderIntent)
-from .strategy_context import CandidateTrendState, FibonacciQuality, MarketContext, evaluate_candidate_state
+from .strategy_context import (CandidateTrendState, EntryStateConfig, FibonacciQuality, MarketContext,
+                               evaluate_candidate_state, evaluate_counter_market)
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,9 +34,30 @@ class EntryExecutionConfig:
     leverage: int = 5
     entry_order_type: str = "market"
     margin_safety_ratio: Decimal = Decimal("1.20")
-    strong_quality_multiplier: Decimal = Decimal("1")
-    breadth_aligned_multiplier: Decimal = Decimal("1")
-    breadth_counter_multiplier: Decimal = Decimal("1")
+    # HtxTrendProperties defaults. These values remain configurable at worker
+    # construction, but Python must not silently use a second sizing policy.
+    strong_quality_multiplier: Decimal = Decimal("1.15")
+    breadth_aligned_multiplier: Decimal = Decimal("1.50")
+    breadth_counter_multiplier: Decimal = Decimal("0.50")
+    combination_mixed_market_multiplier: Decimal = Decimal("0.50")
+    min_adaptive_multiplier: Decimal = Decimal("0.25")
+    max_adaptive_multiplier: Decimal = Decimal("1.80")
+    max_active_positions: int = 1
+
+    @classmethod
+    def from_env(cls) -> "EntryExecutionConfig":
+        def dec(name: str, default: Decimal) -> Decimal:
+            return Decimal(environ.get(name, str(default)))
+        return cls(leverage=int(environ.get("HTX_TREND_LEVERAGE", str(cls.leverage))),
+                   entry_order_type="market",
+                   margin_safety_ratio=dec("HTX_CONTRACT_MARGIN_SAFETY_RATIO", cls.margin_safety_ratio),
+                   strong_quality_multiplier=dec("HTX_TREND_STRONG_QUALITY_POSITION_MULTIPLIER", cls.strong_quality_multiplier),
+                   breadth_aligned_multiplier=dec("HTX_TREND_MARKET_BREADTH_ALIGNED_POSITION_MULTIPLIER", cls.breadth_aligned_multiplier),
+                   breadth_counter_multiplier=dec("HTX_TREND_MARKET_BREADTH_COUNTER_POSITION_MULTIPLIER", cls.breadth_counter_multiplier),
+                   combination_mixed_market_multiplier=dec("HTX_TREND_COMBINATION_MIXED_MARKET_POSITION_MULTIPLIER", cls.combination_mixed_market_multiplier),
+                   min_adaptive_multiplier=dec("HTX_TREND_MIN_ADAPTIVE_POSITION_MULTIPLIER", cls.min_adaptive_multiplier),
+                   max_adaptive_multiplier=dec("HTX_TREND_MAX_ADAPTIVE_POSITION_MULTIPLIER", cls.max_adaptive_multiplier),
+                   max_active_positions=int(environ.get("HTX_TREND_MAX_ACTIVE_POSITIONS", str(cls.max_active_positions))))
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,13 +117,15 @@ class HtxTrendEntryExecutor:
                prior_trade=None, claimed_structure_keys: frozenset[str] = frozenset(),
                factor_snapshot_id: int | None = None, timeframe_profile: str = "INTRADAY_15M",
                now_epoch: int | None = None) -> EntrySubmission:
-        allocation = self._repository.capital_allocation(account_id=self._account.account_id,
-                                                         strategy_family=self._instance.strategy_family,
-                                                         strategy_name=self._instance.strategy_name)
-        limit = self._repository.account_risk_limit(self._account.account_id)
-        if allocation is None or limit is None:
-            gate = GateResult(False, "MODE", "missing enabled strategy allocation or account risk limit")
-            return EntrySubmission(False, gate, None, None, None, gate.reason)
+        # Java loads the latest completed trade before its cooldown gate.  Live
+        # Python used to leave this as None, which silently disabled cooldown.
+        if prior_trade is None:
+            latest_done = getattr(self._repository, "latest_done_trade", lambda **_: None)(
+                account_id=self._account.account_id, contract_code=contract.contract_code)
+            prior_trade = _prior_trade(latest_done)
+        # Java resolves only the enabled strategy-policy ledger here. Account
+        # allocation/reservation rows belong to Python's platform ledger and
+        # must not become an unmirrored admission gate.
         policies = tuple(StrategyPolicy(value.policy_code, value.policy_version, value.primary_model,
                                         value.confirmation_models, value.base_notional_usdt, value.max_notional_usdt,
                                         value.score_threshold, value.box_window_bars)
@@ -110,29 +135,35 @@ class HtxTrendEntryExecutor:
             gate = GateResult(False, "MODEL_POLICY", "no enabled Java-compatible policy matches candidate model, confirmations and score")
             return EntrySubmission(False, gate, None, None, None, gate.reason)
         policy = selections[0]
-        reserved = self._repository.active_risk_reservation_totals(self._account.account_id)
         momentum_quality = min(Decimal("100"), (candidate.score + adx) / Decimal("2"))
+        confirmations = candidate.policy_confirmations or ""
+        counter = evaluate_counter_market(side=candidate.side, context=market_context, model_score=candidate.score,
+                                          expected_r=candidate.expected_r, momentum_score=momentum_quality, adx=adx,
+                                          ema_fast=ema_fast, ema_slow=ema_slow, confirmations=confirmations,
+                                          config=EntryStateConfig(counter_enabled=self._execution.counter_market_strong_candidate_enabled))
         state = evaluate_candidate_state(candidate.score, candidate.expected_r, momentum_quality, candidate.side,
                                          ema_fast, ema_slow, adx, market_context,
-                                         candidate.model.value == "DONCHIAN_BREAKOUT" or any(model.value == "DONCHIAN_BREAKOUT" for model in candidate.confirmation_models))
+                                         counter_market_qualified=counter.qualified)
         adaptive_multiplier = self._sizing_multiplier(candidate, state, market_context)
         # Same sequence as Java: policy score multiplier first, then candidate/market sizing.
         total_multiplier = policy.sizing_multiplier * adaptive_multiplier
-        planned_notional = min(policy.policy.base_notional_usdt * total_multiplier, policy.policy.max_notional_usdt,
-                               allocation.max_notional_usdt, limit.max_notional_usdt)
+        planned_notional = min(policy.policy.base_notional_usdt * total_multiplier, policy.policy.max_notional_usdt)
         effective = replace(self._execution,
                             target_notional=planned_notional, max_notional=planned_notional,
                             margin_safety_ratio=self._config.margin_safety_ratio,
-                            require_execution_facts=True)
+                            require_execution_facts=True,
+                            java_policy_notional_sizing=True)
         snapshot = self._facts.snapshot(contract.contract_code,
                                         candidate.side, book, active_position_count=self._repository.active_position_count(account_id=self._account.account_id),
-                                        max_active_positions=min(allocation.max_active_positions, limit.max_active_positions),
-                                        reserved_notional_usdt=reserved.notional_usdt, risk_capacity_usdt=limit.max_notional_usdt)
+                                        max_active_positions=self._config.max_active_positions,
+                                        reserved_notional_usdt=Decimal("0"), risk_capacity_usdt=Decimal("0"))
         quality = FibonacciQuality.from_candles(recent_candles, candidate.side, atr, ema_fast)
         gate = evaluate_gate(candidate, period=period, now_epoch=int(time.time()) if now_epoch is None else now_epoch, atr=atr, order_book=book.top,
                              contract=contract, funding=funding, recent_candles=recent_candles, prior_trade=prior_trade,
                              market_context=market_context, candidate_state=state, fibonacci_quality=quality,
-                             execution_facts=snapshot.facts, claimed_structure_keys=claimed_structure_keys, config=effective)
+                             execution_facts=snapshot.facts, claimed_structure_keys=claimed_structure_keys,
+                             momentum_quality=momentum_quality, ema_fast=ema_fast, ema_slow=ema_slow, adx=adx,
+                             config=effective)
         if not gate.allowed:
             return EntrySubmission(False, gate, None, None, None, gate.reason)
         assert gate.price_plan is not None and gate.size_plan is not None
@@ -143,6 +174,19 @@ class HtxTrendEntryExecutor:
             leverage_gate = GateResult(False, "MARGIN_RISK", f"leverage switch failed: {type(error).__name__}",
                                       gate.price_plan, gate.size_plan)
             return EntrySubmission(False, leverage_gate, None, None, None, leverage_gate.reason)
+        structure_key = _entry_cycle_key(contract.contract_code, candidate.side, candidate.model, run_id,
+                                         candidate.source_breakout_time)
+        structure_claimed = False
+        if structure_key is not None:
+            claim = getattr(self._repository, "claim_entry_cycle", None)
+            if claim is None or not claim(structure_key=structure_key, contract_code=contract.contract_code,
+                                          timeframe=period, direction=candidate.side.value,
+                                          primary_model=candidate.model.value,
+                                          breakout_bar_time=candidate.source_breakout_time,
+                                          source_run_id=run_id):
+                structure_gate = GateResult(False, "COOLDOWN_STRUCTURE", "STRUCTURE_ALREADY_CONSUMED", gate.price_plan, gate.size_plan)
+                return EntrySubmission(False, structure_gate, None, None, None, structure_gate.reason)
+            structure_claimed = True
         position_key = f"python-trend-{uuid.uuid4()}"
         client_order_id = _numeric_client_order_id()
         reservation_key = sha256(f"{self._instance.instance_key}:{position_key}".encode()).hexdigest()[:160]
@@ -165,8 +209,9 @@ class HtxTrendEntryExecutor:
                 self._instance.strategy_family, self._instance.strategy_name, None, policy.confirmation_models,
                 policy.policy.policy_version, "; ".join(candidate.evidence), total_multiplier, sizing_reason, fee_rate,
                 estimated_entry_fee, estimated_close_fee, expected_net_after_fees))
-            self._repository.reserve_risk(reservation_key=reservation_key, instance=self._instance, position_key=position_key,
-                                          notional_usdt=gate.size_plan.notional, reason=f"entry {candidate.model.value} policy={policy.policy.policy_code}")
+            if structure_claimed:
+                self._repository.attach_entry_cycle_intent(structure_key=structure_key, source_run_id=run_id,
+                                                          position_id=position_id)
             request = _order_request(contract.contract_code, candidate.side, client_order_id, gate.size_plan.contracts,
                                      self._config.entry_order_type)
             self._repository.record_order_intent(TrendOrderIntent(position_id, position_key, run_id, contract.contract_code,
@@ -182,14 +227,16 @@ class HtxTrendEntryExecutor:
             self._repository.mark_order_accepted(position_id=position_id, leg="ENTRY", client_order_id=client_order_id,
                                                  exchange_order_id=exchange_id, exchange_client_order_id=_client_id(response),
                                                  message="entry accepted by exchange")
-            self._repository.mark_position_status(position_id=position_id, status="OPEN_SENT", message="entry sent")
+            self._repository.mark_position_status(position_id=position_id, status="ENTRY_SENT", message="entry sent")
             return EntrySubmission(True, gate, position_id, client_order_id, exchange_id, "entry accepted")
         except Exception as error:
             if position_id is not None:
                 self._repository.mark_order_rejected(position_id=position_id, leg="ENTRY", client_order_id=client_order_id,
                                                      message=f"entry rejected: {type(error).__name__}")
                 self._repository.mark_position_status(position_id=position_id, status="REJECTED", message=f"entry rejected: {type(error).__name__}")
-            self._repository.release_risk(reservation_key, f"entry failure: {type(error).__name__}")
+            if structure_claimed:
+                self._repository.abandon_entry_cycle(structure_key=structure_key,
+                                                     reason=f"entry failure: {type(error).__name__}")
             return EntrySubmission(False, gate, position_id, client_order_id, None, f"entry rejected: {type(error).__name__}")
 
     def reconcile(self, *, client_order_id: str, contract_code: str, position_id: int, leg: str,
@@ -213,6 +260,9 @@ class HtxTrendEntryExecutor:
             realized_profit=_decimal(order, "real_profit"), message="exchange reconciliation")
         if status == "FILLED" and filled > 0 and leg == "ENTRY":
             self._repository.mark_position_status(position_id=position_id, status="ACTIVE", message="entry filled")
+            mark_active = getattr(self._repository, "mark_entry_cycle_active", None)
+            if mark_active is not None:
+                mark_active(position_id=position_id)
             self._repository.record_ledger_event(LedgerEvent(f"python-open-fill:{position_id}:{client_order_id}", "OPEN_FILL",
                 self._account, self._instance.strategy_family, self._instance.strategy_name, model, run_id, factor_snapshot_id,
                 contract_code, position_id, None, client_order_id, side, execution_price_usdt=price, entry_price_usdt=price,
@@ -232,8 +282,9 @@ class HtxTrendEntryExecutor:
         elif status == "FILLED" and filled > 0 and leg in {"CLOSE", "PARTIAL_CLOSE"}:
             if leg == "CLOSE":
                 self._repository.mark_position_status(position_id=position_id, status="DONE", message="close filled")
-                if position_key:
-                    self._repository.release_risk(_reservation_key(self._instance, position_key), "confirmed full close")
+                mark_terminal = getattr(self._repository, "mark_entry_cycle_terminal", None)
+                if mark_terminal is not None:
+                    mark_terminal(position_id=position_id, reason="exchange confirmed full close")
             else:
                 self._repository.mark_position_status(position_id=position_id, status="ACTIVE", message="partial close filled")
             realized = _decimal(order, "real_profit")
@@ -264,12 +315,45 @@ class HtxTrendEntryExecutor:
         return result
 
     def _sizing_multiplier(self, candidate: ModelCandidate, state: CandidateTrendState, context: MarketContext) -> Decimal:
+        """Literal port of Java ``sizingContext`` for combination candidates."""
         multiplier = self._config.strong_quality_multiplier if state.strong else Decimal("1")
-        if context.aligned(candidate.side):
+        if context.breadth_aligned(candidate.side):
             multiplier *= self._config.breadth_aligned_multiplier
-        elif context.opposed(candidate.side):
+        elif context.breadth_opposed(candidate.side):
             multiplier *= self._config.breadth_counter_multiplier
-        return multiplier
+        else:
+            # Every candidate reaching this executor is a Java combination
+            # candidate; Java reduces mixed-market combinations rather than
+            # allowing Python's former neutral 1.0 multiplier.
+            multiplier *= self._config.combination_mixed_market_multiplier
+        return min(self._config.max_adaptive_multiplier,
+                   max(self._config.min_adaptive_multiplier, multiplier))
+
+
+def _entry_cycle_key(contract_code: str, side: TrendSide, model: str | object, run_id: str,
+                     breakout_bar_time: int | None) -> str | None:
+    """Match Java: only Fibonacci owns a persistent entry-cycle key."""
+    model_value = getattr(model, "value", str(model))
+    if model_value != "FIB_PULLBACK_CONTINUATION" or breakout_bar_time is None:
+        return None
+    return f"{contract_code}:{side.value}:{model_value}:ENTRY_CYCLE:{run_id}"
+
+
+def _prior_trade(row: dict[str, Any] | None):
+    if row is None:
+        return None
+    value = row.get("updated_at")
+    if isinstance(value, datetime):
+        closed_at = int(value.replace(tzinfo=value.tzinfo or UTC).timestamp())
+    else:
+        try:
+            closed_at = int(datetime.fromisoformat(str(value)).replace(tzinfo=UTC).timestamp())
+        except (TypeError, ValueError):
+            return None
+    realized = Decimal(str(row.get("realized_profit") or "0"))
+    entry_fee = Decimal(str(row.get("entry_fee") or "0"))
+    close_fee = Decimal(str(row.get("close_fee") or "0"))
+    return PriorTrade(str(row.get("contract_code") or ""), closed_at, realized - entry_fee - close_fee, row.get("message"))
 
 
 def _order_request(contract: str, side: TrendSide, client_order_id: str, volume: int, type_: str) -> SwapOrderRequest:

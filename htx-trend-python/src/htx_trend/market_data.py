@@ -158,7 +158,7 @@ class FundingRate:
 class HtxMarketData:
     """Public market adapter.  No private credential or execution path is used here."""
 
-    def __init__(self, client: HtxV5Client, *, close_grace_seconds: int = 3) -> None:
+    def __init__(self, client: HtxV5Client, *, close_grace_seconds: int = 10) -> None:
         self._client = client
         self._close_grace_seconds = close_grace_seconds
 

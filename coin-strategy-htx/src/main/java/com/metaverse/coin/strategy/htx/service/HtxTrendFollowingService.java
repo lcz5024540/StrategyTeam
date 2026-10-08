@@ -2411,12 +2411,7 @@ public class HtxTrendFollowingService {
         if (funding == null || funding.fundingRate() == null) {
             return "funding unavailable; skip directional entry";
         }
-        BigDecimal sideCost = side == TrendSide.LONG ? funding.fundingRate() : funding.fundingRate().negate();
-        if (sideCost.compareTo(maxCostRate) > 0) {
-            return "funding cost blocked side=" + side + " funding=" + funding.fundingRate()
-                    + " sideCost=" + sideCost + " max=" + maxCostRate;
-        }
-        return null;
+        return HtxTrendEntryExecutionContract.fundingCostGate(funding.fundingRate(), side, maxCostRate);
     }
 
     private String fundingCostExitReason(String contractCode, String side) {
@@ -2987,81 +2982,26 @@ public class HtxTrendFollowingService {
     }
 
     private long targetVolumeForNotional(BigDecimal entryPrice, BigDecimal contractSize, BigDecimal notional) {
-        if (!positive(entryPrice) || !positive(contractSize) || !positive(notional)
-                || notional.compareTo(properties.getMinQuoteNotional()) < 0) {
-            return 0L;
-        }
-        return notional.divide(entryPrice.multiply(contractSize), 0, RoundingMode.DOWN).longValue();
+        return HtxTrendEntryExecutionContract.policyVolume(entryPrice, contractSize, notional,
+                properties.getMinQuoteNotional());
     }
 
     private String expectedMoveGate(TrendSignal signal, BigDecimal entryPrice, BigDecimal spreadRate,
                                     BigDecimal takerFeeRate) {
-        if (!properties.isFeeProtectionEnabled() || !positive(signal.atr()) || !positive(entryPrice)) {
-            return null;
-        }
-        BigDecimal expectedMove = signal.atr().multiply(nonNegative(properties.getMinExpectedMoveAtrMultiplier()));
-        BigDecimal requiredMove = entryPrice.multiply(roundTripCostRate(spreadRate, takerFeeRate));
-        if (expectedMove.compareTo(requiredMove) < 0) {
-            return "expected move too small after fees expectedMove=" + expectedMove
-                    + " requiredMove=" + requiredMove + " atr=" + signal.atr()
-                    + " feeRate=" + nonNegative(takerFeeRate);
-        }
-        return null;
+        return HtxTrendEntryExecutionContract.expectedMoveGate(signal == null ? null : signal.atr(), entryPrice,
+                spreadRate, takerFeeRate, properties.isFeeProtectionEnabled(),
+                properties.getMinExpectedMoveAtrMultiplier(), properties.getMinNetProfitRate());
     }
 
     private String entryChaseGate(TrendSignal signal, BigDecimal entryPrice) {
-        if (signal == null || signal.side() == TrendSide.FLAT || !positive(entryPrice)
-                || !positive(signal.closePrice())) {
-            return null;
-        }
-        BigDecimal worseFill = signal.side() == TrendSide.LONG
-                ? entryPrice.subtract(signal.closePrice())
-                : signal.closePrice().subtract(entryPrice);
-        if (worseFill.signum() <= 0) {
-            return null;
-        }
-        BigDecimal maxChase = BigDecimal.ZERO;
-        BigDecimal atrMultiplier = nonNegative(properties.getMaxEntrySignalChaseAtrMultiplier());
-        if (atrMultiplier.signum() > 0 && positive(signal.atr())) {
-            maxChase = signal.atr().multiply(atrMultiplier);
-        }
-        BigDecimal chaseRate = nonNegative(properties.getMaxEntrySignalChaseRate());
-        if (chaseRate.signum() > 0) {
-            BigDecimal rateLimit = signal.closePrice().multiply(chaseRate);
-            maxChase = positive(maxChase) ? min(maxChase, rateLimit) : rateLimit;
-        }
-        if (!positive(maxChase) || worseFill.compareTo(maxChase) <= 0) {
-            return null;
-        }
-        BigDecimal chaseRateValue = worseFill.divide(signal.closePrice(), 18, RoundingMode.HALF_UP);
-        BigDecimal chaseAtr = positive(signal.atr())
-                ? worseFill.divide(signal.atr(), 18, RoundingMode.HALF_UP) : BigDecimal.ZERO;
-        return "entry price chased signal too far entryPrice=" + entryPrice
-                + " signalClose=" + signal.closePrice()
-                + " chase=" + worseFill
-                + " maxChase=" + maxChase
-                + " chaseRate=" + chaseRateValue
-                + " chaseAtr=" + chaseAtr;
+        return HtxTrendEntryExecutionContract.chaseGate(signal == null ? null : signal.side(),
+                signal == null ? null : signal.closePrice(), entryPrice, signal == null ? null : signal.atr(),
+                properties.getMaxEntrySignalChaseAtrMultiplier(), properties.getMaxEntrySignalChaseRate());
     }
 
     private String entrySignalFreshnessGate(TrendSignal signal) {
-        long maxAgeSeconds = properties.getMaxEntrySignalAgeSeconds();
-        if (maxAgeSeconds <= 0L) {
-            return null;
-        }
-        Long barTime = signal.barTime();
-        if (barTime == null || barTime <= 0L) {
-            return "entry signal bar time unavailable";
-        }
-        long closeEpoch = barTime + periodSeconds(properties.getPeriod());
-        long ageSeconds = Instant.now().getEpochSecond() - closeEpoch;
-        if (ageSeconds < 0L) {
-            return "entry signal bar not closed ageSeconds=" + ageSeconds;
-        }
-        if (ageSeconds > maxAgeSeconds) {
-            return "entry signal too stale ageSeconds=" + ageSeconds + " max=" + maxAgeSeconds;
-        }
-        return null;
+        return HtxTrendEntryExecutionContract.freshnessGate(signal == null ? null : signal.barTime(),
+                properties.getPeriod(), Instant.now().getEpochSecond(), properties.getMaxEntrySignalAgeSeconds());
     }
 
     private static long periodSeconds(String period) {

@@ -85,6 +85,12 @@ class ModelCandidate:
     structure_key: str = ""
     confirmation_models: tuple[ModelCode, ...] = ()
     conflict_evidence: tuple[str, ...] = ()
+    # The Java policy table matches a canonical evidence string, not merely a
+    # model name.  It is optional for legacy/research candidates only.
+    policy_confirmations: str | None = None
+    # ``HtxTrendCombinationCalculator.MarketState`` is local to the candidate
+    # K-line, and is intentionally distinct from cross-symbol market breadth.
+    market_regime: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -35,20 +35,34 @@ class MarketContext:
     breadth_ratio: Decimal = ZERO
     btc_anchor: TrendSide = TrendSide.FLAT
     eth_anchor: TrendSide = TrendSide.FLAT
+    # Java treats the BTC/ETH anchor as an independent multi-timeframe regime;
+    # keep it separate from breadth so the two cannot accidentally promote each other.
+    anchor_regime: MarketRegime = MarketRegime.MIXED
     volatility_expanding: bool = False
 
     @classmethod
     def neutral(cls) -> "MarketContext":
         return cls()
 
+    def breadth_aligned(self, side: TrendSide) -> bool:
+        return side is TrendSide.LONG and self.regime is MarketRegime.BROAD_UP or side is TrendSide.SHORT and self.regime is MarketRegime.BROAD_DOWN
+
+    def breadth_opposed(self, side: TrendSide) -> bool:
+        return side is TrendSide.LONG and self.regime is MarketRegime.BROAD_DOWN or side is TrendSide.SHORT and self.regime is MarketRegime.BROAD_UP
+
+    def anchor_aligned(self, side: TrendSide) -> bool:
+        return side is TrendSide.LONG and self.anchor_regime is MarketRegime.BROAD_UP or side is TrendSide.SHORT and self.anchor_regime is MarketRegime.BROAD_DOWN
+
+    def anchor_opposed(self, side: TrendSide) -> bool:
+        return side is TrendSide.LONG and self.anchor_regime is MarketRegime.BROAD_DOWN or side is TrendSide.SHORT and self.anchor_regime is MarketRegime.BROAD_UP
+
+    # Retained for existing callers. Java's trend-state evaluator deliberately
+    # uses breadth only; market anchor has its own score and confidence path.
     def aligned(self, side: TrendSide) -> bool:
-        return side is not TrendSide.FLAT and (
-            self.breadth_side is side or (self.btc_anchor is side and self.eth_anchor is side)
-        )
+        return self.breadth_aligned(side)
 
     def opposed(self, side: TrendSide) -> bool:
-        opposite = TrendSide.SHORT if side is TrendSide.LONG else TrendSide.LONG
-        return self.breadth_side is opposite and self.breadth_ratio >= Decimal("0.70")
+        return self.breadth_opposed(side)
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,18 +99,65 @@ class EntryStateConfig:
     counter_min_adx: Decimal = Decimal("25")
 
 
+@dataclass(frozen=True, slots=True)
+class CounterMarketDecision:
+    """Literal result of Java ``HtxTrendCounterMarketEntryGate``."""
+
+    counter_market: bool
+    qualified: bool
+    reason: str
+
+    @property
+    def blocks_entry(self) -> bool:
+        return self.counter_market and not self.qualified
+
+
+def evaluate_counter_market(*, side: TrendSide, context: MarketContext, model_score: Decimal,
+                            expected_r: Decimal, momentum_score: Decimal, adx: Decimal,
+                            ema_fast: Decimal, ema_slow: Decimal, confirmations: str,
+                            config: EntryStateConfig = EntryStateConfig()) -> CounterMarketDecision:
+    """Port Java's counter-market gate before candidate-state evaluation."""
+    if not context.breadth_opposed(side):
+        return CounterMarketDecision(False, False, "market direction aligned or mixed")
+    if not config.counter_enabled:
+        return CounterMarketDecision(True, False, "counter-market entry disabled")
+    checks = ((model_score >= config.counter_min_model_score, f"modelScore={model_score}<{config.counter_min_model_score}"),
+              (expected_r >= config.counter_min_expected_r, f"expectedR={expected_r}<{config.counter_min_expected_r}"),
+              (momentum_score >= config.counter_min_momentum_score, f"momentum={momentum_score}<{config.counter_min_momentum_score}"),
+              (adx >= config.counter_min_adx, f"adx={adx}<{config.counter_min_adx}"))
+    for passed, reason in checks:
+        if not passed:
+            return CounterMarketDecision(True, False, reason)
+    ema_aligned = ((side is TrendSide.LONG and ema_fast > ema_slow)
+                   or (side is TrendSide.SHORT and ema_fast < ema_slow))
+    if not ema_aligned:
+        return CounterMarketDecision(True, False, "EMA not aligned with counter-market direction")
+    labels = confirmations.upper()
+    if "DONCHIAN_BREAKOUT" not in labels and "BOX_BREAKOUT" not in labels:
+        return CounterMarketDecision(True, False, "missing independent breakout confirmation")
+    return CounterMarketDecision(True, True, "independent structure confirmed; counter-market sizing applies")
+
+
 def evaluate_candidate_state(model_score: Decimal, expected_r: Decimal, momentum_score: Decimal, side: TrendSide,
                              ema_fast: Decimal, ema_slow: Decimal, adx: Decimal, context: MarketContext,
-                             has_independent_structure: bool, config: EntryStateConfig = EntryStateConfig()) -> CandidateTrendState:
-    """Port of Java ``HtxTrendStateEvaluator`` and counter-market gate."""
+                             has_independent_structure: bool = False, config: EntryStateConfig = EntryStateConfig(),
+                             counter_market_qualified: bool | None = None) -> CandidateTrendState:
+    """Literal port of Java ``HtxTrendStateEvaluator.evaluateEntry``.
+
+    Counter-market eligibility is supplied by ``evaluate_counter_market`` so
+    the explicit counter gate and candidate-state calculation cannot drift.
+    """
     ema_aligned = (side is TrendSide.LONG and ema_fast > ema_slow) or (side is TrendSide.SHORT and ema_fast < ema_slow)
-    broad_aligned = context.aligned(side)
-    broad_opposed = context.opposed(side)
-    counter_qualified = broad_opposed and config.counter_enabled and all((
-        model_score >= config.counter_min_model_score, expected_r >= config.counter_min_expected_r,
-        momentum_score >= config.counter_min_momentum_score, adx >= config.counter_min_adx,
-        ema_aligned, has_independent_structure,
-    ))
+    broad_aligned = context.breadth_aligned(side)
+    broad_opposed = context.breadth_opposed(side)
+    if counter_market_qualified is None:
+        # Compatibility fallback for paper callers that predate the explicit
+        # counter-market decision. Live execution always supplies it.
+        counter_market_qualified = broad_opposed and config.counter_enabled and all((
+            model_score >= config.counter_min_model_score, expected_r >= config.counter_min_expected_r,
+            momentum_score >= config.counter_min_momentum_score, adx >= config.counter_min_adx,
+            ema_aligned, has_independent_structure,
+        ))
     expected_adjustment = Decimal("8") if expected_r >= config.min_expected_r else Decimal("-25")
     momentum_adjustment = Decimal("5") if momentum_score >= config.min_momentum_score else Decimal("-15")
     ema_adjustment = Decimal("5") if ema_aligned else Decimal("-25")
@@ -104,14 +165,17 @@ def evaluate_candidate_state(model_score: Decimal, expected_r: Decimal, momentum
     raw = model_score + expected_adjustment + momentum_adjustment + ema_adjustment + breadth_adjustment
     score = min(Decimal("100"), max(ZERO, raw))
     eligibility = (min(Decimal("100"), max(ZERO, model_score + expected_adjustment + momentum_adjustment + ema_adjustment))
-                   if broad_opposed and counter_qualified else score)
-    tradable = (ema_aligned and (not broad_opposed or counter_qualified) and expected_r >= config.min_expected_r
+                   if broad_opposed and counter_market_qualified else score)
+    tradable = (ema_aligned and (not broad_opposed or counter_market_qualified) and expected_r >= config.min_expected_r
                 and momentum_score >= config.min_momentum_score and eligibility >= config.min_trend_score)
+    # Java's extra TRENDING_UP/DOWN branch is unreachable here because this
+    # input is persisted breadth (BROAD_*/MIXED), so breadth alignment is the
+    # operative strong condition in both implementations.
     strong = tradable and not broad_opposed and score >= config.strong_trend_score and expected_r >= config.strong_expected_r and broad_aligned
     regime = "STRONG" if strong else "COUNTER_QUALIFIED" if tradable and broad_opposed else "QUALIFIED" if tradable else "WEAK"
     reason = (f"regime={regime}; model={model_score}; expected_r={expected_r}; momentum={momentum_score}; "
               f"ema_aligned={ema_aligned}; breadth={context.regime.value}; raw={raw}; score={eligibility}; "
-              f"counter_qualified={counter_qualified}")
+              f"counter_qualified={counter_market_qualified}")
     return CandidateTrendState(eligibility, tradable, strong, reason)
 
 
@@ -137,12 +201,17 @@ class FibonacciQuality:
         body_high, body_low = max(current.open, current.close), min(current.open, current.close)
         body = abs(current.close - current.open) / range_
         # A counter-direction wick is the wick against the intended continuation.
-        counter_wick = (current.high - body_high) / range_ if side is TrendSide.LONG else (body_low - current.low) / range_
-        values = [item.turnover for item in candles[-volume_lookback - 1:-1] if item.turnover is not None and item.turnover > ZERO]
-        current_turnover = current.turnover
+        # Java: for LONG the adverse wick is below the body, for SHORT it is
+        # above the body.  The previous Python implementation inverted this.
+        counter_wick = (body_low - current.low) / range_ if side is TrendSide.LONG else (current.high - body_high) / range_
+        def volume(item: Candle) -> Decimal | None:
+            return next((value for value in (item.amount, item.volume, item.turnover)
+                         if value is not None and value > ZERO), None)
+        values = [value for item in candles[-volume_lookback - 1:-1] if (value := volume(item)) is not None]
+        current_volume = volume(current)
         volume_ratio = None
-        if current_turnover is not None and current_turnover > ZERO and values:
-            volume_ratio = current_turnover / (sum(values, ZERO) / Decimal(len(values)))
+        if current_volume is not None and values:
+            volume_ratio = current_volume / (sum(values, ZERO) / Decimal(len(values)))
         range_to_atr = range_ / atr if atr > ZERO else None
         reclaimed = current.close >= ema_fast if side is TrendSide.LONG else current.close <= ema_fast
         return cls(volume_ratio, body, counter_wick, range_to_atr, reclaimed)

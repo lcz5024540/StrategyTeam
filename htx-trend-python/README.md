@@ -27,7 +27,7 @@ Python 的生产事实账本是现有 MySQL，不是本地 SQLite。Python 仓�
 
 每个实例对应一个独立 systemd 单元：[`deployment/systemd/coinstrategy-python-strategy@.service`](deployment/systemd/coinstrategy-python-strategy@.service)。实例、心跳与账户资金预算在 MySQL 的 `strategy_runtime_instance`、`strategy_runtime_heartbeat`、`strategy_capital_allocation` 中保存。趋势、单所 carry、跨所 carry 因此可分别启动、停止、回滚；共享账户只通过预算和最大并发仓位做硬约束。
 
-当前可安全运行的是 `OBSERVE` 趋势 worker：它并发读取公开行情、顺序写入同口径证据和心跳，但不会创建订单。启动前由部署流程提供数据库变量与 `COINSTRATEGY_CONTRACTS=BTC-USDT,ETH-USDT,...`，然后执行：
+当前可安全运行的是 `OBSERVE` 趋势 worker：它并发读取公开行情、顺序写入同口径证据和心跳，但不会创建订单。启动前由部署流程提供数据库变量与 Java 同源的 `HTX_TREND_CONTRACTS=BTC-USDT,ETH-USDT,...`，然后执行：
 
 ```bash
 python -m htx_trend.worker --strategy-instance <instance-key>
