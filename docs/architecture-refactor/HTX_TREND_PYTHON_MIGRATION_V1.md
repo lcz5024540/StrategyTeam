@@ -47,7 +47,9 @@ tags: [htx, trend, python, migration, execution]
 
 P0 已完成：新建 `htx-trend-python` 独立工程；`HtxV5Client` 已覆盖公开 K 线、盘口、合约信息、资金费，以及私有余额、持仓、开放委托、杠杆、下单、撤单和订单查询接口。签名、公开请求不带密钥、默认阻断订单、以及 V5 `reduce_only` 请求体均有单测。
 
-下一步是 P1：将 Java 运行时 K 线归档和公开行情输入移植到 Python，并以同一个冻结窗口与 Java 逐字段对齐；在此之前不连接生产密钥、不启动 Python 服务、更不改变 Java 的真实执行权。
+P1 已完成第一部分：Python 已新增只读的 `market_data` 与异步 `evidence` 模块。所有指标入口只接收已收盘且经过 grace 校验的 K 线；K 线按周期排序、去重、连续性校验。盘口、资金费率和合约精度也已转换为 typed 输入。每个实际计算窗口可异步写入本地、内容寻址的 K 线和快照 JSON；落盘队列满或写入失败只记诊断，绝不阻塞候选扫描或改变交易决定。
+
+下一步进入 P2：在同一冻结窗口移植 EMA/ATR/ADX/ROC、Donchian、Fibonacci、市场广度和多周期状态，并以 Java 结果逐字段对齐；在此之前不连接生产密钥、不启动 Python 服务、更不改变 Java 的真实执行权。
 
 ## 不可变约束
 
