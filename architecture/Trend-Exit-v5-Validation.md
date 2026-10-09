@@ -1,7 +1,7 @@
 ---
 title: 趋势退出 v5 实验与验收合同
 type: validation-contract
-status: planned-not-executed
+status: l0-in-progress
 created: 2026-10-09
 author: Codex / Ray
 ---
@@ -21,7 +21,7 @@ author: Codex / Ray
 - [x] 编写图示、实验与实施验收方案。
 - [x] 验证／自检：设计覆盖、链接、draw.io XML、差异和仓库结构检查，提交前完成。
 
-后续 M1–M10 均是未实施计划，不能因上述设计清单完成而标记研发已完成。下列测试 ID 是测试规格，不是已经存在或已通过的测试代码。
+M1 输入审计与 M2-M4 的首批 L0 纯核已于 2026-10-10 实现：Java/Python 共享 golden 已逐字段比较，Python 规则单测覆盖 T-01/T-03/T-04/T-05/T-06/T-07/T-08/T-09/T-10/T-11/T-12/T-13/T-16/T-24/T-31/T-32/T-34 的核心边界。其余测试 ID 仍是待实现规格；M5-M10、回放收益和任何上线结论均未完成。M1 报告见 [输入与账本审计](../docs/architecture-refactor/evidence/HTX_TREND_EXIT_V5_M1_INPUT_AUDIT_20261010.md)，G0 当前结果为 `INSUFFICIENT_EVIDENCE`。
 
 ## 2. 分层证据
 

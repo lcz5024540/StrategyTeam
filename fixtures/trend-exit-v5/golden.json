@@ -1,0 +1,70 @@
+{
+  "schema": "trend-exit-v5-golden-v1",
+  "contract": {
+    "account_id": 7,
+    "strategy_instance": "golden-primary",
+    "position_epoch": 1,
+    "model_id": "FIB_PULLBACK_CONTINUATION",
+    "structure_id": "fib:btc-usdt:15m:1",
+    "side": "LONG",
+    "timeframe_seconds": 900,
+    "first_fill_time_ms": 0,
+    "entry_price": "100",
+    "filled_contracts": 6,
+    "contract_size": "1",
+    "immutable_initial_stop": "95",
+    "failure_zone": "97",
+    "target_price": "110",
+    "atr_at_entry": "1",
+    "entry_fee": "0.10",
+    "engine_version": "trend-exit-v5",
+    "contract_schema": "trend-entry-thesis-v5",
+    "model_adapter_version": "trend-model-holding-v5",
+    "policy_hash": "0940acba353a4cf5ef7fc28b5d344af652481fd398314d465574dff562ed64ca"
+  },
+  "policy": {
+    "maturity_bars": 2,
+    "structure_failure_confirm_bars": 2,
+    "soft_breach_confirm_bars": 2,
+    "arm_atr_multiplier": "1.0",
+    "arm_cost_distance_multiple": "2.0",
+    "arm_net_cost_multiple": "2.0",
+    "noise_atr_multiplier": "1.0",
+    "noise_min_atr": "0.5",
+    "partial_fraction": "0.333333333333333333",
+    "partial_net_cost_multiple": "2.0",
+    "max_partial_stages": 1,
+    "no_extension_horizon_bars": 16,
+    "close_grace_ms": 0
+  },
+  "cases": [
+    {
+      "name": "unknown-owner-wins-over-stop",
+      "state": {"revision":0,"phase":"BUILDING","execution_state":"IDLE","last_bar_end_ms":null,"eligible_bars":0,"structure_failure_bars":0,"best_close":null,"active_soft_boundary":null,"active_boundary_id":null,"pending_soft_boundary":null,"pending_boundary_id":null,"soft_breach_bars":0,"armed_bar_end_ms":null,"partial_stage":0,"extension_achieved":false},
+      "event": {"event_key":"tick:1","kind":"TICK","event_time_ms":1,"reference_price":"95","confirmed_remaining_contracts":6,"data_quality":"COMPLETE","ownership_confirmed":false,"bar_open_ms":null,"bar_end_ms":null,"close_price":null,"atr_at_close":null,"current_net_pnl":"0","round_trip_cost":"0.10","model_state":"UNKNOWN","evidence_groups":[],"target_reached":false,"partial_net_pnl":null},
+      "expected_decision": {"action":"RECONCILE_REQUIRED","active_soft_boundary":null,"eligible_bars":0,"evidence_groups":[],"input_hash":"827e266cab6fe526d7511f6f7dbcf117cdf28af0e583b410d67e8a2fb7b9bfff","pending_soft_boundary":null,"phase":"BUILDING","reason_codes":["OWNERSHIP_UNCERTAIN"],"soft_breach_bars":0,"target_remaining_contracts":6},
+      "expected_state": {"active_boundary_id":null,"active_soft_boundary":null,"armed_bar_end_ms":null,"best_close":null,"eligible_bars":0,"execution_state":"UNKNOWN","extension_achieved":false,"last_bar_end_ms":null,"partial_stage":0,"pending_boundary_id":null,"pending_soft_boundary":null,"phase":"BUILDING","revision":1,"soft_breach_bars":0,"structure_failure_bars":0}
+    },
+    {
+      "name": "flat-first-eligible-bar-holds",
+      "state": {"revision":0,"phase":"BUILDING","execution_state":"IDLE","last_bar_end_ms":null,"eligible_bars":0,"structure_failure_bars":0,"best_close":null,"active_soft_boundary":null,"active_boundary_id":null,"pending_soft_boundary":null,"pending_boundary_id":null,"soft_breach_bars":0,"armed_bar_end_ms":null,"partial_stage":0,"extension_achieved":false},
+      "event": {"event_key":"bar:900000","kind":"CLOSED_BAR","event_time_ms":900000,"reference_price":"101","confirmed_remaining_contracts":6,"data_quality":"COMPLETE","ownership_confirmed":true,"bar_open_ms":0,"bar_end_ms":900000,"close_price":"101","atr_at_close":"1","current_net_pnl":"1","round_trip_cost":"0.10","model_state":"VALID","evidence_groups":["DIAGNOSTIC_FLAT"],"target_reached":false,"partial_net_pnl":null},
+      "expected_decision": {"action":"HOLD","active_soft_boundary":null,"eligible_bars":1,"evidence_groups":["DIAGNOSTIC_FLAT"],"input_hash":"73b9ae29f88820bf81c11e630dcb9a77c663df9e2d9c9832e061dc148a1ef691","pending_soft_boundary":null,"phase":"BUILDING","reason_codes":["SOFT_MATURITY_NOT_REACHED"],"soft_breach_bars":0,"target_remaining_contracts":6},
+      "expected_state": {"active_boundary_id":null,"active_soft_boundary":null,"armed_bar_end_ms":null,"best_close":"101","eligible_bars":1,"execution_state":"IDLE","extension_achieved":false,"last_bar_end_ms":900000,"partial_stage":0,"pending_boundary_id":null,"pending_soft_boundary":null,"phase":"BUILDING","revision":1,"soft_breach_bars":0,"structure_failure_bars":0}
+    },
+    {
+      "name": "mature-bar-stages-boundary",
+      "state": {"revision":1,"phase":"BUILDING","execution_state":"IDLE","last_bar_end_ms":900000,"eligible_bars":1,"structure_failure_bars":0,"best_close":"101","active_soft_boundary":null,"active_boundary_id":null,"pending_soft_boundary":null,"pending_boundary_id":null,"soft_breach_bars":0,"armed_bar_end_ms":null,"partial_stage":0,"extension_achieved":false},
+      "event": {"event_key":"bar:1800000","kind":"CLOSED_BAR","event_time_ms":1800000,"reference_price":"102","confirmed_remaining_contracts":6,"data_quality":"COMPLETE","ownership_confirmed":true,"bar_open_ms":900000,"bar_end_ms":1800000,"close_price":"102","atr_at_close":"1","current_net_pnl":"1","round_trip_cost":"0.10","model_state":"VALID","evidence_groups":[],"target_reached":false,"partial_net_pnl":null},
+      "expected_decision": {"action":"UPDATE_SOFT_BOUNDARY","active_soft_boundary":null,"eligible_bars":2,"evidence_groups":[],"input_hash":"0fa85e82f74f0b23a547d2e1daae71c8bb4a7026a96488d1d2997e2276f52e43","pending_soft_boundary":"101.0","phase":"ESTABLISHED","reason_codes":["SOFT_BOUNDARY_STAGED_FOR_NEXT_BAR"],"soft_breach_bars":0,"target_remaining_contracts":6},
+      "expected_state": {"active_boundary_id":null,"active_soft_boundary":null,"armed_bar_end_ms":1800000,"best_close":"102","eligible_bars":2,"execution_state":"IDLE","extension_achieved":true,"last_bar_end_ms":1800000,"partial_stage":0,"pending_boundary_id":"0e5a3b9aa674ed2d407a90a6cf0dead2","pending_soft_boundary":"101.0","phase":"ESTABLISHED","revision":2,"soft_breach_bars":0,"structure_failure_bars":0}
+    },
+    {
+      "name": "confirmed-boundary-and-independent-failure-closes",
+      "state": {"revision":3,"phase":"ESTABLISHED","execution_state":"IDLE","last_bar_end_ms":2700000,"eligible_bars":3,"structure_failure_bars":0,"best_close":"102","active_soft_boundary":"101","active_boundary_id":"boundary-101","pending_soft_boundary":null,"pending_boundary_id":null,"soft_breach_bars":1,"armed_bar_end_ms":1800000,"partial_stage":0,"extension_achieved":true},
+      "event": {"event_key":"bar:3600000","kind":"CLOSED_BAR","event_time_ms":3600000,"reference_price":"100.5","confirmed_remaining_contracts":6,"data_quality":"COMPLETE","ownership_confirmed":true,"bar_open_ms":2700000,"bar_end_ms":3600000,"close_price":"100.5","atr_at_close":"1","current_net_pnl":"0.4","round_trip_cost":"0.10","model_state":"VALID","evidence_groups":["E-H","DIAGNOSTIC_FLAT","E-H"],"target_reached":false,"partial_net_pnl":null},
+      "expected_decision": {"action":"FULL_CLOSE","active_soft_boundary":"101","eligible_bars":4,"evidence_groups":["DIAGNOSTIC_FLAT","E-H"],"input_hash":"afe13d29bc1ea1c252c068accef9d33feb989edb7850f78a910d4c425830983e","pending_soft_boundary":null,"phase":"ESTABLISHED","reason_codes":["CONFIRMED_TREND_FAILURE"],"soft_breach_bars":2,"target_remaining_contracts":0},
+      "expected_state": {"active_boundary_id":"boundary-101","active_soft_boundary":"101","armed_bar_end_ms":1800000,"best_close":"102","eligible_bars":4,"execution_state":"IDLE","extension_achieved":true,"last_bar_end_ms":3600000,"partial_stage":0,"pending_boundary_id":null,"pending_soft_boundary":null,"phase":"ESTABLISHED","revision":4,"soft_breach_bars":2,"structure_failure_bars":0}
+    }
+  ]
+}

@@ -80,7 +80,7 @@ class PaperTrendRuntime:
                 "structure_key": selected.structure_key, "confirmation_models": [item.value for item in selected.confirmation_models],
                 "initial_stop": str(selected.invalidation_price), "invalidation": str(selected.invalidation_price),
                 "structure_target": str(selected.target_low), "contract_size": str(contract.contract_size),
-                "entry_fee": str(entry_price * Decimal(gate.size_plan.contracts) * Decimal("0.0004")),
+                "entry_fee": str(entry_price * contract.contract_size * Decimal(gate.size_plan.contracts) * Decimal("0.0004")),
                 "highest": str(entry_price), "lowest": str(entry_price), "protection": None,
                 "trailing_armed_at": None, "trailing_arm_reason": None, "max_favorable_r": "0"})
             if self._mirror_account_id:
@@ -113,7 +113,7 @@ class PaperTrendRuntime:
         model = ModelCode(context["model"])
         contract_size = Decimal(context["contract_size"])
         gross = (reference_price - position.entry_price) * contract_size * position.quantity if side.value == "LONG" else (position.entry_price - reference_price) * contract_size * position.quantity
-        estimated_close_fee = reference_price * Decimal(position.quantity) * Decimal("0.0004")
+        estimated_close_fee = reference_price * contract_size * Decimal(position.quantity) * Decimal("0.0004")
         decision = decide(ExitInput(model, side, position.quantity, contract_size, position.entry_price,
             Decimal(context["initial_stop"]), Decimal(context["invalidation"]), Decimal(context["structure_target"]),
             reference_price, Decimal(context["protection"]) if context.get("protection") else None, highest_price, lowest_price,

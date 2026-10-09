@@ -60,3 +60,27 @@ def test_v4_paper_exit_closes_primary_and_mirror_from_same_decision(tmp_path) ->
     assert decision.action.value == "FULL_CLOSE"
     assert ledger.position(primary.position_id).status == ledger.position(mirror.position_id).status == "CLOSED"
     ledger.close()
+
+
+def test_paper_exit_fee_uses_contract_size(monkeypatch, tmp_path) -> None:
+    database, schema = tmp_path / "fee.sqlite", Path(__file__).parents[1] / "sql" / "schema.sql"
+    TrendLedger.initialize(database, schema)
+    ledger = TrendLedger(database); ledger.account(Account("main", "Main", "PAPER"))
+    exchange = PaperExchange(ledger); now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    position = exchange.open_position("main", "BTC-USDT", "LONG", 2, Decimal("100"), now, "open")
+    ledger.save_position_context(position.position_id, {"model":"FIB_PULLBACK_CONTINUATION","contract_size":"0.01",
+        "initial_stop":"95","invalidation":"94","structure_target":"110","entry_fee":"0.0008",
+        "highest":"101","lowest":"99","max_favorable_r":"0"})
+    captured={}
+    def capture(value):
+        captured['input']=value
+        from htx_trend.exits import decide_v4
+        return decide_v4(value)
+    monkeypatch.setattr('htx_trend.runtime.decide',capture)
+    from htx_trend.models import TrendSide
+    PaperTrendRuntime(ledger,exchange,account_id='main').manage(run_id='fee',position_id=position.position_id,
+        reference_price=Decimal('101'),highest_price=Decimal('101'),lowest_price=Decimal('99'),atr=Decimal('2'),
+        signal_side=TrendSide.LONG,ema_fast=Decimal('101'),ema_slow=Decimal('100'),major_timeframe_opposition=0,
+        market_context_opposes=False,at=now)
+    assert captured['input'].estimated_close_fee==Decimal('101')*Decimal('0.01')*2*Decimal('0.0004')
+    ledger.close()
