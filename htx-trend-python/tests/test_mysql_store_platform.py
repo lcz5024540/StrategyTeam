@@ -77,7 +77,7 @@ def test_mysql_repository_writes_parameterized_execution_records_without_ddl() -
 def test_schema_validation_is_read_only() -> None:
     connection = Connection()
     HtxTrendMySqlRepository(connection).validate_runtime_schema()
-    assert len(connection.queries) == 14
+    assert any("python_trend_exit_state" in query for query, _ in connection.queries)
     assert all(query.startswith("SELECT") for query, _ in connection.queries)
 
 

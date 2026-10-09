@@ -18,6 +18,22 @@ def test_replay_marks_small_window_as_insufficient_without_fake_performance() ->
     assert report.rows[0].candidates == ()
 
 
+def test_replay_never_substitutes_entry_candles_for_higher_timeframe() -> None:
+    candles = tuple(Candle(900 * index, Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"))
+                    for index in range(1, 161))
+    entry = KlineWindow("BTC-USDT", "15min", candles, 160)
+    missing = replay_report([ReplaySnapshot("entry", "ENTRY_SCAN", entry, "run", None)])
+    assert missing.complete_windows == 0
+    assert missing.rows[0].integrity == "MISSING_TREND_WINDOW"
+
+    trend = KlineWindow("BTC-USDT", "60min", tuple(Candle(140400 - (159 - index) * 3600,
+        Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100")) for index in range(160)), 160)
+    paired = replay_report([ReplaySnapshot("entry", "ENTRY_SCAN", entry, "run", None),
+                            ReplaySnapshot("trend", "ENTRY_SCAN", trend, "run", None)])
+    assert paired.complete_windows == 1
+    assert paired.schema == "htx-trend-python-replay-v2"
+
+
 def test_parity_comparator_reports_only_real_difference() -> None:
     assert compare_json({"side": "LONG", "score": "80"}, {"side": "LONG", "score": "80"}) == []
     diff = compare_json({"side": "LONG"}, {"side": "SHORT"})

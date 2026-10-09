@@ -14,6 +14,7 @@ from htx_trend.htx_v5 import HtxV5Client, LiveTradingDisabled, SwapOrderRequest
 
 def test_public_kline_request_has_no_credentials() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "api.hbdm.com"
         assert request.url.path == "/linear-swap-ex/market/history/kline"
         assert dict(request.url.params) == {"contract_code": "BTC-USDT", "period": "15min", "size": "200"}
         assert "AccessKeyId" not in request.url.params

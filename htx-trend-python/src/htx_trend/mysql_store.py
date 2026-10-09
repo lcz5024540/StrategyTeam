@@ -231,7 +231,9 @@ class LedgerEvent:
 
 
 class HtxTrendMySqlRepository:
-    def __init__(self, connection: Connection) -> None: self._connection = connection
+    def __init__(self, connection: Connection) -> None:
+        self._connection = connection
+        self._in_transaction = False
     def close(self) -> None: self._connection.close()
 
     def validate_runtime_schema(self) -> None:
@@ -243,7 +245,7 @@ class HtxTrendMySqlRepository:
         for table in ("strategy_runtime_instance", "strategy_runtime_heartbeat", "strategy_capital_allocation",
                       "htx_trade_account", "htx_trend_signal", "htx_trend_candidate_signal", "htx_trend_factor_snapshot",
                       "htx_trend_position", "htx_trend_order", "htx_trend_exit_decision", "coin_strategy_ledger_event",
-                      "strategy_account_risk_limit", "strategy_risk_reservation", "htx_trend_structure_lifecycle"):
+                      "strategy_account_risk_limit", "strategy_risk_reservation", "htx_trend_structure_lifecycle", "python_trend_exit_state"):
             self._one(f"SELECT 1 AS present FROM {table} LIMIT 1", ())
 
     def enabled_trend_accounts(self) -> list[TradeAccount]:
@@ -469,7 +471,7 @@ class HtxTrendMySqlRepository:
           sizing_multiplier,sizing_reason,entry_fee_rate,estimated_entry_fee,estimated_close_fee,expected_net_after_fees)
           VALUES({values})""",
           (intent.source_position_id,intent.position_key,intent.run_id,intent.contract_code,intent.side,intent.contract_size,
-           intent.contract_volume,intent.contract_volume,intent.leverage,_clip(intent.entry_signal,512),intent.account.account_id,
+           intent.contract_volume,0,intent.leverage,_clip(intent.entry_signal,512),intent.account.account_id,
            intent.account.account_label,intent.strategy_family,intent.strategy_name,intent.primary_model,
            _clip(intent.entry_gate_reason,1024),intent.primary_model,intent.confirmation_models,intent.policy_version,
            intent.timeframe_profile,intent.market_regime,intent.factor_snapshot_id,_clip(intent.entry_hypothesis,1024) if intent.entry_hypothesis else None,
@@ -509,18 +511,28 @@ class HtxTrendMySqlRepository:
         self._write("""UPDATE htx_trend_order SET status='REJECTED',message=%s,updated_at=CURRENT_TIMESTAMP(3)
           WHERE position_id=%s AND leg=%s AND client_order_id=%s""", (_clip(message,512),position_id,leg,client_order_id))
 
+    def mark_order_unknown(self, *, position_id: int, leg: str, client_order_id: str, message: str) -> None:
+        self._write("UPDATE htx_trend_order SET status='UNKNOWN',message=%s,updated_at=CURRENT_TIMESTAMP(3) "
+                    "WHERE position_id=%s AND leg=%s AND client_order_id=%s",
+                    (_clip(message,512),position_id,leg,client_order_id))
+
+    def apply_exchange_order(self, **values: Any) -> None:
+        from .order_accounting import apply_exchange_order
+        apply_exchange_order(self, **values)
+
     def mark_position_status(self, *, position_id: int, status: str, message: str) -> None:
         self._write("UPDATE htx_trend_position SET status=%s,message=%s,updated_at=CURRENT_TIMESTAMP(3) WHERE id=%s",
                     (status,_clip(message,1024),position_id))
 
-    def pending_orders(self, *, account_id: int) -> list[dict[str, Any]]:
+    def pending_orders(self, *, account_id: int, strategy_family: str = "TREND", strategy_name: str = "HTX_TREND_V1") -> list[dict[str, Any]]:
         """Recovery input only; no worker changes a row without exchange confirmation."""
         return self._all("""SELECT o.id,o.position_id,o.position_key,o.run_id,o.contract_code,o.leg,o.trend_side,o.order_side,
           o.position_side,o.reduce_only,o.client_order_id,o.exchange_order_id,o.request_volume,o.status,o.account_id,
           o.account_label,o.strategy_family,o.strategy_name,o.model_name,o.factor_snapshot_id,o.timeframe_profile
           ,p.contract_size FROM htx_trend_order o JOIN htx_trend_position p ON p.id=o.position_id
-          WHERE o.account_id=%s AND o.status IN ('INTENT','ACCEPTED','PARTIALLY_FILLED')
-          ORDER BY o.created_at""", (account_id,))
+          WHERE o.account_id=%s AND o.strategy_family=%s AND o.strategy_name=%s
+          AND o.status IN ('INTENT','ACCEPTED','PARTIALLY_FILLED','UNKNOWN')
+          ORDER BY o.created_at""", (account_id,strategy_family,strategy_name))
 
     def mirror_position(self, *, source_position_id: int, account_id: int) -> dict[str, Any] | None:
         return self._one("""SELECT id,position_key,contract_code,side,remaining_contract_volume,contract_size,status
@@ -608,13 +620,33 @@ class HtxTrendMySqlRepository:
            exit_phase,suggested_action,executed_action,_clip(block_reason,512) if block_reason else None,reference_price,
            protection_price,current_net_pnl,max_favorable_r,target_remaining,json.dumps(evidence,default=str,sort_keys=True)))
 
+    def managed_positions(self, instance: RuntimeInstance) -> list[dict[str, Any]]:
+        return self._all("""SELECT * FROM htx_trend_position WHERE account_id=%s AND strategy_family=%s
+          AND strategy_name=%s AND source_position_id IS NULL
+          AND status IN ('ACTIVE','ENTRY_SENT','CLOSE_SENT','PARTIAL_CLOSE_SENT','UNKNOWN') ORDER BY id""",
+          (instance.account_id,instance.strategy_family,instance.strategy_name))
+
+    def exit_state(self, position_id: int) -> dict[str, Any]:
+        row = self._one("SELECT state_json FROM python_trend_exit_state WHERE position_id=%s", (position_id,))
+        return json.loads(row['state_json']) if row else {}
+
+    def save_exit_state(self, position_id: int, state: dict[str, Any], decision) -> None:
+        self._write("""INSERT INTO python_trend_exit_state(position_id,state_json) VALUES(%s,%s)
+          ON DUPLICATE KEY UPDATE state_json=VALUES(state_json),updated_at=CURRENT_TIMESTAMP(3)""",
+          (position_id,json.dumps(state,default=str,sort_keys=True)))
+        self._write("""UPDATE htx_trend_position SET highest_price=%s,lowest_price=%s,profit_protection_price=%s,
+          trailing_armed_at=%s,trailing_arm_reason=%s,max_favorable_r=%s,exit_phase=%s WHERE id=%s""",
+          (state['highest'],state['lowest'],decision.protection_price,decision.trailing_armed_at,
+           decision.trailing_arm_reason,decision.max_favorable_r,decision.phase.value,position_id))
+
     def heartbeat(self, *, instance_key: str, status: str, detail: str, candidate_count: int, active_position_count: int) -> None:
         self._write("INSERT INTO strategy_runtime_heartbeat(instance_key,heartbeat_at,status,detail,candidate_count,active_position_count) VALUES(%s,CURRENT_TIMESTAMP(3),%s,%s,%s,%s)",
                     (instance_key,status,_clip(detail,1024),candidate_count,active_position_count))
 
     def _write(self, query: str, params: tuple[Any, ...]) -> None:
         with self._connection.cursor() as cursor: cursor.execute(query, params)
-        self._connection.commit()
+        if not self._in_transaction:
+            self._connection.commit()
     def _one(self, query: str, params: tuple[Any, ...]) -> dict[str, Any] | None:
         with self._connection.cursor() as cursor: cursor.execute(query, params); return cursor.fetchone()
     def _all(self, query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:

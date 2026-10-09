@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#101418"/>
+  <rect x="32" y="32" width="1216" height="656" rx="14" fill="#171d23" stroke="#39434d" stroke-width="2"/>
+  <circle cx="68" cy="67" r="8" fill="#ff605c"/><circle cx="94" cy="67" r="8" fill="#ffbd44"/><circle cx="120" cy="67" r="8" fill="#00ca4e"/>
+  <g font-family="Menlo, Monaco, monospace" font-size="25" fill="#d8dee9">
+    <text x="62" y="126" fill="#8fbcbb">HTX Python live safety validation · 2026-10-09</text>
+    <text x="62" y="180">$ .venv/bin/python -m pytest -q</text>
+    <text x="62" y="222" fill="#a3be8c">99 passed in 0.13s</text>
+    <text x="62" y="280">$ JAVA_HOME=JDK17 mvn -q -pl coin-strategy-htx -am test</text>
+    <text x="62" y="322" fill="#a3be8c">exit 0</text>
+    <text x="62" y="380">$ python -m compileall -q src tests</text>
+    <text x="62" y="422" fill="#a3be8c">exit 0</text>
+    <text x="62" y="480">$ HtxV5Client().history_kline("BTC-USDT", "15min", 2)</text>
+    <text x="62" y="522" fill="#a3be8c">{"rows": 2, "host": "api.hbdm.com"}</text>
+    <text x="62" y="580">$ git diff --check  # draw.io XML parsed separately</text>
+    <text x="62" y="622" fill="#a3be8c">exit 0 · drawio_xml=ok</text>
+    <text x="62" y="662" font-size="20" fill="#ebcb8b">Pending: real MySQL GET_LOCK race + frozen exit parity</text>
+  </g>
+</svg>

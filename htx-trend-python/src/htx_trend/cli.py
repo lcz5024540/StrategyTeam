@@ -31,6 +31,9 @@ def main() -> None:
     if args.command == "dataset-replay":
         print(json.dumps(to_json(replay_frozen_contract(args.data_dir, args.contract, entry_period=args.entry_period, trend_period=args.trend_period)), ensure_ascii=False)); return
     java, python = json.loads(args.java.read_text()), json.loads(args.python.read_text())
-    print(json.dumps({"schema": "htx-java-python-parity-v1", "differences": compare_json(java, python)}, ensure_ascii=False, indent=2))
+    differences = compare_json(java, python)
+    print(json.dumps({"schema": "htx-java-python-parity-v1", "differences": differences}, ensure_ascii=False, indent=2))
+    if differences:
+        raise SystemExit(1)
 
 if __name__ == "__main__": main()
