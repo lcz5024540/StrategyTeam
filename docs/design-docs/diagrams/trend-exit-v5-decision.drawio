@@ -1,0 +1,80 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" version="24.7.17">
+  <diagram id="trend-exit-v5-decision" name="图11-2 · 双时钟与唯一动作仲裁">
+    <mxGraphModel dx="1400" dy="1600" grid="1" gridSize="10" page="1" pageWidth="1400" pageHeight="1800">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="图11-2 · 双时钟与唯一动作仲裁" style="text;html=0;align=center;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="20" width="1280" height="50" />
+        </mxCell>
+        <mxCell id="event" value="有效事件 + 入场合同 + prior state" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="440" y="100" width="280" height="100" />
+        </mxCell>
+        <mxCell id="quality" value="归属/关键事实可靠？" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;shape=rhombus;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="440" y="250" width="280" height="140" />
+        </mxCell>
+        <mxCell id="unknown" value="UNKNOWN / 禁新仓&#10;保留有效原生保护并对账" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="920" y="270" width="280" height="100" />
+        </mxCell>
+        <mxCell id="hard" value="初始止损 / 明确硬风险？" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;shape=rhombus;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="440" y="460" width="280" height="140" />
+        </mxCell>
+        <mxCell id="close" value="硬风险 FULL_CLOSE&#10;不等待软成熟期" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="920" y="480" width="280" height="100" />
+        </mxCell>
+        <mxCell id="bar" value="新的入场后完整bar？" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;shape=rhombus;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="440" y="680" width="280" height="140" />
+        </mxCell>
+        <mxCell id="hold" value="HOLD / EXIT_WATCH&#10;不累加确认、不发软订单" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="900" width="280" height="100" />
+        </mxCell>
+        <mxCell id="soft" value="模型评估 + 上一有效软线&#10;成熟 / 连续确认 / 独立证据" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="440" y="900" width="280" height="120" />
+        </mxCell>
+        <mxCell id="arbiter" value="按R1–R9唯一仲裁&#10;目标剩余量 / reason / input hash" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="850" y="1080" width="280" height="120" />
+        </mxCell>
+        <mxCell id="next" value="更新候选软线&#10;下一个完整bar才生效" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="440" y="1100" width="280" height="100" />
+        </mxCell>
+        <mxCell id="e0" value="检查" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="event" target="quality">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e1" value="否" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="quality" target="unknown">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e2" value="是" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="quality" target="hard">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e3" value="是" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="hard" target="close">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e4" value="否" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="hard" target="bar">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e5" value="否" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="bar" target="hold">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e6" value="是" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="bar" target="soft">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e7" value="证据不足" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="soft" target="hold">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e8" value="满足明确动作条件" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="soft" target="arbiter">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e9" value="软状态推进" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="soft" target="next">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e10" value="最高风险优先" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="close" target="arbiter">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="legend" value="图例：蓝=决策组件；绿=有效推进；红=风险/执行；黄=条件；紫=持久化；橙=外部事实。箭头为事实或动作流。设计草案，未部署。" style="text;html=0;align=center;whiteSpace=wrap;fontSize=12;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="1390" width="1280" height="60" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,68 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" version="24.7.17">
+  <diagram id="trend-exit-v5-rollout" name="图11-4 · 晋级、所有权切换与回滚">
+    <mxGraphModel dx="1400" dy="1600" grid="1" gridSize="10" page="1" pageWidth="1400" pageHeight="1800">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="图11-4 · 晋级、所有权切换与回滚" style="text;html=0;align=center;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="20" width="1280" height="50" />
+        </mxCell>
+        <mxCell id="design" value="设计与manifest冻结&#10;版本 / 数据 / 参数 / 门槛" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="90" y="140" width="280" height="100" />
+        </mxCell>
+        <mxCell id="logic" value="合同与双语言fixture通过&#10;并发 / 重启 / 费用 / 硬保护" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="500" y="140" width="280" height="100" />
+        </mxCell>
+        <mxCell id="economic" value="独立留出 + 完整组合实验&#10;净收益 / 回撤 / 成本 / 样本" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="910" y="140" width="280" height="100" />
+        </mxCell>
+        <mxCell id="observe" value="OBSERVE → PAPER&#10;独立状态；无真实订单权限" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="910" y="410" width="280" height="100" />
+        </mxCell>
+        <mxCell id="approval" value="明确账户/模型/预算批准&#10;原生保护与回滚演练通过" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="910" y="680" width="280" height="120" />
+        </mxCell>
+        <mxCell id="canary" value="空仓/在途收敛后CANARY&#10;单一执行权，新仓绑定v5" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="500" y="900" width="280" height="120" />
+        </mxCell>
+        <mxCell id="fail" value="任何执行安全断言失败&#10;冻结新入场、保持有效风险管理者" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="90" y="900" width="280" height="120" />
+        </mxCell>
+        <mxCell id="drain" value="查订单/实际余量/保护单&#10;v5旧仓由兼容管理器管理" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="90" y="1130" width="280" height="120" />
+        </mxCell>
+        <mxCell id="rollback" value="空仓且无在途后回退新入场&#10;非空仓不热切v4、不盲回旧JAR" style="rounded=1;whiteSpace=wrap;html=0;align=center;verticalAlign=middle;spacing=10;fontSize=14;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="500" y="1130" width="280" height="120" />
+        </mxCell>
+        <mxCell id="e0" value="M1–M6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="design" target="logic">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e1" value="G0/G1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="logic" target="economic">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e2" value="G2–G4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="economic" target="observe">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e3" value="G5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="observe" target="approval">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e4" value="G6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="approval" target="canary">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e5" value="触发即冻结" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="canary" target="fail">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e6" value="对账" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="fail" target="drain">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e7" value="满足接管条件" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="drain" target="rollback">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="legend" value="图例：蓝=决策组件；绿=有效推进；红=风险/执行；黄=条件；紫=持久化；橙=外部事实。箭头为事实或动作流。设计草案，未部署。" style="text;html=0;align=center;whiteSpace=wrap;fontSize=12;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="1390" width="1280" height="60" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

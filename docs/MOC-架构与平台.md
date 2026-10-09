@@ -22,6 +22,11 @@ updated: 2026-05-23
 
 ## 二、架构重构与部署拓扑
 
+- [趋势退出系统 v5 技术设计](../architecture/CoinStrategy-Trend-Exit-Design-v5.md) — 完整持仓合同、双时钟、风险/利润分离、执行/账本及再入场；设计交付，尚未实现
+- [趋势退出 v5 实验与验收](../architecture/Trend-Exit-v5-Validation.md) — 36 项规则/故障规格、分层回放、独立样本与晋级门槛
+- [退出全面重设计 ADR](design-docs/adr-20261009-redesign-trend-exits.md) — 用户确认 B 方向与影响范围
+- [2026-10-09 短持仓证据](architecture-refactor/evidence/HTX_TREND_SHORT_HOLDING_20261009.md) — 主账户 LTC/DOGE/BTC 的真实决策与成交确认口径
+- [技术设计索引](../architecture/index.md) · [决策索引](design-docs/index.md)
 - [NETWORK_HARDENING](architecture-refactor/NETWORK_HARDENING.md) — 网络加固方案
 - [deploy-topology-refactor](deploy-topology-refactor.md) — 部署拓扑重构
 - [README-smart-wallet-service](../deploy/linux/README-smart-wallet-service.md) — 智能钱包服务部署说明
