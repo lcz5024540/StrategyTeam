@@ -146,7 +146,7 @@ class LiveTrendWorker(StrategyWorker):
 
     def __init__(self, instance: RuntimeInstance, repository: HtxTrendMySqlRepository, market: HtxMarketData,
                  executor: HtxTrendEntryExecutor, config: LiveTrendWorkerConfig,
-                 trend_config: JavaEntryConfig | None = None) -> None:
+                 trend_config: JavaEntryConfig | None = None, *, position_manager=None, writer_guard=None) -> None:
         if instance.execution_mode != ExecutionMode.LIVE:
             raise ValueError("LiveTrendWorker requires a LIVE strategy instance")
         if not config.enabled:
@@ -160,6 +160,7 @@ class LiveTrendWorker(StrategyWorker):
         self._last_scanned_close_epoch: int | None = None
         self._pending: dict[str, tuple[PolicySelection, _Scan, int]] = {}
         self._last_context = MarketContext.neutral()
+        self._position_manager, self._writer_guard = position_manager, writer_guard
 
     def stop(self) -> None:
         self._stopped = True
@@ -167,8 +168,14 @@ class LiveTrendWorker(StrategyWorker):
     def tick(self) -> WorkerHealth:
         if self._stopped:
             return WorkerHealth("STOPPED", "worker has been stopped")
+        if self._writer_guard is None or self._position_manager is None:
+            raise RuntimeError("LIVE worker requires ownership and position management")
+        self._writer_guard()
         recovered = self._executor.reconcile_pending()
         now_epoch = int(datetime.now(UTC).timestamp())
+        management_failures = self._position_manager.manage(now_epoch, self._last_context)
+        if management_failures:
+            return WorkerHealth("DEGRADED", "; ".join(management_failures))
         policies = tuple(StrategyPolicy(value.policy_code, value.policy_version, value.primary_model,
                                         value.confirmation_models, value.base_notional_usdt, value.max_notional_usdt,
                                         value.score_threshold, value.box_window_bars)

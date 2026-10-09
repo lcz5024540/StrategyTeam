@@ -83,3 +83,11 @@ P6 的代码与验证工具已完成：提供有界并发的公开行情扫描�
 | 订单、成交、对账与镜像 | 维持 `杠杆 → 结构 claim → position intent → order intent → HTX → 回填` 顺序；仅 `state=filled` 或 legacy `status=6` 的真实成交才激活仓位和写账本。重启只查询既有 intent；镜像仅复制主账户确认成交后的增量，并以 `reduce_only` 跟随确认减仓。 |
 
 Python 现已具备 `LIVE` worker 连接，但只会在 `strategy_runtime_instance.execution_mode=LIVE`、绑定 PRIMARY 账户且 Java 同源开关 `HTX_TREND_ENABLED=true`、`HTX_TREND_OBSERVE_ONLY=false`、`HTX_TREND_ENTRY_ENABLED=true`、`HTX_TREND_COMBINATION_ENTRY_ENABLED=true` 都满足时启动。镜像账户只由主账户确认成交回调触发。默认配置仍是禁用/观察，因此本次“完成”只表示组合候选开仓合同和运行时连接完成，**不表示已部署、已开启或已实盘验证**。
+
+## 2026-10-09：实盘安全闭环代码完成，切换验收仍阻断
+
+Python 已补齐请求结果未知时的 `UNKNOWN` 恢复、累计部分成交事务投影、持仓退出管理、退出状态持久化和 Java/Python 共享 MySQL writer lock。硬止损只依赖确认仓位与可执行盘口，不会因 K 线、资金费或高周期证据失败而跳过；v4 开启但 live 关闭时只记录决策，不回退执行 legacy 退出。
+
+首次 LIVE 切换进一步限定为 PRIMARY-only：任何启用的镜像账户都会使启动失败，并且必须显式设置 `HTX_PYTHON_EXIT_PARITY_APPROVED=true` 与 `HTX_TREND_MIXED_MARKET_REQUIRES_STRONG_CANDIDATE=false`。回放现在要求同一 `run_id` 的 15m 开仓窗口和已完成 60m 趋势窗口，缺失时报告 `MISSING_TREND_WINDOW`，不再用开仓周期数据替代。
+
+这些改动尚未取得切换资格。真实 MySQL 的双进程 `GET_LOCK` 竞争、两份 SQL 的非生产演练、生产冻结退出样本逐笔零差异和停 Java 后的锁释放证明仍未完成；在这些证据齐全前不得设置验收开关、部署或切换真实执行权。

@@ -59,7 +59,7 @@ class HtxV5Client:
         access_key: str | None = None,
         secret_key: str | None = None,
         *,
-        base_url: str = "https://api.huobi.pro",
+        base_url: str = "https://api.hbdm.com",
         live_trading_enabled: bool = False,
         client: httpx.Client | None = None,
     ) -> None:

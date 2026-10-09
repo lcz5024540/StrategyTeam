@@ -35,6 +35,16 @@ import java.util.concurrent.ThreadLocalRandom;
 @Component
 @ConditionalOnBean(HtxTrendProperties.class)
 public class HtxTrendMirrorExecutor {
+    @org.springframework.beans.factory.annotation.Autowired
+    private HtxTrendWriterLock writerLock;
+
+    private void assertWriterOwnership() {
+        // Spring injection is mandatory; direct-construction unit tests have no DB.
+        if (writerLock != null) {
+            writerLock.assertOwned();
+        }
+    }
+
 
     private static final String LONG = "LONG";
     private static final String POSITION_SIDE_LONG = "long";
@@ -166,6 +176,7 @@ public class HtxTrendMirrorExecutor {
         createMirrorOrderIntent(mirrorPosition, account, HtxTrendRecorder.LEG_ENTRY, request, deltaVolume, feeRates,
                 estimateFee(position.getEntryAvgPrice(), position.getContractSize(), deltaVolume, takerFeeRate),
                 mirrorEntryReason(position, leverageWarning));
+        assertWriterOwnership();
         HtxRestResponse<HtxSwapOrderResult> response = account.swap().placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         if (response == null || !response.ok() || accepted == null || accepted.getOrderId() == null) {
@@ -225,6 +236,7 @@ public class HtxTrendMirrorExecutor {
         createMirrorOrderIntent(mirrorPosition, account, leg, request, closeVolume, feeRates,
                 estimateFee(position.getEntryAvgPrice(), position.getContractSize(), closeVolume, takerFeeRate),
                 "mirror exit signal: " + safe(position.getExitReason()));
+        assertWriterOwnership();
         HtxRestResponse<HtxSwapOrderResult> response = account.swap().placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         if (response == null || !response.ok() || accepted == null || accepted.getOrderId() == null) {

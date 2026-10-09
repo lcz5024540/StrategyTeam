@@ -191,6 +191,7 @@ class HtxTrendEntryExecutor:
         client_order_id = _numeric_client_order_id()
         reservation_key = sha256(f"{self._instance.instance_key}:{position_key}".encode()).hexdigest()[:160]
         position_id: int | None = None
+        submission_started = False
         try:
             fee_rate = snapshot.facts.actual_taker_fee_rate
             estimated_entry_fee = gate.size_plan.notional * fee_rate if fee_rate is not None else None
@@ -220,6 +221,7 @@ class HtxTrendEntryExecutor:
                 f"entry: {gate.reason}", timeframe_profile, self._instance.strategy_family, self._instance.strategy_name,
                 total_multiplier, sizing_reason, gate.reason, fee_rate, estimated_entry_fee, estimated_close_fee))
             # V5 returns ids under slightly different keys depending on API version.
+            submission_started = True
             response = self._executor.place(request)
             exchange_id = _order_id(response)
             if exchange_id is None:
@@ -230,14 +232,20 @@ class HtxTrendEntryExecutor:
             self._repository.mark_position_status(position_id=position_id, status="ENTRY_SENT", message="entry sent")
             return EntrySubmission(True, gate, position_id, client_order_id, exchange_id, "entry accepted")
         except Exception as error:
+            # Once the request may have left the process, rejection is unknowable.
+            # Keep both intent and structure occupied until exchange reconciliation.
+            state = "UNKNOWN" if submission_started else "REJECTED"
             if position_id is not None:
-                self._repository.mark_order_rejected(position_id=position_id, leg="ENTRY", client_order_id=client_order_id,
-                                                     message=f"entry rejected: {type(error).__name__}")
-                self._repository.mark_position_status(position_id=position_id, status="REJECTED", message=f"entry rejected: {type(error).__name__}")
-            if structure_claimed:
-                self._repository.abandon_entry_cycle(structure_key=structure_key,
-                                                     reason=f"entry failure: {type(error).__name__}")
-            return EntrySubmission(False, gate, position_id, client_order_id, None, f"entry rejected: {type(error).__name__}")
+                if submission_started:
+                    self._repository.mark_order_unknown(position_id=position_id, leg="ENTRY", client_order_id=client_order_id,
+                                                        message=f"entry outcome unknown: {type(error).__name__}")
+                else:
+                    self._repository.mark_order_rejected(position_id=position_id, leg="ENTRY", client_order_id=client_order_id,
+                                                         message=f"entry not sent: {type(error).__name__}")
+                self._repository.mark_position_status(position_id=position_id, status=state, message=f"entry {state}: {type(error).__name__}")
+            if structure_claimed and not submission_started:
+                self._repository.abandon_entry_cycle(structure_key=structure_key, reason="entry not sent")
+            return EntrySubmission(False, gate, position_id, client_order_id, None, f"entry {state}: {type(error).__name__}")
 
     def reconcile(self, *, client_order_id: str, contract_code: str, position_id: int, leg: str,
                   factor_snapshot_id: int | None, model: str, contract_size: Decimal,
@@ -251,67 +259,32 @@ class HtxTrendEntryExecutor:
         status = _terminal_status(order)
         filled = _decimal(order, "trade_volume") or Decimal("0")
         price = _decimal(order, "trade_avg_price")
-        fee = _decimal(order, "fee") or Decimal("0")
+        fee = _decimal(order, "fee")
         exchange_id = _order_id(order)
         exchange_state = _exchange_state(order)
-        self._repository.reconcile_order(position_id=position_id, leg=leg, client_order_id=client_order_id, status=status,
-            exchange_order_id=exchange_id, exchange_client_order_id=_client_id(order), exchange_state=exchange_state,
-            filled_contracts=filled, average_price=price, fee=fee, fee_currency=str(order.get("fee_currency") or "USDT"),
-            realized_profit=_decimal(order, "real_profit"), message="exchange reconciliation")
-        if status == "FILLED" and filled > 0 and leg == "ENTRY":
-            self._repository.mark_position_status(position_id=position_id, status="ACTIVE", message="entry filled")
-            mark_active = getattr(self._repository, "mark_entry_cycle_active", None)
-            if mark_active is not None:
-                mark_active(position_id=position_id)
-            self._repository.record_ledger_event(LedgerEvent(f"python-open-fill:{position_id}:{client_order_id}", "OPEN_FILL",
-                self._account, self._instance.strategy_family, self._instance.strategy_name, model, run_id, factor_snapshot_id,
-                contract_code, position_id, None, client_order_id, side, execution_price_usdt=price, entry_price_usdt=price,
-                filled_contracts=filled, contract_size=contract_size,
-                amount_usdt=(price * filled * contract_size if price else None), fee_usdt=fee, reason="exchange confirmed entry fill"))
-            if self._on_confirmed_entry is not None and price is not None and position_key:
-                try:
-                    self._on_confirmed_entry(ConfirmedEntryFill(position_id, position_key, run_id, contract_code,
-                        TrendSide(side) if side else TrendSide.LONG, int(filled), price, contract_size, model, factor_snapshot_id))
-                except Exception:
-                    # A follower must never reverse a primary exchange-confirmed fill.
-                    pass
-        elif leg == "ENTRY" and status in {"CANCELLED", "REJECTED"} and filled == 0:
-            self._repository.mark_position_status(position_id=position_id, status="REJECTED", message=f"entry terminal without fill state={exchange_state}")
-            if position_key:
-                self._repository.release_risk(_reservation_key(self._instance, position_key), "confirmed entry terminal without fill")
-        elif status == "FILLED" and filled > 0 and leg in {"CLOSE", "PARTIAL_CLOSE"}:
-            if leg == "CLOSE":
-                self._repository.mark_position_status(position_id=position_id, status="DONE", message="close filled")
-                mark_terminal = getattr(self._repository, "mark_entry_cycle_terminal", None)
-                if mark_terminal is not None:
-                    mark_terminal(position_id=position_id, reason="exchange confirmed full close")
-            else:
-                self._repository.mark_position_status(position_id=position_id, status="ACTIVE", message="partial close filled")
-            realized = _decimal(order, "real_profit")
-            self._repository.record_ledger_event(LedgerEvent(f"python-close-fill:{position_id}:{client_order_id}", "CLOSE_FILL",
-                self._account, self._instance.strategy_family, self._instance.strategy_name, model, run_id, factor_snapshot_id,
-                contract_code, position_id, None, client_order_id, side, execution_price_usdt=price, close_price_usdt=price,
-                filled_contracts=filled, contract_size=contract_size, amount_usdt=(price * filled * contract_size if price else None),
-                fee_usdt=fee, gross_pnl_usdt=realized, net_pnl_after_fee=(realized - fee if realized is not None else None),
-                reason=f"exchange confirmed {leg.lower()} fill"))
-            if self._on_confirmed_reduction is not None and position_key:
-                try:
-                    self._on_confirmed_reduction(ConfirmedReductionFill(position_id, position_key, run_id, contract_code,
-                        TrendSide(side) if side else TrendSide.LONG, int(filled), model, factor_snapshot_id, leg == "CLOSE"))
-                except Exception:
-                    # A follower failure is recorded in its own intent path and cannot undo primary fill.
-                    pass
+        self._repository.apply_exchange_order(
+            account=self._account, instance=self._instance, position_id=position_id, leg=leg,
+            client_order_id=client_order_id, status=status, exchange_order_id=exchange_id,
+            exchange_client_order_id=_client_id(order), exchange_state=exchange_state,
+            filled_contracts=filled, average_price=price, fee=fee,
+            fee_currency=order.get("fee_currency"), realized_profit=_decimal(order, "real_profit"))
+
         return status
 
     def reconcile_pending(self) -> dict[str, str]:
         """Restart-safe reconciliation for persisted intents; no order is re-sent."""
         result: dict[str, str] = {}
-        for item in self._repository.pending_orders(account_id=self._account.account_id):
+        for item in self._repository.pending_orders(account_id=self._account.account_id, strategy_family=self._instance.strategy_family, strategy_name=self._instance.strategy_name):
             client_order_id = str(item["client_order_id"])
-            result[client_order_id] = self.reconcile(client_order_id=client_order_id, contract_code=item["contract_code"],
-                position_id=int(item["position_id"]), leg=str(item["leg"]), factor_snapshot_id=item.get("factor_snapshot_id"),
-                model=str(item["model_name"]), contract_size=Decimal(str(item["contract_size"])),
-                position_key=str(item["position_key"]), run_id=item.get("run_id"), side=item.get("trend_side"))
+            try:
+                result[client_order_id] = self.reconcile(client_order_id=client_order_id, contract_code=item["contract_code"],
+                    position_id=int(item["position_id"]), leg=str(item["leg"]), factor_snapshot_id=item.get("factor_snapshot_id"),
+                    model=str(item["model_name"]), contract_size=Decimal(str(item["contract_size"])),
+                    position_key=str(item["position_key"]), run_id=item.get("run_id"), side=item.get("trend_side"))
+            except Exception as error:
+                # Preserve the intent and continue. A single unavailable HTX
+                # order lookup must not suppress protection of other positions.
+                result[client_order_id] = f"ERROR:{type(error).__name__}"
         return result
 
     def _sizing_multiplier(self, candidate: ModelCandidate, state: CandidateTrendState, context: MarketContext) -> Decimal:
@@ -409,7 +382,7 @@ def _terminal_status(row: dict[str, Any]) -> str:
     if state in {"partially_filled", "partial-filled"}:
         return "PARTIALLY_FILLED"
     if state in {"partially_canceled", "canceled", "cancelled"}:
-        return "PARTIALLY_FILLED" if filled > 0 else "CANCELLED"
+        return "PARTIALLY_CANCELLED" if filled > 0 else "CANCELLED"
     if state == "rejected":
-        return "PARTIALLY_FILLED" if filled > 0 else "REJECTED"
+        return "PARTIALLY_CANCELLED" if filled > 0 else "REJECTED"
     return "ACCEPTED"

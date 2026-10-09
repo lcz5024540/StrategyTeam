@@ -33,6 +33,8 @@ class Repository:
     def mark_position_status(self, **value): self.calls.append(("position_status", value))
     def mark_order_rejected(self, **value): self.calls.append(("rejected", value))
     def release_risk(self, *_): self.calls.append(("release", None))
+    def mark_order_unknown(self, **value): self.calls.append(("unknown", value))
+    def apply_exchange_order(self, **value): self.calls.append(("atomic_fill", value))
     def reconcile_order(self, **value): self.calls.append(("reconcile", value))
     def record_ledger_event(self, value): self.calls.append(("ledger", value))
 
@@ -77,7 +79,8 @@ def test_reconciliation_only_marks_fill_after_exchange_order_response() -> None:
     status = executor(repo, live).reconcile(client_order_id="1", contract_code="BTC-USDT", position_id=7, leg="ENTRY",
                                              factor_snapshot_id=None, model="DONCHIAN_BREAKOUT", contract_size=Decimal("0.01"))
     assert status == "FILLED"
-    assert {name for name, _ in repo.calls} >= {"reconcile", "position_status", "ledger"}
+    assert [name for name, _ in repo.calls] == ["atomic_fill"]
+    assert repo.calls[0][1]["filled_contracts"] == Decimal("2")
 
 
 def test_mirror_follows_only_a_confirmed_primary_fill() -> None:
@@ -129,6 +132,27 @@ def test_reconcile_pending_queries_existing_intent_without_new_order() -> None:
     assert [name for name, _ in live.calls] == []
 
 
+def test_reconcile_pending_isolates_one_failed_lookup_and_continues() -> None:
+    repo, live = Repository(), Executor()
+    repo.pending_orders = lambda **_: [
+        {"client_order_id": "1", "contract_code": "BTC-USDT", "position_id": 7, "leg": "ENTRY",
+         "factor_snapshot_id": None, "model_name": "DONCHIAN_BREAKOUT", "contract_size": ".01",
+         "position_key": "p1", "run_id": "r1", "trend_side": "LONG"},
+        {"client_order_id": "2", "contract_code": "ETH-USDT", "position_id": 8, "leg": "ENTRY",
+         "factor_snapshot_id": None, "model_name": "DONCHIAN_BREAKOUT", "contract_size": ".01",
+         "position_key": "p2", "run_id": "r2", "trend_side": "LONG"},
+    ]
+    calls = []
+    def order(contract_code, **_):
+        calls.append(contract_code)
+        if contract_code == "BTC-USDT": raise TimeoutError("lookup failed")
+        return {"order_id": "2", "state": "filled", "trade_volume": "1", "trade_avg_price": "100"}
+    live.order = order
+    result = executor(repo, live).reconcile_pending()
+    assert result["1"] == "ERROR:TimeoutError" and result["2"] == "FILLED"
+    assert calls == ["BTC-USDT", "ETH-USDT"]
+
+
 def test_mirror_reduction_requires_confirmed_primary_and_never_fakes_a_fill() -> None:
     repo, live = Repository(), Executor()
     repo.mirror_position = lambda **_: {"id": 15, "position_key": "mirror-key"}
@@ -151,6 +175,22 @@ def test_mirror_reduction_requires_confirmed_primary_and_never_fakes_a_fill() ->
 
 def test_reconciliation_maps_java_v5_partial_cancel_with_fill_to_partial() -> None:
     from htx_trend.execution_service import _terminal_status
-    assert _terminal_status({"state": "partially_canceled", "trade_volume": "1"}) == "PARTIALLY_FILLED"
+    assert _terminal_status({"state": "partially_canceled", "trade_volume": "1"}) == "PARTIALLY_CANCELLED"
     assert _terminal_status({"state": "partially_canceled", "trade_volume": "0"}) == "CANCELLED"
     assert _terminal_status({"status": 6, "trade_volume": "1"}) == "FILLED"
+
+
+def test_submission_timeout_is_unknown_and_does_not_free_structure(monkeypatch):
+    repo, live = Repository(), Executor()
+    def timeout(_): raise TimeoutError("response lost after acceptance")
+    live.place = timeout
+    bars = (Candle(9000,Decimal(99),Decimal(101),Decimal(98),Decimal(100),turnover=Decimal(1000)),)
+    result = executor(repo,live).submit(run_id="run",candidate=candidate(),period="15min",atr=Decimal(2),
+        ema_fast=Decimal(101),ema_slow=Decimal(99),adx=Decimal(30),recent_candles=bars,
+        book=OrderBook(((Decimal("99.99"),Decimal(100)),),((Decimal("100.01"),Decimal(100)),)),
+        contract=ContractSpec("BTC-USDT",Decimal(".01"),Decimal(".1"),1),
+        funding=FundingRate("BTC-USDT",Decimal(".0001")),
+        market_context=MarketContext(MarketRegime.BROAD_UP,TrendSide.LONG,Decimal(".8")),now_epoch=10000)
+    assert not result.accepted and "UNKNOWN" in result.reason
+    assert any(name=="unknown" for name,_ in repo.calls)
+    assert not any(name=="rejected" for name,_ in repo.calls)

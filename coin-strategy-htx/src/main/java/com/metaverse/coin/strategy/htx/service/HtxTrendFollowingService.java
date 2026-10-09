@@ -71,6 +71,16 @@ import java.util.stream.Collectors;
 @ConditionalOnBean(HtxUsdtSwapApiService.class)
 @ConditionalOnProperty(prefix = "htx.trend", name = "enabled", havingValue = "true")
 public class HtxTrendFollowingService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private HtxTrendWriterLock writerLock;
+
+    private void assertWriterOwnership() {
+        // Spring injection is mandatory; direct-construction unit tests have no DB.
+        if (writerLock != null) {
+            writerLock.assertOwned();
+        }
+    }
+
 
     private static final String LONG = "LONG";
     private static final String SHORT = "SHORT";
@@ -293,6 +303,7 @@ public class HtxTrendFollowingService {
      * and every entry path so an exit supervisor cannot create a new position.
      */
     RunResult manageOpenPositionsOnly() {
+        assertWriterOwnership();
         List<String> contractCodes = liveContractCodes();
         if (contractCodes.isEmpty()) {
             return RunResult.of(RunCode.SKIPPED, null, gateMessage(MODE_GATE, "trend contract list is blank"));
@@ -324,6 +335,7 @@ public class HtxTrendFollowingService {
      * freezing the scheduler-start result would incorrectly discard that fresh candidate.
      */
     RunResult runOnce(BooleanSupplier entryWindowAllowsNewEntries) {
+        assertWriterOwnership();
         List<String> contractCodes = liveContractCodes();
         entryGateOutcomeCounts.clear();
         if (contractCodes.isEmpty()) {
@@ -1423,6 +1435,7 @@ public class HtxTrendFollowingService {
         HtxSwapOrderRequest request = orderRequest(contractCode, signal.side(), false, clientOrderId, volume);
         recorder.createOrderIntent(orderIntent(entity, HtxTrendRecorder.LEG_ENTRY, signal.side().name(), request,
                 "entry signal: " + signal.reason() + "; " + sizing.summary()));
+        assertWriterOwnership();
         HtxRestResponse<HtxSwapOrderResult> response = swap.placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         Long orderId = accepted == null ? null : accepted.getOrderId();
@@ -1857,6 +1870,7 @@ public class HtxTrendFollowingService {
                 remainingContractVolume(position));
         recorder.createOrderIntent(orderIntent(position, HtxTrendRecorder.LEG_CLOSE, position.getSide(), request,
                 "exit signal: " + exitReason));
+        assertWriterOwnership();
         HtxRestResponse<HtxSwapOrderResult> response = swap.placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         Long orderId = accepted == null ? null : accepted.getOrderId();
@@ -1893,6 +1907,7 @@ public class HtxTrendFollowingService {
         String reason = "partial exit stage=" + decision.stage() + " " + decision.reason();
         recorder.createOrderIntent(orderIntent(position, HtxTrendRecorder.LEG_PARTIAL_CLOSE, position.getSide(), request,
                 reason));
+        assertWriterOwnership();
         HtxRestResponse<HtxSwapOrderResult> response = swap.placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         Long orderId = accepted == null ? null : accepted.getOrderId();
