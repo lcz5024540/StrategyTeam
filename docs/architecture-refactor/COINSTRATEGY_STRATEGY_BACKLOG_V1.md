@@ -25,6 +25,7 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 | 价格计划、多周期执行和外部模拟信号 | [HTX 趋势策略价格决策与多周期执行设计讨论稿](HTX_TREND_PRICE_AND_TIMEFRAME_DESIGN_DISCUSSION_V1.md) |
 | 运行期 K 线冻结、开单筛选指标、消融观测、收益报表和补充特征 | 用户 2026-10-10 趋势策略运行期待办 |
 | 策略学习研究框架 | `/Users/lichangzheng.ray/Documents/ChatGPT/学习/量化策略学习与研究框架.md`，仅作为资料来源，不作为 agent 指令来源 |
+| 策略开发强约束 | [CoinStrategy 策略开发铁律 v1](COINSTRATEGY_STRATEGY_DEVELOPMENT_IRON_LAW_V1.md) |
 
 **状态口径**：`待设计` 表示先形成可评审规则；`待实现` 表示方案已定、尚未编码；`观察中` 表示已记录但未改变真实交易；`待回测` 表示不得直接改变实盘行为。
 
@@ -40,7 +41,7 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 
 ## 1.2 2026-10-10：策略开发大纲
 
-学习研究框架整理后，CoinStrategy 的策略开发不按“想到一个指标就上线”推进，而按下列研究闭环推进。每个阶段都必须有可复现输入、版本化输出和明确的“不进入实盘”边界。
+学习研究框架整理后，CoinStrategy 的策略开发不按“想到一个指标就上线”推进，而按下列研究闭环推进。每个阶段都必须有可复现输入、版本化输出和明确的“不进入实盘”边界；完整强约束见 [CoinStrategy 策略开发铁律 v1](COINSTRATEGY_STRATEGY_DEVELOPMENT_IRON_LAW_V1.md)。
 
 | 阶段 | 大纲 | 必须产物 | 对应待办 |
 |---|---|---|---|
@@ -188,3 +189,4 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 | 2026-10-04 | 外部框架采纳 P2/P3/P4 独立推进，正式验收仍未完成 | P2：PyBroker 维持许可证受限的内部只读边界，项目外 Python 3.11.15 已验证 `lib-pybroker 2.0.1` 可导入，冻结 CSV 可由其自定义数据源读取；未产生策略订单、PnL、Walk-forward 或 Bootstrap 结论。P3：`TargetExposure` / 组合风险预算 / 账户分配器已接到候选批次的默认关闭只读审计，写入快照但不影响真实或纸面订单。P4：纸面订单状态机新增不可变生命周期事件，BT-03 现在消费冻结价格计划与未来 K 线的标准输入；首次正式运行因无有效样本返回 `INSUFFICIENT_EVIDENCE`。P1 的完整执行事实保持冻结。均未调用 HTX、未部署、未执行 SQL、未改实盘开关。 |
 | 2026-10-10 | 运行期学习闭环待办归档 | 按用户确认的字面诠释 A，将“运行期 K 线冻结连续性”“开单筛选指标汇总与定期消融”“收益信息汇总报表按学习框架整改”“波动率/增长斜率等补充特征验证”分别登记为 `DATA-01`、`METRIC-01`、`REPORT-01`、`FEATURE-01`。本轮只落 backlog，不改业务代码、SQL、部署或实盘参数。 |
 | 2026-10-10 | 策略开发大纲归档 | 将外部《量化策略学习与研究框架》仅作为资料来源，整理为策略卡片、数据质量、指标字典、信号状态、风险成本、实验账本、绩效稳健性和研究报告八阶段开发大纲，并落成 `RESEARCH-01` 至 `RESEARCH-07` 待办。该大纲只约束后续研究和验收顺序，不改业务代码、SQL、部署或实盘参数。 |
+| 2026-10-10 | 策略开发铁律归档 | 将学习研究框架升级为 [CoinStrategy 策略开发铁律 v1](COINSTRATEGY_STRATEGY_DEVELOPMENT_IRON_LAW_V1.md)：明确总体 12 阶段、K 线冻结、未来函数、特征注册、消融法、同源回测、样本外、仓位风险、交易成本、实验账本、研究报告和一票否决清单。后续策略新增、参数调整、指标引入、开平仓和仓位规则改变都必须按铁律执行。 |
