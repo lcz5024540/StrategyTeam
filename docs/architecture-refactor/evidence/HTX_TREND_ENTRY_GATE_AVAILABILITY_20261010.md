@@ -73,7 +73,7 @@
 
 ## 下一步
 
-1. 为候选扫描补一份按 model、policy、gate 聚合的拒绝漏斗，分别记录“生成候选、POLICY_NOT_MATCHED、趋势状态、FIB 质量、点差、成功下单”。只增强诊断，不改变交易。
+1. 已在本地实现候选扫描的模型路由证据：每个具体 model + confirmation 都写入现有候选账本，区分 POLICY_NOT_MATCHED 与 POLICY_SCORE_BELOW_THRESHOLD；通过政策的候选沿用原有后续 Gate 与下单路径。无需新增 SQL，部署后才能开始产生这批明细。
 2. 对 Donchian、EMA/VWAP 与 Fibonacci 分别完成同源的“政策精确匹配 + 完整 Gate + 成本”回放；先找出哪一条模型路径有正的样本外净收益，再为它建立独立政策。
 3. 只有某条模型路径通过上述验证，才讨论增加该路径的实盘开仓频率；不能以降低全局 expectedR、动量或混合市场门槛替代。
 
