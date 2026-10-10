@@ -52,6 +52,10 @@ deploy/linux/env/**/secrets.env
 ### Local Maven Cache ###
 .m2/
 
+### Python generated caches ###
+__pycache__/
+*.py[cod]
+
 coin-strategy-frontend/node_modules/
 coin-strategy-frontend/dist/
 logs/
