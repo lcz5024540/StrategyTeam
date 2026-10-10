@@ -1,7 +1,7 @@
 ---
 title: 趋势退出 v5 实验与验收合同
 type: validation-contract
-status: l0-in-progress
+status: implementation-complete-gates-blocked
 created: 2026-10-09
 author: Codex / Ray
 ---
@@ -21,7 +21,7 @@ author: Codex / Ray
 - [x] 编写图示、实验与实施验收方案。
 - [x] 验证／自检：设计覆盖、链接、draw.io XML、差异和仓库结构检查，提交前完成。
 
-M1 输入审计与 M2-M4 的首批 L0 纯核已于 2026-10-10 实现：Java/Python 共享 golden 已逐字段比较，Python 规则单测覆盖 T-01/T-03/T-04/T-05/T-06/T-07/T-08/T-09/T-10/T-11/T-12/T-13/T-16/T-24/T-31/T-32/T-34 的核心边界。其余测试 ID 仍是待实现规格；M5-M10、回放收益和任何上线结论均未完成。M1 报告见 [输入与账本审计](../docs/architecture-refactor/evidence/HTX_TREND_EXIT_V5_M1_INPUT_AUDIT_20261010.md)，G0 当前结果为 `INSUFFICIENT_EVIDENCE`。
+M1-M9 的本地安全边界已于 2026-10-10 实施并验证：Java/Python 共享 golden 已逐字段比较，状态/决策/意图事务、owner fencing、唯一 fill、再入场预算、OBSERVE/PAPER、费用分摊、证据门、只读 API 与 LIVE readiness 已落地。Java 模块 636 tests、Python 121 tests 通过。G0 当前仍为 `INSUFFICIENT_EVIDENCE`，T-01..T-36 也尚未全部自动化，故 G1-G6 均未晋级；没有回放收益或上线结论。详见 [输入与账本审计](../docs/architecture-refactor/evidence/HTX_TREND_EXIT_V5_M1_INPUT_AUDIT_20261010.md)和[本地实施与门禁结果](../docs/architecture-refactor/evidence/HTX_TREND_EXIT_V5_IMPLEMENTATION_20261010.md)。
 
 ## 2. 分层证据
 

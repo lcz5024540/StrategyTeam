@@ -9,6 +9,9 @@ from htx_trend.exit_contract_v5 import (
 )
 from htx_trend.exit_kernel_v5 import decide_v5
 from htx_trend.model_holding_v5 import evaluate_model_holding_v5
+from htx_trend.fee_allocator_v5 import allocate_fee
+from htx_trend.exit_observer_v5 import observe_v5
+from htx_trend.exit_experiment_v5 import evaluate_experiment_evidence, require_economic_evidence
 
 
 def thesis(**changes):
@@ -178,6 +181,34 @@ def test_thesis_timeout_only_fires_at_frozen_horizon():
     expired=decide_v5(thesis(),before.state,bar(16,reference_price=D('100.2'),close_price=D('100.2'),current_net_pnl=D('0')))
     assert expired.decision.action is ExitActionV5.FULL_CLOSE
     assert expired.decision.reason_codes==('THESIS_TIMEOUT',)
+
+
+def test_partial_fill_fee_allocation_absorbs_remainder_once():
+    values=allocate_fee(D('0.1'),(D('1'),D('1'),D('1')))
+    assert sum(values,D('0'))==D('0.1')
+    assert values[-1]==D('0.033333333333333334')
+
+
+def test_observer_accepts_only_non_live_modes_even_for_full_close():
+    event=ExitEventV5('tick',EventKind.TICK,1,D('95'),6)
+    assert observe_v5('OBSERVE',thesis(),ExitStateV5(),event).transition.decision.action is ExitActionV5.FULL_CLOSE
+    try:
+        observe_v5('LIVE',thesis(),ExitStateV5(),event)
+    except ValueError as error:
+        assert 'OBSERVE or PAPER' in str(error)
+    else:
+        raise AssertionError('observer must reject LIVE')
+
+
+def test_economic_experiment_fails_closed_on_current_missing_execution_facts():
+    result=evaluate_experiment_evidence({'source_commit':'2a479c04'},())
+    assert result.status=='INSUFFICIENT_EVIDENCE' and result.level=='L1'
+    try:
+        require_economic_evidence({'source_commit':'2a479c04'},())
+    except ValueError as error:
+        assert str(error).startswith('INSUFFICIENT_EVIDENCE:')
+    else:
+        raise AssertionError('economic result must remain blocked')
 
 
 def _from_fixture(cls, values, decimal_fields=(), enum_fields=None):

@@ -125,6 +125,7 @@ htx:
   trend:
     enabled: ${HTX_TREND_ENABLED:false}
     observe-only: ${HTX_TREND_OBSERVE_ONLY:true}
+    exit-v5-query-enabled: ${HTX_TREND_EXIT_V5_QUERY_ENABLED:false}
     entry-enabled: ${HTX_TREND_ENTRY_ENABLED:true}
     combination-entry-enabled: ${HTX_TREND_COMBINATION_ENTRY_ENABLED:false}
     combination-require-trending-regime: ${HTX_TREND_COMBINATION_REQUIRE_TRENDING_REGIME:true}

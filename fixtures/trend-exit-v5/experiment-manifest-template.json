@@ -1,0 +1,15 @@
+{
+  "schema": "trend-exit-v5-experiment-manifest-v1",
+  "data_start_utc": null,
+  "data_end_utc": null,
+  "universe": [],
+  "source_commit": "2a479c04",
+  "policy_hash": "0940acba353a4cf5ef7fc28b5d344af652481fd398314d465574dff562ed64ca",
+  "fee_source": null,
+  "order_book_source": null,
+  "funding_source": null,
+  "sample_split": "50/25/25 with horizon purge and embargo",
+  "experiments": ["E0", "E1", "E2", "E3", "E4", "E5", "E6"],
+  "result_path": null,
+  "status": "INSUFFICIENT_EVIDENCE"
+}
