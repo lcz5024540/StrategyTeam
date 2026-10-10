@@ -74,8 +74,17 @@ public class HtxTrendCombinationService {
                 .filter(item -> item != null)
                 .sorted(Comparator.comparing((ResolvedCandidate item) -> item.candidate().score()).reversed())
                 .toList();
+        String runId = runId(contractCode, period, signal.barTime());
         if (resolved.isEmpty()) {
-            return reject(contractCode, period, signal, HtxTrendCombinationGateReason.POLICY_NOT_MATCHED);
+            // Record each concrete model/confirmation route rather than a single
+            // generic NONE row.  This is observational only: it lets research
+            // distinguish “no policy for this structure” from “policy exists,
+            // but this bar missed its raw-score threshold”.
+            for (CombinationCandidate candidate : candidates) {
+                recordRouteRejectedCandidate(contractCode, period, signal, candidate, runId,
+                        policyRouteRejection(candidate, policies));
+            }
+            return Selection.rejected(HtxTrendCombinationGateReason.POLICY_NOT_MATCHED.code());
         }
         ResolvedCandidate selected = resolved.get(0);
         Long snapshotId = recordSnapshot(contractCode, period, signal, selected);
@@ -83,10 +92,19 @@ public class HtxTrendCombinationService {
         if (snapshotId == null) {
             return Selection.rejected("factor snapshot persistence failed");
         }
-        String runId = runId(contractCode, period, signal.barTime());
-        for (ResolvedCandidate item : resolved) {
-            recordCandidate(contractCode, period, signal, item, snapshotId,
-                    runId, item == selected ? "PASSED" : "REJECTED", item == selected ? "PASSED" : HtxTrendCombinationGateReason.LOWER_PRIORITY_FOR_SYMBOL.code());
+        for (CombinationCandidate candidate : candidates) {
+            ResolvedCandidate item = resolved.stream()
+                    .filter(value -> value.candidate().primaryModel().equals(candidate.primaryModel())
+                            && value.candidate().confirmationModels().equals(candidate.confirmationModels()))
+                    .findFirst().orElse(null);
+            if (item == null) {
+                recordRouteRejectedCandidate(contractCode, period, signal, candidate, runId,
+                        policyRouteRejection(candidate, policies));
+            } else {
+                recordCandidate(contractCode, period, signal, item, snapshotId,
+                        runId, item == selected ? "PASSED" : "REJECTED",
+                        item == selected ? "PASSED" : HtxTrendCombinationGateReason.LOWER_PRIORITY_FOR_SYMBOL.code());
+            }
         }
         BigDecimal multiplier = sizingMultiplier(selected.baseScore(), selected.candidate().marketRegime());
         BigDecimal notional = selected.policy().getBaseNotionalUsdt().multiply(multiplier)
@@ -500,6 +518,12 @@ public class HtxTrendCombinationService {
                 .filter(policy -> candidate.score().compareTo(policy.getScoreThreshold()) >= 0)
                 .map(policy -> new ResolvedCandidate(effectiveCandidate, policy, candidate.score(), adjustment))
                 .findFirst().orElse(null);
+    }
+
+    private static String policyRouteRejection(CombinationCandidate candidate,
+                                               List<HtxTrendStrategyPolicyEntity> policies) {
+        boolean structuralMatch = policies.stream().anyMatch(policy -> matches(policy, candidate));
+        return structuralMatch ? "POLICY_SCORE_BELOW_THRESHOLD" : HtxTrendCombinationGateReason.POLICY_NOT_MATCHED.code();
     }
 
     private static boolean matches(HtxTrendStrategyPolicyEntity policy, CombinationCandidate candidate) {
@@ -918,31 +942,54 @@ public class HtxTrendCombinationService {
 
     private void recordCandidate(String contractCode, String period, TrendCandidateSignal signal, ResolvedCandidate resolved,
                                  Long snapshotId, String runId, String result, String reason) {
+        recordCandidate(contractCode, period, signal, resolved.candidate(), resolved.policy(), snapshotId, runId, result, reason);
+    }
+
+    /**
+     * Stores one model route that stopped at policy matching.  It deliberately
+     * has no policy version, planned notional or executable-gate outcome: this
+     * candidate was never allowed into the execution chain.
+     */
+    private void recordRouteRejectedCandidate(String contractCode, String period, TrendCandidateSignal signal,
+                                              CombinationCandidate candidate, String runId, String reason) {
+        recordCandidate(contractCode, period, signal, candidate, null, null, runId, "REJECTED", reason);
+    }
+
+    private void recordCandidate(String contractCode, String period, TrendCandidateSignal signal,
+                                 CombinationCandidate candidate, HtxTrendStrategyPolicyEntity policy,
+                                 Long snapshotId, String runId, String result, String reason) {
         HtxTrendCandidateSignalEntity entity = new HtxTrendCandidateSignalEntity();
         entity.setContractCode(contractCode); entity.setPeriod(period); entity.setBarTime(signal.barTime());
-        entity.setDirection(signal.direction().name()); entity.setRegime(resolved.candidate().marketRegime());
-        entity.setSignalScore(resolved.candidate().score()); entity.setClosePrice(signal.closePrice());
+        entity.setDirection(signal.direction().name()); entity.setRegime(candidate.marketRegime());
+        entity.setSignalScore(candidate.score()); entity.setClosePrice(signal.closePrice());
         entity.setAdx(signal.adx()); entity.setAtr(signal.atr()); entity.setAtrPct(signal.atrPct());
         entity.setMomentumPct(signal.momentumPct()); entity.setVolumeRatio(signal.volumeRatio());
         entity.setBreakoutHigh(signal.breakoutHigh()); entity.setBreakoutLow(signal.breakoutLow());
         entity.setEmaFast(signal.emaFast()); entity.setEmaMedium(signal.emaMedium()); entity.setEmaSlow(signal.emaSlow());
         entity.setEntryReason(signal.entryReason()); entity.setInvalidationReason(signal.invalidationReason());
-        entity.setShadow(false); entity.setModelVersion(resolved.policy().getPolicyVersion()
-                + ":evidence-v3:" + resolved.policy().getPolicyCode());
-        entity.setPrimaryModel(resolved.candidate().primaryModel()); entity.setConfirmationModels(resolved.candidate().confirmationModels());
+        entity.setShadow(false);
+        entity.setModelVersion(policy == null ? routeModelVersion(candidate)
+                : policy.getPolicyVersion() + ":evidence-v3:" + policy.getPolicyCode());
+        entity.setPrimaryModel(candidate.primaryModel()); entity.setConfirmationModels(candidate.confirmationModels());
         entity.setRunId(runId);
-        entity.setPolicyVersion(resolved.policy().getPolicyVersion()); entity.setFactorSnapshotId(snapshotId);
-        entity.setGateResult(result); entity.setGateReason(reason); entity.setInvalidationPrice(resolved.candidate().invalidationPrice());
-        entity.setEntryHypothesis(resolved.candidate().hypothesis());
-        entity.setSizingMultiplier(sizingMultiplier(resolved.candidate().score(), resolved.candidate().marketRegime()));
-        entity.setPlannedNotionalUsdt(resolved.policy().getBaseNotionalUsdt().multiply(entity.getSizingMultiplier())
-                .min(resolved.policy().getMaxNotionalUsdt()));
-        entity.setTargetZoneLow(resolved.candidate().targetZoneLow()); entity.setTargetZoneHigh(resolved.candidate().targetZoneHigh());
-        entity.setBoxMeasuredMoveTarget(resolved.candidate().boxMeasuredMoveTarget());
-        entity.setFibExtension1272(resolved.candidate().fibExtension1272()); entity.setFibExtension1618(resolved.candidate().fibExtension1618());
-        entity.setExpectedRMultiple(resolved.candidate().expectedRMultiple());
-        entity.setMomentumQualityScore(resolved.candidate().momentumQualityScore());
+        entity.setPolicyVersion(policy == null ? "UNMATCHED" : policy.getPolicyVersion()); entity.setFactorSnapshotId(snapshotId);
+        entity.setGateResult(result); entity.setGateReason(reason); entity.setInvalidationPrice(candidate.invalidationPrice());
+        entity.setEntryHypothesis(candidate.hypothesis());
+        entity.setSizingMultiplier(sizingMultiplier(candidate.score(), candidate.marketRegime()));
+        if (policy != null) {
+            entity.setPlannedNotionalUsdt(policy.getBaseNotionalUsdt().multiply(entity.getSizingMultiplier())
+                    .min(policy.getMaxNotionalUsdt()));
+        }
+        entity.setTargetZoneLow(candidate.targetZoneLow()); entity.setTargetZoneHigh(candidate.targetZoneHigh());
+        entity.setBoxMeasuredMoveTarget(candidate.boxMeasuredMoveTarget());
+        entity.setFibExtension1272(candidate.fibExtension1272()); entity.setFibExtension1618(candidate.fibExtension1618());
+        entity.setExpectedRMultiple(candidate.expectedRMultiple());
+        entity.setMomentumQualityScore(candidate.momentumQualityScore());
         candidateRecorder.record(entity);
+    }
+
+    private static String routeModelVersion(CombinationCandidate candidate) {
+        return "R:" + candidate.primaryModel() + ":" + candidate.confirmationModels();
     }
 
     private static BigDecimal sizingMultiplier(BigDecimal score, String regime) {

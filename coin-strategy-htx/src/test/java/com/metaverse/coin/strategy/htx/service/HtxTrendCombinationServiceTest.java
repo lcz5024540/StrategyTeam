@@ -299,8 +299,9 @@ class HtxTrendCombinationServiceTest {
         when(policyService.enabledPolicies()).thenReturn(List.of(policy));
         HtxTrendCombinationRecorder recorder = mock(HtxTrendCombinationRecorder.class);
         when(recorder.recordSnapshot(any())).thenReturn(1L);
+        HtxTrendCandidateSignalRecorder candidateRecorder = mock(HtxTrendCandidateSignalRecorder.class);
         HtxTrendCombinationService service = new HtxTrendCombinationService(policyService, recorder,
-                mock(HtxTrendCandidateSignalRecorder.class));
+                candidateRecorder);
 
         HtxTrendCombinationService.Selection selection = service.select("BTC-USDT", "15min", candles, signal,
                 new HtxTrendCombinationService.MarketEntryRank("BROAD_UP", "BROAD_UP", "BROAD_UP", "LONG",
@@ -308,6 +309,16 @@ class HtxTrendCombinationServiceTest {
 
         assertFalse(selection.accepted());
         assertEquals(HtxTrendCombinationGateReason.POLICY_NOT_MATCHED.code(), selection.rejection());
+        ArgumentCaptor<com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendCandidateSignalEntity> route =
+                ArgumentCaptor.forClass(com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendCandidateSignalEntity.class);
+        verify(candidateRecorder, org.mockito.Mockito.atLeastOnce()).record(route.capture());
+        com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendCandidateSignalEntity matched = route.getAllValues().stream()
+                .filter(item -> candidate.primaryModel().equals(item.getPrimaryModel())
+                        && candidate.confirmationModels().equals(item.getConfirmationModels()))
+                .findFirst().orElseThrow();
+        assertEquals("REJECTED", matched.getGateResult());
+        assertEquals("POLICY_SCORE_BELOW_THRESHOLD", matched.getGateReason());
+        assertEquals("UNMATCHED", matched.getPolicyVersion());
     }
 
     @Test
