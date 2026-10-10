@@ -7,7 +7,7 @@ from htx_trend.ledger import Account, TrendLedger
 from htx_trend.market_data import Candle, ContractSpec, FundingRate, KlineWindow, TopOfBook
 from htx_trend.paper import PaperExchange
 from htx_trend.runtime import PaperTrendRuntime
-from htx_trend.models import TrendConfig
+from htx_trend.java_entry_contract import JavaEntryConfig
 
 
 def bar(index, close):
@@ -21,9 +21,11 @@ def test_primary_scan_can_mirror_only_a_filled_primary_paper_trade(tmp_path) -> 
     ledger = TrendLedger(database)
     ledger.account(Account("main", "Main", "PAPER")); ledger.account(Account("trademax", "TradeX", "PAPER"))
     exchange = PaperExchange(ledger)
-    config = TrendConfig(medium_ema_period=16, slow_ema_period=20, breakout_lookback=10, atr_period=5, adx_period=5,
-                         min_adx=Decimal("1"), min_atr_pct=Decimal("0"))
-    runtime = PaperTrendRuntime(ledger, exchange, account_id="main", mirror_account_id="trademax", trend_config=config,
+    config = JavaEntryConfig(fast_ema_period=4,medium_ema_period=8,slow_ema_period=20,breakout_lookback=10,
+        momentum_lookback=5,atr_period=5,adx_period=5,volume_lookback=5,min_adx=Decimal("1"),
+        min_atr_pct=Decimal("0"),entry_score_threshold=Decimal("1"),min_score_gap=Decimal("0"),
+        box_window_bars=8,combination_require_trending_regime=False)
+    runtime = PaperTrendRuntime(ledger, exchange, account_id="main", mirror_account_id="trademax", entry_config=config,
                                 execution_config=ExecutionConfig(min_score=Decimal("0"), min_net_r=Decimal("-100"),
                                                                  min_notional=Decimal("1"), target_notional=Decimal("100"), max_notional=Decimal("100")))
     entry = [bar(i, 100 + i) for i in range(90)]; entry[-1] = bar(89, 195)

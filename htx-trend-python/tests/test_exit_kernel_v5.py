@@ -12,6 +12,8 @@ from htx_trend.model_holding_v5 import evaluate_model_holding_v5
 from htx_trend.fee_allocator_v5 import allocate_fee
 from htx_trend.exit_observer_v5 import observe_v5
 from htx_trend.exit_experiment_v5 import evaluate_experiment_evidence, require_economic_evidence
+from htx_trend.strategy_admission import (DecisionSurface, ResearchStage, StageEvidence, StageStatus,
+                                          build_artifact)
 
 
 def thesis(**changes):
@@ -31,6 +33,15 @@ def bar(number, **changes):
         bar_end_ms=end,close_price=D('101'),atr_at_close=D('1'),current_net_pnl=D('1'),
         round_trip_cost=D('.10'),model_state=ModelState.VALID)
     values.update(changes); return ExitEventV5(**values)
+
+
+def admission(stage=ResearchStage.SIGNAL_STATE_MACHINE, surface=DecisionSurface.OBSERVE):
+    digest='a'*64
+    return build_artifact(strategy_id='htx-trend-exit',strategy_version='HTX_TREND_EXIT_V5',
+        experiment_id='EXP-20261010-001',source_commit='test',policy_hash=digest,config_hash=digest,
+        dataset_manifest_hash=digest,stages=tuple(StageEvidence(item,StageStatus.PASS,f'evidence/{item.name}',digest,'passed')
+            for item in ResearchStage if item<=stage),allowed_surfaces=(surface,),
+        failure_conditions=('negative net expectancy',),pause_conditions=('private state unknown',))
 
 
 def test_t01_flat_is_diagnostic_and_does_not_invalidate_entry_thesis():
@@ -191,9 +202,9 @@ def test_partial_fill_fee_allocation_absorbs_remainder_once():
 
 def test_observer_accepts_only_non_live_modes_even_for_full_close():
     event=ExitEventV5('tick',EventKind.TICK,1,D('95'),6)
-    assert observe_v5('OBSERVE',thesis(),ExitStateV5(),event).transition.decision.action is ExitActionV5.FULL_CLOSE
+    assert observe_v5('OBSERVE',thesis(),ExitStateV5(),event,admission=admission()).transition.decision.action is ExitActionV5.FULL_CLOSE
     try:
-        observe_v5('LIVE',thesis(),ExitStateV5(),event)
+        observe_v5('LIVE',thesis(),ExitStateV5(),event,admission=admission())
     except ValueError as error:
         assert 'OBSERVE or PAPER' in str(error)
     else:

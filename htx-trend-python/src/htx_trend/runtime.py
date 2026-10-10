@@ -14,8 +14,11 @@ from .execution import ExecutionConfig, ExecutionFacts, GateResult, PriorTrade, 
 from .exits import ExitInput, ExitAction, decide
 from .ledger import TrendLedger
 from .market_data import ContractSpec, FundingRate, KlineWindow, TopOfBook
-from .models import ModelCandidate, ModelCode, TrendConfig, TrendSide, evaluate_signal, model_candidates, route_candidates
+from .java_entry_contract import JavaEntryConfig
+from .models import ModelCandidate, ModelCode, TrendSide, route_candidates
 from .strategy_context import FibonacciQuality, MarketContext
+from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
+from .strategy_decision import HtxStrategyDecisionEngine, LEGACY_STRATEGY_VERSION
 from .paper import PaperExchange, PaperOrder
 
 
@@ -30,20 +33,25 @@ class ScanOutcome:
 
 class PaperTrendRuntime:
     def __init__(self, ledger: TrendLedger, exchange: PaperExchange, *, account_id: str,
-                 trend_config: TrendConfig = TrendConfig(), execution_config: ExecutionConfig = ExecutionConfig(),
-                 mirror_account_id: str | None = None) -> None:
+                 entry_config: JavaEntryConfig = JavaEntryConfig(), execution_config: ExecutionConfig = ExecutionConfig(),
+                 mirror_account_id: str | None = None, strategy_version: str = LEGACY_STRATEGY_VERSION,
+                 admission: StrategyAdmissionArtifact | None = None) -> None:
         self._ledger, self._exchange = ledger, exchange
         self._account_id, self._mirror_account_id = account_id, mirror_account_id
-        self._trend_config, self._execution_config = trend_config, execution_config
+        self._decision = HtxStrategyDecisionEngine(strategy_version=strategy_version, config=entry_config,
+                                                   admission=admission)
+        self._execution_config = execution_config
 
     def scan(self, *, run_id: str, entry_window: KlineWindow, trend_window: KlineWindow, now_epoch: int,
              at: datetime, book: TopOfBook, contract: ContractSpec, funding: FundingRate | None,
              prior_trade: PriorTrade | None = None, market_context: MarketContext | None = None,
              execution_facts: ExecutionFacts | None = None,
              claimed_structure_keys: frozenset[str] = frozenset()) -> ScanOutcome:
-        signal = evaluate_signal(entry_window.candles, trend_window.candles, self._trend_config)
+        decision = self._decision.decide(contract_code=entry_window.contract_code, period=entry_window.period,
+                                         candles=entry_window.candles, surface=DecisionSurface.PAPER)
+        signal = decision.signal
         context = market_context or MarketContext.neutral()
-        output = model_candidates(entry_window.candles, trend_window.candles, self._trend_config)
+        output = decision.candidates
         route = route_candidates(output, market_context=context)
         gates = tuple(evaluate_gate(item, period=entry_window.period, now_epoch=now_epoch,
                                     atr=signal.indicators.atr if signal.indicators else Decimal("0"), order_book=book,
@@ -58,6 +66,7 @@ class PaperTrendRuntime:
             "signal": signal.reason, "side": signal.side.value,
             "candidates": [item.model.value for item in output], "gates": [item.reason for item in gates],
             "primary_model": route.primary.model.value if route.primary else None, "route": route.reason,
+            "strategy_version": decision.strategy_version, "decision_hash": decision.decision_hash,
         })
         selected = next((item for item in route.ranked if gates[output.index(item)].allowed), None)
         if selected is None:

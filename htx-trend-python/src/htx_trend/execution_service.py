@@ -27,6 +27,8 @@ from .mysql_store import (HtxTrendMySqlRepository, LedgerEvent, PositionIntent,
                           RuntimeInstance, TradeAccount, TrendOrderIntent)
 from .strategy_context import (CandidateTrendState, EntryStateConfig, FibonacciQuality, MarketContext,
                                evaluate_candidate_state, evaluate_counter_market)
+from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
+from .strategy_decision import LEGACY_STRATEGY_VERSION
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,12 +106,14 @@ class HtxTrendEntryExecutor:
                  facts: HtxAccountFactsAdapter, executor: HtxLiveExecutor,
                  execution: ExecutionConfig = ExecutionConfig(), config: EntryExecutionConfig = EntryExecutionConfig(),
                  on_confirmed_entry: Callable[[ConfirmedEntryFill], None] | None = None,
-                 on_confirmed_reduction: Callable[[ConfirmedReductionFill], None] | None = None) -> None:
+                 on_confirmed_reduction: Callable[[ConfirmedReductionFill], None] | None = None,
+                 admission: StrategyAdmissionArtifact | None = None) -> None:
         if instance.account_id != account.account_id:
             raise ValueError("strategy instance and execution account differ")
         self._repository, self._instance, self._account = repository, instance, account
         self._facts, self._executor, self._execution, self._config = facts, executor, execution, config
         self._on_confirmed_entry, self._on_confirmed_reduction = on_confirmed_entry, on_confirmed_reduction
+        self._admission = admission
 
     def submit(self, *, run_id: str, candidate: ModelCandidate, period: str, atr: Decimal,
                ema_fast: Decimal, ema_slow: Decimal, adx: Decimal, recent_candles, book: OrderBook, contract: ContractSpec,
@@ -117,6 +121,17 @@ class HtxTrendEntryExecutor:
                prior_trade=None, claimed_structure_keys: frozenset[str] = frozenset(),
                factor_snapshot_id: int | None = None, timeframe_profile: str = "INTRADAY_15M",
                now_epoch: int | None = None) -> EntrySubmission:
+        new_strategy = self._instance.strategy_name != LEGACY_STRATEGY_VERSION
+        if new_strategy:
+            if self._admission is None or self._admission.strategy_version != self._instance.strategy_name:
+                gate = GateResult(False, "STRATEGY_ADMISSION", "new Python strategy version lacks matching admission artifact")
+                return EntrySubmission(False, gate, None, None, None, gate.reason)
+            try:
+                for surface in (DecisionSurface.RANKING, DecisionSurface.GATE, DecisionSurface.SIZING):
+                    self._admission.require(surface)
+            except ValueError as error:
+                gate = GateResult(False, "STRATEGY_ADMISSION", str(error))
+                return EntrySubmission(False, gate, None, None, None, gate.reason)
         # Java loads the latest completed trade before its cooldown gate.  Live
         # Python used to leave this as None, which silently disabled cooldown.
         if prior_trade is None:
@@ -152,7 +167,9 @@ class HtxTrendEntryExecutor:
                             target_notional=planned_notional, max_notional=planned_notional,
                             margin_safety_ratio=self._config.margin_safety_ratio,
                             require_execution_facts=True,
-                            java_policy_notional_sizing=True)
+                            # V1 preserves Java parity. Newly admitted Python
+                            # versions obey risk-per-trade before notional caps.
+                            java_policy_notional_sizing=not new_strategy)
         snapshot = self._facts.snapshot(contract.contract_code,
                                         candidate.side, book, active_position_count=self._repository.active_position_count(account_id=self._account.account_id),
                                         max_active_positions=self._config.max_active_positions,

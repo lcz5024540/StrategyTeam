@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import time
+from pathlib import Path
 
 from .account_facts import HtxAccountFactsAdapter
 from .credentials import materialize
@@ -17,6 +18,8 @@ from .live_worker import LiveTrendWorker, LiveTrendWorkerConfig
 from .market_data import HtxMarketData
 from .mysql_store import HtxTrendMySqlRepository, MySqlSettings, connect
 from .strategy_platform import DisabledStrategyWorker, ExecutionMode, StrategySupervisor, TrendObservationWorker, TrendObserverConfig
+from .strategy_admission import StrategyAdmissionArtifact
+from .strategy_decision import LEGACY_STRATEGY_VERSION
 
 
 def _account_client(repository: HtxTrendMySqlRepository, account_id: int, *, live: bool) -> HtxV5Client:
@@ -38,6 +41,18 @@ def _validate_first_live_cutover() -> None:
         )
 
 
+def _load_admission(strategy_version: str) -> StrategyAdmissionArtifact | None:
+    if strategy_version == LEGACY_STRATEGY_VERSION:
+        return None
+    raw = os.environ.get("HTX_TREND_STRATEGY_ADMISSION_PATH", "").strip()
+    if not raw:
+        raise SystemExit(f"new strategy {strategy_version} requires HTX_TREND_STRATEGY_ADMISSION_PATH")
+    artifact = StrategyAdmissionArtifact.load(Path(raw))
+    if artifact.strategy_version != strategy_version:
+        raise SystemExit("strategy runtime and admission artifact versions differ")
+    return artifact
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="CoinStrategy independently deployed Python strategy worker")
     parser.add_argument("--strategy-instance", required=True)
@@ -56,10 +71,12 @@ def main() -> None:
         if not instance.enabled:
             raise SystemExit(f"strategy instance is disabled: {args.strategy_instance}")
         family = instance.strategy_family.upper()
+        admission = _load_admission(instance.strategy_name) if family == "TREND" else None
         if family == "TREND" and instance.execution_mode == ExecutionMode.OBSERVE:
             contracts = tuple(dict.fromkeys(item.strip().upper() for item in os.environ.get("HTX_TREND_CONTRACTS", "").split(",") if item.strip()))
             market_client = HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com"))
-            worker = TrendObservationWorker(instance, repository, HtxMarketData(market_client), TrendObserverConfig(contracts))
+            worker = TrendObservationWorker(instance, repository, HtxMarketData(market_client),
+                                            TrendObserverConfig(contracts), admission=admission)
         elif family == "TREND" and instance.execution_mode == ExecutionMode.LIVE:
             if instance.account_id is None:
                 raise SystemExit("LIVE trend instance requires an account-bound runtime instance")
@@ -79,12 +96,12 @@ def main() -> None:
             entry_config = EntryExecutionConfig.from_env()
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
                 facts=HtxAccountFactsAdapter(private_client), executor=live, execution=ExecutionConfig.from_env(),
-                config=entry_config)
+                config=entry_config, admission=admission)
             scan_config = LiveTrendWorkerConfig.from_env()
             manager = LivePositionManager(repository, instance, account, market, private_client, live,
                 period=scan_config.entry_period, java_config=scan_config.java_entry, config=ExitConfig.from_env())
             worker = LiveTrendWorker(instance, repository, market, entry, scan_config,
-                position_manager=manager, writer_guard=writer_lock.assert_owned)
+                position_manager=manager, writer_guard=writer_lock.assert_owned, admission=admission)
         elif family in {"CARRY_SINGLE", "CARRY_CROSS"}:
             worker = DisabledStrategyWorker(instance, repository)
         else:

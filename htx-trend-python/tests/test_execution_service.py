@@ -8,6 +8,7 @@ from htx_trend.mirror import ConfirmedPrimaryFill, HtxTrendMirrorFollower
 from htx_trend.models import ModelCandidate, ModelCode, PriceStructure, TrendSide
 from htx_trend.mysql_store import AccountRiskLimit, CapitalAllocation, RiskReservationTotals, RuntimeInstance, TradeAccount, StrategyPolicyRecord
 from htx_trend.strategy_context import MarketContext, MarketRegime
+from htx_trend.strategy_admission import DecisionSurface, ResearchStage, StageEvidence, StageStatus, build_artifact
 
 
 def candidate() -> ModelCandidate:
@@ -55,10 +56,21 @@ class Executor:
     def order(self, *_args, **_kwargs): return {"order_id": "99", "status": "filled", "trade_volume": "2", "trade_avg_price": "100", "fee": "0.01"}
 
 
-def executor(repo: Repository, live: Executor) -> HtxTrendEntryExecutor:
-    return HtxTrendEntryExecutor(repository=repo, instance=RuntimeInstance("python-main", "TREND", "HTX_TREND_V1", 7, "primary", "LIVE", True, "unit", None),
+def executor(repo: Repository, live: Executor, *, strategy_name="HTX_TREND_V1", admission=None,
+             execution=None) -> HtxTrendEntryExecutor:
+    return HtxTrendEntryExecutor(repository=repo, instance=RuntimeInstance("python-main", "TREND", strategy_name, 7, "primary", "LIVE", True, "unit", None),
         account=TradeAccount(7, "primary", "PRIMARY", True, False, "https://example.test"), facts=Facts(), executor=live,
-        execution=ExecutionConfig(min_score=Decimal("70"), min_net_r=Decimal("0"), min_notional=Decimal("1"), target_notional=Decimal("100"), max_notional=Decimal("100")))
+        execution=execution or ExecutionConfig(min_score=Decimal("70"), min_net_r=Decimal("0"), min_notional=Decimal("1"), target_notional=Decimal("100"), max_notional=Decimal("100")),
+        admission=admission)
+
+
+def full_admission():
+    digest="a"*64
+    return build_artifact(strategy_id="htx-trend",strategy_version="HTX_TREND_V2",
+        experiment_id="EXP-20261011-002",source_commit="test",policy_hash=digest,config_hash=digest,
+        dataset_manifest_hash=digest,stages=tuple(StageEvidence(stage,StageStatus.PASS,f"e/{stage.name}",digest,"passed")
+            for stage in ResearchStage),allowed_surfaces=(DecisionSurface.RANKING,DecisionSurface.GATE,DecisionSurface.SIZING),
+        failure_conditions=("negative expectancy",),pause_conditions=("HTX state unknown",))
 
 
 def test_entry_writes_intent_reserves_then_submits_java_market_order() -> None:
@@ -72,6 +84,24 @@ def test_entry_writes_intent_reserves_then_submits_java_market_order() -> None:
     assert [name for name, _ in repo.calls[:2]] == ["position", "order"]
     assert live.calls[0][0] == "leverage"
     assert live.calls[1][1].type == "market"
+
+
+def test_new_strategy_requires_admission_and_uses_risk_first_sizing() -> None:
+    repo, live = Repository(), Executor()
+    bars=(Candle(9000,Decimal(99),Decimal(101),Decimal(98),Decimal(100),turnover=Decimal(1000)),)
+    common=dict(run_id="run",candidate=candidate(),period="15min",atr=Decimal(2),ema_fast=Decimal(101),
+        ema_slow=Decimal(99),adx=Decimal(30),recent_candles=bars,
+        book=OrderBook(((Decimal("99.99"),Decimal(100)),),((Decimal("100.01"),Decimal(100)),)),
+        contract=ContractSpec("BTC-USDT",Decimal(".01"),Decimal(".1"),1),
+        funding=FundingRate("BTC-USDT",Decimal(".0001")),
+        market_context=MarketContext(MarketRegime.BROAD_UP,TrendSide.LONG,Decimal(".8")),now_epoch=10000)
+    blocked=executor(repo,live,strategy_name="HTX_TREND_V2").submit(**common)
+    assert not blocked.accepted and blocked.gate.stage=="STRATEGY_ADMISSION"
+    execution=ExecutionConfig(min_score=Decimal("70"),min_net_r=Decimal("0"),min_notional=Decimal("1"),
+        target_notional=Decimal("100"),max_notional=Decimal("100"),risk_per_trade=Decimal("1"))
+    accepted=executor(repo,live,strategy_name="HTX_TREND_V2",admission=full_admission(),execution=execution).submit(**common)
+    assert accepted.accepted
+    assert [request for name,request in live.calls if name=="place"][-1].volume=="19"
 
 
 def test_reconciliation_only_marks_fill_after_exchange_order_response() -> None:

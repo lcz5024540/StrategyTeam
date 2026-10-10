@@ -32,10 +32,11 @@ def evaluate_experiment_evidence(manifest: dict[str, Any], trades: tuple[dict[st
     if missing:
         return ExperimentGateV5("INSUFFICIENT_EVIDENCE", "L1", tuple(missing),
                                 "execution-level economics are blocked until every frozen fact is present")
-    return ExperimentGateV5("READY", "L2", (), "frozen execution evidence is structurally complete")
+    return ExperimentGateV5("STRUCTURALLY_COMPLETE", "L2", (),
+                            "execution facts are complete; strategy admission is still required")
 
 
 def require_economic_evidence(manifest: dict[str, Any], trades: tuple[dict[str, Any], ...]) -> None:
     result = evaluate_experiment_evidence(manifest, trades)
-    if result.status != "READY":
+    if result.status != "STRUCTURALLY_COMPLETE":
         raise ValueError(f"{result.status}: {','.join(result.missing)}")

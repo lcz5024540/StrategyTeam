@@ -17,11 +17,13 @@ from typing import Any
 from .execution_service import HtxTrendEntryExecutor
 from .market_data import HtxMarketData, period_seconds
 from .models import TrendSide
-from .java_entry_contract import JavaEntryConfig, candidates as java_combination_candidates, evaluate as evaluate_java_ensemble
+from .java_entry_contract import JavaEntryConfig
 from .policy import StrategyPolicy, PolicySelection, select_policy
 from .strategy_context import MarketContext, MarketRegime
 from .strategy_platform import ExecutionMode, StrategyWorker, WorkerHealth
 from .mysql_store import HtxTrendMySqlRepository, RuntimeInstance
+from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
+from .strategy_decision import HtxStrategyDecisionEngine, LEGACY_STRATEGY_VERSION
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,7 +148,8 @@ class LiveTrendWorker(StrategyWorker):
 
     def __init__(self, instance: RuntimeInstance, repository: HtxTrendMySqlRepository, market: HtxMarketData,
                  executor: HtxTrendEntryExecutor, config: LiveTrendWorkerConfig,
-                 trend_config: JavaEntryConfig | None = None, *, position_manager=None, writer_guard=None) -> None:
+                 trend_config: JavaEntryConfig | None = None, *, position_manager=None, writer_guard=None,
+                 admission: StrategyAdmissionArtifact | None = None) -> None:
         if instance.execution_mode != ExecutionMode.LIVE:
             raise ValueError("LiveTrendWorker requires a LIVE strategy instance")
         if not config.enabled:
@@ -157,6 +160,7 @@ class LiveTrendWorker(StrategyWorker):
             raise ValueError("LiveTrendWorker requires HTX_TREND_COMBINATION_ENTRY_ENABLED=true; Java legacy entry is not implemented in Python")
         self._instance, self._repository, self._market, self._executor = instance, repository, market, executor
         self._config, self._trend_config, self._stopped = config, trend_config or config.java_entry, False
+        self._admission = admission
         self._last_scanned_close_epoch: int | None = None
         self._pending: dict[str, tuple[PolicySelection, _Scan, int]] = {}
         self._last_context = MarketContext.neutral()
@@ -385,14 +389,16 @@ class LiveTrendWorker(StrategyWorker):
     def _scan_one(self, contract: str, now_epoch: int, java_config: JavaEntryConfig) -> _Scan:
         entry = self._market.kline_window(contract, self._config.entry_period, self._config.kline_size, now_epoch=now_epoch)
         trend = self._market.kline_window(contract, self._config.trend_period, self._config.kline_size, now_epoch=now_epoch)
-        # Do not use the separate research scorer here.  Java executes an
-        # ensemble signal followed by its combination calculator.
-        signal = evaluate_java_ensemble(entry.candles, java_config)
+        decision = HtxStrategyDecisionEngine(
+            strategy_version=self._instance.strategy_name or LEGACY_STRATEGY_VERSION,
+            config=java_config, admission=self._admission,
+        ).decide(contract_code=contract, period=self._config.entry_period, candles=entry.candles,
+                 surface=DecisionSurface.RANKING)
         try:
             funding = self._market.funding_rate(contract)
         except Exception:
             funding = None
-        return _Scan(contract, entry, trend, signal, java_combination_candidates(entry.candles, signal, java_config, self._config.entry_period),
+        return _Scan(contract, entry, trend, decision.signal, decision.candidates,
                      self._market.order_book(contract), self._market.contract_spec(contract), funding)
 
     def _persist_observation(self, scan: _Scan, context: MarketContext) -> int:
