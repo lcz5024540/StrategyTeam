@@ -1,0 +1,28 @@
+<mxfile host="app.diagrams.net" modified="2026-10-11T00:00:00.000Z" agent="Codex" version="24.7.17">
+  <diagram id="htx-python-iron-law-v1" name="HTX Python 铁律调用链">
+    <mxGraphModel dx="1400" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/><mxCell id="1" parent="0"/>
+        <mxCell id="2" value="阶段 1–7&#xa;策略卡片 / 冻结数据 / 质量 / 特征 / 状态机 / 风险 / 成本" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;" vertex="1" parent="1"><mxGeometry x="40" y="80" width="240" height="110" as="geometry"/></mxCell>
+        <mxCell id="3" value="阶段 8–12&#xa;同源回测 / 消融 / OOS / PAPER / 报告" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;" vertex="1" parent="1"><mxGeometry x="340" y="80" width="230" height="110" as="geometry"/></mxCell>
+        <mxCell id="4" value="sealed AdmissionArtifact&#xa;版本 + 实验 + policy/config/dataset hash&#xa;作用面许可" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;" vertex="1" parent="1"><mxGeometry x="630" y="70" width="260" height="130" as="geometry"/></mxCell>
+        <mxCell id="5" value="HtxStrategyDecisionEngine&#xa;同一 HTX completed-bar 输入&#xa;同一 java_entry_contract" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;" vertex="1" parent="1"><mxGeometry x="950" y="70" width="250" height="130" as="geometry"/></mxCell>
+        <mxCell id="6" value="OBSERVE&#xa;阶段 1–5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="230" y="310" width="160" height="75" as="geometry"/></mxCell>
+        <mxCell id="7" value="BACKTEST&#xa;阶段 1–7 + COMPLETE manifest" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="430" y="300" width="190" height="95" as="geometry"/></mxCell>
+        <mxCell id="8" value="PAPER&#xa;阶段 1–10" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="660" y="310" width="160" height="75" as="geometry"/></mxCell>
+        <mxCell id="9" value="RANKING / GATE / SIZING / EXIT&#xa;阶段 1–12&#xa;新版本风险优先 sizing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;" vertex="1" parent="1"><mxGeometry x="860" y="290" width="260" height="115" as="geometry"/></mxCell>
+        <mxCell id="10" value="HTX 事实边界&#xa;K线 / 合约规格 / 盘口 / 费率 / 资金费 / 保证金 / 订单 / fills" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;" vertex="1" parent="1"><mxGeometry x="480" y="520" width="390" height="100" as="geometry"/></mxCell>
+        <mxCell id="11" value="HTX_TREND_V1&#xa;存量兼容，不自动切换" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1"><mxGeometry x="1000" y="520" width="190" height="85" as="geometry"/></mxCell>
+        <mxCell id="20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="2" target="3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="3" target="4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="22" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="4" target="5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="23" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="5" target="6"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="5" target="7"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="25" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="5" target="8"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="26" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="5" target="9"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="27" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="10" target="5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="28" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="11" target="9"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

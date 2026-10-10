@@ -137,3 +137,5 @@ htx-trend replay --evidence /path/evidence --output /path/report.json
 ```
 
 本次只实现本地代码和验证合同；未生成虚假的 PASS 证据，未执行 SQL，未部署，未交易，也未把 V5 接入 LIVE。
+
+图示见 [`diagrams/htx-python-strategy-iron-law-call-flow-v1.drawio`](diagrams/htx-python-strategy-iron-law-call-flow-v1.drawio)。
