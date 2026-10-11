@@ -13,6 +13,16 @@ python3.12 -m venv .venv
 .venv/bin/pytest
 ```
 
+`configs/runs/R0001.yaml` 的 `dataset_id` / `manifest_hash` 在数据冻结前是 `TODO_FREEZE_*` 占位。`python -m htx_trend.research run` 会硬拒绝含 `TODO` / `PLACEHOLDER` 的值；必须先 `collect` + `freeze`，再把冻结后的 id/hash 写进配置。登记规则只验证流程（记录完整、两次运行一致），不把盈利或 PF 当 keep/kill。
+
+健康与状态：
+
+```bash
+python -m htx_trend health
+python -m htx_trend status --json   # 无 status 文件时非零退出
+# 原入口仍可用：python -m htx_trend.research.cli status --json
+```
+
 迁移路线见 [`../docs/architecture-refactor/HTX_TREND_PYTHON_MIGRATION_V1.md`](../docs/architecture-refactor/HTX_TREND_PYTHON_MIGRATION_V1.md)。
 
 
@@ -40,7 +50,7 @@ htx-trend verify-evidence --evidence /var/lib/coinstrategy/htx-python-evidence -
 
 Python 的生产事实账本是现有 MySQL，不是本地 SQLite。订单查询按交易所累计成交量事务更新订单、仓位和统一账本；部分成交后撤单保留真实剩余仓位，未知提交结果保留为 `UNKNOWN` 并按客户端订单号恢复。SQLite 仍只用于离线回放和事务行为测试。部署前由运维显式执行 [`sql/2026-10-08__python_strategy_platform.sql`](sql/2026-10-08__python_strategy_platform.sql) 和 [`sql/2026-10-09__python_exit_state.sql`](sql/2026-10-09__python_exit_state.sql)，worker 启动时只读验表，绝不执行 DDL。
 
-每个实例对应一个独立 systemd 单元：[`deployment/systemd/coinstrategy-python-strategy@.service`](deployment/systemd/coinstrategy-python-strategy@.service)。实例、心跳与账户资金预算在 MySQL 的 `strategy_runtime_instance`、`strategy_runtime_heartbeat`、`strategy_capital_allocation` 中保存。趋势、单所 carry、跨所 carry 因此可分别启动、停止、回滚；共享账户只通过预算和最大并发仓位做硬约束。
+生产采集与心跳只有一套 systemd unit：[`deployment/systemd/htx-trend-collector.service`](deployment/systemd/htx-trend-collector.service) 与 [`deployment/systemd/htx-trend-heartbeat.service`](deployment/systemd/htx-trend-heartbeat.service)。`WorkingDirectory=/opt/coinstrategy/htx-trend-py`，`ExecStart` 使用该目录下 `.venv/bin/python`，`User=ubuntu`，采集器读 `configs/collector.yaml`。实例、心跳与账户资金预算仍可在 MySQL 的 `strategy_runtime_instance`、`strategy_runtime_heartbeat`、`strategy_capital_allocation` 中保存。趋势、单所 carry、跨所 carry 不得共用订单或仓位状态。
 
 `OBSERVE` worker 并发读取公开行情、顺序写入同口径证据和心跳，不会创建订单。`LIVE` 代码路径已存在，但启动前必须同时满足：完成退出逐笔验收并显式设置 `HTX_PYTHON_EXIT_PARITY_APPROVED=true`；当前只允许 PRIMARY 且拒绝启用镜像账户；Java 与 Python 使用同一个 `coinstrategy:htx:trend:writer:v1` 生命周期锁；同源趋势和退出开关全部一致。会话已批准的混合市场消融必须显式保留：`HTX_TREND_MIXED_MARKET_REQUIRES_STRONG_CANDIDATE=false`，避免回到默认 `true`。
 

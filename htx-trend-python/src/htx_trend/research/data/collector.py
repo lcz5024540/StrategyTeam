@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -197,6 +198,7 @@ class DataCollector:
                 contract_code,
                 page_size=50,
                 page_sleep=0.2 if owned else 0.0,
+                strict=True,
             )
         finally:
             if owned:
@@ -220,6 +222,12 @@ class DataCollector:
                 bn_rates, contract_code, default_source="binance_external"
             )
             df = stitch_funding_history(htx_df, bn_df, stitch_point)
+            htx_after = 0 if df.empty else int((df["source"] == "htx").sum())
+            if htx_after == 0:
+                raise ValueError(
+                    f"HTX funding after stitch is empty for {contract_code}; "
+                    "paginated HTX fetch must return post-stitch history"
+                )
         else:
             df = htx_df
 
@@ -228,12 +236,19 @@ class DataCollector:
 
         output_path = self.raw_data_dir / f"{contract_code}_funding.parquet"
         df.to_parquet(output_path, index=False)
+        source_counts = (
+            {str(key): int(value) for key, value in df["source"].value_counts().items()}
+            if "source" in df.columns
+            else {"htx": int(len(df))}
+        )
 
         log_event(
             LogComponent.DATA,
             f"Funding history saved: {len(df)} records",
             contract=contract_code,
             records=len(df),
+            htx=source_counts.get("htx", 0),
+            binance_external=source_counts.get("binance_external", 0),
             path=str(output_path),
         )
 
@@ -348,4 +363,18 @@ def summarize_funding_sources(raw_dir, contracts: list[str]) -> dict:
         else:
             counts = {"htx": int(len(fund))}
         payload[contract] = counts
+    return payload
+
+
+def hash_funding_files(raw_dir, contracts: list[str]) -> dict:
+    payload: dict[str, dict[str, str]] = {}
+    for contract in contracts:
+        path = raw_dir / f"{contract}_funding.parquet"
+        if not path.exists():
+            continue
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        payload[contract] = {
+            "path": f"{contract}_funding.parquet",
+            "sha256": f"sha256:{digest}",
+        }
     return payload

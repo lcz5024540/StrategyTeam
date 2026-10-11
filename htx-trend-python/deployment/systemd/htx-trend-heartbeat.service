@@ -1,5 +1,5 @@
 [Unit]
-Description=HTX Trend Research Kline Collector
+Description=HTX Trend Research Heartbeat Monitor
 After=network.target
 
 [Service]
@@ -13,17 +13,17 @@ ReadWritePaths=/opt/coinstrategy/htx-trend-py/data
 ReadWritePaths=/opt/coinstrategy/htx-trend-py/logs
 ReadWritePaths=/opt/coinstrategy/htx-trend-py/status.json
 ReadWritePaths=/opt/coinstrategy/htx-trend-py/heartbeat.txt
-ReadWritePaths=/opt/coinstrategy/htx-trend-py/collector_state.json
 
-ExecStart=/usr/bin/python3 -m htx_trend.research.collectors.continuous_collector \
-    --config /opt/coinstrategy/htx-trend-py/configs/collector.yaml
+ExecStart=/opt/coinstrategy/htx-trend-py/.venv/bin/python -m htx_trend.research.ops.heartbeat \
+    --interval 60 \
+    --file /opt/coinstrategy/htx-trend-py/heartbeat.txt
 
 Restart=always
-RestartSec=10
+RestartSec=5
 
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=htx-trend-collector
+SyslogIdentifier=htx-trend-heartbeat
 
 [Install]
 WantedBy=multi-user.target

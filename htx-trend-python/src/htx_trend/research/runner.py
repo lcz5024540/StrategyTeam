@@ -56,6 +56,36 @@ REQUIRED_RUN_FIELDS = (
 )
 
 
+def _is_unfrozen_placeholder(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return True
+    upper = text.upper()
+    return "TODO" in upper or "PLACEHOLDER" in upper
+
+
+def _marked_equity(broker: Any) -> float:
+    equity = float(broker.get_account_equity())
+    for fill in getattr(broker, "fills", []) or []:
+        if getattr(fill, "is_entry", False):
+            equity -= float(getattr(fill, "fees", 0.0) or 0.0)
+            equity -= float(getattr(fill, "slippage", 0.0) or 0.0)
+    for position in getattr(broker, "positions", {}).values():
+        equity -= float(getattr(position, "accumulated_funding", 0.0) or 0.0)
+    return equity
+
+
+def annualized_sharpe_from_equity(equity: Any, ppy: float) -> float:
+    series = pd.Series(equity, dtype="float64")
+    rets = series.pct_change().dropna()
+    if len(rets) < 2:
+        return 0.0
+    std = float(rets.std(ddof=1))
+    if std <= 0:
+        return 0.0
+    return float(rets.mean() / std * (float(ppy) ** 0.5))
+
+
 class BacktestRunner:
     def __init__(self, config_path: Path, workspace_dir: Path):
         self.config_path = config_path
@@ -87,6 +117,8 @@ class BacktestRunner:
 
     def _validate_run_type(self) -> bool:
         run_type = self.config.get("run_type")
+        if str(self.run_id).startswith("SMOKE-") and str(run_type or "").upper() != "SMOKE":
+            raise ValueError("SMOKE- run_id requires run_type=SMOKE")
         if run_type is None or run_type == "BACKTEST":
             return False
         if run_type != "SMOKE":
@@ -106,6 +138,9 @@ class BacktestRunner:
         return True
 
     def run(self) -> dict[str, Any]:
+        from ..arrow_runtime import configure_arrow
+
+        configure_arrow()
         log_event(LogComponent.ENGINE, f"Starting backtest run: {self.run_id}")
 
         trial_id = str(uuid.uuid4())
@@ -221,6 +256,14 @@ class BacktestRunner:
             )
         if not self.config["manifest_hash"]:
             raise ValueError("manifest_hash is required; unverified dataset load is not allowed")
+        if _is_unfrozen_placeholder(self.config.get("dataset_id")):
+            raise ValueError(
+                "dataset_id is a TODO placeholder; freeze the dataset first"
+            )
+        if _is_unfrozen_placeholder(self.config.get("manifest_hash")):
+            raise ValueError(
+                "manifest_hash is a TODO placeholder; freeze the dataset first"
+            )
         if not self.config["cost_scenario"]:
             raise ValueError("cost_scenario is required")
         if not self.config["symbols"]:
@@ -518,6 +561,7 @@ class BacktestRunner:
 
         state_machines = {symbol: StateMachine() for symbol in data}
         all_decisions = []
+        equity_curve: list[dict[str, Any]] = []
         interval = frozen.timeframe if getattr(frozen, "timeframe", None) else "4hour"
 
         for symbol, df in data.items():
@@ -561,6 +605,13 @@ class BacktestRunner:
                 funding_df = getattr(self, "_funding_by_symbol", {}).get(symbol)
                 if funding_df is not None:
                     apply_bar_settlements(broker, symbol, bar_payload, interval, funding_df)
+                equity_curve.append(
+                    {
+                        "symbol": symbol,
+                        "bar_time": bar["bar_time"],
+                        "equity": _marked_equity(broker),
+                    }
+                )
                 if skip_signals and not check_stop:
                     continue
 
@@ -671,6 +722,7 @@ class BacktestRunner:
                                         size=pos_size.size,
                                         order_type="MARKET",
                                         stop_slippage=slippage_amount,
+                                        client_order_id=position_id,
                                     )
                                 )
                                 decision_record["action"] = "ENTER"
@@ -684,16 +736,20 @@ class BacktestRunner:
 
                 elif current_state == StrategyState.ENTRY_PENDING:
                     current_position = sm.get_position(symbol)
+                    position_id = (current_position.metadata or {}).get("position_id")
                     entry_fills = [
                         fill
                         for fill in broker.fills
-                        if fill.symbol == symbol and fill.is_entry
+                        if fill.is_entry
+                        and getattr(fill, "position_id", None) == position_id
                     ]
-                    actual_price = (
-                        float(entry_fills[-1].price)
-                        if entry_fills
-                        else float(bar["open"])
-                    )
+                    if not entry_fills:
+                        decision_record["action"] = "HOLD"
+                        decision_record["skip_reason"] = "entry_unfilled"
+                        decision_record["position_id"] = position_id
+                        all_decisions.append(decision_record)
+                        continue
+                    actual_price = float(entry_fills[-1].price)
                     signal_atr = float((current_position.metadata or {}).get("signal_atr") or bar[atr_col])
                     fill_stop = c02.calculate_stop_loss(
                         actual_price, signal_atr, current_position.side
@@ -726,6 +782,7 @@ class BacktestRunner:
                                 is_stop=True,
                                 stop_price=fill_stop,
                                 stop_slippage=slippage_amount,
+                                client_order_id=position_id,
                             )
                         )
                         decision_record["action"] = "EXIT"
@@ -763,6 +820,7 @@ class BacktestRunner:
                                         position_id, current_position.stop_loss
                                     ),
                                     stop_slippage=slippage_amount,
+                                    client_order_id=position_id,
                                 )
                             )
                             decision_record["action"] = "EXIT"
@@ -791,6 +849,7 @@ class BacktestRunner:
             "fee_rates_used": fee_rates_record,
             "funding_missing": list(getattr(self, "_funding_missing", [])),
             "funding_events": list(broker.funding_events),
+            "equity_curve": equity_curve,
         }
 
     def _fills_frame(self, fills: list[Any]) -> pd.DataFrame:
@@ -810,6 +869,8 @@ class BacktestRunner:
                     "contract_size": fill.contract_size,
                     "notional": fill.notional,
                     "funding": fill.funding,
+                    "position_id": getattr(fill, "position_id", None),
+                    "client_order_id": getattr(fill, "client_order_id", None),
                 }
                 for fill in fills
             ]
@@ -915,17 +976,18 @@ class BacktestRunner:
             "fees",
             "funding",
         ]
+        curve = pd.DataFrame(results.get("equity_curve") or [])
+        sharpe = (
+            annualized_sharpe_from_equity(curve["equity"], ppy)
+            if not curve.empty
+            else None
+        )
         if trades:
             df = pd.DataFrame(trades)
             df.to_parquet(path, index=False)
-            std = float(df["return"].std(ddof=1)) if len(df) > 1 else 0.0
-            if std > 0:
-                sharpe = float(df["return"].mean() / std * np.sqrt(ppy))
-            else:
-                sharpe = 0.0
             return sharpe, n_trades, path
         pd.DataFrame(columns=columns).to_parquet(path, index=False)
-        return None, 0, path
+        return sharpe, 0, path
 
     def _load_stitch_points(self) -> dict[str, Any] | None:
         dataset_id = self.config.get("dataset_id")

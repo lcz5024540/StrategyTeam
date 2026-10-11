@@ -14,15 +14,17 @@
 - **Heartbeat**: `/opt/coinstrategy/htx-trend-py/heartbeat.txt`
 - **采集状态**: `/opt/coinstrategy/htx-trend-py/collector_state.json`
 
-统一 systemd unit 位于仓库 `systemd/`：
+统一 systemd unit 只有一套，位于仓库 `deployment/systemd/`：
 
 - `htx-trend-collector.service`
 - `htx-trend-heartbeat.service`
 
+`WorkingDirectory=/opt/coinstrategy/htx-trend-py`，`User=ubuntu`，`ExecStart` 使用 `/opt/coinstrategy/htx-trend-py/.venv/bin/python`。采集器走配置 `/opt/coinstrategy/htx-trend-py/configs/collector.yaml`。仓库里不得再放第二套 `.service`。
+
 ```bash
 sudo mkdir -p /opt/coinstrategy/htx-trend-py/{data,logs}
 sudo chown -R ubuntu:ubuntu /opt/coinstrategy/htx-trend-py
-sudo cp systemd/*.service /etc/systemd/system/
+sudo cp deployment/systemd/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now htx-trend-collector htx-trend-heartbeat
 ```
@@ -226,9 +228,12 @@ python -m htx_trend.research run configs/runs/production.yaml
 
 ### Health Check
 
+`health` / `status` 同时挂在 `python -m htx_trend` 和 `python -m htx_trend.research.cli`。
+
 ```bash
 # Check component health
-python -m htx_trend.research health
+python -m htx_trend health
+# equivalently: python -m htx_trend.research.cli health
 
 # Returns exit code 0 if healthy, 1 if unhealthy
 ```
@@ -238,7 +243,7 @@ python -m htx_trend.research health
 #!/bin/bash
 # health_check.sh
 while true; do
-  if ! python -m htx_trend.research health; then
+  if ! python -m htx_trend health; then
     echo "ALERT: System unhealthy" | mail -s "HTX Trend Alert" ops@example.com
   fi
   sleep 60
@@ -247,9 +252,14 @@ done
 
 ### Status Check
 
+`status --json` 在没有 status 文件时必须非零退出，不要把空输出当成功。
+
 ```bash
-# Get current status
-python -m htx_trend.research status --json > status.json
+# Get current status (nonzero if no status.json)
+python -m htx_trend status --json
+# equivalently: python -m htx_trend.research.cli status --json
+
+python -m htx_trend status --json > status.json
 
 # Check positions
 jq '.positions' status.json
@@ -432,10 +442,10 @@ python -c "from htx_trend.research.account_guard import AccountConfig; \
   config.validate()"
 
 # Check approvals
-python -m htx_trend.research status --json | jq '.approvals'
+python -m htx_trend status --json | jq '.approvals'
 
 # Check circuit breaker
-python -m htx_trend.research status --json | jq '.circuit_breaker'
+python -m htx_trend status --json | jq '.circuit_breaker'
 ```
 
 ### Health check failing
@@ -445,7 +455,7 @@ python -m htx_trend.research status --json | jq '.circuit_breaker'
 ls heartbeats/
 
 # Check stale heartbeat
-python -m htx_trend.research health --max-age 300
+python -m htx_trend health --max-age 300
 
 # Manual check
 cat heartbeats/backtest.json

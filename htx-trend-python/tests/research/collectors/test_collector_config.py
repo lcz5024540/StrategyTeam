@@ -99,8 +99,8 @@ def test_collector_uses_configured_paths(tmp_path):
 
 def test_systemd_units_use_unified_paths():
     root = Path(__file__).resolve().parents[3]
-    collector = (root / "systemd" / "htx-trend-collector.service").read_text()
-    heartbeat = (root / "systemd" / "htx-trend-heartbeat.service").read_text()
+    collector = (root / "deployment" / "systemd" / "htx-trend-collector.service").read_text()
+    heartbeat = (root / "deployment" / "systemd" / "htx-trend-heartbeat.service").read_text()
     for text in (collector, heartbeat):
         assert "User=ubuntu" in text
         assert "Group=ubuntu" in text

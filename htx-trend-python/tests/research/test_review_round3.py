@@ -66,6 +66,30 @@ def _ohlc_workspace(tmp_path, name="ws", n=230, mutate=None):
     return workspace
 
 
+def test_next_bar_bad_tick_keeps_strategy_and_broker_state_consistent(tmp_path):
+    workspace = _ohlc_workspace(tmp_path, "ghost")
+    _mark_bar(workspace, 211, bad_tick=True, bad_tick_kind="spike")
+    results = _stop_runner(workspace, "GHOST").run()
+    decisions = results["decisions"]
+    target = pd.read_parquet(workspace / "data" / "datasets" / "ohlc" / "BTC-USDT.parquet")
+    spike = pd.Timestamp(target.loc[211, "bar_time"])
+    on_spike = decisions[pd.to_datetime(decisions["bar_time"], utc=True) == spike]
+    assert on_spike.empty or not (on_spike["action"] == "CONFIRM_ENTRY").any()
+    fills = results["fills"]
+    confirms = decisions[decisions["action"] == "CONFIRM_ENTRY"]
+    for _, row in confirms.iterrows():
+        pid = row.get("position_id")
+        assert pid
+        matched = [
+            fill
+            for fill in fills
+            if fill.is_entry and getattr(fill, "position_id", None) == pid
+        ]
+        assert matched, f"CONFIRM_ENTRY {pid} has no matching broker fill"
+    entry_times = {pd.Timestamp(fill.time) for fill in fills if fill.is_entry}
+    assert spike not in entry_times
+
+
 def test_non_comparable_still_checks_stop_while_in_position(tmp_path):
     workspace = _ohlc_workspace(tmp_path, "nc")
     _mark_bar(workspace, 212, non_comparable=True)

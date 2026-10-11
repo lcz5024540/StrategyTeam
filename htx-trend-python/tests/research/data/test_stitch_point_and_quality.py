@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from argparse import Namespace
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from htx_trend.research.cli import cmd_freeze
 from htx_trend.research.data.manifest import DatasetManifest
@@ -212,6 +214,53 @@ def test_written_dataset_manifest_json_contains_stitch_points_and_bad_ticks_hash
     assert batch_written["stitch_points"]["BTC-USDT"].startswith("2020-11-01T00:00:00")
     assert batch_written["bad_ticks_hash"] == written["bad_ticks_hash"]
     assert "stitch_points" in json.dumps(batch_written, sort_keys=True)
+
+
+def test_freeze_records_funding_file_hashes_and_load_rejects_mismatch(tmp_path):
+    times = _around_stitch(before=8, after=8)
+    _write_raw(tmp_path, times)
+    raw = tmp_path / "data" / "raw"
+    funding = pd.DataFrame(
+        {
+            "symbol": ["BTC-USDT"],
+            "funding_time": pd.to_datetime(["2020-11-01T08:00:00Z"], utc=True),
+            "funding_rate": [0.0001],
+            "source": ["htx"],
+        }
+    )
+    funding.to_parquet(raw / "BTC-USDT_funding.parquet", index=False)
+    cmd_freeze(_freeze_args(tmp_path, stitch_point="2020-11-01T00:00:00Z"))
+    dataset_dir = next(
+        path
+        for path in (tmp_path / "data" / "datasets").iterdir()
+        if path.is_dir() and path.name != "manifests"
+    )
+    written = json.loads((dataset_dir / "manifest.json").read_text())
+    recorded = written["funding_files"]["BTC-USDT"]
+    assert recorded["sha256"].startswith("sha256:")
+    digest = hashlib.sha256((raw / "BTC-USDT_funding.parquet").read_bytes()).hexdigest()
+    assert recorded["sha256"] == f"sha256:{digest}"
+    batch = DatasetManifest.load(
+        tmp_path / "data" / "datasets" / "manifests" / f"{dataset_dir.name}.json"
+    )
+    assert batch.metadata["funding_files"]["BTC-USDT"]["sha256"] == recorded["sha256"]
+    baseline = batch.sha256()
+    batch.metadata["funding_files"] = {
+        "BTC-USDT": {"path": "BTC-USDT_funding.parquet", "sha256": "sha256:" + ("0" * 64)}
+    }
+    assert batch.sha256() != baseline
+
+    from htx_trend.research.data.dataset import DatasetManager
+
+    mgr = DatasetManager(tmp_path / "data" / "datasets")
+    manifest_hash = DatasetManifest.load(
+        tmp_path / "data" / "datasets" / "manifests" / f"{dataset_dir.name}.json"
+    ).sha256()
+    tampered = funding.copy()
+    tampered.loc[0, "funding_rate"] = 0.9999
+    tampered.to_parquet(raw / "BTC-USDT_funding.parquet", index=False)
+    with pytest.raises(ValueError, match="[Ff]unding"):
+        mgr.load_dataset_with_verification(dataset_dir.name, manifest_hash)
 
 
 def test_freeze_records_funding_sources_in_manifest_and_hash(tmp_path):

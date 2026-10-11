@@ -101,6 +101,90 @@ def test_trial_failed_on_exception(tmp_path):
     assert "dataset exploded" in (trials[0]["error_message"] or "")
 
 
+def test_count_trials_filters_by_run_type_not_id_prefix(tmp_path):
+    from htx_trend.research.ledger import LedgerManager, RunRecord
+
+    ledger = LedgerManager(tmp_path / "ledger.db")
+    now = datetime.now(timezone.utc)
+    ledger.start_trial(
+        trial_id="formal-smoke-id",
+        run_id="SMOKE-20261011-99",
+        parent_run_id=None,
+        family_id="FAM",
+        changed_key="baseline",
+        status="completed",
+        started_at=now,
+    )
+    ledger.register_run(
+        RunRecord(
+            run_id="SMOKE-20261011-99",
+            parent_run_id=None,
+            git_commit="abc",
+            dataset_hash="ds",
+            environment="BACKTEST",
+            config_snapshot={"run_type": None},
+            cost_scenario="base",
+            created_at=now,
+        )
+    )
+    ledger.start_trial(
+        trial_id="real-smoke",
+        run_id="SMOKE-20261011-01",
+        parent_run_id=None,
+        family_id="FAM",
+        changed_key="baseline",
+        status="completed",
+        started_at=now,
+    )
+    ledger.register_run(
+        RunRecord(
+            run_id="SMOKE-20261011-01",
+            parent_run_id=None,
+            git_commit="abc",
+            dataset_hash="ds",
+            environment="SMOKE",
+            config_snapshot={"run_type": "SMOKE"},
+            cost_scenario="base",
+            created_at=now,
+        )
+    )
+    ledger.start_trial(
+        trial_id="r0001",
+        run_id="R0001",
+        parent_run_id=None,
+        family_id="FAM",
+        changed_key="baseline",
+        status="completed",
+        started_at=now,
+    )
+    ledger.register_run(
+        RunRecord(
+            run_id="R0001",
+            parent_run_id=None,
+            git_commit="abc",
+            dataset_hash="ds",
+            environment="BACKTEST",
+            config_snapshot={},
+            cost_scenario="base",
+            created_at=now,
+        )
+    )
+    assert ledger.count_trials("FAM") == 2
+
+
+def test_smoke_prefixed_id_without_run_type_is_rejected(tmp_path):
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    dataset_id = "trial_smoke_id"
+    create_test_dataset(workspace, dataset_id)
+    cfg = runner_config(workspace, "SMOKE-20261011-99", dataset_id)
+    cfg.pop("run_type", None)
+    path = workspace / "SMOKE-20261011-99.yaml"
+    path.write_text(yaml.dump(cfg))
+    with pytest.raises(ValueError, match="run_type"):
+        BacktestRunner(path, workspace)
+
+
 def test_trial_no_update_trigger(tmp_path):
     ledger = LedgerManager(tmp_path / "ledger.db")
     ledger.start_trial(

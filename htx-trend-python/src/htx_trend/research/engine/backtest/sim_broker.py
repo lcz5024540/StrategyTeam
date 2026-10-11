@@ -52,6 +52,9 @@ class Fill:
     contract_size: float = 1.0
     notional: float = 0.0
     funding: float = 0.0
+    order_id: str | None = None
+    client_order_id: str | None = None
+    position_id: str | None = None
 
 
 class SimBroker:
@@ -198,6 +201,9 @@ class SimBroker:
                     contract_size=contract_size,
                     notional=notional,
                     funding=funding,
+                    order_id=getattr(order, "order_id", None),
+                    client_order_id=order.client_order_id,
+                    position_id=order.client_order_id,
                 )
             )
             acks.append(

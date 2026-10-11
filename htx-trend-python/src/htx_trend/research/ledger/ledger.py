@@ -550,10 +550,22 @@ class LedgerManager:
         return [t for t in self.get_all_trials() if t["family_id"] == family_id]
 
     def count_trials(self, family_id: str) -> int:
-        return len([
-            trial for trial in self.get_trials_by_family(family_id)
-            if not str(trial.get("run_id", "")).startswith("SMOKE-")
-        ])
+        return len(
+            [
+                trial
+                for trial in self.get_trials_by_family(family_id)
+                if not self._trial_is_smoke(trial)
+            ]
+        )
+
+    def _trial_is_smoke(self, trial: dict[str, Any]) -> bool:
+        run = self.get_run(str(trial.get("run_id") or ""))
+        if run is None:
+            return False
+        if str(run.environment or "").upper() == "SMOKE":
+            return True
+        snapshot = run.config_snapshot or {}
+        return str(snapshot.get("run_type") or "").upper() == "SMOKE"
 
     def export_trials(
         self,

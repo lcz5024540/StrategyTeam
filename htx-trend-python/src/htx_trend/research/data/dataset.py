@@ -112,7 +112,7 @@ class DatasetManager:
             "total_bars": total_bars,
         }
         if extra_metadata:
-            for key in ("stitch_points", "bad_ticks_hash", "funding_sources"):
+            for key in ("stitch_points", "bad_ticks_hash", "funding_sources", "funding_files"):
                 if key in extra_metadata:
                     manifest[key] = extra_metadata[key]
         
@@ -353,6 +353,7 @@ class DatasetManager:
                 f"Dataset {dataset_id} failed hash verification: "
                 f"mismatches={result.mismatches} missing={result.missing_files}"
             )
+        self._verify_funding_files(manifest)
 
         return self.load_dataset(
             dataset_id,
@@ -362,3 +363,20 @@ class DatasetManager:
             run_id=run_id,
             strategy_version=strategy_version,
         )
+
+    def _verify_funding_files(self, manifest: DatasetManifest) -> None:
+        files = (manifest.metadata or {}).get("funding_files") or {}
+        if not files:
+            return
+        raw_dir = self.datasets_dir.parent / "raw"
+        for symbol, info in files.items():
+            rel = (info or {}).get("path") or f"{symbol}_funding.parquet"
+            path = raw_dir / rel
+            if not path.exists():
+                raise ValueError(f"Funding file missing for {symbol}: {path}")
+            actual = f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+            expected = (info or {}).get("sha256")
+            if actual != expected:
+                raise ValueError(
+                    f"Funding hash mismatch for {symbol}: expected {expected}, got {actual}"
+                )

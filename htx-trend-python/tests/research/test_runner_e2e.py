@@ -354,6 +354,20 @@ def test_market_on_open_entry_charged_taker(tmp_path):
         assert fill.fees == pytest.approx(fill.notional * 0.0006, rel=1e-6)
 
 
+def test_sharpe_numeric_from_known_equity_curve():
+    from htx_trend.research.runner import annualized_sharpe_from_equity
+
+    equity = pd.Series([100.0, 110.0, 99.0, 108.9])
+    ppy = periods_per_year("4hour")
+    sharpe = annualized_sharpe_from_equity(equity, ppy)
+    rets = equity.pct_change().dropna()
+    expected = float(rets.mean() / rets.std(ddof=1) * (ppy ** 0.5))
+    assert sharpe == pytest.approx(expected)
+    assert sharpe == pytest.approx(
+        (0.1 / float(pd.Series([0.1, -0.1, 0.1]).std(ddof=1))) * (ppy ** 0.5)
+    )
+
+
 def test_sharpe_net_of_fees_and_annualized(tmp_path):
     workspace = _breakout_workspace(tmp_path)
     runner = write_runner(
@@ -366,12 +380,19 @@ def test_sharpe_net_of_fees_and_annualized(tmp_path):
     assert "fees" in series.columns
     assert "funding" in series.columns
     assert results["sharpe"] is not None
-    raw = series["return"]
-    std = float(raw.std(ddof=1)) if len(raw) > 1 else 0.0
-    if std > 0:
-        expected = float(raw.mean() / std * (periods_per_year("4hour") ** 0.5))
-        assert results["sharpe"] == pytest.approx(expected)
-        assert abs(results["sharpe"]) > abs(float(raw.mean() / std)) or abs(results["sharpe"]) == 0
+    curve = pd.DataFrame(results["equity_curve"])
+    assert not curve.empty
+    rets = curve["equity"].pct_change().dropna()
+    std = float(rets.std(ddof=1)) if len(rets) > 1 else 0.0
+    expected = (
+        float(rets.mean() / std * (periods_per_year("4hour") ** 0.5)) if std > 0 else 0.0
+    )
+    assert results["sharpe"] == pytest.approx(expected)
+    trade_std = float(series["return"].std(ddof=1)) if len(series) > 1 else 0.0
+    if trade_std > 0:
+        old = float(series["return"].mean() / trade_std * (periods_per_year("4hour") ** 0.5))
+        if abs(old - expected) > 1e-9:
+            assert results["sharpe"] != pytest.approx(old)
     assert periods_per_year("4hour") == 6 * 365
     assert periods_per_year("1day") == 365
 

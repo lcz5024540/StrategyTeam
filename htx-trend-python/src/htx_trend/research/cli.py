@@ -8,8 +8,14 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from ..arrow_runtime import configure_arrow
 from .data import DataCollector, DatasetManager, DataStitcher
-from .data.collector import BINANCE_VISION_START, parse_lookback_days, summarize_funding_sources
+from .data.collector import (
+    BINANCE_VISION_START,
+    hash_funding_files,
+    parse_lookback_days,
+    summarize_funding_sources,
+)
 from .data.quality import (
     DEFAULT_STITCH_POINT,
     KNOWN_CANDIDATES,
@@ -202,6 +208,9 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     funding_sources = summarize_funding_sources(raw_dir, contracts)
     if funding_sources:
         extra_metadata["funding_sources"] = funding_sources
+    funding_files = hash_funding_files(raw_dir, contracts)
+    if funding_files:
+        extra_metadata["funding_files"] = funding_files
     if timeframe == "1day":
         extra_metadata.update(
             daily_resample_manifest_fields(daily_cut=args.daily_cut or "UTC00")
@@ -419,6 +428,7 @@ def cmd_check_approval(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    configure_arrow()
     parser = argparse.ArgumentParser(
         description="HTX Trend Research System MVP-1"
     )

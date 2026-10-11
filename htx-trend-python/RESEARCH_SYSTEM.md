@@ -60,7 +60,7 @@ htx_trend/research/
 ### 7. 运维监控（MVP-1轻量级）
 - **结构化日志**：JSON格式，包含 run_id/component/event/level
 - **心跳系统**：每个组件写心跳+最后处理bar时间
-- **健康检查**：`python -m htx_trend.research health` 返回非零表示异常
+- **健康检查**：`python -m htx_trend health`（或 `python -m htx_trend.research.cli health`）返回非零表示异常
 - **状态接口**：仓位、PnL、强平距离、熔断状态（函数+CLI+可选HTTP）
 - **非策略仓位标记**：账户上其他策略/手动开的仓位标记为 non-strategy
 
@@ -118,7 +118,7 @@ Test: 1314
 ```
 
 ### 4. 编辑运行配置
-更新 `configs/runs/R0001.yaml` 中的 `dataset_id` 为上一步的输出。
+`configs/runs/R0001.yaml` 的 `dataset_id` / `manifest_hash` 默认是 `TODO_FREEZE_*` 占位，runner 会拒绝。更新为上一步冻结输出的 id 与 `manifest_hash`。
 
 ### 5. 运行回测
 ```bash
@@ -139,12 +139,15 @@ cat runs/R0001/report.md
 
 ### 7. 健康检查
 ```bash
-python -m htx_trend.research health --workspace .
+python -m htx_trend health --workspace .
+# 或 python -m htx_trend.research.cli health --workspace .
 ```
 
 ### 8. 查看状态
 ```bash
-python -m htx_trend.research status --workspace . --json
+python -m htx_trend status --json
+# 无 status 文件时非零退出
+# 或 python -m htx_trend.research.cli status --json
 ```
 
 ### 9. 审批管理
@@ -188,10 +191,11 @@ registration:
   drop_rule: "放弃标准（必填）"
   evidence_ref: "文献引用"
 
-dataset_id: "4hour_xxxx"
+dataset_id: "TODO_FREEZE_DATASET_ID"  # freeze 后替换
+manifest_hash: "TODO_FREEZE_MANIFEST_HASH"
 symbols: [BTC-USDT, ETH-USDT]
 split: train  # train / validation / test
-stage_acceptance: false  # 测试集锁
+timeframe: 4hour
 
 initial_equity: 1000.0
 cost_scenario: base

@@ -302,6 +302,7 @@ class HtxMarketDataClient:
         contract_code: str,
         page_size: int = 50,
         page_index: int = 1,
+        strict: bool = False,
     ) -> list[FundingRate]:
         """获取单页资金费率历史"""
         try:
@@ -327,6 +328,8 @@ class HtxMarketDataClient:
             return sorted(rates, key=lambda r: r.funding_time)
 
         except Exception:
+            if strict:
+                raise
             return []
 
     def fetch_funding_history_paginated(
@@ -338,6 +341,7 @@ class HtxMarketDataClient:
         page_size: int = 50,
         empty_pages_to_stop: int = DEFAULT_EMPTY_PAGES_TO_STOP,
         page_sleep: float = 0.5,
+        strict: bool = True,
     ) -> list[FundingRate]:
         """按页向后取资金费率直到耗尽；连续空页停止，边界去重。"""
         all_rates: list[FundingRate] = []
@@ -348,7 +352,10 @@ class HtxMarketDataClient:
             if max_pages is not None and page >= max_pages:
                 break
             batch = self.fetch_funding_history(
-                contract_code, page_size=page_size, page_index=page + 1
+                contract_code,
+                page_size=page_size,
+                page_index=page + 1,
+                strict=strict,
             )
             if start_time:
                 batch = [row for row in batch if row.funding_time >= start_time]

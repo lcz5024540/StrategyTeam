@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 
+from .arrow_runtime import configure_arrow
 from .ledger import TrendLedger
 from .datasets import replay_frozen_contract
 from .replay import load_snapshots
@@ -28,6 +29,7 @@ def _epoch(value: str) -> int:
 
 
 def main() -> None:
+    configure_arrow()
     parser = argparse.ArgumentParser(description="HTX Python trend research and paper tools")
     commands = parser.add_subparsers(dest="command", required=True)
     init = commands.add_parser("init-ledger", help="explicitly initialize a local SQLite ledger")
@@ -61,7 +63,24 @@ def main() -> None:
     entry_replay.add_argument("--evidence", required=True, type=Path); entry_replay.add_argument("--manifest-hash", required=True)
     entry_replay.add_argument("--symbol", required=True); entry_replay.add_argument("--period", default="15min", choices=PERIODS)
     entry_replay.add_argument("--window", type=int, default=160)
+    health = commands.add_parser("health", help="Check research component health")
+    health.add_argument("--workspace", type=Path, default=Path("."))
+    health.add_argument("--max-age", type=int, default=300)
+    health.add_argument("--threshold-minutes", type=int, default=10)
+    health.add_argument("--collector-state", help="Collector state JSON path")
+    status = commands.add_parser("status", help="Get research system status")
+    status.add_argument("--json", action="store_true")
+    status.add_argument("--status-file", help="Path to status.json written by a running process")
+    status.add_argument("--workspace", type=Path, default=Path("."))
     args = parser.parse_args()
+    if args.command == "health":
+        from .research.cli import cmd_health
+        cmd_health(args)
+        return
+    if args.command == "status":
+        from .research.cli import cmd_status
+        cmd_status(args)
+        return
     if args.command == "init-ledger":
         TrendLedger.initialize(args.database, args.schema); print(json.dumps({"status": "initialized", "database": str(args.database)})); return
     if args.command == "replay":
