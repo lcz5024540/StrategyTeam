@@ -27,7 +27,7 @@ split: train  # train / validation / test
 stage_acceptance: false  # 测试集锁，仅验收时true
 
 # 回测参数
-initial_equity: 1000.0
+initial_equity: 400.0  # 初始资金 400 USDT（真实账户起始资金）
 cost_scenario: base  # zero / optimistic / base / conservative
 
 # 费率配置（可选）
