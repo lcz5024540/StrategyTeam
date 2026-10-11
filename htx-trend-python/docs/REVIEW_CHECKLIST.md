@@ -3,7 +3,7 @@
 **Version**: 0.1.0  
 **Review Date**: 2026-10-11  
 **Review Spec**: tech-review-spec-v0.1.md  
-**Status**: ✅ **v0.1.0 必需项已接线** — 允许延后的仅 DSR/PBO、告警集成、双人评审、PAPER 执行
+**Status**: ✅ **v0.1.0 必需项已接线** — 允许延后的仅 DSR/PBO 计算、告警集成、双人评审、PAPER 执行、Ablation
 
 本文档按照《技术评审规范 v0.1》的 8 个评审维度逐项检查，每项标记为 **PASS**（通过）/ **FAIL**（不通过）/ **DEFERRED**（延后，附目标版本）。
 
@@ -12,22 +12,30 @@
 已用真实代码路径测试核对（不是只改文档）：
 
 - ✅ **P0-3** 时间周期感知恢复 + 跨批次间隙：`ContinuousCollector._load_resume_time` / `_detect_cross_batch_gap`
-- ✅ **P1-4** Dataset manifest + hash 验证 + runs.manifest_hash
-- ✅ **P1-6** HTX kline `from`/`to` + `HtxAPIError`
-- ✅ **Trial records** 开始写入 / finally 收尾 / UPDATE·DELETE 触发器 / `export-trials`
-- ✅ **Test-set gate** `DatasetManager.load_dataset` + `STAGE_ACCEPTANCE` + `holdout_access_log`
+- ✅ **P1-4** Dataset manifest + hash 验证 + runs.manifest_hash（现为必填，无未校验加载）
+- ✅ **P1-6** HTX kline `from`/`to` + `HtxAPIError`；采集器走适配器且同时发 from+to
+- ✅ **Trial records** 开始写入 / finally 收尾 / UPDATE·DELETE 触发器 / `export-trials`（含 Sharpe、n_trades、return_series_path）
+- ✅ **Test-set gate** 审批绑定 run_id + strategy_version；holdout_access_log 只增不改
 - ✅ **Report fields** evidence_ref / conclusion / decision + 父运行真实 PnL
 - ✅ **Health** 按 timeframe 的 bar staleness
 - ✅ **Systemd** `/opt/coinstrategy/htx-trend-py` + `User=ubuntu` + ReadWritePaths
-- ✅ **Collector config** symbols=`BTC-USDT`,`ETH-USDT`；intervals=`4hour`,`1day`
-- ✅ **C02** favorable-only ratchet 测试
+- ✅ **Collector** 全 interval 循环、状态键 `(symbol, interval)`、写入前过滤未关闭 bar、跨批缺口回填、状态原子写
+- ✅ **C02** position_id 键控、入场创建/平仓 reset、无前视触发、滑点不利作用于成交价；atr_period/tick_size/stop_slippage_ticks 必填
 - ✅ **status.json** 原子写入 + 另一进程 `status --json` 可读
+- ✅ **仓位** 使用采集到的 contract_size/min_order_size；账户级强平默认；cost_scenario 必填
+- ✅ **登记 diff** 全量 canonical config（排除 run_id/parent/registration/approval）
+- ✅ **runs** 只增不改（metrics 走 run_metrics 追加表）
+- ✅ **Binance** data.binance.vision USDT-M monthly+daily，校验 CHECKSUM，禁止 spot
+- ✅ **1d** 由 4h 按可配置 daily_cut（UTC00 默认 / UTC16）重采样；满 6 根才进信号；混源 non_comparable 且不累加 volume
+- ✅ **SMOKE** 独立 run_type，不计入 trials，仅 train，报告标注；重叠偏差分布写入报告
+- ✅ **未实现条件 id**（如 C04）直接报错
 
 **允许延后**（用户明确批准）:
-- ⚠️ DSR/PBO 计算：v0.3.0（export-trials 已提供输入序列）
+- ⚠️ DSR/PBO 计算：v0.3.0（export-trials 已提供 Sharpe / n_trades / 收益序列路径）
 - ⚠️ H5 告警进群：v0.2.0
 - ⚠️ G2 双人评审流程：v0.2.0
 - ⚠️ B1 Stage 11 PAPER 执行：v0.4.0
+- ⚠️ Ablation：未在本轮实现
 
 ---
 

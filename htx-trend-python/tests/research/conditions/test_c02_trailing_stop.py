@@ -25,7 +25,7 @@ def _ctx(df: pd.DataFrame, idx: int, side: str, position_id: str, entry_price: f
 
 
 def test_c02_long_stop_only_moves_up():
-    c02 = C02ATRStop(atr_period=14, atr_multiplier=2.0)
+    c02 = C02ATRStop(atr_period=14, atr_multiplier=2.0, tick_size=0.1, stop_slippage_ticks=1)
     position_id = "LONG_BTC"
     entry_price = 100.0
     initial_atr = 5.0
@@ -53,7 +53,7 @@ def test_c02_long_stop_only_moves_up():
 
 
 def test_c02_short_stop_only_moves_down():
-    c02 = C02ATRStop(atr_period=14, atr_multiplier=2.0)
+    c02 = C02ATRStop(atr_period=14, atr_multiplier=2.0, tick_size=0.1, stop_slippage_ticks=1)
     position_id = "SHORT_BTC"
     entry_price = 100.0
     initial_atr = 5.0
@@ -80,8 +80,23 @@ def test_c02_short_stop_only_moves_down():
     assert c02._position_stops[position_id] < 95.0 + (6.0 * 2.0)
 
 
+def test_c02_trigger_uses_prior_stop_not_same_bar_update():
+    c02 = C02ATRStop(atr_period=14, atr_multiplier=2.0, tick_size=0.1, stop_slippage_ticks=1)
+    position_id = "NOLOOK"
+    df = pd.DataFrame(
+        [
+            {"close": 100.0, "high": 101.0, "low": 99.0, "atr14": 5.0},
+            {"close": 120.0, "high": 121.0, "low": 80.0, "atr14": 5.0},
+        ]
+    )
+    c02.initialize_position_stop(position_id, 90.0)
+    result = c02.evaluate(_ctx(df, 1, "LONG", position_id, 100.0), {})
+    assert result.status == "PASS"
+    assert result.threshold == 90.0
+
+
 def test_c02_stop_initialized_at_entry():
-    c02 = C02ATRStop(atr_period=14, atr_multiplier=2.0)
+    c02 = C02ATRStop(atr_period=14, atr_multiplier=2.0, tick_size=0.1, stop_slippage_ticks=1)
     position_id = "NEW_POSITION"
     entry_price = 100.0
     atr = 5.0

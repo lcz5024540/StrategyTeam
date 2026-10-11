@@ -239,8 +239,62 @@ class LedgerManager:
                 decision TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS run_metrics (
+                event_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                metrics TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+
+            CREATE TRIGGER IF NOT EXISTS runs_no_update
+            BEFORE UPDATE ON runs
+            FOR EACH ROW
+            BEGIN
+                SELECT RAISE(ABORT, 'runs table is append-only');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS runs_no_delete
+            BEFORE DELETE ON runs
+            FOR EACH ROW
+            BEGIN
+                SELECT RAISE(ABORT, 'runs table is append-only');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS run_metrics_no_update
+            BEFORE UPDATE ON run_metrics
+            FOR EACH ROW
+            BEGIN
+                SELECT RAISE(ABORT, 'run_metrics table is append-only');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS run_metrics_no_delete
+            BEFORE DELETE ON run_metrics
+            FOR EACH ROW
+            BEGIN
+                SELECT RAISE(ABORT, 'run_metrics table is append-only');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS holdout_access_log_no_update
+            BEFORE UPDATE ON holdout_access_log
+            FOR EACH ROW
+            BEGIN
+                SELECT RAISE(ABORT, 'holdout_access_log table is append-only');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS holdout_access_log_no_delete
+            BEFORE DELETE ON holdout_access_log
+            FOR EACH ROW
+            BEGIN
+                SELECT RAISE(ABORT, 'holdout_access_log table is append-only');
+            END;
             """
         )
+        trial_cols = {row[1] for row in conn.execute("PRAGMA table_info(trials)")}
+        if "n_trades" not in trial_cols:
+            conn.execute("ALTER TABLE trials ADD COLUMN n_trades INTEGER")
+        if "return_series_path" not in trial_cols:
+            conn.execute("ALTER TABLE trials ADD COLUMN return_series_path TEXT")
     
     def register_run(self, run: RunRecord) -> None:
         with sqlite3.connect(self.db_path) as conn:
@@ -293,6 +347,20 @@ class LedgerManager:
             if not row:
                 return None
             
+            metrics_row = conn.execute(
+                """
+                SELECT metrics FROM run_metrics
+                WHERE run_id = ?
+                ORDER BY rowid DESC
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+            metrics = {}
+            if metrics_row and metrics_row[0]:
+                metrics = json.loads(metrics_row[0])
+            elif row[9]:
+                metrics = json.loads(row[9])
             return RunRecord(
                 run_id=row[0],
                 parent_run_id=row[1],
@@ -303,7 +371,7 @@ class LedgerManager:
                 cost_scenario=row[6],
                 created_at=datetime.fromisoformat(row[7]),
                 total_trades=row[8],
-                metrics=json.loads(row[9]) if row[9] else {},
+                metrics=metrics,
                 manifest_hash=row[10] if len(row) > 10 else None,
             )
     
@@ -392,6 +460,8 @@ class LedgerManager:
         final_sharpe: float | None = None,
         error_message: str | None = None,
         changed_key: str | None = None,
+        n_trades: int | None = None,
+        return_series_path: str | None = None,
     ) -> str:
         latest = self.get_latest_trial_event(trial_id)
         if latest is None:
@@ -403,8 +473,9 @@ class LedgerManager:
                 INSERT INTO trials (
                     event_id, trial_id, run_id, parent_run_id, family_id,
                     changed_key, status, started_at, completed_at,
-                    final_pnl, final_sharpe, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    final_pnl, final_sharpe, error_message,
+                    n_trades, return_series_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event_id,
@@ -419,6 +490,8 @@ class LedgerManager:
                     final_pnl,
                     final_sharpe,
                     error_message,
+                    n_trades,
+                    return_series_path,
                 ),
             )
         return event_id
@@ -446,7 +519,10 @@ class LedgerManager:
         return [t for t in self.get_all_trials() if t["family_id"] == family_id]
 
     def count_trials(self, family_id: str) -> int:
-        return len(self.get_trials_by_family(family_id))
+        return len([
+            trial for trial in self.get_trials_by_family(family_id)
+            if not str(trial.get("run_id", "")).startswith("SMOKE-")
+        ])
 
     def export_trials(
         self,
@@ -468,6 +544,8 @@ class LedgerManager:
             "completed_at",
             "final_pnl",
             "final_sharpe",
+            "n_trades",
+            "return_series_path",
         ]
         if fmt == "json":
             return json.dumps(
@@ -484,8 +562,16 @@ class LedgerManager:
     def update_run_metrics(self, run_id: str, metrics: dict[str, Any]) -> None:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "UPDATE runs SET metrics = ? WHERE run_id = ?",
-                (json.dumps(metrics), run_id),
+                """
+                INSERT INTO run_metrics (event_id, run_id, metrics, recorded_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    run_id,
+                    json.dumps(metrics),
+                    datetime.now().isoformat(),
+                ),
             )
 
     def get_registration(self, run_id: str) -> ExperimentRegistration | None:

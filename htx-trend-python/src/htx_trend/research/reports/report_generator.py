@@ -22,11 +22,16 @@ class ReportGenerator:
         decisions: pd.DataFrame,
         parent_comparison: dict[str, Any] | None = None,
         registration: Any | None = None,
+        overlap_deviation: dict[str, Any] | None = None,
+        smoke: bool = False,
     ) -> Path:
         report_path = self.output_dir / "report.md"
         
         with open(report_path, "w") as f:
-            f.write(f"# 回测报告 - {self.run_id}\n\n")
+            title = "SMOKE 回测报告" if smoke or config.get("run_type") == "SMOKE" else "回测报告"
+            f.write(f"# {title} - {self.run_id}\n\n")
+            if smoke or config.get("run_type") == "SMOKE":
+                f.write("**SMOKE**: 不计入 trials，仅 train split，不可用于正式结论。\n\n")
             f.write(f"生成时间: {datetime.now().isoformat()}\n\n")
             
             f.write("## 配置\n\n")
@@ -64,6 +69,11 @@ class ReportGenerator:
                 f.write(self._format_comparison(parent_comparison))
                 f.write("\n\n")
             
+            if overlap_deviation:
+                f.write("## 重叠偏差分布\n\n")
+                f.write(self._format_overlap_deviation(overlap_deviation))
+                f.write("\n\n")
+
             f.write("## 决策记录摘要\n\n")
             f.write(f"总决策数: {len(decisions)}\n\n")
             if not decisions.empty:
@@ -112,6 +122,31 @@ class ReportGenerator:
             f"- decision: {decision}\n"
             f"- note: Fill via CLI: update-conclusion --run-id {self.run_id}\n"
         )
+
+    def _format_overlap_deviation(self, payload: dict[str, Any]) -> str:
+        lines = [
+            "| symbol | timeframe | count | median | p95 | max | bars_over_threshold | threshold |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+        for symbol, by_tf in payload.items():
+            if not isinstance(by_tf, dict):
+                continue
+            for timeframe, stats in by_tf.items():
+                if not isinstance(stats, dict):
+                    continue
+                lines.append(
+                    "| {symbol} | {timeframe} | {count} | {median} | {p95} | {max} | {over} | {thr} |".format(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        count=stats.get("count"),
+                        median=stats.get("median"),
+                        p95=stats.get("p95"),
+                        max=stats.get("max"),
+                        over=stats.get("bars_over_threshold"),
+                        thr=stats.get("threshold"),
+                    )
+                )
+        return "\n".join(lines) + "\n"
 
     def _format_config(self, config: dict[str, Any]) -> str:
         import yaml
@@ -203,14 +238,32 @@ class ReportGenerator:
         
         pct = comparison.get("pct_change")
         pct_line = f"- 百分比变化: {pct:.2f}%\n" if pct is not None else "- 百分比变化: N/A\n"
+        parent_pnl = comparison.get("parent_pnl")
+        pnl_diff = comparison.get("pnl_diff")
+        current_pnl = comparison.get("current_pnl")
+        parent_line = (
+            f"- 父运行PnL: ${parent_pnl:.2f}"
+            if parent_pnl is not None
+            else "- 父运行PnL: N/A"
+        )
+        diff_line = (
+            f"- 差值: ${pnl_diff:.2f}"
+            if pnl_diff is not None
+            else "- 差值: N/A"
+        )
+        current_line = (
+            f"- 当前PnL: ${current_pnl:.2f}"
+            if current_pnl is not None
+            else "- 当前PnL: N/A"
+        )
         return f"""
 父运行: {parent_id}
 
 变化点: {comparison.get('changed_key') or comparison.get('change', 'N/A')}
 
 指标对比:
-- 当前PnL: ${comparison.get('current_pnl', 0):.2f}
-- 父运行PnL: ${comparison.get('parent_pnl', 0):.2f}
-- 差值: ${comparison.get('pnl_diff', 0):.2f}
+{current_line}
+{parent_line}
+{diff_line}
 {pct_line}
 """

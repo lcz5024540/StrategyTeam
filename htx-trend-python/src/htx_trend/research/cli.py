@@ -57,7 +57,13 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     
     data = {}
     
-    stitcher = DataStitcher()
+    if args.backfill_binance and args.overlap_threshold is None:
+        raise SystemExit("--overlap-threshold is required with --backfill-binance")
+    if args.timeframe == "1day" and not args.daily_cut:
+        raise SystemExit("--daily-cut is required when freezing 1day (UTC00 or UTC16)")
+
+    stitcher = DataStitcher(close_deviation_threshold=args.overlap_threshold or 0.003)
+    overlap_deviation: dict = {}
     
     for contract in contracts:
         htx_file = raw_dir / f"{contract}_{timeframe}_htx.parquet"
@@ -69,7 +75,25 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         import pandas as pd
         htx_df = pd.read_parquet(htx_file)
         
-        if args.backfill_binance:
+        if timeframe == "1day":
+            htx_4h_file = raw_dir / f"{contract}_4hour_htx.parquet"
+            if not htx_4h_file.exists():
+                print(f"Warning: HTX 4h data not found for {contract}, cannot build canonical 1d")
+                continue
+            htx_4h = pd.read_parquet(htx_4h_file)
+            binance_4h = pd.DataFrame()
+            if args.backfill_binance:
+                binance_symbol = contract.replace("-", "")
+                bn_4h_file = raw_dir / f"{binance_symbol}_4h_binance.parquet"
+                if bn_4h_file.exists():
+                    binance_4h = pd.read_parquet(bn_4h_file)
+            combined, stats = stitcher.stitch_daily_from_4h(
+                htx_4h, binance_4h, htx_1d=htx_df, daily_cut=args.daily_cut or "UTC00"
+            )
+            print(f"{contract} canonical 1d (daily_cut={args.daily_cut or 'UTC00'}): {stats}")
+            overlap_deviation[contract] = {"1day": stats.get("overlap_deviation", {})}
+            data[contract] = combined
+        elif args.backfill_binance:
             binance_symbol = contract.replace("-", "")
             binance_file = raw_dir / f"{binance_symbol}_{timeframe.replace('hour', 'h')}_binance.parquet"
             
@@ -77,6 +101,7 @@ def cmd_freeze(args: argparse.Namespace) -> None:
                 binance_df = pd.read_parquet(binance_file)
                 combined, stats = stitcher.stitch_klines(htx_df, binance_df)
                 print(f"{contract}: {stats}")
+                overlap_deviation[contract] = {timeframe: stats.get("overlap_deviation", {})}
                 data[contract] = combined
             else:
                 data[contract] = htx_df
@@ -95,6 +120,21 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         train_ratio=args.train_ratio,
         val_ratio=args.val_ratio,
     )
+    dataset_dir = workspace / "data" / "datasets" / frozen.dataset_id
+    if overlap_deviation:
+        (dataset_dir / "overlap_deviation.json").write_text(
+            json.dumps(overlap_deviation, indent=2)
+        )
+    from .data.manifest import DatasetManifest
+    batch_path = workspace / "data" / "datasets" / "manifests" / f"{frozen.dataset_id}.json"
+    if batch_path.exists():
+        batch = DatasetManifest.load(batch_path)
+        batch.metadata.update({
+            "daily_cut": args.daily_cut or ("UTC00" if timeframe == "1day" else None),
+            "overlap_deviation": overlap_deviation,
+        })
+        batch.save(batch_path)
+        print(f"manifest_hash: {batch.sha256()}")
     
     print(f"Dataset frozen: {frozen.dataset_id}")
     print(f"Total bars: {frozen.total_bars}")
@@ -294,6 +334,8 @@ def main() -> None:
     freeze_parser.add_argument("--train-ratio", type=float, default=0.6)
     freeze_parser.add_argument("--val-ratio", type=float, default=0.2)
     freeze_parser.add_argument("--backfill-binance", action="store_true")
+    freeze_parser.add_argument("--overlap-threshold", type=float)
+    freeze_parser.add_argument("--daily-cut", choices=["UTC00", "UTC16"])
     
     run_parser = subparsers.add_parser("run", help="Run backtest")
     run_parser.add_argument("config", help="Path to run config YAML")

@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from htx_trend.research.runner import BacktestRunner
+from tests.research.helpers import create_test_dataset, runner_config, write_runner
 
 
 def create_fixture_dataset(workspace: Path) -> str:
@@ -65,45 +66,20 @@ def test_deterministic_backtest(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     
-    dataset_id = create_fixture_dataset(workspace)
-    
-    config = {
-        "run_id": "TEST001",
-        "parent_run_id": None,
-        "registration": {
+    dataset_id = create_test_dataset(workspace, "4hour_fixture_test")
+    config = runner_config(
+        workspace,
+        "TEST001",
+        dataset_id,
+        registration={
             "change": "Test run",
             "hypothesis": "Testing determinism",
             "expected_effect": "Same results twice",
             "keep_rule": "Identical results",
             "drop_rule": "Different results",
         },
-        "dataset_id": dataset_id,
-        "symbols": ["BTC-USDT", "ETH-USDT"],
-        "split": "train",
-        "stage_acceptance": False,
-        "initial_equity": 1000.0,
-        "cost_scenario": "base",
-        "risk_per_trade": 0.005,
-        "max_total_risk": 0.015,
-        "max_positions": 3,
-        "conditions": {
-            "C01": {
-                "enabled": True,
-                "periods": [42, 84, 126, 168],
-                "threshold": 0.25,
-            },
-            "C02": {
-                "atr_period": 14,
-                "atr_multiplier": 2.0,
-            },
-        },
-    }
-    
-    config_path = workspace / "test_config.yaml"
-    with open(config_path, "w") as f:
-        yaml.dump(config, f)
-    
-    runner1 = BacktestRunner(config_path, workspace)
+    )
+    runner1 = write_runner(workspace, config)
     results1 = runner1.run()
     
     decisions1 = results1["decisions"]
@@ -131,7 +107,7 @@ def test_data_change_detection(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     
-    dataset_id = create_fixture_dataset(workspace)
+    dataset_id = create_test_dataset(workspace, "4hour_fixture_test")
     
     datasets_dir = workspace / "data" / "datasets" / dataset_id
     btc_file = datasets_dir / "BTC-USDT.parquet"

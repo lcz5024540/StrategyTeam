@@ -54,6 +54,8 @@ conditions:
     enabled: true
     atr_period: 14
     atr_multiplier: 2.0
+    tick_size: 0.1
+    stop_slippage_ticks: 1
 
 # 其他
 leverage_target: 5.0

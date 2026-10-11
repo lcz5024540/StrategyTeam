@@ -10,7 +10,7 @@ from typing import Literal
 
 import pandas as pd
 
-from ..adapters.binance import BinanceMarketDataClient
+from ..adapters.binance import BinanceVisionClient
 from ..adapters.htx.market_data import HtxMarketDataClient, Kline
 from ..ops.logging import LogComponent, log_event
 
@@ -86,32 +86,14 @@ class DataCollector:
             end=end_date.isoformat(),
         )
         
-        all_klines: list[Kline] = []
-        
-        with BinanceMarketDataClient() as client:
-            current_start = int(start_date.timestamp() * 1000)
-            end_ms = int(end_date.timestamp() * 1000)
-            
-            while current_start < end_ms:
-                klines = client.fetch_klines(
-                    symbol=symbol,
-                    interval=interval,
-                    start_time=current_start,
-                    end_time=end_ms,
-                    limit=1500,
-                )
-                
-                if not klines:
-                    break
-                
-                all_klines.extend(klines)
-                
-                last_time = int(klines[-1].bar_time.timestamp() * 1000)
-                if last_time >= end_ms:
-                    break
-                
-                current_start = last_time + 1
-        
+        with BinanceVisionClient() as client:
+            all_klines = client.download_klines(
+                symbol=symbol,
+                interval=interval,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
         if not all_klines:
             return pd.DataFrame()
         

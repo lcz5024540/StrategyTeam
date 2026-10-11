@@ -37,9 +37,9 @@ def _closed_bar(bar_time: datetime, close: float = 100.0) -> dict:
 def test_resume_1day_interval(tmp_path):
     collector = _make_collector(tmp_path, "1day")
     last = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    collector.states["BTC-USDT"].last_bar_time = last.isoformat()
+    collector.states["BTC-USDT::1day"].last_bar_time = last.isoformat()
 
-    resume = collector._load_resume_time("BTC-USDT")
+    resume = collector._load_resume_time("BTC-USDT", "1day")
 
     assert resume == last + timedelta(days=1)
     assert resume - last == timedelta(days=1)
@@ -48,9 +48,9 @@ def test_resume_1day_interval(tmp_path):
 def test_resume_4hour_interval(tmp_path):
     collector = _make_collector(tmp_path, "4hour")
     last = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
-    collector.states["BTC-USDT"].last_bar_time = last.isoformat()
+    collector.states["BTC-USDT::4hour"].last_bar_time = last.isoformat()
 
-    resume = collector._load_resume_time("BTC-USDT")
+    resume = collector._load_resume_time("BTC-USDT", "4hour")
 
     assert resume == last + timedelta(hours=4)
     assert resume - last == timedelta(hours=4)

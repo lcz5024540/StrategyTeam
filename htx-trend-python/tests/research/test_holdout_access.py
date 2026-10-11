@@ -60,7 +60,7 @@ def test_invalid_split_name_raises(tmp_path):
 def test_test_split_requires_approval_id(tmp_path):
     mgr, _ledger, dataset_id = _mgr(tmp_path)
     with pytest.raises(ValueError, match="approval_id"):
-        mgr.load_dataset(dataset_id, split="test")
+        mgr.load_dataset(dataset_id, split="test", run_id="HOLD1", strategy_version="v0.1.0")
 
 
 def test_test_split_requires_stage_acceptance(tmp_path):
@@ -81,7 +81,11 @@ def test_holdout_access_logged(tmp_path):
     mgr, ledger, dataset_id = _mgr(tmp_path)
     approval_id = _approve(ledger)
     data, frozen = mgr.load_dataset(
-        dataset_id, split="test", approval_id=str(approval_id)
+        dataset_id,
+        split="test",
+        approval_id=str(approval_id),
+        run_id="HOLD1",
+        strategy_version="v0.1.0",
     )
     assert data
     logs = ledger.list_holdout_access(frozen.manifest_hash)
@@ -94,9 +98,21 @@ def test_holdout_access_logged(tmp_path):
 def test_same_dataset_hash_second_access_blocked(tmp_path):
     mgr, ledger, dataset_id = _mgr(tmp_path)
     approval_id = _approve(ledger)
-    mgr.load_dataset(dataset_id, split="test", approval_id=str(approval_id))
+    mgr.load_dataset(
+        dataset_id,
+        split="test",
+        approval_id=str(approval_id),
+        run_id="HOLD1",
+        strategy_version="v0.1.0",
+    )
     with pytest.raises(ValueError, match="already been accessed"):
-        mgr.load_dataset(dataset_id, split="test", approval_id=str(approval_id))
+        mgr.load_dataset(
+            dataset_id,
+            split="test",
+            approval_id=str(approval_id),
+            run_id="HOLD1",
+            strategy_version="v0.1.0",
+        )
 
 
 def test_train_val_no_approval_needed(tmp_path):
@@ -111,7 +127,12 @@ def test_dataset_manager_returns_only_requested_split(tmp_path):
     mgr, ledger, dataset_id = _mgr(tmp_path)
     approval_id = _approve(ledger)
     test, frozen = mgr.load_dataset(
-        dataset_id, symbols=["BTC-USDT"], split="test", approval_id=str(approval_id)
+        dataset_id,
+        symbols=["BTC-USDT"],
+        split="test",
+        approval_id=str(approval_id),
+        run_id="HOLD1",
+        strategy_version="v0.1.0",
     )
     n_test = frozen.total_bars // 2 - frozen.val_end_idx  # total_bars is 600 (2 symbols)
     btc = test["BTC-USDT"]

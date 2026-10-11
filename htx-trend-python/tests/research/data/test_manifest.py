@@ -136,9 +136,15 @@ def test_runner_binds_manifest(tmp_path):
         "risk_per_trade": 0.005,
         "max_total_risk": 0.015,
         "max_positions": 3,
+        "leverage_target": 5.0,
         "conditions": {
             "C01": {"enabled": True, "periods": [42, 84, 126, 168], "threshold": 0.25},
-            "C02": {"atr_period": 14, "atr_multiplier": 2.0},
+            "C02": {
+                "atr_period": 14,
+                "atr_multiplier": 2.0,
+                "tick_size": 0.1,
+                "stop_slippage_ticks": 1,
+            },
         },
     }
     config_path = workspace / "config.yaml"

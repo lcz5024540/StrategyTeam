@@ -2,28 +2,49 @@
 
 特性：
 1. 独立运行，不依赖策略
-2. 断点续传（重启后自动恢复）
-3. 缺口检测与补齐
-4. 状态持久化
+2. 断点续传（重启后自动恢复），状态按 (symbol, interval) 键控
+3. 缺口检测与补齐（跨批次缺口会触发回填）
+4. 未关闭 bar 在写入前过滤（存储层仍作兜底）
+5. HTX 请求同时发送 from 与 to（经固定适配器）
+6. 状态文件原子写入（temp + rename）
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import signal
 import sys
-import time
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pandas as pd
 
-from ..data.immutable_storage import ImmutableKlineStorage, _parse_interval_seconds
+from ..adapters.htx.market_data import HtxMarketDataClient, Kline
+from ..data.immutable_storage import (
+    ImmutableKlineStorage,
+    _is_bar_closed,
+    _parse_interval_seconds,
+)
 from ..ops import log_event, LogComponent, LogLevel
+
+
+INTERVAL_MAP = {
+    "1m": "1min",
+    "5m": "5min",
+    "15m": "15min",
+    "30m": "30min",
+    "1h": "60min",
+    "4h": "4hour",
+    "4hour": "4hour",
+    "1d": "1day",
+    "1day": "1day",
+    "1w": "1week",
+}
 
 
 def _as_utc_datetime(value: datetime | pd.Timestamp | str) -> datetime:
@@ -37,13 +58,17 @@ def _as_utc_datetime(value: datetime | pd.Timestamp | str) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def _state_key(symbol: str, interval: str) -> str:
+    return f"{symbol}::{interval}"
+
+
 @dataclass
 class CollectorState:
     """采集器状态"""
     symbol: str
     interval: str
-    last_bar_time: str | None  # 最后采集的 K 线时间
-    last_collection_at: str  # 最后采集时间
+    last_bar_time: str | None
+    last_collection_at: str
     total_bars_collected: int
     gaps_detected: int
     gaps_filled: int
@@ -51,35 +76,29 @@ class CollectorState:
 
 class ContinuousCollector:
     """持续 K 线采集器"""
-    
+
     def __init__(
         self,
         storage_dir: Path,
         state_file: Path,
         symbols: list[str],
         interval: str = "4h",
-        collection_interval_seconds: int = 300,  # 5 分钟一次
+        collection_interval_seconds: int = 300,
+        intervals: list[str] | None = None,
+        market_client: Any | None = None,
     ):
-        """
-        Args:
-            storage_dir: 不可变存储目录
-            state_file: 状态文件路径（用于断点续传）
-            symbols: 采集的交易对列表
-            interval: K 线周期
-            collection_interval_seconds: 采集间隔（秒）
-        """
         self.storage_dir = storage_dir
         self.state_file = state_file
         self.symbols = symbols
-        self.interval = interval
-        self.intervals = [interval]
+        self.intervals = [str(item) for item in (intervals if intervals is not None else [interval])]
+        self.interval = self.intervals[0]
         self.collection_interval = collection_interval_seconds
-        
+        self.market_client = market_client
+
         self.storage = ImmutableKlineStorage(storage_dir)
         self.running = False
         self.states: dict[str, CollectorState] = {}
-        
-        # 加载状态
+
         self._load_state()
 
     @classmethod
@@ -102,38 +121,57 @@ class ContinuousCollector:
             )
         storage_cfg = cfg.get("storage") or {}
         state_cfg = cfg.get("state") or {}
-        inst = cls(
+        return cls(
             storage_dir=Path(storage_cfg.get("base_path", "./data/klines")),
             state_file=Path(state_cfg.get("file_path", "./collector_state.json")),
             symbols=list(symbols),
             interval=str(intervals[0]),
+            intervals=[str(item) for item in intervals],
             collection_interval_seconds=int(cfg.get("poll_interval_seconds", 300)),
         )
-        inst.intervals = [str(item) for item in intervals]
-        return inst
-    
+
+    def _empty_state(self, symbol: str, interval: str) -> CollectorState:
+        return CollectorState(
+            symbol=symbol,
+            interval=interval,
+            last_bar_time=None,
+            last_collection_at=datetime.now(timezone.utc).isoformat(),
+            total_bars_collected=0,
+            gaps_detected=0,
+            gaps_filled=0,
+        )
+
+    def _ensure_state(self, symbol: str, interval: str) -> CollectorState:
+        key = _state_key(symbol, interval)
+        if key not in self.states:
+            self.states[key] = self._empty_state(symbol, interval)
+        return self.states[key]
+
     def _load_state(self) -> None:
-        """从状态文件加载断点信息"""
         if not self.state_file.exists():
-            # 初始化状态
             for symbol in self.symbols:
-                self.states[symbol] = CollectorState(
-                    symbol=symbol,
-                    interval=self.interval,
-                    last_bar_time=None,
-                    last_collection_at=datetime.now(timezone.utc).isoformat(),
-                    total_bars_collected=0,
-                    gaps_detected=0,
-                    gaps_filled=0,
-                )
+                for interval in self.intervals:
+                    self.states[_state_key(symbol, interval)] = self._empty_state(
+                        symbol, interval
+                    )
             return
-        
+
         try:
             with open(self.state_file) as f:
                 data = json.load(f)
-                for symbol, state_data in data.items():
-                    self.states[symbol] = CollectorState(**state_data)
-            
+            for raw_key, state_data in data.items():
+                if "::" in raw_key:
+                    key = raw_key
+                    state = CollectorState(**state_data)
+                else:
+                    interval = state_data.get("interval", self.interval)
+                    symbol = state_data.get("symbol", raw_key)
+                    state = CollectorState(**state_data)
+                    key = _state_key(symbol, interval)
+                self.states[key] = state
+            for symbol in self.symbols:
+                for interval in self.intervals:
+                    self._ensure_state(symbol, interval)
             log_event(
                 LogComponent.DATA,
                 "Collector state loaded (resume after restart)",
@@ -145,376 +183,322 @@ class ContinuousCollector:
                 f"Failed to load collector state: {e}",
                 level=LogLevel.ERROR,
             )
-            # 初始化空状态
             for symbol in self.symbols:
-                self.states[symbol] = CollectorState(
-                    symbol=symbol,
-                    interval=self.interval,
-                    last_bar_time=None,
-                    last_collection_at=datetime.now(timezone.utc).isoformat(),
-                    total_bars_collected=0,
-                    gaps_detected=0,
-                    gaps_filled=0,
-                )
-    
+                for interval in self.intervals:
+                    self.states[_state_key(symbol, interval)] = self._empty_state(
+                        symbol, interval
+                    )
+
     def _save_state(self) -> None:
-        """保存状态到文件（断点续传）"""
+        """原子写入：临时文件 + os.replace。"""
         try:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
-            
-            data = {symbol: asdict(state) for symbol, state in self.states.items()}
-            
-            with open(self.state_file, "w") as f:
-                json.dump(data, f, indent=2)
+            data = {key: asdict(state) for key, state in self.states.items()}
+            fd, tmp_path = tempfile.mkstemp(
+                prefix=".collector_state.",
+                suffix=".tmp",
+                dir=str(self.state_file.parent),
+            )
+            try:
+                with os.fdopen(fd, "w") as handle:
+                    json.dump(data, handle, indent=2)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(tmp_path, self.state_file)
+            except Exception:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                raise
         except Exception as e:
             log_event(
                 LogComponent.DATA,
                 f"Failed to save collector state: {e}",
                 level=LogLevel.ERROR,
             )
-    
-    async def _fetch_klines(
+
+    def _closed_bars_only(self, df: pd.DataFrame, interval: str) -> pd.DataFrame:
+        if df.empty:
+            return df
+        check_time = datetime.now(timezone.utc)
+        mask = df["bar_time"].map(
+            lambda value: _is_bar_closed(_as_utc_datetime(value), interval, check_time)
+        )
+        return df.loc[mask].reset_index(drop=True)
+
+    def _klines_to_df(self, klines: Any) -> pd.DataFrame:
+        if klines is None:
+            return pd.DataFrame()
+        if isinstance(klines, pd.DataFrame):
+            return klines
+        if not klines:
+            return pd.DataFrame()
+        rows = []
+        for item in klines:
+            if isinstance(item, Kline):
+                rows.append(
+                    {
+                        "bar_time": item.bar_time,
+                        "open": item.open,
+                        "high": item.high,
+                        "low": item.low,
+                        "close": item.close,
+                        "volume": item.volume,
+                        "amount": item.amount,
+                        "source": item.source,
+                    }
+                )
+            elif isinstance(item, dict):
+                rows.append(item)
+            else:
+                raise TypeError(f"Unsupported kline type: {type(item)}")
+        df = pd.DataFrame(rows)
+        df["bar_time"] = pd.to_datetime(df["bar_time"], utc=True)
+        return df.sort_values("bar_time").reset_index(drop=True)
+
+    def _fetch_klines(
         self,
         symbol: str,
+        interval: str,
         start_time: datetime | None = None,
+        end_time: datetime | None = None,
         limit: int = 2000,
     ) -> pd.DataFrame:
-        """从 HTX 获取 K 线数据
-        
-        Args:
-            symbol: 交易对（如 "BTC-USDT"）
-            start_time: 起始时间（可选）
-            limit: 最大数量
-        
-        Returns:
-            DataFrame with bar_time, open, high, low, close, volume
-        """
-        # 转换 symbol 格式：BTC-USDT → btcusdt
-        htx_symbol = symbol.replace("-", "").lower()
-        
-        # 转换 interval 格式：4h → 4hour, 1d → 1day
-        interval_map = {
-            "1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min",
-            "1h": "60min", "4h": "4hour", "1d": "1day", "1w": "1week",
-        }
-        htx_interval = interval_map.get(self.interval, self.interval)
-        
-        url = "https://api.hbdm.com/linear-swap-ex/market/history/kline"
-        
-        params: dict[str, Any] = {
-            "contract_code": htx_symbol.upper(),
-            "period": htx_interval,
-            "size": limit,
-        }
-        
-        if start_time:
-            params["from"] = int(start_time.timestamp())
-        
+        """Fetch via the fixed HTX adapter; always send from AND to."""
+        del limit  # size is mutually exclusive with from/to
+        owns_client = self.market_client is None
+        client = self.market_client or HtxMarketDataClient()
+        now = datetime.now(timezone.utc)
+        start = start_time or (now - timedelta(days=90))
+        end = end_time or now
+        period = INTERVAL_MAP.get(interval, interval)
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(url, params=params)
-                response.raise_for_status()
-                data = response.json()
-                
-                if data.get("status") != "ok":
-                    raise ValueError(f"HTX API error: {data}")
-                
-                klines = data.get("data", [])
-                
-                if not klines:
-                    return pd.DataFrame()
-                
-                # 转换为 DataFrame
-                df = pd.DataFrame(klines)
-                df = df.rename(columns={
-                    "id": "bar_time",
-                    "vol": "volume",
-                })
-                
-                # 转换时间戳
-                df["bar_time"] = pd.to_datetime(df["bar_time"], unit="s", utc=True)
-                
-                # 选择需要的列
-                df = df[["bar_time", "open", "high", "low", "close", "volume"]]
-                
-                # 排序
-                df = df.sort_values("bar_time").reset_index(drop=True)
-                
-                return df
-        
+            klines = client.fetch_klines(
+                contract_code=symbol,
+                period=period,
+                from_timestamp=int(_as_utc_datetime(start).timestamp()),
+                to_timestamp=int(_as_utc_datetime(end).timestamp()),
+            )
+            return self._klines_to_df(klines)
         except Exception as e:
             log_event(
                 LogComponent.DATA,
-                f"Failed to fetch klines for {symbol}: {e}",
+                f"Failed to fetch klines for {symbol} {interval}: {e}",
                 level=LogLevel.ERROR,
             )
             return pd.DataFrame()
-    
-    def _detect_gaps(self, df: pd.DataFrame) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
-        """检测 K 线缺口
-        
-        Args:
-            df: K 线 DataFrame（已排序）
-        
-        Returns:
-            缺口列表 [(gap_start, gap_end), ...]
-        """
+        finally:
+            if owns_client and hasattr(client, "close"):
+                client.close()
+
+    async def _fetch_klines_async(
+        self,
+        symbol: str,
+        interval: str,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        limit: int = 2000,
+    ) -> pd.DataFrame:
+        return self._fetch_klines(symbol, interval, start_time, end_time, limit)
+
+    def _detect_gaps(
+        self, df: pd.DataFrame, interval: str
+    ) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
         if len(df) < 2:
             return []
-        
-        expected_delta = timedelta(seconds=_parse_interval_seconds(self.interval))
-        
+        expected_delta = timedelta(seconds=_parse_interval_seconds(interval))
         gaps = []
-        
         for i in range(len(df) - 1):
             current_time = df["bar_time"].iloc[i]
             next_time = df["bar_time"].iloc[i + 1]
-            
-            actual_delta = next_time - current_time
-            
-            # 如果实际间隔 > 期望间隔 * 1.5，认为有缺口
-            if actual_delta > expected_delta * 1.5:
+            if next_time - current_time > expected_delta * 1.5:
                 gaps.append((current_time, next_time))
-        
         return gaps
-    
+
     async def _fill_gap(
         self,
         symbol: str,
         gap_start: pd.Timestamp,
         gap_end: pd.Timestamp,
+        interval: str | None = None,
     ) -> int:
-        """填补缺口
-        
-        Args:
-            symbol: 交易对
-            gap_start: 缺口开始时间
-            gap_end: 缺口结束时间
-        
-        Returns:
-            填补的 K 线数量
-        """
+        interval = interval or self.interval
         log_event(
             LogComponent.DATA,
-            f"Filling gap for {symbol}",
-            gap_start=gap_start.isoformat(),
-            gap_end=gap_end.isoformat(),
+            f"Filling gap for {symbol} {interval}",
+            gap_start=pd.Timestamp(gap_start).isoformat(),
+            gap_end=pd.Timestamp(gap_end).isoformat(),
         )
-        
-        # 获取缺口期间的数据
-        df = await self._fetch_klines(symbol, start_time=gap_start, limit=2000)
-        
+        df = await self._fetch_klines_async(
+            symbol,
+            interval,
+            start_time=_as_utc_datetime(gap_start),
+            end_time=_as_utc_datetime(gap_end),
+        )
         if df.empty:
             return 0
-        
-        # 筛选缺口内的数据
         df = df[(df["bar_time"] > gap_start) & (df["bar_time"] < gap_end)]
-        
+        df = self._closed_bars_only(df, interval)
         if df.empty:
             return 0
-        
-        # 追加到存储
-        batch = self.storage.append_batch(symbol, self.interval, df, source="htx")
-        
+        batch = self.storage.append_batch(symbol, interval, df, source="htx")
         log_event(
             LogComponent.DATA,
-            f"Gap filled for {symbol}",
+            f"Gap filled for {symbol} {interval}",
             bars_filled=len(df),
             batch_id=batch.batch_id,
         )
-        
         return len(df)
-    
-    def _load_resume_time(self, symbol: str) -> datetime | None:
-        """加载恢复时间（时间周期感知）
-        
-        逻辑:
-        1. 读取状态文件中的 last_bar_time
-        2. 根据 interval 计算下一个起始时间:
-           - 4hour: last_bar_time + 4h
-           - 1day: last_bar_time + 1d
-        3. 如果无状态，返回 None（从90天前开始）
-        
-        Returns:
-            下一个起始时间，或 None（如果无历史状态）
-        """
-        state = self.states.get(symbol)
-        if not state or not state.last_bar_time:
+
+    def _load_resume_time(
+        self, symbol: str, interval: str | None = None
+    ) -> datetime | None:
+        interval = interval or self.interval
+        state = self.states.get(_state_key(symbol, interval))
+        if state is None or not state.last_bar_time:
             return None
-        
         last_bar_time = _as_utc_datetime(state.last_bar_time)
-        interval_seconds = _parse_interval_seconds(self.interval)
-        next_start = last_bar_time + timedelta(seconds=interval_seconds)
-        return next_start
-    
+        return last_bar_time + timedelta(seconds=_parse_interval_seconds(interval))
+
     def _detect_cross_batch_gap(
         self,
         symbol: str,
         new_batch: pd.DataFrame,
+        interval: str | None = None,
     ) -> list[dict]:
-        """检测跨批次间隙
-        
-        逻辑:
-        1. 加载该 symbol+interval 的最后一个已存储 bar 的 bar_time
-        2. 取新批次的第一个 bar_time
-        3. 计算期望的下一个时间: last_stored + interval
-        4. 如果 new_first_bar_time > expected_next + tolerance:
-           - 记录到 gap_events.jsonl
-           - 返回间隙详情
-        
-        Returns:
-            间隙详情列表
-        """
+        interval = interval or self.interval
         if new_batch.empty:
             return []
-        
-        # 获取最后存储的 bar_time
-        latest_bar_time = self.storage.get_latest_bar_time(symbol, self.interval)
+        latest_bar_time = self.storage.get_latest_bar_time(symbol, interval)
         if latest_bar_time is None:
-            # 首次采集，无历史数据
             return []
-        
         latest_bar_time = _as_utc_datetime(latest_bar_time)
         first_new_bar_time = _as_utc_datetime(new_batch["bar_time"].iloc[0])
-        
-        interval_seconds = _parse_interval_seconds(self.interval)
+        interval_seconds = _parse_interval_seconds(interval)
         expected_next = latest_bar_time + timedelta(seconds=interval_seconds)
-        
-        # 容差：允许 10% 误差
         tolerance = timedelta(seconds=interval_seconds * 0.1)
-        
-        # 检测间隙
-        if first_new_bar_time > expected_next + tolerance:
-            gap_seconds = (first_new_bar_time - expected_next).total_seconds()
-            missing_bars = int(gap_seconds / interval_seconds)
-            
-            gap_event = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "symbol": symbol,
-                "interval": self.interval,
-                "last_stored_bar_time": latest_bar_time.isoformat(),
-                "expected_next": expected_next.isoformat(),
-                "actual_first_new": first_new_bar_time.isoformat(),
-                "gap_hours": gap_seconds / 3600,
-                "missing_bars": missing_bars,
-            }
-            
-            gap_log_file = self.storage_dir / "gap_events.jsonl"
-            try:
-                with open(gap_log_file, "a") as f:
-                    f.write(json.dumps(gap_event) + "\n")
-            except Exception as e:
-                log_event(
-                    LogComponent.DATA,
-                    f"Failed to write gap event: {e}",
-                    level=LogLevel.ERROR,
-                )
-            
+        if first_new_bar_time <= expected_next + tolerance:
+            return []
+        gap_seconds = (first_new_bar_time - expected_next).total_seconds()
+        gap_event = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "symbol": symbol,
+            "interval": interval,
+            "last_stored_bar_time": latest_bar_time.isoformat(),
+            "expected_next": expected_next.isoformat(),
+            "actual_first_new": first_new_bar_time.isoformat(),
+            "gap_hours": gap_seconds / 3600,
+            "missing_bars": int(gap_seconds / interval_seconds),
+        }
+        gap_log_file = self.storage_dir / "gap_events.jsonl"
+        try:
+            with open(gap_log_file, "a") as handle:
+                handle.write(json.dumps(gap_event) + "\n")
+        except Exception as e:
             log_event(
                 LogComponent.DATA,
-                "Cross-batch gap detected",
-                level=LogLevel.WARNING,
-                **gap_event,
+                f"Failed to write gap event: {e}",
+                level=LogLevel.ERROR,
             )
-            
-            return [gap_event]
-        
-        return []
-    
-    async def _collect_symbol(self, symbol: str) -> None:
-        """采集单个交易对的数据"""
-        state = self.states[symbol]
-        
-        # 时间周期感知的恢复
-        start_time = self._load_resume_time(symbol)
+        log_event(
+            LogComponent.DATA,
+            "Cross-batch gap detected",
+            level=LogLevel.WARNING,
+            **gap_event,
+        )
+        return [gap_event]
+
+    async def _collect_symbol(self, symbol: str, interval: str | None = None) -> None:
+        interval = interval or self.interval
+        state = self._ensure_state(symbol, interval)
+        start_time = self._load_resume_time(symbol, interval)
         if start_time is None:
-            # 首次采集，从90天前开始
             start_time = datetime.now(timezone.utc) - timedelta(days=90)
-        
-        df = await self._fetch_klines(symbol, start_time=start_time, limit=100)
-        
+
+        df = await self._fetch_klines_async(symbol, interval, start_time=start_time)
         if df.empty:
             log_event(
                 LogComponent.DATA,
-                f"No new data for {symbol}",
+                f"No new data for {symbol} {interval}",
                 last_bar_time=state.last_bar_time,
             )
             return
-        
-        # 检测跨批次间隙（在检测批次内间隙之前）
-        cross_batch_gaps = self._detect_cross_batch_gap(symbol, df)
+
+        cross_batch_gaps = self._detect_cross_batch_gap(symbol, df, interval)
         if cross_batch_gaps:
             state.gaps_detected += len(cross_batch_gaps)
-        
-        # 检测批次内缺口
-        gaps = self._detect_gaps(df)
-        
+            for gap in cross_batch_gaps:
+                filled = await self._fill_gap(
+                    symbol,
+                    pd.Timestamp(gap["last_stored_bar_time"]),
+                    pd.Timestamp(gap["actual_first_new"]),
+                    interval=interval,
+                )
+                if filled > 0:
+                    state.gaps_filled += 1
+
+        gaps = self._detect_gaps(df, interval)
         if gaps:
             log_event(
                 LogComponent.DATA,
-                f"Detected {len(gaps)} gaps for {symbol}",
+                f"Detected {len(gaps)} gaps for {symbol} {interval}",
                 gaps=[(g[0].isoformat(), g[1].isoformat()) for g in gaps],
                 level=LogLevel.WARNING,
             )
-            
             state.gaps_detected += len(gaps)
-            
-            # 填补缺口
             for gap_start, gap_end in gaps:
-                filled = await self._fill_gap(symbol, gap_start, gap_end)
+                filled = await self._fill_gap(symbol, gap_start, gap_end, interval)
                 if filled > 0:
                     state.gaps_filled += 1
-        
-        # 追加新数据
-        batch = self.storage.append_batch(symbol, self.interval, df, source="htx")
-        
-        # 更新状态
-        state.last_bar_time = df["bar_time"].iloc[-1].isoformat()
+
+        closed = self._closed_bars_only(df, interval)
+        if closed.empty:
+            log_event(
+                LogComponent.DATA,
+                f"All fetched bars still open for {symbol} {interval}",
+            )
+            return
+
+        batch = self.storage.append_batch(symbol, interval, closed, source="htx")
+        state.last_bar_time = closed["bar_time"].iloc[-1].isoformat()
         state.last_collection_at = datetime.now(timezone.utc).isoformat()
-        state.total_bars_collected += len(df)
-        
+        state.total_bars_collected += len(closed)
         log_event(
             LogComponent.DATA,
-            f"Collected {len(df)} bars for {symbol}",
+            f"Collected {len(closed)} bars for {symbol} {interval}",
             batch_id=batch.batch_id,
             last_bar_time=state.last_bar_time,
             total_collected=state.total_bars_collected,
+            filtered_unclosed=len(df) - len(closed),
         )
-    
+
     async def collect_once(self) -> None:
-        """执行一次采集（所有交易对）"""
         log_event(
             LogComponent.DATA,
             "Starting collection cycle",
             symbols=self.symbols,
-            interval=self.interval,
+            intervals=self.intervals,
         )
-        
         for symbol in self.symbols:
-            try:
-                await self._collect_symbol(symbol)
-            except Exception as e:
-                log_event(
-                    LogComponent.DATA,
-                    f"Error collecting {symbol}: {e}",
-                    level=LogLevel.ERROR,
-                )
-        
-        # 保存状态
+            for interval in self.intervals:
+                try:
+                    await self._collect_symbol(symbol, interval)
+                except Exception as e:
+                    log_event(
+                        LogComponent.DATA,
+                        f"Error collecting {symbol} {interval}: {e}",
+                        level=LogLevel.ERROR,
+                    )
         self._save_state()
-    
+
     async def run_forever(self) -> None:
-        """持续运行采集器"""
         self.running = True
-        
         log_event(
             LogComponent.DATA,
             "Continuous collector started",
             symbols=self.symbols,
-            interval=self.interval,
+            intervals=self.intervals,
             collection_interval_seconds=self.collection_interval,
         )
-        
         while self.running:
             try:
                 await self.collect_once()
@@ -524,33 +508,25 @@ class ContinuousCollector:
                     f"Collection cycle error: {e}",
                     level=LogLevel.ERROR,
                 )
-            
-            # 等待下一次采集
             await asyncio.sleep(self.collection_interval)
-    
+
     def stop(self) -> None:
-        """停止采集器"""
         self.running = False
         self._save_state()
-        
-        log_event(
-            LogComponent.DATA,
-            "Continuous collector stopped",
-        )
+        log_event(LogComponent.DATA, "Continuous collector stopped")
 
 
 async def main() -> None:
-    """主入口（用于 systemd 服务）"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="HTX Continuous Kline Collector")
     parser.add_argument("--config", type=Path, help="Collector YAML config")
     parser.add_argument("--storage-dir", type=Path, help="Storage directory")
     parser.add_argument("--state-file", type=Path, help="State file path")
     parser.add_argument("--symbols", nargs="+", help="Symbols to collect")
-    parser.add_argument("--interval", default="4h", help="Kline interval")
-    parser.add_argument("--collection-interval", type=int, default=300, help="Collection interval (seconds)")
-    
+    parser.add_argument("--interval", default="4h", help="Legacy single interval")
+    parser.add_argument("--intervals", nargs="+", help="Intervals to collect")
+    parser.add_argument("--collection-interval", type=int, default=300)
     args = parser.parse_args()
 
     if args.config:
@@ -563,19 +539,17 @@ async def main() -> None:
             state_file=args.state_file,
             symbols=args.symbols,
             interval=args.interval,
+            intervals=args.intervals,
             collection_interval_seconds=args.collection_interval,
         )
-    
-    # 信号处理
+
     def signal_handler(sig, frame):
         print("\nStopping collector...")
         collector.stop()
         sys.exit(0)
-    
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
-    # 运行
     await collector.run_forever()
 
 

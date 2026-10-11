@@ -15,46 +15,32 @@ import yaml
 from htx_trend.research.cli import main
 from htx_trend.research.ledger import LedgerManager, RunRecord
 from htx_trend.research.runner import BacktestRunner
-from tests.research.test_strict_determinism import create_test_dataset
+from tests.research.helpers import create_test_dataset, runner_config, write_runner
 
 
-def _base_config(run_id: str, dataset_id: str, parent_run_id=None, extra=None) -> dict:
-    config = {
-        "run_id": run_id,
-        "parent_run_id": parent_run_id,
-        "registration": {
-            "change": extra.get("change") if extra else "Baseline trial",
-            "hypothesis": "Trials are recorded",
-            "expected_effect": "ledger has trial rows",
-            "keep_rule": "trial finalized",
-            "drop_rule": "trial missing",
-            "evidence_ref": "docs/REMAINING_WORK.md",
-        },
-        "dataset_id": dataset_id,
-        "symbols": ["BTC-USDT", "ETH-USDT"],
-        "split": "train",
-        "stage_acceptance": False,
-        "initial_equity": 1000.0,
-        "cost_scenario": "base",
-        "risk_per_trade": 0.005,
-        "max_total_risk": 0.015,
-        "max_positions": 3,
-        "conditions": {
-            "C01": {"enabled": True, "periods": [42, 84, 126, 168], "threshold": 0.25},
-            "C02": {"atr_period": 14, "atr_multiplier": 2.0},
-        },
+def _base_config(workspace: Path, run_id: str, dataset_id: str, parent_run_id=None, extra=None) -> dict:
+    extra = extra or {}
+    registration = {
+        "change": extra.get("change", "Baseline trial"),
+        "hypothesis": "Trials are recorded",
+        "expected_effect": "ledger has trial rows",
+        "keep_rule": "trial finalized",
+        "drop_rule": "trial missing",
+        "evidence_ref": "docs/REMAINING_WORK.md",
     }
-    if extra:
-        config.update({k: v for k, v in extra.items() if k != "change"})
-        if "change" in extra:
-            config["registration"]["change"] = extra["change"]
+    config = runner_config(
+        workspace,
+        run_id,
+        dataset_id,
+        parent_run_id=parent_run_id,
+        registration=registration,
+    )
+    config.update({k: v for k, v in extra.items() if k != "change"})
     return config
 
 
 def _write_runner(workspace: Path, config: dict) -> BacktestRunner:
-    path = workspace / f"{config['run_id']}.yaml"
-    path.write_text(yaml.dump(config))
-    return BacktestRunner(path, workspace)
+    return write_runner(workspace, config)
 
 
 def test_trial_written_at_start(tmp_path):
@@ -62,7 +48,7 @@ def test_trial_written_at_start(tmp_path):
     workspace.mkdir()
     dataset_id = "trial_start"
     create_test_dataset(workspace, dataset_id)
-    runner = _write_runner(workspace, _base_config("TSTART", dataset_id))
+    runner = _write_runner(workspace, _base_config(workspace, "TSTART", dataset_id))
     seen: dict = {}
 
     orig = BacktestRunner._load_dataset
@@ -85,7 +71,7 @@ def test_trial_completed_on_success(tmp_path):
     workspace.mkdir()
     dataset_id = "trial_ok"
     create_test_dataset(workspace, dataset_id)
-    runner = _write_runner(workspace, _base_config("TOK", dataset_id))
+    runner = _write_runner(workspace, _base_config(workspace, "TOK", dataset_id))
     runner.run()
 
     trials = runner.ledger.get_all_trials()
@@ -100,7 +86,7 @@ def test_trial_failed_on_exception(tmp_path):
     workspace.mkdir()
     dataset_id = "trial_fail"
     create_test_dataset(workspace, dataset_id)
-    runner = _write_runner(workspace, _base_config("TFAIL", dataset_id))
+    runner = _write_runner(workspace, _base_config(workspace, "TFAIL", dataset_id))
 
     def _boom(self):
         raise RuntimeError("dataset exploded")
@@ -153,7 +139,7 @@ def test_family_id_traces_to_baseline(tmp_path):
     dataset_id = "trial_family"
     create_test_dataset(workspace, dataset_id)
     ledger = LedgerManager(workspace / "ledger.db")
-    parent_config = _base_config("BASE", dataset_id)
+    parent_config = _base_config(workspace, "BASE", dataset_id)
     ledger.register_run(
         RunRecord(
             run_id="BASE",
@@ -168,6 +154,7 @@ def test_family_id_traces_to_baseline(tmp_path):
     )
 
     child = _base_config(
+        workspace,
         "CHILD",
         dataset_id,
         parent_run_id="BASE",
@@ -230,7 +217,7 @@ def test_trial_count_from_db(tmp_path):
     workspace.mkdir()
     dataset_id = "trial_count"
     create_test_dataset(workspace, dataset_id)
-    runner = _write_runner(workspace, _base_config("C1", dataset_id))
+    runner = _write_runner(workspace, _base_config(workspace, "C1", dataset_id))
     runner.run()
     reg = runner.ledger.get_registration("C1")
     assert reg is not None
@@ -240,6 +227,7 @@ def test_trial_count_from_db(tmp_path):
     parent = runner.ledger.get_run("C1")
     assert parent is not None
     child_cfg = _base_config(
+        workspace,
         "C2",
         dataset_id,
         parent_run_id="C1",

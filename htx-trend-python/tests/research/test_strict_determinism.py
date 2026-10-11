@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from htx_trend.research.runner import BacktestRunner
+from tests.research.helpers import create_test_dataset, runner_config, write_runner
 
 
 def compute_parquet_hash(file_path: Path) -> str:
@@ -23,55 +24,6 @@ def compute_parquet_hash(file_path: Path) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
-def create_test_dataset(workspace: Path, dataset_id: str, seed: int = 42) -> str:
-    """创建测试数据集"""
-    np.random.seed(seed)
-    dates = pd.date_range("2024-01-01", periods=300, freq="4h")
-    
-    datasets_dir = workspace / "data" / "datasets"
-    datasets_dir.mkdir(parents=True, exist_ok=True)
-    
-    for symbol in ["BTC-USDT", "ETH-USDT"]:
-        close = 100 + np.cumsum(np.random.randn(300) * 0.5)
-        high = close + np.random.rand(300) * 2
-        low = close - np.random.rand(300) * 2
-        open_prices = close + (np.random.rand(300) - 0.5) * 1
-        
-        df = pd.DataFrame({
-            "bar_time": dates,
-            "open": open_prices,
-            "high": high,
-            "low": low,
-            "close": close,
-            "volume": np.random.rand(300) * 1000,
-            "amount": np.random.rand(300) * 100000,
-            "source": "fixture",
-        })
-        
-        dataset_dir = datasets_dir / dataset_id
-        dataset_dir.mkdir(parents=True, exist_ok=True)
-        
-        df.to_parquet(dataset_dir / f"{symbol}.parquet", index=False)
-    
-    manifest = {
-        "dataset_id": dataset_id,
-        "symbols": ["BTC-USDT", "ETH-USDT"],
-        "timeframe": "4hour",
-        "start_date": dates[0].isoformat(),
-        "end_date": dates[-1].isoformat(),
-        "total_bars": len(dates) * 2,
-        "train_end_idx": 180,
-        "val_end_idx": 240,
-        "manifest_hash": dataset_id,
-        "created_at": "2024-01-01T00:00:00",
-    }
-    
-    manifest_path = dataset_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2))
-    
-    return dataset_id
-
-
 def test_strict_determinism_identical_runs(tmp_path):
     """测试：相同配置运行两次，ledger metrics 和 parquet hash 完全一致"""
     workspace = tmp_path / "workspace"
@@ -80,43 +32,19 @@ def test_strict_determinism_identical_runs(tmp_path):
     dataset_id = "test_determinism"
     create_test_dataset(workspace, dataset_id)
     
-    config = {
-        "run_id": "DET001",
-        "parent_run_id": None,
-        "registration": {
+    config = runner_config(
+        workspace,
+        "DET001",
+        dataset_id,
+        registration={
             "change": "Determinism test",
             "hypothesis": "Same config produces identical results",
             "expected_effect": "Identical outputs",
             "keep_rule": "Perfect match",
             "drop_rule": "Any difference",
         },
-        "dataset_id": dataset_id,
-        "symbols": ["BTC-USDT", "ETH-USDT"],
-        "split": "train",
-        "stage_acceptance": False,
-        "initial_equity": 1000.0,
-        "cost_scenario": "base",
-        "risk_per_trade": 0.005,
-        "max_total_risk": 0.015,
-        "max_positions": 3,
-        "conditions": {
-            "C01": {
-                "enabled": True,
-                "periods": [42, 84, 126, 168],
-                "threshold": 0.25,
-            },
-            "C02": {
-                "atr_period": 14,
-                "atr_multiplier": 2.0,
-            },
-        },
-    }
-    
-    config_path = workspace / "test_config.yaml"
-    with open(config_path, "w") as f:
-        yaml.dump(config, f)
-    
-    runner1 = BacktestRunner(config_path, workspace)
+    )
+    runner1 = write_runner(workspace, config)
     results1 = runner1.run()
     
     decisions1_hash = compute_parquet_hash(workspace / "runs" / "DET001" / "decisions.parquet")
@@ -248,37 +176,22 @@ def test_no_lookahead_truncation_invariance(tmp_path):
     for truncate_at in [250, 300]:
         dataset_id = f"lookahead_test_{truncate_at}"
         
-        config = {
-            "run_id": f"LOOKAHEAD_{truncate_at}",
-            "parent_run_id": None,
-            "registration": {
+        from tests.research.helpers import write_batch_manifest, write_contract_specs
+        write_contract_specs(workspace)
+        write_batch_manifest(workspace, dataset_id)
+        config = runner_config(
+            workspace,
+            f"LOOKAHEAD_{truncate_at}",
+            dataset_id,
+            symbols=["BTC-USDT"],
+            registration={
                 "change": f"Lookahead test {truncate_at}",
                 "hypothesis": "No lookahead",
                 "expected_effect": "Decisions at t unchanged",
                 "keep_rule": "Match",
                 "drop_rule": "Differ",
             },
-            "dataset_id": dataset_id,
-            "symbols": ["BTC-USDT"],
-            "split": "train",
-            "stage_acceptance": False,
-            "initial_equity": 1000.0,
-            "cost_scenario": "base",
-            "risk_per_trade": 0.005,
-            "max_total_risk": 0.015,
-            "max_positions": 3,
-            "conditions": {
-                "C01": {
-                    "enabled": True,
-                    "periods": [42, 84, 126, 168],
-                    "threshold": 0.25,
-                },
-                "C02": {
-                    "atr_period": 14,
-                    "atr_multiplier": 2.0,
-                },
-            },
-        }
+        )
         
         config_path = workspace / f"config_{truncate_at}.yaml"
         with open(config_path, "w") as f:

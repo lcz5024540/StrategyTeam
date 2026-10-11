@@ -28,6 +28,9 @@ class Order:
     price: float | None = None
     client_order_id: str | None = None
     reduce_only: bool = False
+    is_stop: bool = False
+    stop_price: float | None = None
+    stop_slippage: float | None = None
 
 
 @dataclass

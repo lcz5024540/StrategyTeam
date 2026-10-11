@@ -122,6 +122,10 @@ class SimBroker:
             
             fill_price = bar["open"]
             fill_time = bar["bar_time"]
+            if order.is_stop and order.stop_price is not None:
+                fill_price = _adverse_stop_fill(
+                    order.side, order.stop_price, bar["open"], order.stop_slippage or 0.0
+                )
             
             is_entry = order.symbol not in self.positions
             
@@ -222,3 +226,15 @@ class SimBroker:
     def get_account_equity(self) -> float:
         total_unrealized = sum(p.unrealized_pnl for p in self.positions.values())
         return self.equity + total_unrealized
+
+
+def _adverse_stop_fill(
+    close_side: str, stop_price: float, next_open: float, slippage: float
+) -> float:
+    """Apply stop fill adversely: worse for us, not used as the trigger.
+
+    close_side is the *exit order* side: SHORT closes a LONG, LONG closes a SHORT.
+    """
+    if close_side == "SHORT":
+        return min(stop_price, next_open) - slippage
+    return max(stop_price, next_open) + slippage

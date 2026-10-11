@@ -82,7 +82,7 @@ def test_parent_comparison_real_pnl(tmp_path):
         "cost_scenario": "base",
         "fees": None,
         "symbols": ["BTC-USDT", "ETH-USDT"],
-        "leverage_target": None,
+        "leverage_target": 5.0,
     }
     ledger.register_run(
         RunRecord(

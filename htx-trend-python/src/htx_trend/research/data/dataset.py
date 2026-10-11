@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -59,11 +59,12 @@ class FrozenDataset:
     
     @classmethod
     def from_dict(cls, data: dict) -> FrozenDataset:
-        data = data.copy()
-        data["start_date"] = datetime.fromisoformat(data["start_date"])
-        data["end_date"] = datetime.fromisoformat(data["end_date"])
-        data["created_at"] = datetime.fromisoformat(data["created_at"])
-        return cls(**data)
+        allowed = {item.name for item in fields(cls)}
+        filtered = {key: value for key, value in data.items() if key in allowed}
+        filtered["start_date"] = datetime.fromisoformat(filtered["start_date"])
+        filtered["end_date"] = datetime.fromisoformat(filtered["end_date"])
+        filtered["created_at"] = datetime.fromisoformat(filtered["created_at"])
+        return cls(**filtered)
 
 
 class DatasetManager:
@@ -159,6 +160,13 @@ class DatasetManager:
         
         manifest_path = dataset_dir / "manifest.json"
         manifest_path.write_text(json.dumps(manifest_with_splits, indent=2))
+
+        batch_manifest = DatasetManifest.generate_from_dataset_dir(dataset_dir, dataset_id)
+        batch_manifest.metadata.update({
+            "timeframe": timeframe,
+            "frozen_manifest_hash": manifest_hash,
+        })
+        batch_manifest.save(self.manifests_dir / f"{dataset_id}.json")
         
         log_event(
             LogComponent.DATA,
@@ -181,6 +189,7 @@ class DatasetManager:
         split: str = "train",
         approval_id: str | None = None,
         run_id: str | None = None,
+        strategy_version: str | None = None,
     ) -> tuple[dict[str, pd.DataFrame], FrozenDataset]:
         if split not in FrozenDataset.VALID_SPLITS:
             raise ValueError(
@@ -203,6 +212,7 @@ class DatasetManager:
                 dataset_hash=frozen.manifest_hash,
                 approval_id=approval_id,
                 run_id=run_id or self.current_run_id,
+                strategy_version=strategy_version,
             )
         
         symbols_to_load = symbols or frozen.symbols
@@ -230,6 +240,7 @@ class DatasetManager:
         dataset_hash: str,
         approval_id: str | None,
         run_id: str | None,
+        strategy_version: str | None = None,
     ) -> None:
         if not approval_id:
             raise ValueError(
@@ -249,6 +260,19 @@ class DatasetManager:
         if approval.decision != ApprovalDecision.APPROVED:
             raise ValueError(
                 f"Approval {approval_id} is {approval.decision.value}, not APPROVED"
+            )
+        if not run_id:
+            raise ValueError("Test set access requires run_id bound to the approval")
+        if approval.run_id != run_id:
+            raise ValueError(
+                f"Approval {approval_id} is bound to run {approval.run_id}, not {run_id}"
+            )
+        if not strategy_version:
+            raise ValueError("Test set access requires strategy_version bound to the approval")
+        if approval.strategy_version != strategy_version:
+            raise ValueError(
+                f"Approval {approval_id} strategy_version {approval.strategy_version} "
+                f"does not match {strategy_version}"
             )
         if self.ledger.is_holdout_accessed(dataset_hash, str(approval_id)):
             raise ValueError(
@@ -294,6 +318,7 @@ class DatasetManager:
         split: str = "train",
         approval_id: str | None = None,
         run_id: str | None = None,
+        strategy_version: str | None = None,
     ) -> tuple[dict[str, pd.DataFrame], FrozenDataset]:
         manifest_path = self.manifests_dir / f"{dataset_id}.json"
         if not manifest_path.exists():
@@ -328,4 +353,5 @@ class DatasetManager:
             split=split,
             approval_id=approval_id,
             run_id=run_id,
+            strategy_version=strategy_version,
         )
