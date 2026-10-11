@@ -3,9 +3,40 @@
 **Version**: 0.1.0  
 **Review Date**: 2026-10-11  
 **Review Spec**: tech-review-spec-v0.1.md  
-**Status**: Pre-Release Review
+**Status**: ❌ **INCOMPLETE** - 多项 P0/P1 必需项未完成
 
 本文档按照《技术评审规范 v0.1》的 8 个评审维度逐项检查，每项标记为 **PASS**（通过）/ **FAIL**（不通过）/ **DEFERRED**（延后，附目标版本）。
+
+## ⚠️ 未完成的必需项 (详见 docs/REMAINING_WORK.md)
+
+以下项目标记为 **❌ FAIL**，必须在 v0.1.0 完成，不可延后：
+
+**数据层**:
+- ❌ **P0-3**: 时间周期感知恢复 + 跨批次间隙检测 (C3/C4 部分)
+- ❌ **P1-4**: Dataset manifest + hash 验证
+- ❌ **P1-6**: HTX API 参数验证和错误处理
+
+**预注册**:
+- ❌ **Trial records**: 运行开始写入 + finally + triggers + export-trials CLI (D2 部分)
+- ❌ **Test-set gate**: DatasetManager 强制 + approval + access log (D4 完整)
+- ❌ **Report fields**: evidence_ref/conclusion/decision + 真实父运行对比 (Extra 1)
+
+**运维**:
+- ❌ **Health check**: Bar staleness per timeframe (H1 部分)
+- ❌ **Systemd**: 统一部署配置 (H4 部分)
+- ❌ **Collector config**: Symbols/timeframes from config (包括 1day)
+
+**测试**:
+- ❌ **C02**: Favorable-only ratchet test
+
+**详细实施文档**: 参见 `docs/REMAINING_WORK.md`（包含设计、文件位置、必需测试）
+
+**已完成**:
+- ✅ P0-1: 闭合 bar 存储
+- ✅ P0-2: 修订检测
+- ✅ P0: 登记门禁完整
+- ✅ P1: C02 trailing stop + 移除默认值
+- ✅ P1-5: 原子状态写入
 
 ---
 
