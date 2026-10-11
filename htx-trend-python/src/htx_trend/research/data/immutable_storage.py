@@ -57,6 +57,9 @@ def _parse_interval_seconds(interval: str) -> int:
         "1hour": 3600,
         "4hour": 14400,
         "1day": 86400,
+        "1d": 86400,  # 别名
+        "4h": 14400,  # 别名
+        "1h": 3600,   # 别名
     }
     if interval not in mapping:
         raise ValueError(f"未知时间周期: {interval}")
@@ -76,6 +79,12 @@ def _is_bar_closed(bar_time: datetime | pd.Timestamp, interval: str, check_time:
     """
     if isinstance(bar_time, pd.Timestamp):
         bar_time = bar_time.to_pydatetime()
+    
+    # 确保两个时间都是 timezone-aware 或都是 naive
+    if bar_time.tzinfo is None and check_time.tzinfo is not None:
+        bar_time = bar_time.replace(tzinfo=timezone.utc)
+    elif bar_time.tzinfo is not None and check_time.tzinfo is None:
+        check_time = check_time.replace(tzinfo=timezone.utc)
     
     interval_seconds = _parse_interval_seconds(interval)
     bar_close_time = bar_time + timedelta(seconds=interval_seconds)
