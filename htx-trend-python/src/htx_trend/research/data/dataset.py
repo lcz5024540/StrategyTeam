@@ -111,6 +111,10 @@ class DatasetManager:
             "end_date": end_date.isoformat(),
             "total_bars": total_bars,
         }
+        if extra_metadata:
+            for key in ("stitch_points", "bad_ticks_hash"):
+                if key in extra_metadata:
+                    manifest[key] = extra_metadata[key]
         
         manifest_str = json.dumps(manifest, sort_keys=True)
         manifest_hash = hashlib.sha256(manifest_str.encode()).hexdigest()[:16]

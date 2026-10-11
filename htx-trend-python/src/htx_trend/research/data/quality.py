@@ -21,6 +21,12 @@ STITCH_WINDOW_BARS = 30
 OVERLAP_AUDIT_THRESHOLD = 0.003
 MANUAL_REVIEW_THRESHOLD = 0.015
 
+BAD_TICK_KINDS = ("frozen", "spike")
+DEFAULT_KIND_STOP_ON_BAR = {
+    "frozen": False,
+    "spike": True,
+}
+
 KNOWN_CANDIDATES = [
     {
         "symbol": "BTC-USDT",
@@ -81,7 +87,28 @@ class BadTick:
     bar_time: datetime
     reason: str
     confirmed: bool = True
+    kind: str = "frozen"
     end_time: datetime | None = None
+    stop_on_bar: bool | None = None
+
+
+def normalize_bad_tick_kind(kind: str | None) -> str:
+    value = (kind or "frozen").strip().lower()
+    if value not in BAD_TICK_KINDS:
+        raise ValueError(f"bad_tick kind must be one of {BAD_TICK_KINDS}, got {kind!r}")
+    return value
+
+
+def stop_on_bar_for_kind(kind: str | None, config: dict | None = None) -> bool:
+    resolved = normalize_bad_tick_kind(kind or "frozen")
+    merged = dict(DEFAULT_KIND_STOP_ON_BAR)
+    if config:
+        for key, value in config.items():
+            if isinstance(value, dict) and "stop_on_bar" in value:
+                merged[str(key)] = bool(value["stop_on_bar"])
+            elif isinstance(value, bool):
+                merged[str(key)] = value
+    return bool(merged.get(resolved, True))
 
 
 def parse_utc(value: str | datetime) -> datetime:
@@ -137,16 +164,19 @@ def load_bad_ticks(path: Path | None = None) -> list[BadTick]:
     if not candidate.exists():
         return []
     payload = yaml.safe_load(candidate.read_text()) or {}
-    rows = payload.get("ticks") or []
+    rows = payload.get("ticks") or payload.get("entries") or []
     ticks: list[BadTick] = []
     for item in rows:
+        stop_override = item.get("stop_on_bar")
         ticks.append(
             BadTick(
                 symbol=str(item["symbol"]),
                 bar_time=parse_utc(item["bar_time"]),
                 reason=str(item.get("reason") or ""),
                 confirmed=bool(item.get("confirmed", True)),
+                kind=normalize_bad_tick_kind(item.get("kind")),
                 end_time=parse_utc(item["end_time"]) if item.get("end_time") else None,
+                stop_on_bar=None if stop_override is None else bool(stop_override),
             )
         )
     return ticks
@@ -166,6 +196,7 @@ def bad_ticks_hash(path: Path | None, ticks: Iterable[BadTick] | None = None) ->
                 "bar_time": tick.bar_time.isoformat(),
                 "reason": tick.reason,
                 "confirmed": tick.confirmed,
+                "kind": tick.kind,
             }
             for tick in confirmed_bad_ticks(ticks or [])
         ]
@@ -179,6 +210,8 @@ def apply_bad_ticks(df: pd.DataFrame, symbol: str, ticks: Iterable[BadTick]) -> 
     work = df.copy()
     if "bad_tick" not in work.columns:
         work["bad_tick"] = False
+    if "bad_tick_kind" not in work.columns:
+        work["bad_tick_kind"] = ""
     if work.empty:
         return work
     times = pd.to_datetime(work["bar_time"], utc=True)
@@ -190,6 +223,7 @@ def apply_bad_ticks(df: pd.DataFrame, symbol: str, ticks: Iterable[BadTick]) -> 
         else:
             mask = times == pd.Timestamp(tick.bar_time)
         work.loc[mask, "bad_tick"] = True
+        work.loc[mask, "bad_tick_kind"] = tick.kind
     return work
 
 

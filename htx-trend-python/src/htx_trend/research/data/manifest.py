@@ -47,6 +47,8 @@ class DatasetManifest:
             "dataset_id": self.dataset_id,
             "batches": [asdict(b) for b in self.batches],
             "metadata": self.metadata,
+            "stitch_points": self.metadata.get("stitch_points"),
+            "bad_ticks_hash": self.metadata.get("bad_ticks_hash"),
         }
         digest = hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -147,6 +149,8 @@ class DatasetManifest:
             "created_at": self.created_at,
             "batches": [asdict(b) for b in self.batches],
             "metadata": self.metadata,
+            "stitch_points": self.metadata.get("stitch_points"),
+            "bad_ticks_hash": self.metadata.get("bad_ticks_hash"),
             "manifest_hash": self.sha256(),
         }
         path.write_text(json.dumps(payload, indent=2))

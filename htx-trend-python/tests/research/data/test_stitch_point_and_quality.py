@@ -172,6 +172,48 @@ def _write_raw(workspace: Path, times, htx_close=100.0, bn_close=100.0):
     _klines(times, bn_close, "binance").to_parquet(raw / "BTCUSDT_4h_binance.parquet", index=False)
 
 
+def test_written_dataset_manifest_json_contains_stitch_points_and_bad_ticks_hash(tmp_path):
+    times = _around_stitch(before=8, after=8)
+    _write_raw(tmp_path, times)
+    yaml_path = tmp_path / "bad_ticks.yaml"
+    yaml_path.write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "ticks:",
+                "  - symbol: BTC-USDT",
+                '    bar_time: "2020-11-06T00:00:00Z"',
+                "    kind: frozen",
+                "    confirmed: true",
+                "    reason: fixture",
+            ]
+        )
+    )
+    cmd_freeze(_freeze_args(tmp_path, stitch_point="2020-11-01T00:00:00Z", bad_ticks=str(yaml_path)))
+    dataset_dir = next(
+        path
+        for path in (tmp_path / "data" / "datasets").iterdir()
+        if path.is_dir() and path.name != "manifests"
+    )
+    written_path = dataset_dir / "manifest.json"
+    assert written_path.is_file()
+    written = json.loads(written_path.read_text())
+    assert "stitch_points" in written
+    assert written["stitch_points"]["BTC-USDT"].startswith("2020-11-01T00:00:00")
+    assert str(written["bad_ticks_hash"]).startswith("sha256:")
+    assert written["bad_ticks_hash"] == bad_ticks_hash(yaml_path)
+    hashed = json.dumps(
+        {k: written[k] for k in ("symbols", "timeframe", "stitch_points", "bad_ticks_hash")},
+        sort_keys=True,
+    )
+    assert "2020-11-01" in hashed
+    batch_path = tmp_path / "data" / "datasets" / "manifests" / f"{dataset_dir.name}.json"
+    batch_written = json.loads(batch_path.read_text())
+    assert batch_written["stitch_points"]["BTC-USDT"].startswith("2020-11-01T00:00:00")
+    assert batch_written["bad_ticks_hash"] == written["bad_ticks_hash"]
+    assert "stitch_points" in json.dumps(batch_written, sort_keys=True)
+
+
 def test_freeze_records_stitch_point_and_bad_ticks_in_manifest_hash(tmp_path):
     times = _around_stitch(before=8, after=8)
     _write_raw(tmp_path, times)
@@ -238,6 +280,7 @@ def test_confirmed_bad_tick_excludes_from_signals_and_hashes(tmp_path):
                 "ticks:",
                 "  - symbol: BTC-USDT",
                 '    bar_time: "2020-11-06T00:00:00Z"',
+                "    kind: frozen",
                 "    reason: confirmed frozen-price after review",
                 "    confirmed: true",
                 "  - symbol: BTC-USDT",

@@ -73,6 +73,24 @@ class FeatureCalculator:
         Where donchian_low[t] = min(low[t-N:t]) (prior N bars, excluding bar t)
         """
         return series.shift(1).rolling(window=period).min()
+
+    @staticmethod
+    def donchian_high_excluding_bad_ticks(
+        series: pd.Series, period: int, bad_mask: pd.Series
+    ) -> pd.Series:
+        return lift_valid_indicator(
+            FeatureCalculator.donchian_high(series.loc[~bad_mask.astype(bool)], period),
+            series.index,
+        )
+
+    @staticmethod
+    def donchian_low_excluding_bad_ticks(
+        series: pd.Series, period: int, bad_mask: pd.Series
+    ) -> pd.Series:
+        return lift_valid_indicator(
+            FeatureCalculator.donchian_low(series.loc[~bad_mask.astype(bool)], period),
+            series.index,
+        )
     
     @staticmethod
     def adx(df: pd.DataFrame, period: int = 14, method: str = "wilder") -> pd.Series:
@@ -148,19 +166,39 @@ class FeatureCalculator:
         return series.rolling(window=window).apply(rank_pct, raw=False)
 
 
+def lift_valid_indicator(values: pd.Series, full_index: pd.Index) -> pd.Series:
+    """Map a valid-bar-only series back onto the full index without introducing NaNs."""
+    return values.reindex(full_index).ffill()
+
+
+def valid_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
+    if "bad_tick" not in df.columns:
+        return df
+    mask = df["bad_tick"].astype(bool)
+    if not mask.any():
+        return df
+    return df.loc[~mask]
+
+
 def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
     calc = FeatureCalculator()
     
     df = df.copy()
+    source = valid_feature_frame(df)
+
+    def lift(values: pd.Series) -> pd.Series:
+        if source is df:
+            return values
+        return lift_valid_indicator(values, df.index)
     
-    df["atr14"] = calc.atr(df, 14)
-    df["atr20"] = calc.atr(df, 20)
+    df["atr14"] = lift(calc.atr(source, 14))
+    df["atr20"] = lift(calc.atr(source, 20))
     df["atr_pct"] = df["atr14"] / df["close"]
     df["atr_pct_rank_90"] = calc.percentile_rank(df["atr_pct"], 90)
     
-    df["ema20"] = calc.ema(df["close"], 20)
-    df["ema60"] = calc.ema(df["close"], 60)
-    df["ema120"] = calc.ema(df["close"], 120)
+    df["ema20"] = lift(calc.ema(source["close"], 20))
+    df["ema60"] = lift(calc.ema(source["close"], 60))
+    df["ema120"] = lift(calc.ema(source["close"], 120))
     
     ema20_above_60 = df["ema20"] > df["ema60"]
     ema60_above_120 = df["ema60"] > df["ema120"]
@@ -171,16 +209,16 @@ def compute_all_features(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[ema20_above_60 & ema60_above_120, "ema_align"] = 1
     df.loc[ema20_below_60 & ema60_below_120, "ema_align"] = -1
     
-    df["donchian_high_42"] = calc.donchian_high(df["high"], 42)
-    df["donchian_low_42"] = calc.donchian_low(df["low"], 42)
-    df["donchian_high_84"] = calc.donchian_high(df["high"], 84)
-    df["donchian_low_84"] = calc.donchian_low(df["low"], 84)
-    df["donchian_high_126"] = calc.donchian_high(df["high"], 126)
-    df["donchian_low_126"] = calc.donchian_low(df["low"], 126)
-    df["donchian_high_168"] = calc.donchian_high(df["high"], 168)
-    df["donchian_low_168"] = calc.donchian_low(df["low"], 168)
+    df["donchian_high_42"] = lift(calc.donchian_high(source["high"], 42))
+    df["donchian_low_42"] = lift(calc.donchian_low(source["low"], 42))
+    df["donchian_high_84"] = lift(calc.donchian_high(source["high"], 84))
+    df["donchian_low_84"] = lift(calc.donchian_low(source["low"], 84))
+    df["donchian_high_126"] = lift(calc.donchian_high(source["high"], 126))
+    df["donchian_low_126"] = lift(calc.donchian_low(source["low"], 126))
+    df["donchian_high_168"] = lift(calc.donchian_high(source["high"], 168))
+    df["donchian_low_168"] = lift(calc.donchian_low(source["low"], 168))
     
-    df["adx14"] = calc.adx(df, 14)
+    df["adx14"] = lift(calc.adx(source, 14))
     
     df["feature_version"] = FeatureCalculator.VERSION
     

@@ -1,40 +1,66 @@
+# bad_tick 清单 v1（行情分析bot 核对，数据源 bad-tick-candidates-cd37947f.csv）
+# 时间为 UTC 4h K线开盘时间；仅排除信号，不删原始数据。
+# kind=frozen: 停更/冻结，止损不看该根高低点（stop_on_bar=false）
+# kind=spike: 真实 HTX 插针，止损仍触发（stop_on_bar=true）
 version: 1
-# Confirmed bad ticks only. A confirmed row (symbol + bar_time [+ optional end_time])
-# is excluded from signals and is part of the dataset manifest hash.
-# Do not auto-promote the ops candidates below.
-ticks: []
-candidates:
-  - symbol: BTC-USDT
-    bar_time: "2020-10-21T00:00:00Z"
-    end_time: "2020-10-27T23:59:59Z"
-    reason: "HTX USDT-M contract launch week"
-    confirmed: false
-  - symbol: ETH-USDT
-    bar_time: "2020-10-21T00:00:00Z"
-    end_time: "2020-10-27T23:59:59Z"
-    reason: "HTX USDT-M contract launch week"
-    confirmed: false
+reviewed_by: 行情分析bot
+reviewed_at: 2026-10-12
+ticks:
   - symbol: BTC-USDT
     bar_time: "2021-02-19T12:00:00Z"
-    reason: "frozen-price bar 12:00 UTC (identical closes on both symbols)"
-    confirmed: false
+    kind: frozen
+    confirmed: true
+    reason: "HTX高点55492.9超币安53980，收盘偏差+2.6%，随后冻结"
   - symbol: BTC-USDT
     bar_time: "2021-02-19T16:00:00Z"
-    reason: "frozen-price bar 16:00 UTC (identical closes on both symbols)"
-    confirmed: false
+    kind: frozen
+    confirmed: true
+    reason: "OHLC全为55357.0，成交量0，价格冻结"
   - symbol: BTC-USDT
     bar_time: "2021-02-19T20:00:00Z"
-    reason: "frozen-price bar 20:00 UTC (identical closes on both symbols)"
-    confirmed: false
-  - symbol: ETH-USDT
-    bar_time: "2021-02-19T12:00:00Z"
-    reason: "frozen-price bar 12:00 UTC (identical closes on both symbols)"
-    confirmed: false
+    kind: frozen
+    confirmed: true
+    reason: "冻结后恢复首根，成交量100360远低于常态（约千万级）"
   - symbol: ETH-USDT
     bar_time: "2021-02-19T16:00:00Z"
-    reason: "frozen-price bar 16:00 UTC (identical closes on both symbols)"
-    confirmed: false
+    kind: frozen
+    confirmed: true
+    reason: "OHLC全为1927.22，成交量0，价格冻结"
   - symbol: ETH-USDT
     bar_time: "2021-02-19T20:00:00Z"
-    reason: "frozen-price bar 20:00 UTC (identical closes on both symbols)"
-    confirmed: false
+    kind: frozen
+    confirmed: true
+    reason: "成交量334，振幅几乎为0，币安同期正常，偏差-1.6%"
+  - symbol: BTC-USDT
+    bar_time: "2021-04-27T08:00:00Z"
+    kind: frozen
+    confirmed: true
+    reason: "两品种同刻收盘偏低>1.1%，HTX高点低于币安，疑似收盘停更"
+  - symbol: ETH-USDT
+    bar_time: "2021-04-27T08:00:00Z"
+    kind: frozen
+    confirmed: true
+    reason: "同上，偏差-1.3%"
+  - symbol: BTC-USDT
+    bar_time: "2021-09-16T08:00:00Z"
+    kind: frozen
+    confirmed: true
+    reason: "两品种同刻异常，HTX open=high，成交量偏低"
+  - symbol: ETH-USDT
+    bar_time: "2021-09-16T08:00:00Z"
+    kind: frozen
+    confirmed: true
+    reason: "同上，偏差-1.2%"
+  - symbol: BTC-USDT
+    bar_time: "2022-04-27T04:00:00Z"
+    kind: spike
+    confirmed: true
+    reason: "HTX高点39200.1超币安39070，收盘整数39200.00，成交量偏低，插针"
+  - symbol: ETH-USDT
+    bar_time: "2022-04-27T04:00:00Z"
+    kind: spike
+    confirmed: true
+    reason: "HTX高点2928.8超币安2888.88，同刻插针"
+# 保留（真实行情或正常基差，0.3%~1.0%）：BTC 2021-02-17 04:00、2021-04-18 00:00；
+# ETH 2020-11-03、2020-11-21、2021-01-03、2021-01-10、2021-02-02、2021-02-03、2021-02-19 12:00、
+# 2021-05-12 20:00（暴跌K线，偏差1.0%）、2021-05-19 12:00（5·19暴跌）、2021-10-28、2023-08-07

@@ -18,12 +18,13 @@ import yaml
 from .adapters.htx.fees import create_fee_provider
 from .conditions import C01DonchianEnsemble, C02ATRStop, DecisionContext
 from .data import DatasetManager
+from .data.quality import stop_on_bar_for_kind
 from .engine.backtest import CostScenario, SimBroker
 from .engine.contract_value import coin_notional, periods_per_year, require_contract_size
 from .engine.interfaces import Order
 from .ops.stable_hash import stable_frame_hash
 from .features import attach_funding_as_of, compute_all_features
-from .features.indicators import FeatureCalculator
+from .features.indicators import FeatureCalculator, lift_valid_indicator, valid_feature_frame
 from .context import compute_regime_labels
 from .ledger import ExperimentRegistration, LedgerManager, RunRecord
 from .ops import log_event, LogComponent, LogLevel, set_run_id, setup_logging
@@ -371,19 +372,29 @@ class BacktestRunner:
                 interval = frozen.timeframe if getattr(frozen, "timeframe", None) else "4hour"
                 df = attach_funding_as_of(df, pd.read_parquet(funding_path), interval)
             df = compute_all_features(df)
+            source = valid_feature_frame(df)
             atr_period = ((self.config.get("conditions") or {}).get("C02") or {}).get("atr_period")
             if atr_period:
                 atr_col = f"atr{atr_period}"
                 if atr_col not in df.columns:
-                    df[atr_col] = FeatureCalculator.atr(df, int(atr_period))
+                    atr_values = FeatureCalculator.atr(source, int(atr_period))
+                    df[atr_col] = (
+                        atr_values if source is df else lift_valid_indicator(atr_values, df.index)
+                    )
             c01_periods = ((self.config.get("conditions") or {}).get("C01") or {}).get("periods") or []
             for period in c01_periods:
                 high_col = f"donchian_high_{period}"
                 low_col = f"donchian_low_{period}"
                 if high_col not in df.columns:
-                    df[high_col] = FeatureCalculator.donchian_high(df["high"], int(period))
+                    high_values = FeatureCalculator.donchian_high(source["high"], int(period))
+                    df[high_col] = (
+                        high_values if source is df else lift_valid_indicator(high_values, df.index)
+                    )
                 if low_col not in df.columns:
-                    df[low_col] = FeatureCalculator.donchian_low(df["low"], int(period))
+                    low_values = FeatureCalculator.donchian_low(source["low"], int(period))
+                    df[low_col] = (
+                        low_values if source is df else lift_valid_indicator(low_values, df.index)
+                    )
             df = compute_regime_labels(df)
             processed_data[symbol] = df
             log_event(
@@ -504,15 +515,20 @@ class BacktestRunner:
                 start_idx = 200
             for idx in range(start_idx, len(df)):
                 bar = df.iloc[idx]
-                if (
-                    bar.get("incomplete", False)
-                    or bar.get("non_comparable", False)
-                    or bar.get("bad_tick", False)
-                ):
-                    broker.process_next_bar(symbol, bar.to_dict())
+                blocked = bool(bar.get("incomplete", False) or bar.get("non_comparable", False))
+                is_bad_tick = bool(bar.get("bad_tick", False))
+                skip_signals = blocked or is_bad_tick
+                check_stop = (not blocked) and (
+                    (not is_bad_tick)
+                    or stop_on_bar_for_kind(
+                        bar.get("bad_tick_kind") or "frozen",
+                        self.config.get("bad_tick_stop"),
+                    )
+                )
+                broker.process_next_bar(symbol, bar.to_dict())
+                if skip_signals and not check_stop:
                     continue
 
-                broker.process_next_bar(symbol, bar.to_dict())
                 sm = state_machines[symbol]
                 current_state = sm.get_state(symbol)
                 current_position = sm.get_position(symbol)
@@ -534,6 +550,13 @@ class BacktestRunner:
                 }
 
                 if current_state == StrategyState.FLAT:
+                    if skip_signals:
+                        decision_record["action"] = "HOLD"
+                        decision_record["skip_reason"] = "bad_tick" if is_bad_tick else "blocked_bar"
+                        if is_bad_tick:
+                            decision_record["bad_tick_kind"] = bar.get("bad_tick_kind")
+                        all_decisions.append(decision_record)
+                        continue
                     ctx.current_position = None
                     c01_result = c01.evaluate(ctx, {})
                     decision_record["c01_status"] = c01_result.status
