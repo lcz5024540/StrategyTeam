@@ -92,6 +92,13 @@ class BacktestRunner:
         if not reg_config.get("drop_rule"):
             raise ValueError("Registration incomplete: 'drop_rule' is required")
         
+        # ✅ P0: expected_effect 和 change 必填（无默认值）
+        if not reg_config.get("expected_effect"):
+            raise ValueError("Registration incomplete: 'expected_effect' is required")
+        
+        if not reg_config.get("change"):
+            raise ValueError("Registration incomplete: 'change' is required")
+        
         # 验证单条件变更（vs parent_run_id）
         parent_run_id = self.config.get("parent_run_id")
         if parent_run_id:
@@ -100,13 +107,13 @@ class BacktestRunner:
         exp = ExperimentRegistration(
             run_id=self.run_id,
             parent_run_id=self.config.get("parent_run_id"),
-            change=reg_config.get("change", "Initial baseline"),
+            change=reg_config["change"],  # ✅ 必填
             hypothesis=reg_config["hypothesis"],
-            expected_effect=reg_config.get("expected_effect", "Establish baseline"),
+            expected_effect=reg_config["expected_effect"],  # ✅ 必填
             keep_rule=reg_config["keep_rule"],
             drop_rule=reg_config["drop_rule"],
             evidence_ref=reg_config.get("evidence_ref"),
-            trial_count=1,
+            trial_count=1,  # TODO: P0 - 应从 trials 表计数，而非写死
             uses_holdout=self.config.get("stage_acceptance", False),
             conclusion=None,
             decision=None,
@@ -126,13 +133,13 @@ class BacktestRunner:
         # 查找父运行的配置
         parent_run = self.ledger.get_run(parent_run_id)
         
+        # ✅ P0: 父运行不存在时必须报错（不可绕过）
         if not parent_run:
-            log_event(
-                LogComponent.ENGINE,
-                f"Parent run {parent_run_id} not found, skipping single-change validation",
-                level=LogLevel.WARNING,
+            raise ValueError(
+                f"Parent run {parent_run_id} not found. "
+                f"Cannot validate single-change requirement. "
+                f"If this is a baseline run, remove parent_run_id from config."
             )
-            return
         
         parent_config = parent_run.config_snapshot
         current_config = self.config
@@ -153,22 +160,31 @@ class BacktestRunner:
             if parent_cond != current_cond:
                 changes.append(cond_id)
         
-        # 检查其他关键参数
-        if parent_config.get("risk_per_trade") != current_config.get("risk_per_trade"):
-            changes.append("risk_per_trade")
+        # ✅ P0: 扩展检查范围，包含所有可能影响结果的参数
+        params_to_check = [
+            "risk_per_trade",
+            "max_positions",
+            "max_total_risk",
+            "initial_equity",
+            "dataset_id",
+            "split",
+            "cost_scenario",
+            "fees",
+            "symbols",
+            "leverage_target",
+        ]
         
-        if parent_config.get("max_positions") != current_config.get("max_positions"):
-            changes.append("max_positions")
-        
-        if parent_config.get("initial_equity") != current_config.get("initial_equity"):
-            changes.append("initial_equity")
+        for param in params_to_check:
+            if parent_config.get(param) != current_config.get(param):
+                changes.append(param)
         
         # 验证只改变了一个条件
         if len(changes) == 0:
-            log_event(
-                LogComponent.ENGINE,
-                f"No changes detected vs parent {parent_run_id}",
-                level=LogLevel.WARNING,
+            # ✅ P0: 零改动必须报错（不可放行）
+            raise ValueError(
+                f"No changes detected vs parent {parent_run_id}. "
+                f"Registration gate requires exactly ONE changed parameter. "
+                f"If this is an exact replication, use a different parent_run_id."
             )
         elif len(changes) == 1:
             log_event(
