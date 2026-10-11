@@ -505,9 +505,17 @@
 
 ### D3. 试验计数只增不减
 
-**状态**: ✅ PASS
+**状态**: ✅ PASS（DSR/PBO计算 DEFERRED v0.3.0）
 
-**要求**: 试验计数 append-only，可导出供 DSR (决策支持报告) 使用
+**要求**: 试验计数 append-only，可导出供 DSR (Deflated Sharpe Ratio) 和 PBO (Probability of Backtest Overfitting) 计算使用
+
+**当前状态**:
+- ✅ trials 表结构完整（schema + append-only）
+- ✅ SQLite 数据可导出
+- ⚠️ DSR 和 PBO 指标计算未实现（延后到 v0.3.0）
+  - DSR: 根据试验数调整夏普比率（通过假设检验次数惩罚）
+  - PBO: 通过 CSCV 估计过拟合概率
+  - 要求：明确接受阈值（例如 DSR>2.0, PBO<0.3）写入策略卡片
 
 **证据**:
 - **Schema**: `src/htx_trend/research/ledger/ledger.py:96-102`
