@@ -24,6 +24,7 @@ class ReportGenerator:
         registration: Any | None = None,
         overlap_deviation: dict[str, Any] | None = None,
         smoke: bool = False,
+        funding_missing: list[str] | None = None,
     ) -> Path:
         report_path = self.output_dir / "report.md"
         
@@ -73,6 +74,14 @@ class ReportGenerator:
                 f.write("## 重叠偏差分布\n\n")
                 f.write(self._format_overlap_deviation(overlap_deviation))
                 f.write("\n\n")
+
+            if funding_missing:
+                f.write("## funding_missing\n\n")
+                f.write(
+                    "Funding history was not attached for: "
+                    + ", ".join(funding_missing)
+                    + "\n\n"
+                )
 
             f.write("## 决策记录摘要\n\n")
             f.write(f"总决策数: {len(decisions)}\n\n")

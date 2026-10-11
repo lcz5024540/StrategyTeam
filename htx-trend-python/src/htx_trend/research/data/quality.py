@@ -93,14 +93,18 @@ class BadTick:
 
 
 def normalize_bad_tick_kind(kind: str | None) -> str:
-    value = (kind or "frozen").strip().lower()
+    if kind is None:
+        raise ValueError("bad_tick kind is required; expected 'frozen' or 'spike'")
+    value = str(kind).strip().lower()
+    if value in {"", "nan", "none"}:
+        raise ValueError("bad_tick kind is required; expected 'frozen' or 'spike'")
     if value not in BAD_TICK_KINDS:
         raise ValueError(f"bad_tick kind must be one of {BAD_TICK_KINDS}, got {kind!r}")
     return value
 
 
 def stop_on_bar_for_kind(kind: str | None, config: dict | None = None) -> bool:
-    resolved = normalize_bad_tick_kind(kind or "frozen")
+    resolved = normalize_bad_tick_kind(kind)
     merged = dict(DEFAULT_KIND_STOP_ON_BAR)
     if config:
         for key, value in config.items():

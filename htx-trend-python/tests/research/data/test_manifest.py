@@ -137,6 +137,7 @@ def test_runner_binds_manifest(tmp_path):
         "max_total_risk": 0.015,
         "max_positions": 3,
         "leverage_target": 5.0,
+        "allow_missing_funding": True,
         "conditions": {
             "C01": {"enabled": True, "periods": [42, 84, 126, 168], "threshold": 0.25},
             "C02": {

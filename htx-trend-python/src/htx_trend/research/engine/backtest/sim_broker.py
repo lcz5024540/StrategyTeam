@@ -119,13 +119,26 @@ class SimBroker:
             reject_reason=None,
         )
 
-    def process_next_bar(self, symbol: str, bar: dict[str, Any]) -> list[OrderAck]:
+    def process_next_bar(
+        self,
+        symbol: str,
+        bar: dict[str, Any],
+        *,
+        allow_entry_fills: bool = True,
+        allow_exit_fills: bool = True,
+    ) -> list[OrderAck]:
         acks = []
         remaining_orders = []
         for order, signal_time in self.pending_orders:
-            del signal_time
             if order.symbol != symbol:
-                remaining_orders.append((order, datetime.now()))
+                remaining_orders.append((order, signal_time))
+                continue
+            is_exit = bool(order.reduce_only or order.is_stop)
+            if is_exit and not allow_exit_fills:
+                remaining_orders.append((order, signal_time))
+                continue
+            if (not is_exit) and not allow_entry_fills:
+                remaining_orders.append((order, signal_time))
                 continue
 
             contract_size = self.contract_size_for(order.symbol)

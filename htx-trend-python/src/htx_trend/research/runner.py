@@ -18,7 +18,7 @@ import yaml
 from .adapters.htx.fees import create_fee_provider
 from .conditions import C01DonchianEnsemble, C02ATRStop, DecisionContext
 from .data import DatasetManager
-from .data.quality import stop_on_bar_for_kind
+from .data.quality import normalize_bad_tick_kind, stop_on_bar_for_kind
 from .engine.backtest import CostScenario, SimBroker
 from .engine.contract_value import coin_notional, periods_per_year, require_contract_size
 from .engine.interfaces import Order
@@ -352,6 +352,7 @@ class BacktestRunner:
         )
 
         processed_data = {}
+        self._funding_missing = []
         for symbol, df in data.items():
             df = df.copy()
             total_bars = len(df)
@@ -368,9 +369,17 @@ class BacktestRunner:
                 df.loc[df["incomplete"] == True, "non_comparable"] = True
             df["_original_source"] = df.get("source", "htx")
             funding_path = self.workspace_dir / "data" / "raw" / f"{symbol}_funding.parquet"
+            allow_missing_funding = bool(self.config.get("allow_missing_funding", False))
             if funding_path.exists():
                 interval = frozen.timeframe if getattr(frozen, "timeframe", None) else "4hour"
                 df = attach_funding_as_of(df, pd.read_parquet(funding_path), interval)
+            elif allow_missing_funding:
+                self._funding_missing.append(symbol)
+            else:
+                raise ValueError(
+                    f"Missing funding file for {symbol}: {funding_path}. "
+                    "Collect funding history or set allow_missing_funding=true"
+                )
             df = compute_all_features(df)
             source = valid_feature_frame(df)
             atr_period = ((self.config.get("conditions") or {}).get("C02") or {}).get("atr_period")
@@ -515,17 +524,34 @@ class BacktestRunner:
                 start_idx = 200
             for idx in range(start_idx, len(df)):
                 bar = df.iloc[idx]
-                blocked = bool(bar.get("incomplete", False) or bar.get("non_comparable", False))
+                incomplete = bool(bar.get("incomplete", False))
+                non_comparable = bool(bar.get("non_comparable", False))
                 is_bad_tick = bool(bar.get("bad_tick", False))
-                skip_signals = blocked or is_bad_tick
-                check_stop = (not blocked) and (
+                kind = bar.get("bad_tick_kind")
+                if is_bad_tick:
+                    kind = normalize_bad_tick_kind(kind)
+                skip_signals = incomplete or non_comparable or is_bad_tick
+                check_stop = (not incomplete) and (
                     (not is_bad_tick)
-                    or stop_on_bar_for_kind(
-                        bar.get("bad_tick_kind") or "frozen",
-                        self.config.get("bad_tick_stop"),
-                    )
+                    or stop_on_bar_for_kind(kind, self.config.get("bad_tick_stop"))
                 )
-                broker.process_next_bar(symbol, bar.to_dict())
+                if is_bad_tick:
+                    allow_entry_fills = False
+                    allow_exit_fills = stop_on_bar_for_kind(
+                        kind, self.config.get("bad_tick_stop")
+                    )
+                elif incomplete:
+                    allow_entry_fills = False
+                    allow_exit_fills = False
+                else:
+                    allow_entry_fills = True
+                    allow_exit_fills = True
+                broker.process_next_bar(
+                    symbol,
+                    bar.to_dict(),
+                    allow_entry_fills=allow_entry_fills,
+                    allow_exit_fills=allow_exit_fills,
+                )
                 if skip_signals and not check_stop:
                     continue
 
@@ -757,6 +783,7 @@ class BacktestRunner:
             "final_equity": broker.get_account_equity(),
             "initial_equity": initial_equity,
             "fee_rates_used": fee_rates_record,
+            "funding_missing": list(getattr(self, "_funding_missing", [])),
         }
 
     def _fills_frame(self, fills: list[Any]) -> pd.DataFrame:
@@ -956,4 +983,5 @@ class BacktestRunner:
             registration=registration,
             overlap_deviation=self._load_overlap_deviation(),
             smoke=self._is_smoke,
+            funding_missing=results.get("funding_missing") or [],
         )

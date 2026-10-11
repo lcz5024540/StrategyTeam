@@ -285,6 +285,7 @@ def test_confirmed_bad_tick_excludes_from_signals_and_hashes(tmp_path):
                 "    confirmed: true",
                 "  - symbol: BTC-USDT",
                 '    bar_time: "2021-02-19T12:00:00Z"',
+                "    kind: frozen",
                 "    reason: ops candidate only",
                 "    confirmed: false",
             ]
