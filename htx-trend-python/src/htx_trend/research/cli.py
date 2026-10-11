@@ -16,6 +16,7 @@ from .data.collector import (
     hash_funding_files,
     hash_spec_files,
     parse_lookback_days,
+    funding_source_timeline,
     summarize_funding_sources,
 )
 from .data.quality import (
@@ -242,6 +243,12 @@ def cmd_freeze(args: argparse.Namespace) -> None:
             json.dumps(source_counts, indent=2)
         )
         print(f"source_counts: {json.dumps(source_counts)}")
+    timeline = funding_source_timeline(raw_dir, contracts)
+    if timeline:
+        (dataset_dir / "funding_source_timeline.json").write_text(
+            json.dumps(timeline, indent=2)
+        )
+        print(f"funding_source_timeline: {json.dumps(timeline)}")
     if overlap_deviation:
         (dataset_dir / "overlap_deviation.json").write_text(
             json.dumps(overlap_deviation, indent=2)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -347,6 +347,32 @@ def stitch_funding_history(
     combined = pd.concat(frames, ignore_index=True)
     combined = combined.drop_duplicates(subset=["funding_time"]).sort_values("funding_time")
     return combined.reset_index(drop=True)
+
+
+def funding_source_timeline(raw_dir, contracts: list[str]) -> dict:
+    """Per-source settlement count and earliest/latest time for smoke summaries."""
+    payload: dict[str, dict[str, dict[str, Any]]] = {}
+    for contract in contracts:
+        path = raw_dir / f"{contract}_funding.parquet"
+        if not path.exists():
+            continue
+        fund = pd.read_parquet(path)
+        if fund.empty:
+            continue
+        frame = fund.copy()
+        if "source" not in frame.columns:
+            frame["source"] = "htx"
+        frame["funding_time"] = pd.to_datetime(frame["funding_time"], utc=True)
+        by_source: dict[str, dict[str, Any]] = {}
+        for source, group in frame.groupby(frame["source"].astype(str)):
+            stamps = group["funding_time"]
+            by_source[str(source)] = {
+                "count": int(len(group)),
+                "earliest": stamps.min().isoformat(),
+                "latest": stamps.max().isoformat(),
+            }
+        payload[contract] = by_source
+    return payload
 
 
 def summarize_funding_sources(raw_dir, contracts: list[str]) -> dict:

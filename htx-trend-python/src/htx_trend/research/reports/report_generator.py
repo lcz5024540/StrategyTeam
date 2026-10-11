@@ -8,6 +8,133 @@ from typing import Any
 
 import pandas as pd
 
+TOTAL_SCOPE = "TOTAL"
+
+
+def summarize_fee_ledger(
+    fills: list[dict[str, Any]],
+    funding_events: list[dict[str, Any]] | None = None,
+    *,
+    initial_equity: float | None = None,
+    final_equity: float | None = None,
+    last_closes: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """Entry/exit fees, slippage, signed funding, and equity reconciliation."""
+    buckets: dict[str, dict[str, float]] = {}
+
+    def bucket(symbol: str) -> dict[str, float]:
+        if symbol not in buckets:
+            buckets[symbol] = {
+                "entry_fees": 0.0,
+                "exit_fees": 0.0,
+                "slippage": 0.0,
+                "funding_paid": 0.0,
+                "funding_received": 0.0,
+                "net_funding": 0.0,
+            }
+        return buckets[symbol]
+
+    pending: dict[str, list[dict[str, Any]]] = {}
+    realized = 0.0
+    for fill in fills:
+        symbol = str(fill.get("symbol") or "")
+        row = bucket(symbol)
+        fees = float(fill.get("fees") or 0.0)
+        slip = float(fill.get("slippage") or 0.0)
+        row["slippage"] += slip
+        if fill.get("is_entry"):
+            row["entry_fees"] += fees
+            pending.setdefault(symbol, []).append(fill)
+            continue
+        row["exit_fees"] += fees
+        entries = pending.get(symbol) or []
+        if not entries:
+            continue
+        entry = entries.pop(0)
+        size = float(fill.get("size") or 0.0)
+        contract = float(fill.get("contract_size") or entry.get("contract_size") or 1.0)
+        direction = 1.0 if entry.get("side") == "LONG" else -1.0
+        realized += (float(fill["price"]) - float(entry["price"])) * size * contract * direction
+
+    if funding_events:
+        for event in funding_events:
+            symbol = str(event.get("symbol") or "")
+            row = bucket(symbol)
+            if event.get("signed_payment") is not None:
+                signed = float(event["signed_payment"])
+            else:
+                payment = float(event.get("payment") or 0.0)
+                signed = payment if event.get("side") != "SHORT" else -payment
+            if signed >= 0:
+                row["funding_paid"] += signed
+            else:
+                row["funding_received"] += -signed
+            row["net_funding"] += signed
+    else:
+        for fill in fills:
+            if fill.get("is_entry"):
+                continue
+            signed = float(fill.get("funding") or 0.0)
+            row = bucket(str(fill.get("symbol") or ""))
+            if signed >= 0:
+                row["funding_paid"] += signed
+            else:
+                row["funding_received"] += -signed
+            row["net_funding"] += signed
+
+    totals = {
+        "entry_fees": 0.0,
+        "exit_fees": 0.0,
+        "slippage": 0.0,
+        "funding_paid": 0.0,
+        "funding_received": 0.0,
+        "net_funding": 0.0,
+    }
+    for row in buckets.values():
+        for key in totals:
+            totals[key] += row[key]
+
+    unrealized = 0.0
+    closes = last_closes or {}
+    for symbol, entries in pending.items():
+        for entry in entries:
+            last = float(closes.get(symbol, entry["price"]))
+            size = float(entry.get("size") or 0.0)
+            contract = float(entry.get("contract_size") or 1.0)
+            direction = 1.0 if entry.get("side") == "LONG" else -1.0
+            unrealized += (last - float(entry["price"])) * size * contract * direction
+
+    fees = totals["entry_fees"] + totals["exit_fees"]
+    expected = None
+    diff = None
+    if initial_equity is not None:
+        expected = (
+            float(initial_equity)
+            + realized
+            - fees
+            - totals["slippage"]
+            - totals["net_funding"]
+            + unrealized
+        )
+        if final_equity is not None:
+            diff = float(final_equity) - expected
+
+    return {
+        "by_symbol": buckets,
+        "total": totals,
+        "reconciliation": {
+            "initial_equity": initial_equity,
+            "realized_pnl": realized,
+            "fees": fees,
+            "slippage": totals["slippage"],
+            "net_funding": totals["net_funding"],
+            "unrealized_pnl": unrealized,
+            "expected_final": expected,
+            "actual_final": final_equity,
+            "diff": diff,
+        },
+    }
+
 
 class ReportGenerator:
     def __init__(self, run_id: str, output_dir: Path):
@@ -26,6 +153,9 @@ class ReportGenerator:
         smoke: bool = False,
         funding_missing: list[str] | None = None,
         stitch_points: dict[str, Any] | None = None,
+        funding_events: list[dict[str, Any]] | None = None,
+        initial_equity: float | None = None,
+        final_equity: float | None = None,
     ) -> Path:
         report_path = self.output_dir / "report.md"
         
@@ -51,6 +181,20 @@ class ReportGenerator:
             
             f.write("## 交易统计\n\n")
             f.write(self._format_trade_stats(fills))
+            f.write("\n\n")
+
+            f.write("## fees\n\n")
+            f.write(
+                self._format_fees(
+                    fills,
+                    funding_events or [],
+                    initial_equity=initial_equity
+                    if initial_equity is not None
+                    else config.get("initial_equity"),
+                    final_equity=final_equity,
+                    decisions=decisions,
+                )
+            )
             f.write("\n\n")
             
             if fills and not (smoke or config.get("run_type") == "SMOKE"):
@@ -167,6 +311,64 @@ class ReportGenerator:
         import yaml
         return yaml.dump(config, default_flow_style=False, allow_unicode=True)
     
+    def _format_fees(
+        self,
+        fills: list[dict[str, Any]],
+        funding_events: list[dict[str, Any]],
+        *,
+        initial_equity: float | None,
+        final_equity: float | None,
+        decisions: pd.DataFrame,
+    ) -> str:
+        last_closes: dict[str, float] = {}
+        if decisions is not None and not decisions.empty and "close" in decisions.columns:
+            grouped = (
+                decisions
+                if "symbol" not in decisions.columns
+                else decisions
+            )
+            if "symbol" in grouped.columns:
+                for symbol, rows in grouped.groupby("symbol"):
+                    last_closes[str(symbol)] = float(rows.iloc[-1]["close"])
+        summary = summarize_fee_ledger(
+            fills,
+            funding_events,
+            initial_equity=None if initial_equity is None else float(initial_equity),
+            final_equity=None if final_equity is None else float(final_equity),
+            last_closes=last_closes,
+        )
+        header = (
+            "| scope | entry_fees | exit_fees | slippage | "
+            "funding_paid | funding_received | net_funding |"
+        )
+        lines = [header, "| --- | --- | --- | --- | --- | --- | --- |"]
+        for symbol in sorted(summary["by_symbol"]):
+            row = summary["by_symbol"][symbol]
+            lines.append(_fee_row(symbol, row))
+        lines.append(_fee_row(TOTAL_SCOPE, summary["total"]))
+        recon = summary["reconciliation"]
+        lines.extend(
+            [
+                "",
+                "### equity reconciliation",
+                (
+                    "initial + realized_pnl - fees - slippage - net_funding "
+                    "+ unrealized = expected_final"
+                ),
+                (
+                    f"{_num(recon['initial_equity'])} + {_num(recon['realized_pnl'])} "
+                    f"- {_num(recon['fees'])} - {_num(recon['slippage'])} "
+                    f"- {_num(recon['net_funding'])} + {_num(recon['unrealized_pnl'])} "
+                    f"= {_num(recon['expected_final'])}"
+                ),
+                (
+                    f"actual_final={_num(recon['actual_final'])} "
+                    f"diff={_num(recon['diff'])}"
+                ),
+            ]
+        )
+        return "\n".join(lines) + "\n"
+
     def _format_trade_stats(self, fills: list[dict[str, Any]]) -> str:
         if not fills:
             return "无交易记录\n"
@@ -346,6 +548,20 @@ class ReportGenerator:
 {diff_line}
 {pct_line}
 """
+
+
+def _num(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{float(value):.6f}".rstrip("0").rstrip(".")
+
+
+def _fee_row(scope: str, row: dict[str, float]) -> str:
+    return (
+        f"| {scope} | {_num(row['entry_fees'])} | {_num(row['exit_fees'])} | "
+        f"{_num(row['slippage'])} | {_num(row['funding_paid'])} | "
+        f"{_num(row['funding_received'])} | {_num(row['net_funding'])} |"
+    )
 
 
 def _stitch_for(symbol: str, stitch_points: dict[str, Any]) -> datetime | None:

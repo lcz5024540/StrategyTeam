@@ -1064,4 +1064,7 @@ class BacktestRunner:
             smoke=self._is_smoke,
             funding_missing=results.get("funding_missing") or [],
             stitch_points=self._load_stitch_points(),
+            funding_events=list(results.get("funding_events") or []),
+            initial_equity=results.get("initial_equity"),
+            final_equity=results.get("final_equity"),
         )

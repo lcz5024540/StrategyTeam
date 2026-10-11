@@ -57,6 +57,28 @@ PY
     else
       echo "source_counts=missing"
     fi
+    if [[ -n "$DATASET_ID" && -f "$WS/data/datasets/$DATASET_ID/funding_source_timeline.json" ]]; then
+      echo "funding_source_timeline_file=$WS/data/datasets/$DATASET_ID/funding_source_timeline.json"
+      python - "$WS/data/datasets/$DATASET_ID/funding_source_timeline.json" <<'PY' || true
+import json
+import sys
+from pathlib import Path
+payload = json.loads(Path(sys.argv[1]).read_text())
+print("funding_source_timeline=" + json.dumps(payload, sort_keys=True))
+for symbol, sources in payload.items():
+    if not isinstance(sources, dict):
+        continue
+    for source, stats in sources.items():
+        if not isinstance(stats, dict):
+            continue
+        print(
+            f"{symbol} {source}: count={stats.get('count', 0)} "
+            f"earliest={stats.get('earliest')} latest={stats.get('latest')}"
+        )
+PY
+    else
+      echo "funding_source_timeline=missing"
+    fi
   } > "$SUMMARY"
 }
 

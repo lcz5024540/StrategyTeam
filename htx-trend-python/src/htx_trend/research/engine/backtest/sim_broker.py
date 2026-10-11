@@ -245,6 +245,7 @@ class SimBroker:
         price = float(mark_price) if mark_price is not None else position.entry_price
         notional = coin_notional(price, position.size, position.contract_size, symbol)
         payment = notional * funding_rate
+        signed = payment if position.side == "LONG" else -payment
         if position.side == "LONG":
             position.accumulated_funding += payment
         else:
@@ -252,8 +253,10 @@ class SimBroker:
         self.funding_events.append(
             {
                 "symbol": symbol,
+                "side": position.side,
                 "funding_rate": float(funding_rate),
                 "payment": payment,
+                "signed_payment": signed,
                 "notional": notional,
                 "mark_price": price,
                 "settlement_time": settlement_time,
