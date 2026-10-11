@@ -7,10 +7,31 @@ import pandas as pd
 
 
 class FeatureCalculator:
-    VERSION = "1.0.0"
+    VERSION = "1.1.0"  # Updated: Wilder smoothing + index preservation
     
     @staticmethod
-    def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    def _wilder_smooth(series: pd.Series, period: int) -> pd.Series:
+        """Wilder's smoothing (RMA - Running Moving Average)
+        
+        RMA[i] = (RMA[i-1] * (period - 1) + value[i]) / period
+        
+        This is equivalent to EWM with alpha = 1/period.
+        Preserves the original series index.
+        """
+        return series.ewm(alpha=1.0/period, adjust=False).mean()
+    
+    @staticmethod
+    def atr(df: pd.DataFrame, period: int = 14, method: str = "wilder") -> pd.Series:
+        """Average True Range
+        
+        Args:
+            df: DataFrame with high, low, close columns
+            period: ATR period
+            method: Smoothing method - "wilder" (default) or "ema"
+        
+        Returns:
+            pd.Series with same index as input df
+        """
         high = df["high"]
         low = df["low"]
         close = df["close"]
@@ -21,8 +42,14 @@ class FeatureCalculator:
         
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         
-        atr = tr.ewm(span=period, adjust=False).mean()
+        if method == "wilder":
+            atr = FeatureCalculator._wilder_smooth(tr, period)
+        elif method == "ema":
+            atr = tr.ewm(span=period, adjust=False).mean()
+        else:
+            raise ValueError(f"Unknown ATR method: {method}")
         
+        # Index is preserved automatically by pandas operations
         return atr
     
     @staticmethod
@@ -31,38 +58,84 @@ class FeatureCalculator:
     
     @staticmethod
     def donchian_high(series: pd.Series, period: int) -> pd.Series:
-        return series.rolling(window=period).max()
+        """Donchian high channel - max of prior N bars (excludes current bar)
+        
+        Breakout condition: close[t] > donchian_high[t]
+        Where donchian_high[t] = max(high[t-N:t]) (prior N bars, excluding bar t)
+        """
+        return series.shift(1).rolling(window=period).max()
     
     @staticmethod
     def donchian_low(series: pd.Series, period: int) -> pd.Series:
-        return series.rolling(window=period).min()
+        """Donchian low channel - min of prior N bars (excludes current bar)
+        
+        Breakout condition: close[t] < donchian_low[t]
+        Where donchian_low[t] = min(low[t-N:t]) (prior N bars, excluding bar t)
+        """
+        return series.shift(1).rolling(window=period).min()
     
     @staticmethod
-    def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    def adx(df: pd.DataFrame, period: int = 14, method: str = "wilder") -> pd.Series:
+        """Average Directional Index (ADX)
+        
+        Args:
+            df: DataFrame with high, low, close columns
+            period: ADX period
+            method: Smoothing method - "wilder" (default, traditional) or "ema"
+        
+        Returns:
+            pd.Series with same index as input df
+        """
         high = df["high"]
         low = df["low"]
         close = df["close"]
         
+        # Directional movement
         high_diff = high.diff()
         low_diff = -low.diff()
         
-        plus_dm = np.where((high_diff > low_diff) & (high_diff > 0), high_diff, 0)
-        minus_dm = np.where((low_diff > high_diff) & (low_diff > 0), low_diff, 0)
+        # Keep as Series to preserve index
+        plus_dm = pd.Series(
+            np.where((high_diff > low_diff) & (high_diff > 0), high_diff, 0),
+            index=df.index,
+        )
+        minus_dm = pd.Series(
+            np.where((low_diff > high_diff) & (low_diff > 0), low_diff, 0),
+            index=df.index,
+        )
         
+        # True Range
         tr1 = high - low
         tr2 = abs(high - close.shift(1))
         tr3 = abs(low - close.shift(1))
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         
-        atr = tr.ewm(span=period, adjust=False).mean()
+        # Smoothing
+        if method == "wilder":
+            smoothed_tr = FeatureCalculator._wilder_smooth(tr, period)
+            smoothed_plus_dm = FeatureCalculator._wilder_smooth(plus_dm, period)
+            smoothed_minus_dm = FeatureCalculator._wilder_smooth(minus_dm, period)
+        elif method == "ema":
+            smoothed_tr = tr.ewm(span=period, adjust=False).mean()
+            smoothed_plus_dm = plus_dm.ewm(span=period, adjust=False).mean()
+            smoothed_minus_dm = minus_dm.ewm(span=period, adjust=False).mean()
+        else:
+            raise ValueError(f"Unknown ADX method: {method}")
         
-        plus_di = 100 * pd.Series(plus_dm).ewm(span=period, adjust=False).mean() / atr
-        minus_di = 100 * pd.Series(minus_dm).ewm(span=period, adjust=False).mean() / atr
+        # Directional indicators
+        plus_di = 100 * smoothed_plus_dm / smoothed_tr
+        minus_di = 100 * smoothed_minus_dm / smoothed_tr
         
+        # DX
         dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
         
-        adx = dx.ewm(span=period, adjust=False).mean()
+        # ADX (smooth DX)
+        if method == "wilder":
+            adx = FeatureCalculator._wilder_smooth(dx, period)
+        else:
+            adx = dx.ewm(span=period, adjust=False).mean()
         
+        # Index is preserved throughout
         return adx
     
     @staticmethod

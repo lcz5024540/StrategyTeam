@@ -24,14 +24,19 @@ class ConditionResult:
     threshold: float | None = None
     reason: str = ""
     
+    evidence: dict[str, Any] | None = None
+    
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "cond_id": self.cond_id,
             "status": self.status,
             "value": self.value,
             "threshold": self.threshold,
             "reason": self.reason,
         }
+        if self.evidence:
+            result["evidence"] = self.evidence
+        return result
 
 
 @dataclass
