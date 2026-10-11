@@ -62,6 +62,90 @@ def test_indicators_skip_bad_tick_and_extend_window():
     assert out.loc[43, "donchian_high_42"] == 101.0
 
 
+def _delete_then_align(df: pd.DataFrame, compute):
+    """Independent oracle: drop the bad bar, compute, reindex, ffill."""
+    deleted = df.loc[~df["bad_tick"].astype(bool)]
+    computed = compute(deleted)
+    return computed.reindex(df.index).ffill()
+
+
+def _replace_ohlc_with_prior(df: pd.DataFrame) -> pd.DataFrame:
+    """Incorrect approach: keep the row but copy previous OHLC onto the bad bar."""
+    replaced = df.copy()
+    bad = replaced["bad_tick"].astype(bool)
+    for col in ("open", "high", "low", "close"):
+        replaced.loc[bad, col] = replaced[col].where(~bad).ffill().loc[bad]
+    return replaced
+
+
+def test_frozen_bad_tick_donchian168_atr14_match_deleted_series_not_replaced_ohlc():
+    rng = np.random.default_rng(7)
+    n = 240
+    bad_idx = 190
+    close = 100 + np.cumsum(rng.normal(0, 0.8, n))
+    high = close + rng.uniform(0.4, 1.6, n)
+    low = close - rng.uniform(0.4, 1.6, n)
+    df = pd.DataFrame(
+        {
+            "bar_time": pd.date_range("2020-11-01", periods=n, freq="4h", tz="UTC"),
+            "open": np.concatenate([[close[0]], close[:-1]]),
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": 1.0,
+            "amount": close,
+            "bad_tick": False,
+        }
+    )
+    original_ohlc = df.loc[bad_idx, ["open", "high", "low", "close"]].copy()
+    df.loc[bad_idx, ["open", "high", "low", "close"]] = [
+        original_ohlc["open"],
+        9_999.0,
+        0.01,
+        original_ohlc["close"],
+    ]
+    df.loc[bad_idx, "bad_tick"] = True
+    df.loc[bad_idx, "bad_tick_kind"] = "frozen"
+    before_ohlc = df.loc[bad_idx, ["open", "high", "low", "close"]].copy()
+
+    pipeline = compute_all_features(df)
+    after_ohlc = pipeline.loc[bad_idx, ["open", "high", "low", "close"]]
+    pd.testing.assert_series_equal(after_ohlc, before_ohlc, check_names=False)
+    assert pipeline.loc[bad_idx, "high"] == 9_999.0
+    assert pipeline.loc[bad_idx, "low"] == 0.01
+
+    expected_don_high = _delete_then_align(
+        df, lambda valid: FeatureCalculator.donchian_high(valid["high"], 168)
+    )
+    expected_don_low = _delete_then_align(
+        df, lambda valid: FeatureCalculator.donchian_low(valid["low"], 168)
+    )
+    expected_atr = _delete_then_align(df, lambda valid: FeatureCalculator.atr(valid, 14))
+
+    window = list(range(bad_idx - 8, bad_idx + 9))
+    pd.testing.assert_series_equal(
+        pipeline["donchian_high_168"], expected_don_high, check_names=False
+    )
+    pd.testing.assert_series_equal(
+        pipeline["donchian_low_168"], expected_don_low, check_names=False
+    )
+    pd.testing.assert_series_equal(pipeline["atr14"], expected_atr, check_names=False)
+    pd.testing.assert_series_equal(
+        pipeline.loc[window, "donchian_high_168"],
+        expected_don_high.loc[window],
+        check_names=False,
+    )
+    pd.testing.assert_series_equal(
+        pipeline.loc[window, "atr14"], expected_atr.loc[window], check_names=False
+    )
+
+    replaced = _replace_ohlc_with_prior(df)
+    assert (replaced.loc[bad_idx, ["open", "high", "low", "close"]] != before_ohlc).any()
+    replaced_atr = FeatureCalculator.atr(replaced.drop(columns=["bad_tick"], errors="ignore"), 14)
+    assert not replaced_atr.equals(pipeline["atr14"])
+    assert replaced_atr.iloc[bad_idx + 1] != pipeline["atr14"].iloc[bad_idx + 1]
+
+
 def test_stop_on_bar_defaults_and_override():
     assert DEFAULT_KIND_STOP_ON_BAR["frozen"] is False
     assert DEFAULT_KIND_STOP_ON_BAR["spike"] is True
