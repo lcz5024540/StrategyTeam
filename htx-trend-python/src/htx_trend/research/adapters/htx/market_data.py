@@ -74,9 +74,39 @@ KLINE_PERIOD_SECONDS = {
     "1mon": 30 * 24 * 3600,
 }
 
+# HTX rejects from/to windows spanning more than 2000 bars
+# (400d of 4h fails; inclusive endpoints can count as 2001).
+SAFE_KLINE_BARS = 1990
+DEFAULT_EMPTY_PAGES_TO_STOP = 2
+
+
+def kline_window_seconds(period: str, bars: int = SAFE_KLINE_BARS) -> int:
+    if period not in KLINE_PERIOD_SECONDS:
+        raise ValueError(f"Unsupported HTX kline period: {period}")
+    if bars <= 0 or bars > 2000:
+        raise ValueError("kline window bars must be in (0, 2000]")
+    return int(bars) * KLINE_PERIOD_SECONDS[period]
+
+
+def parse_create_date(create_date: int | None) -> datetime | None:
+    if create_date is None:
+        return None
+    value = int(create_date)
+    if value <= 0:
+        return None
+    if value >= 10**12:
+        return datetime.fromtimestamp(value / 1000, UTC)
+    if value >= 10**9:
+        return datetime.fromtimestamp(value, UTC)
+    text = f"{value:08d}"
+    if len(text) == 8:
+        return datetime(int(text[:4]), int(text[4:6]), int(text[6:8]), tzinfo=UTC)
+    return None
+
 
 class HtxMarketDataClient:
     MAX_KLINE_SIZE = 2000
+    SAFE_KLINE_BARS = SAFE_KLINE_BARS
 
     def __init__(self, base_url: str = "https://api.hbdm.com"):
         self.client = HtxV5Client(base_url=base_url)
@@ -108,7 +138,13 @@ class HtxMarketDataClient:
         except httpx.HTTPError as exc:
             raise HtxAPIError(f"Network error: {exc}") from exc
         except HtxApiError as exc:
-            raise HtxAPIError(str(exc), err_code="unknown", err_msg=str(exc)) from exc
+            err_code = getattr(exc, "err_code", None) or "unknown"
+            err_msg = getattr(exc, "err_msg", None) or str(exc)
+            raise HtxAPIError(
+                f"HTX API error: {err_code} - {err_msg}",
+                err_code=str(err_code),
+                err_msg=str(err_msg),
+            ) from exc
 
         if envelope.get("status") != "ok":
             err_code = str(envelope.get("err-code") or envelope.get("err_code") or "unknown")
@@ -181,14 +217,17 @@ class HtxMarketDataClient:
         start_time: datetime | None = None,
         end_time: datetime | None = None,
         max_pages: int = 10,
-        page_size: int = 2000,
+        page_size: int = SAFE_KLINE_BARS,
         from_timestamp: int | None = None,
         to_timestamp: int | None = None,
+        empty_pages_to_stop: int = DEFAULT_EMPTY_PAGES_TO_STOP,
+        listed_from: datetime | None = None,
+        page_sleep: float = 0.2,
     ) -> list[Kline]:
-        """向后分页抓取 K 线（from/to 窗口，每页最多 2000 根）。"""
+        """向后分页。每个 from/to 窗口 <= 1990 根，避免 HTX invalid from to。"""
         if period not in KLINE_PERIOD_SECONDS:
             raise ValueError(f"Unsupported HTX kline period: {period}")
-        page_size = min(int(page_size), self.MAX_KLINE_SIZE)
+        page_size = min(int(page_size), SAFE_KLINE_BARS)
         period_sec = KLINE_PERIOD_SECONDS[period]
         start_ts = from_timestamp
         end_ts = to_timestamp
@@ -199,9 +238,23 @@ class HtxMarketDataClient:
         if end_ts is None:
             end_ts = int(datetime.now(UTC).timestamp())
 
+        listing_ts: int | None = None
+        if listed_from is not None:
+            listing_ts = int(listed_from.timestamp())
+        else:
+            spec = self.fetch_contract_info(contract_code)
+            parsed = parse_create_date(getattr(spec, "create_date", None) if spec else None)
+            if parsed is not None:
+                listing_ts = int(parsed.timestamp())
+        if listing_ts is not None:
+            start_ts = listing_ts if start_ts is None else max(int(start_ts), listing_ts)
+
         all_klines: list[Kline] = []
         cursor_end = int(end_ts)
+        empty_streak = 0
         for page in range(max_pages):
+            if listing_ts is not None and cursor_end <= listing_ts:
+                break
             window = page_size * period_sec
             cursor_start = cursor_end - window
             if start_ts is not None:
@@ -215,19 +268,21 @@ class HtxMarketDataClient:
                 to_timestamp=cursor_end,
             )
             if not batch:
-                break
+                empty_streak += 1
+                if empty_streak >= max(1, int(empty_pages_to_stop)):
+                    break
+                cursor_end = cursor_start
+                if page_sleep and page + 1 < max_pages:
+                    time.sleep(page_sleep)
+                continue
+            empty_streak = 0
             all_klines.extend(batch)
             earliest_ts = int(min(k.bar_time for k in batch).timestamp())
             if start_ts is not None and earliest_ts <= int(start_ts):
                 break
-            if len(batch) < page_size:
-                break
-            next_end = earliest_ts - 1
-            if next_end >= cursor_end:
-                break
-            cursor_end = next_end
-            if page + 1 < max_pages:
-                time.sleep(0.2)
+            cursor_end = cursor_start
+            if page_sleep and page + 1 < max_pages:
+                time.sleep(page_sleep)
 
         seen: set[datetime] = set()
         unique_klines = []
@@ -242,30 +297,36 @@ class HtxMarketDataClient:
         return unique_klines
     
     def fetch_funding_history(
-        self, contract_code: str, page_size: int = 50
+        self,
+        contract_code: str,
+        page_size: int = 50,
+        page_index: int = 1,
     ) -> list[FundingRate]:
         """获取单页资金费率历史"""
         try:
-            raw_data = self.client.funding_history(contract_code, page_size)
-            
+            raw_data = self.client.funding_history(
+                contract_code, page_size=page_size, page_index=page_index
+            )
+
             rates = []
             for item in raw_data:
+                funding_time = item["funding_time"]
+                if isinstance(funding_time, (int, float)) and funding_time > 10**12:
+                    funding_time = funding_time / 1000
                 rates.append(
                     FundingRate(
                         symbol=item["symbol"],
-                        funding_time=datetime.fromtimestamp(
-                            item["funding_time"] / 1000, UTC
-                        ),
+                        funding_time=datetime.fromtimestamp(float(funding_time), UTC),
                         funding_rate=float(item["funding_rate"]),
                         realized_rate=float(item.get("realized_rate", item["funding_rate"])),
                     )
                 )
-            
+
             return sorted(rates, key=lambda r: r.funding_time)
-        
+
         except Exception:
             return []
-    
+
     def fetch_funding_history_paginated(
         self,
         contract_code: str,
@@ -273,58 +334,39 @@ class HtxMarketDataClient:
         end_time: datetime | None = None,
         max_pages: int = 20,
         page_size: int = 50,
+        empty_pages_to_stop: int = DEFAULT_EMPTY_PAGES_TO_STOP,
+        page_sleep: float = 0.5,
     ) -> list[FundingRate]:
-        """分页获取资金费率历史，获取最大可用深度
-        
-        Args:
-            contract_code: 合约代码
-            start_time: 起始时间（可选）
-            end_time: 结束时间（可选）
-            max_pages: 最大页数
-            page_size: 每页大小
-        
-        Returns:
-            所有资金费率记录（按时间升序）
-        """
+        """按页向后取资金费率；连续空页停止，边界去重。"""
         all_rates: list[FundingRate] = []
-        
+        empty_streak = 0
+
         for page in range(max_pages):
-            batch = self.fetch_funding_history(contract_code, page_size)
-            
-            if not batch:
-                break
-            
-            # 筛选时间范围
+            batch = self.fetch_funding_history(
+                contract_code, page_size=page_size, page_index=page + 1
+            )
             if start_time:
-                batch = [r for r in batch if r.funding_time >= start_time]
-            
+                batch = [row for row in batch if row.funding_time >= start_time]
             if end_time:
-                batch = [r for r in batch if r.funding_time <= end_time]
-            
+                batch = [row for row in batch if row.funding_time <= end_time]
             if not batch:
-                break
-            
+                empty_streak += 1
+                if empty_streak >= max(1, int(empty_pages_to_stop)):
+                    break
+                if page_sleep and page + 1 < max_pages:
+                    time.sleep(page_sleep)
+                continue
+            empty_streak = 0
             all_rates.extend(batch)
-            
-            # 检查是否已达到起始时间
-            if start_time and batch[-1].funding_time <= start_time:
-                break
-            
-            # 如果返回的数据量 < page_size，说明已经没有更多历史数据
-            if len(batch) < page_size:
-                break
-            
-            # 限速
-            time.sleep(0.5)
-        
-        # 去重并排序
-        seen = set()
+            if page_sleep and page + 1 < max_pages:
+                time.sleep(page_sleep)
+
+        seen: set[datetime] = set()
         unique_rates = []
-        for r in sorted(all_rates, key=lambda x: x.funding_time):
-            if r.funding_time not in seen:
-                seen.add(r.funding_time)
-                unique_rates.append(r)
-        
+        for row in sorted(all_rates, key=lambda item: item.funding_time):
+            if row.funding_time not in seen:
+                seen.add(row.funding_time)
+                unique_rates.append(row)
         return unique_rates
     
     def fetch_contract_info(self, contract_code: str) -> ContractSpec | None:

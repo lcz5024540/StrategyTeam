@@ -66,9 +66,12 @@ def test_collect_max_uses_pagination(tmp_path):
             {"status": "ok", "data": later},
             {"status": "ok", "data": earlier},
             {"status": "ok", "data": []},
+            {"status": "ok", "data": []},
         ]
     )
-    result = client.fetch_klines_paginated("BTC-USDT", "4hour", max_pages=5, page_size=2000)
+    result = client.fetch_klines_paginated(
+        "BTC-USDT", "4hour", max_pages=5, page_size=2000, page_sleep=0
+    )
     assert client.client.history_kline_envelope.call_count >= 2
     assert len(result) == 2050
     first_kwargs = client.client.history_kline_envelope.call_args_list[0]

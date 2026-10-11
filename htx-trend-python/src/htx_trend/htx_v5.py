@@ -22,6 +22,16 @@ import httpx
 class HtxApiError(RuntimeError):
     """HTX returned a transport or business error response."""
 
+    def __init__(
+        self,
+        message: str,
+        err_code: str | None = None,
+        err_msg: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.err_code = err_code
+        self.err_msg = err_msg
+
 
 class LiveTradingDisabled(RuntimeError):
     """A mutation was attempted without the explicit live-trading opt-in."""
@@ -127,6 +137,28 @@ class HtxV5Client:
         response = self._public_get("/linear-swap-api/v1/swap_funding_rate", {"contract_code": contract_code})
         return self._data_object(response)
 
+    def funding_history(
+        self,
+        contract_code: str,
+        page_size: int = 50,
+        page_index: int = 1,
+    ) -> list[dict[str, Any]]:
+        response = self._public_get(
+            "/linear-swap-api/v1/swap_historical_funding_rate",
+            {
+                "contract_code": contract_code,
+                "page_index": str(page_index),
+                "page_size": str(min(int(page_size), 50)),
+            },
+        )
+        data = response.get("data")
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            rows = data.get("data") or data.get("list") or []
+            return rows if isinstance(rows, list) else []
+        return []
+
     def swap_fee(self, contract_code: str) -> list[dict[str, Any]]:
         """Read the account-specific contract fee profile used by Java.
 
@@ -226,7 +258,17 @@ class HtxV5Client:
             raise HtxApiError(f"HTX returned non-object envelope for {method} {path}")
         status, code = payload.get("status"), payload.get("code")
         if status not in (None, "ok") or (code is not None and int(code) != 200):
-            raise HtxApiError(f"HTX business error for {method} {path}: {payload.get('err_msg') or payload.get('message')}")
+            err_code = payload.get("err-code") or payload.get("err_code")
+            err_msg = (
+                payload.get("err-msg")
+                or payload.get("err_msg")
+                or payload.get("message")
+            )
+            raise HtxApiError(
+                f"HTX business error for {method} {path}: {err_code} - {err_msg}",
+                err_code=None if err_code is None else str(err_code),
+                err_msg=None if err_msg is None else str(err_msg),
+            )
         return payload
 
     @staticmethod

@@ -36,6 +36,7 @@ def _client_with_envelope(envelope_or_error) -> HtxMarketDataClient:
     else:
         mock.return_value = envelope_or_error
     client.client.history_kline_envelope = mock
+    client.client.contract_info = MagicMock(return_value=[])
     return client
 
 
