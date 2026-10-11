@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +47,41 @@ class KlineRevision:
     new_values: dict[str, Any]  # 新值（OHLCV）
 
 
+def _parse_interval_seconds(interval: str) -> int:
+    """解析时间周期为秒数"""
+    mapping = {
+        "1min": 60,
+        "5min": 300,
+        "15min": 900,
+        "30min": 1800,
+        "1hour": 3600,
+        "4hour": 14400,
+        "1day": 86400,
+    }
+    if interval not in mapping:
+        raise ValueError(f"未知时间周期: {interval}")
+    return mapping[interval]
+
+
+def _is_bar_closed(bar_time: datetime | pd.Timestamp, interval: str, check_time: datetime) -> bool:
+    """判断 bar 是否已关闭
+    
+    Args:
+        bar_time: K线开始时间
+        interval: 时间周期
+        check_time: 检查时间（通常是当前时间）
+    
+    Returns:
+        True 如果 bar_time + interval <= check_time
+    """
+    if isinstance(bar_time, pd.Timestamp):
+        bar_time = bar_time.to_pydatetime()
+    
+    interval_seconds = _parse_interval_seconds(interval)
+    bar_close_time = bar_time + timedelta(seconds=interval_seconds)
+    return bar_close_time <= check_time
+
+
 class ImmutableKlineStorage:
     """不可变 K 线存储管理器"""
     
@@ -73,7 +108,7 @@ class ImmutableKlineStorage:
         df: pd.DataFrame,
         source: str = "htx",
     ) -> KlineBatch:
-        """追加一批 K 线数据
+        """追加一批 K 线数据（仅存储已关闭的 bar）
         
         Args:
             symbol: 交易对（如 "BTC-USDT"）
@@ -86,12 +121,22 @@ class ImmutableKlineStorage:
             KlineBatch 元数据
         
         Raises:
-            ValueError: 如果 DataFrame 缺少必需列
+            ValueError: 如果 DataFrame 缺少必需列，或包含未关闭的 bar
         """
         required_cols = ["bar_time", "open", "high", "low", "close", "volume"]
         missing = [c for c in required_cols if c not in df.columns]
         if missing:
             raise ValueError(f"DataFrame missing required columns: {missing}")
+        
+        # ✅ P0-1: 检查所有 bar 是否已关闭
+        check_time = datetime.now(timezone.utc)
+        for idx, row in df.iterrows():
+            bar_time = row["bar_time"]
+            if not _is_bar_closed(bar_time, interval, check_time):
+                raise ValueError(
+                    f"未关闭的 bar (bar_time={bar_time}, interval={interval}) "
+                    f"不应存储为最终数据。请等待 bar 关闭后再写入。"
+                )
         
         # 确保有 first_seen_at
         if "first_seen_at" not in df.columns:

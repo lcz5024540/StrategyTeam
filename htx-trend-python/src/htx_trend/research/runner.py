@@ -200,16 +200,41 @@ class BacktestRunner:
         processed_data = {}
         for symbol, df in data.items():
             df = df.iloc[start_idx:end_idx].copy()
+            
+            # 记录原始统计（用于报告分离）
+            total_bars = len(df)
+            non_comparable_count = df.get("non_comparable", pd.Series([False] * len(df))).sum()
+            external_count = df.get("external", pd.Series([False] * len(df))).sum()
+            
+            # 标记 non_comparable K 线（如果列不存在，创建全 False）
+            if "non_comparable" not in df.columns:
+                df["non_comparable"] = False
+            
+            if "external" not in df.columns:
+                df["external"] = False
+            
+            # 保存完整数据（包含 non_comparable）用于统计分离
+            df["_original_source"] = df.get("source", "htx")
+            
             df = compute_all_features(df)
             df = compute_regime_labels(df)
             processed_data[symbol] = df
+            
+            log_event(
+                LogComponent.DATA,
+                f"Dataset loaded: {symbol}",
+                split=split,
+                total_bars=total_bars,
+                non_comparable=int(non_comparable_count),
+                external=int(external_count),
+                usable_bars=len(df[~df["non_comparable"]]),
+            )
         
         log_event(
             LogComponent.DATA,
             f"Dataset loaded: {dataset_id}",
             split=split,
             symbols=list(processed_data.keys()),
-            bars={s: len(df) for s, df in processed_data.items()},
         )
         
         return processed_data, frozen
@@ -230,7 +255,32 @@ class BacktestRunner:
     def _run_backtest(
         self, data: dict[str, pd.DataFrame], frozen: Any
     ) -> dict[str, Any]:
-        initial_equity = self.config.get("initial_equity", 1000.0)
+        # ✅ 移除静默默认值 - 关键参数必须显式配置
+        if "initial_equity" not in self.config:
+            raise ValueError(
+                "Config missing required field 'initial_equity'. "
+                "Set initial_equity in your run config (e.g., 400.0 for 400 USDT)."
+            )
+        
+        if "risk_per_trade" not in self.config:
+            raise ValueError(
+                "Config missing required field 'risk_per_trade'. "
+                "Set risk_per_trade (e.g., 0.005 for 0.5% per trade)."
+            )
+        
+        if "max_total_risk" not in self.config:
+            raise ValueError(
+                "Config missing required field 'max_total_risk'. "
+                "Set max_total_risk (e.g., 0.015 for 1.5% total)."
+            )
+        
+        if "max_positions" not in self.config:
+            raise ValueError(
+                "Config missing required field 'max_positions'. "
+                "Set max_positions (e.g., 3)."
+            )
+        
+        initial_equity = self.config["initial_equity"]
         cost_scenario = CostScenario(self.config.get("cost_scenario", "base"))
         
         fee_config = self.config.get("fees", {})
@@ -243,9 +293,9 @@ class BacktestRunner:
         
         broker = SimBroker(initial_equity, cost_scenario, fee_provider=fee_provider)
         sizer = PositionSizer(
-            risk_per_trade_pct=self.config.get("risk_per_trade", 0.005),
-            max_total_risk_pct=self.config.get("max_total_risk", 0.015),
-            max_positions=self.config.get("max_positions", 3),
+            risk_per_trade_pct=self.config["risk_per_trade"],
+            max_total_risk_pct=self.config["max_total_risk"],
+            max_positions=self.config["max_positions"],
         )
         liq_checker = LiquidationChecker()
         
@@ -278,6 +328,12 @@ class BacktestRunner:
             
             for idx in range(200, len(df)):
                 bar = df.iloc[idx]
+                
+                # ✅ 排除 non_comparable K 线（不生成信号）
+                if bar.get("non_comparable", False):
+                    # 仅处理已有订单，不生成新信号
+                    broker.process_next_bar(symbol, bar.to_dict())
+                    continue
                 
                 broker.process_next_bar(symbol, bar.to_dict())
                 
