@@ -434,6 +434,33 @@ class ImmutableKlineStorage:
         
         return (0, old_values)
     
+    def get_latest_bar_time(
+        self,
+        symbol: str,
+        interval: str,
+    ) -> datetime | None:
+        """获取该 symbol+interval 最后存储的 bar_time
+        
+        用于跨批次间隙检测
+        
+        Args:
+            symbol: 交易对
+            interval: 周期
+        
+        Returns:
+            最后 bar_time，或 None（如果没有数据）
+        """
+        df = self.load_all_batches(symbol, interval, include_revisions=True)
+        if df.empty:
+            return None
+        
+        latest = df["bar_time"].max()
+        if isinstance(latest, pd.Timestamp):
+            latest = latest.to_pydatetime()
+        if isinstance(latest, datetime) and latest.tzinfo is None:
+            latest = latest.replace(tzinfo=timezone.utc)
+        return latest
+    
     def list_batches(
         self,
         symbol: str | None = None,

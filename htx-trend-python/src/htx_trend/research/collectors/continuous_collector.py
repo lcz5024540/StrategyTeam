@@ -22,8 +22,19 @@ from typing import Any
 import httpx
 import pandas as pd
 
-from ..data.immutable_storage import ImmutableKlineStorage
+from ..data.immutable_storage import ImmutableKlineStorage, _parse_interval_seconds
 from ..ops import log_event, LogComponent, LogLevel
+
+
+def _as_utc_datetime(value: datetime | pd.Timestamp | str) -> datetime:
+    """Normalize bar timestamps to timezone-aware UTC datetimes."""
+    if isinstance(value, str):
+        value = pd.Timestamp(value)
+    if isinstance(value, pd.Timestamp):
+        value = value.to_pydatetime()
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 @dataclass
@@ -220,19 +231,7 @@ class ContinuousCollector:
         if len(df) < 2:
             return []
         
-        # 计算期望的时间间隔
-        interval_map = {
-            "1m": timedelta(minutes=1),
-            "5m": timedelta(minutes=5),
-            "15m": timedelta(minutes=15),
-            "30m": timedelta(minutes=30),
-            "1h": timedelta(hours=1),
-            "4h": timedelta(hours=4),
-            "1d": timedelta(days=1),
-            "1w": timedelta(weeks=1),
-        }
-        
-        expected_delta = interval_map.get(self.interval, timedelta(hours=4))
+        expected_delta = timedelta(seconds=_parse_interval_seconds(self.interval))
         
         gaps = []
         
@@ -295,14 +294,111 @@ class ContinuousCollector:
         
         return len(df)
     
+    def _load_resume_time(self, symbol: str) -> datetime | None:
+        """加载恢复时间（时间周期感知）
+        
+        逻辑:
+        1. 读取状态文件中的 last_bar_time
+        2. 根据 interval 计算下一个起始时间:
+           - 4hour: last_bar_time + 4h
+           - 1day: last_bar_time + 1d
+        3. 如果无状态，返回 None（从90天前开始）
+        
+        Returns:
+            下一个起始时间，或 None（如果无历史状态）
+        """
+        state = self.states.get(symbol)
+        if not state or not state.last_bar_time:
+            return None
+        
+        last_bar_time = _as_utc_datetime(state.last_bar_time)
+        interval_seconds = _parse_interval_seconds(self.interval)
+        next_start = last_bar_time + timedelta(seconds=interval_seconds)
+        return next_start
+    
+    def _detect_cross_batch_gap(
+        self,
+        symbol: str,
+        new_batch: pd.DataFrame,
+    ) -> list[dict]:
+        """检测跨批次间隙
+        
+        逻辑:
+        1. 加载该 symbol+interval 的最后一个已存储 bar 的 bar_time
+        2. 取新批次的第一个 bar_time
+        3. 计算期望的下一个时间: last_stored + interval
+        4. 如果 new_first_bar_time > expected_next + tolerance:
+           - 记录到 gap_events.jsonl
+           - 返回间隙详情
+        
+        Returns:
+            间隙详情列表
+        """
+        if new_batch.empty:
+            return []
+        
+        # 获取最后存储的 bar_time
+        latest_bar_time = self.storage.get_latest_bar_time(symbol, self.interval)
+        if latest_bar_time is None:
+            # 首次采集，无历史数据
+            return []
+        
+        latest_bar_time = _as_utc_datetime(latest_bar_time)
+        first_new_bar_time = _as_utc_datetime(new_batch["bar_time"].iloc[0])
+        
+        interval_seconds = _parse_interval_seconds(self.interval)
+        expected_next = latest_bar_time + timedelta(seconds=interval_seconds)
+        
+        # 容差：允许 10% 误差
+        tolerance = timedelta(seconds=interval_seconds * 0.1)
+        
+        # 检测间隙
+        if first_new_bar_time > expected_next + tolerance:
+            gap_seconds = (first_new_bar_time - expected_next).total_seconds()
+            missing_bars = int(gap_seconds / interval_seconds)
+            
+            gap_event = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "symbol": symbol,
+                "interval": self.interval,
+                "last_stored_bar_time": latest_bar_time.isoformat(),
+                "expected_next": expected_next.isoformat(),
+                "actual_first_new": first_new_bar_time.isoformat(),
+                "gap_hours": gap_seconds / 3600,
+                "missing_bars": missing_bars,
+            }
+            
+            gap_log_file = self.storage_dir / "gap_events.jsonl"
+            try:
+                with open(gap_log_file, "a") as f:
+                    f.write(json.dumps(gap_event) + "\n")
+            except Exception as e:
+                log_event(
+                    LogComponent.DATA,
+                    f"Failed to write gap event: {e}",
+                    level=LogLevel.ERROR,
+                )
+            
+            log_event(
+                LogComponent.DATA,
+                "Cross-batch gap detected",
+                level=LogLevel.WARNING,
+                **gap_event,
+            )
+            
+            return [gap_event]
+        
+        return []
+    
     async def _collect_symbol(self, symbol: str) -> None:
         """采集单个交易对的数据"""
         state = self.states[symbol]
         
-        # 获取最新数据
-        start_time = None
-        if state.last_bar_time:
-            start_time = pd.Timestamp(state.last_bar_time) + timedelta(hours=4)  # 从上次之后开始
+        # 时间周期感知的恢复
+        start_time = self._load_resume_time(symbol)
+        if start_time is None:
+            # 首次采集，从90天前开始
+            start_time = datetime.now(timezone.utc) - timedelta(days=90)
         
         df = await self._fetch_klines(symbol, start_time=start_time, limit=100)
         
@@ -314,7 +410,12 @@ class ContinuousCollector:
             )
             return
         
-        # 检测缺口
+        # 检测跨批次间隙（在检测批次内间隙之前）
+        cross_batch_gaps = self._detect_cross_batch_gap(symbol, df)
+        if cross_batch_gaps:
+            state.gaps_detected += len(cross_batch_gaps)
+        
+        # 检测批次内缺口
         gaps = self._detect_gaps(df)
         
         if gaps:
