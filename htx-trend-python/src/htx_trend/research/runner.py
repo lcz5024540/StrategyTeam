@@ -177,8 +177,21 @@ class BacktestRunner:
         
         state_machines = {symbol: StateMachine() for symbol in data.keys()}
         
-        c01 = C01DonchianEnsemble()
-        c02 = C02ATRStop()
+        # 从配置读取条件参数（必须显式传递）
+        c01_config = self.config.get("conditions", {}).get("C01", {})
+        if not c01_config.get("enabled", True):
+            raise ValueError("C01 must be enabled (required entry condition)")
+        
+        c01 = C01DonchianEnsemble(
+            periods=c01_config.get("periods", [42, 84, 126, 168]),
+            threshold=c01_config.get("threshold", 0.25),
+        )
+        
+        c02_config = self.config.get("conditions", {}).get("C02", {})
+        c02 = C02ATRStop(
+            atr_period=c02_config.get("atr_period", 14),
+            atr_multiplier=c02_config.get("atr_multiplier", 2.0),
+        )
         
         all_decisions = []
         
