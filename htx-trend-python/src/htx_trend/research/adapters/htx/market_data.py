@@ -9,36 +9,68 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 
 from ....htx_v5 import HtxApiError, HtxV5Client
 
-RESEARCH_YEAR_MIN = 2019
-RESEARCH_YEAR_MAX = 2026
+RESEARCH_TIME_MIN = datetime(2019, 1, 1, tzinfo=UTC)
 
 
-def require_research_timestamp(value: datetime, *, field: str = "timestamp") -> datetime:
-    """Reject timestamps outside the research window [2019, 2026]."""
-    year = int(value.year)
-    if year < RESEARCH_YEAR_MIN or year > RESEARCH_YEAR_MAX:
+def system_utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def datetime_from_epoch(timestamp: float, *, field: str = "timestamp") -> datetime:
+    """Convert epoch seconds to UTC, mapping overflow (e.g. year 58747) to ValueError."""
+    try:
+        return datetime.fromtimestamp(float(timestamp), UTC)
+    except (OverflowError, OSError, ValueError) as exc:
+        raise ValueError(f"{field} year out of range: {exc}") from exc
+
+
+def require_research_timestamp(
+    value: datetime,
+    *,
+    field: str = "timestamp",
+    clock: Callable[[], datetime] | None = None,
+) -> datetime:
+    """Reject times before 2019-01-01 UTC or after now(UTC)+1 day."""
+    if value.tzinfo is None:
+        aware = value.replace(tzinfo=UTC)
+    else:
+        aware = value.astimezone(UTC)
+    current = (clock or system_utc_now)()
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    else:
+        current = current.astimezone(UTC)
+    upper = current + timedelta(days=1)
+    if aware < RESEARCH_TIME_MIN or aware > upper:
         raise ValueError(
-            f"{field} year {year} out of range [{RESEARCH_YEAR_MIN}, {RESEARCH_YEAR_MAX}]"
+            f"{field} {aware.isoformat()} out of range "
+            f"[{RESEARCH_TIME_MIN.isoformat()}, {upper.isoformat()}]"
         )
-    return value
+    return aware
 
 
-def parse_htx_funding_time(value: Any) -> datetime:
+def parse_htx_funding_time(
+    value: Any,
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> datetime:
     """HTX funding_time is milliseconds since epoch (e.g. 1791763200000)."""
     timestamp = float(value)
     if timestamp > 10**12:
         timestamp = timestamp / 1000.0
     return require_research_timestamp(
-        datetime.fromtimestamp(timestamp, UTC),
+        datetime_from_epoch(timestamp, field="funding_time"),
         field="funding_time",
+        clock=clock,
     )
 
 
@@ -193,7 +225,7 @@ class HtxMarketDataClient:
             klines.append(
                 Kline(
                     bar_time=require_research_timestamp(
-                        datetime.fromtimestamp(timestamp, UTC),
+                        datetime_from_epoch(timestamp, field="id"),
                         field="id",
                     ),
                     open=float(item["open"]),

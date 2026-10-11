@@ -17,7 +17,7 @@ from typing import Iterable
 
 import httpx
 
-from .htx.market_data import FundingRate, Kline, require_research_timestamp
+from .htx.market_data import FundingRate, Kline, datetime_from_epoch, require_research_timestamp
 
 VISION_BASE = "https://data.binance.vision/data/futures/um"
 ALLOWED_SYMBOLS = frozenset({"BTCUSDT", "ETHUSDT"})
@@ -142,7 +142,7 @@ class BinanceVisionClient:
                 continue
             timestamp, rate, interval_hours = _funding_fields(parts, columns)
             funding_time = require_research_timestamp(
-                datetime.fromtimestamp(_floor_epoch_seconds(timestamp), UTC),
+                datetime_from_epoch(_floor_epoch_seconds(timestamp), field="calc_time"),
                 field="calc_time",
             )
             rows.append((funding_time, rate, interval_hours))
@@ -203,7 +203,10 @@ class BinanceVisionClient:
             klines.append(
                 Kline(
                     bar_time=require_research_timestamp(
-                        datetime.fromtimestamp(_floor_epoch_seconds(float(parts[0])), UTC),
+                        datetime_from_epoch(
+                            _floor_epoch_seconds(float(parts[0])),
+                            field="open_time",
+                        ),
                         field="open_time",
                     ),
                     open=float(parts[1]),

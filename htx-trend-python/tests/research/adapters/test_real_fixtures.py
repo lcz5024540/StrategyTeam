@@ -171,11 +171,11 @@ def test_htx_kline_4hour_invalid_range_raises():
 
 
 def test_htx_timestamp_year_must_be_in_2019_2026():
-    with pytest.raises(ValueError, match="year"):
+    with pytest.raises(ValueError, match="out of range"):
         parse_htx_funding_time(1_262_304_000_000)
-    with pytest.raises(ValueError, match="year"):
+    with pytest.raises(ValueError, match="out of range"):
         parse_htx_funding_time(1_893_456_000)
-    with pytest.raises(ValueError, match="year"):
+    with pytest.raises(ValueError, match="out of range"):
         _htx_client()._parse_klines(
             [{"id": 1_262_304_000, "open": 1, "high": 1, "low": 1, "close": 1, "vol": 1}]
         )
@@ -210,7 +210,7 @@ def test_binance_kline_year_out_of_range_raises():
             "BTCUSDT-4h-2010-01.csv",
             "1262304000000,1,1,1,1,1,1262318399999,1,1,1,1,0\n",
         )
-    with pytest.raises(ValueError, match="year"):
+    with pytest.raises(ValueError, match="out of range"):
         BinanceVisionClient()._parse_archive(buf.getvalue(), datetime.now(UTC))
 
 

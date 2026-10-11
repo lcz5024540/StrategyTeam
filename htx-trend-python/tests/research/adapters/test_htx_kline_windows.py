@@ -313,8 +313,8 @@ def test_funding_pagination_continues_until_exhausted():
     assert earliest < datetime(2024, 1, 1, tzinfo=UTC)
 
 
-def test_funding_pagination_end_time_does_not_count_filtered_pages_as_empty():
-    """Newest API pages after end_time must not trip the empty-page stop."""
+def test_funding_pagination_end_time_three_months_ago_returns_earliest_2020_10_21_16utc():
+    """end_time = 3 months ago still reaches 2020-10-21 16:00 UTC (131 pages)."""
     client = HtxMarketDataClient()
     now = datetime(2026, 10, 11, 16, tzinfo=UTC)
     end_time = now - timedelta(days=90)
