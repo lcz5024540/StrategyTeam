@@ -191,9 +191,12 @@ def check_health(
                 continue
             last_bar_time = _as_utc(last_raw)
             interval_seconds = _parse_interval_seconds(interval)
-            expected_next_close = last_bar_time + timedelta(seconds=interval_seconds)
+            expected_next_close = last_bar_time + timedelta(seconds=2 * interval_seconds)
+            stale_deadline = expected_next_close + timedelta(
+                minutes=float(bar_staleness_threshold_minutes)
+            )
             lag_minutes = (now - expected_next_close).total_seconds() / 60.0
-            is_stale = lag_minutes > bar_staleness_threshold_minutes
+            is_stale = now > stale_deadline
             check = BarStalenessCheck(
                 symbol=symbol,
                 interval=interval,

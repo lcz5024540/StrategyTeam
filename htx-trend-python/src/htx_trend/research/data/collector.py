@@ -378,3 +378,19 @@ def hash_funding_files(raw_dir, contracts: list[str]) -> dict:
             "sha256": f"sha256:{digest}",
         }
     return payload
+
+
+def hash_spec_files(raw_dir, contracts: list[str] | None = None) -> dict:
+    payload: dict[str, dict[str, str]] = {}
+    if contracts is None:
+        contracts = [path.name[: -len("_spec.json")] for path in sorted(raw_dir.glob("*_spec.json"))]
+    for contract in contracts:
+        path = raw_dir / f"{contract}_spec.json"
+        if not path.exists():
+            continue
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        payload[contract] = {
+            "path": f"{contract}_spec.json",
+            "sha256": f"sha256:{digest}",
+        }
+    return payload

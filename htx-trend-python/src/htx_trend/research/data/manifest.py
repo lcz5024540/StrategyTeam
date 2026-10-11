@@ -51,6 +51,8 @@ class DatasetManifest:
             "bad_ticks_hash": self.metadata.get("bad_ticks_hash"),
             "funding_sources": self.metadata.get("funding_sources"),
             "funding_files": self.metadata.get("funding_files"),
+            "spec_files": self.metadata.get("spec_files"),
+            "aux_files": self.metadata.get("aux_files"),
         }
         digest = hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -155,6 +157,8 @@ class DatasetManifest:
             "bad_ticks_hash": self.metadata.get("bad_ticks_hash"),
             "funding_sources": self.metadata.get("funding_sources"),
             "funding_files": self.metadata.get("funding_files"),
+            "spec_files": self.metadata.get("spec_files"),
+            "aux_files": self.metadata.get("aux_files"),
             "manifest_hash": self.sha256(),
         }
         path.write_text(json.dumps(payload, indent=2))

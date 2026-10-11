@@ -18,6 +18,14 @@ import httpx
 from ....htx_v5 import HtxApiError, HtxV5Client
 
 
+def parse_htx_funding_time(value: Any) -> datetime:
+    """HTX funding_time is milliseconds since epoch (e.g. 1791763200000)."""
+    timestamp = float(value)
+    if timestamp > 10**12:
+        timestamp = timestamp / 1000.0
+    return datetime.fromtimestamp(timestamp, UTC)
+
+
 class HtxAPIError(Exception):
     """HTX API 错误（含 err-code / err-msg）"""
 
@@ -309,28 +317,23 @@ class HtxMarketDataClient:
             raw_data = self.client.funding_history(
                 contract_code, page_size=page_size, page_index=page_index
             )
-
-            rates = []
-            for item in raw_data:
-                funding_time = item["funding_time"]
-                if isinstance(funding_time, (int, float)) and funding_time > 10**12:
-                    funding_time = funding_time / 1000
-                rates.append(
-                    FundingRate(
-                        symbol=item["symbol"],
-                        funding_time=datetime.fromtimestamp(float(funding_time), UTC),
-                        funding_rate=float(item["funding_rate"]),
-                        realized_rate=float(item.get("realized_rate", item["funding_rate"])),
-                        source="htx",
-                    )
-                )
-
-            return sorted(rates, key=lambda r: r.funding_time)
-
         except Exception:
             if strict:
                 raise
             return []
+
+        rates = []
+        for item in raw_data:
+            rates.append(
+                FundingRate(
+                    symbol=item["symbol"],
+                    funding_time=parse_htx_funding_time(item["funding_time"]),
+                    funding_rate=float(item["funding_rate"]),
+                    realized_rate=float(item.get("realized_rate", item["funding_rate"])),
+                    source="htx",
+                )
+            )
+        return sorted(rates, key=lambda r: r.funding_time)
 
     def fetch_funding_history_paginated(
         self,

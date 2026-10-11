@@ -97,6 +97,16 @@ def test_collector_uses_configured_paths(tmp_path):
     assert collector.state_file == state
 
 
+def test_collector_yaml_does_not_use_spot_huobi_pro():
+    root = Path(__file__).resolve().parents[3]
+    text = (root / "configs" / "collector.yaml").read_text()
+    assert "api.huobi.pro" not in text
+    cfg = yaml.safe_load(text)
+    htx = (cfg.get("collector") or {}).get("htx") or {}
+    if "api_base_url" in htx:
+        assert htx["api_base_url"] == "https://api.hbdm.com"
+
+
 def test_systemd_units_use_unified_paths():
     root = Path(__file__).resolve().parents[3]
     collector = (root / "deployment" / "systemd" / "htx-trend-collector.service").read_text()

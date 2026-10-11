@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from htx_trend.research.data.collector import hash_funding_files, hash_spec_files
 from htx_trend.research.data.manifest import DatasetManifest
 from htx_trend.research.runner import BacktestRunner
 
@@ -64,6 +65,29 @@ def record_funding_files(workspace: Path, dataset_id: str, symbols: list[str]) -
 def write_batch_manifest(workspace: Path, dataset_id: str) -> str:
     dataset_dir = workspace / "data" / "datasets" / dataset_id
     manifest = DatasetManifest.generate_from_dataset_dir(dataset_dir, dataset_id)
+    raw = workspace / "data" / "raw"
+    symbols = [parquet.stem for parquet in sorted(dataset_dir.glob("*.parquet"))]
+    spec_files = hash_spec_files(raw, symbols) if raw.exists() else {}
+    if spec_files:
+        manifest.metadata["spec_files"] = spec_files
+    funding_files = hash_funding_files(raw, symbols) if raw.exists() else {}
+    if funding_files:
+        manifest.metadata["funding_files"] = funding_files
+    aux: dict[str, dict[str, str]] = {}
+    simple = dataset_dir / "manifest.json"
+    if simple.exists():
+        aux["dataset_manifest"] = {
+            "path": "manifest.json",
+            "sha256": f"sha256:{hashlib.sha256(simple.read_bytes()).hexdigest()}",
+        }
+    overlap = dataset_dir / "overlap_deviation.json"
+    if overlap.exists():
+        aux["overlap_deviation"] = {
+            "path": "overlap_deviation.json",
+            "sha256": f"sha256:{hashlib.sha256(overlap.read_bytes()).hexdigest()}",
+        }
+    if aux:
+        manifest.metadata["aux_files"] = aux
     path = workspace / "data" / "datasets" / "manifests" / f"{dataset_id}.json"
     manifest.save(path)
     return manifest.sha256()

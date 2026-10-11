@@ -361,13 +361,9 @@ def test_sharpe_numeric_from_known_equity_curve():
     ppy = periods_per_year("4hour")
     sharpe = annualized_sharpe_from_equity(equity, ppy)
     rets = equity.pct_change().dropna()
-    expected = float(rets.mean() / rets.std(ddof=1) * (ppy ** 0.5))
-    assert sharpe == pytest.approx(expected)
-    known = pd.Series([0.1, -0.1, 0.1])
     assert list(rets.round(12)) == [0.1, -0.1, 0.1]
-    assert sharpe == pytest.approx(
-        (float(known.mean()) / float(known.std(ddof=1))) * (ppy ** 0.5)
-    )
+    assert ppy == 2190
+    assert sharpe == pytest.approx(13.509, abs=0.001)
 
 
 def test_sharpe_net_of_fees_and_annualized(tmp_path):
@@ -408,7 +404,7 @@ def test_smoke_failure_still_records_smoke_runs(tmp_path):
         workspace, run_id, run_type="SMOKE", split="train", smoke_bar_window=40
     )
     runner = write_runner(workspace, cfg)
-    with pytest.raises(ValueError, match="contract"):
+    with pytest.raises(ValueError, match="spec"):
         runner.run()
     rows = runner.ledger.list_smoke_runs(run_id)
     assert rows

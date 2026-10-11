@@ -29,9 +29,23 @@ class FrozenDataset:
     val_end_idx: int
     manifest_hash: str
     created_at: datetime
+    stitch_points: dict | None = None
     verified_funding_paths: dict = field(default_factory=dict)
-    
+    verified_spec_paths: dict = field(default_factory=dict)
+    verified_kline_paths: dict = field(default_factory=dict)
+    verified_aux_paths: dict = field(default_factory=dict)
+    verified_input_paths: dict = field(default_factory=dict)
+
     VALID_SPLITS = ("train", "val", "validation", "test")
+    _RUNTIME_PATH_FIELDS = frozenset(
+        {
+            "verified_funding_paths",
+            "verified_spec_paths",
+            "verified_kline_paths",
+            "verified_aux_paths",
+            "verified_input_paths",
+        }
+    )
 
     def get_split(self, split: str) -> tuple[int, int]:
         if split not in self.VALID_SPLITS:
@@ -60,7 +74,7 @@ class FrozenDataset:
     
     @classmethod
     def from_dict(cls, data: dict) -> FrozenDataset:
-        allowed = {item.name for item in fields(cls)} - {"verified_funding_paths"}
+        allowed = {item.name for item in fields(cls)} - cls._RUNTIME_PATH_FIELDS
         filtered = {key: value for key, value in data.items() if key in allowed}
         filtered["start_date"] = datetime.fromisoformat(filtered["start_date"])
         filtered["end_date"] = datetime.fromisoformat(filtered["end_date"])
@@ -113,7 +127,14 @@ class DatasetManager:
             "total_bars": total_bars,
         }
         if extra_metadata:
-            for key in ("stitch_points", "bad_ticks_hash", "funding_sources", "funding_files"):
+            for key in (
+                "stitch_points",
+                "bad_ticks_hash",
+                "funding_sources",
+                "funding_files",
+                "spec_files",
+                "aux_files",
+            ):
                 if key in extra_metadata:
                     manifest[key] = extra_metadata[key]
         
@@ -174,6 +195,12 @@ class DatasetManager:
         })
         if extra_metadata:
             batch_manifest.metadata.update(extra_metadata)
+        aux = dict(batch_manifest.metadata.get("aux_files") or {})
+        aux["dataset_manifest"] = {
+            "path": "manifest.json",
+            "sha256": f"sha256:{hashlib.sha256(manifest_path.read_bytes()).hexdigest()}",
+        }
+        batch_manifest.metadata["aux_files"] = aux
         batch_manifest.save(self.manifests_dir / f"{dataset_id}.json")
         
         log_event(
@@ -198,6 +225,8 @@ class DatasetManager:
         approval_id: str | None = None,
         run_id: str | None = None,
         strategy_version: str | None = None,
+        verified_kline_paths: dict[str, Path] | None = None,
+        verified_manifest_path: Path | None = None,
     ) -> tuple[dict[str, pd.DataFrame], FrozenDataset]:
         if split not in FrozenDataset.VALID_SPLITS:
             raise ValueError(
@@ -209,7 +238,7 @@ class DatasetManager:
         if not dataset_dir.exists():
             raise FileNotFoundError(f"Dataset not found: {dataset_id}")
         
-        manifest_path = dataset_dir / "manifest.json"
+        manifest_path = verified_manifest_path or (dataset_dir / "manifest.json")
         manifest = json.loads(manifest_path.read_text())
         
         frozen = FrozenDataset.from_dict(manifest)
@@ -228,8 +257,10 @@ class DatasetManager:
         data = {}
         
         for symbol in symbols_to_load:
-            parquet_path = dataset_dir / f"{symbol}.parquet"
-            if parquet_path.exists():
+            parquet_path = (verified_kline_paths or {}).get(symbol)
+            if parquet_path is None:
+                parquet_path = dataset_dir / f"{symbol}.parquet"
+            if Path(parquet_path).exists():
                 data[symbol] = pd.read_parquet(parquet_path).iloc[start_idx:end_idx].copy()
         
         log_event(
@@ -328,6 +359,7 @@ class DatasetManager:
         run_id: str | None = None,
         strategy_version: str | None = None,
         allow_missing_funding: bool = False,
+        require_specs: bool = False,
     ) -> tuple[dict[str, pd.DataFrame], FrozenDataset]:
         manifest_path = self.manifests_dir / f"{dataset_id}.json"
         if not manifest_path.exists():
@@ -355,19 +387,27 @@ class DatasetManager:
                 f"Dataset {dataset_id} failed hash verification: "
                 f"mismatches={result.mismatches} missing={result.missing_files}"
             )
-        required = list(symbols) if symbols else None
-        if required is None:
-            simple_path = dataset_dir / "manifest.json"
-            if simple_path.exists():
-                required = list(
-                    (json.loads(simple_path.read_text()) or {}).get("symbols") or []
-                )
-            else:
-                required = []
-        verified = self._verify_funding_files(
-            manifest,
+        required = list(symbols) if symbols else [entry.symbol for entry in manifest.batches]
+        kline_paths = self._verified_kline_paths(manifest, dataset_dir, required)
+        verified_funding = self._verify_hashed_files(
+            (manifest.metadata or {}).get("funding_files"),
             required,
-            allow_missing_funding=allow_missing_funding,
+            field_name="funding_files",
+            default_name="{symbol}_funding.parquet",
+            required=not allow_missing_funding,
+            allow_missing=allow_missing_funding,
+        )
+        verified_specs = self._verify_hashed_files(
+            (manifest.metadata or {}).get("spec_files"),
+            required,
+            field_name="spec_files",
+            default_name="{symbol}_spec.json",
+            required=require_specs,
+            allow_missing=not require_specs,
+        )
+        verified_aux = self._verify_aux_files(
+            (manifest.metadata or {}).get("aux_files"),
+            dataset_dir,
         )
 
         data, frozen = self.load_dataset(
@@ -377,9 +417,122 @@ class DatasetManager:
             approval_id=approval_id,
             run_id=run_id,
             strategy_version=strategy_version,
+            verified_kline_paths=kline_paths,
+            verified_manifest_path=verified_aux.get("dataset_manifest"),
         )
-        frozen.verified_funding_paths = verified
+        frozen.verified_funding_paths = verified_funding
+        frozen.verified_spec_paths = verified_specs
+        frozen.verified_kline_paths = kline_paths
+        frozen.verified_aux_paths = verified_aux
+        if not frozen.stitch_points:
+            frozen.stitch_points = (manifest.metadata or {}).get("stitch_points")
+        verified_inputs: dict[str, Path] = {
+            f"kline:{symbol}": path for symbol, path in kline_paths.items()
+        }
+        verified_inputs.update(
+            {f"funding:{symbol}": path for symbol, path in verified_funding.items()}
+        )
+        verified_inputs.update(
+            {f"spec:{symbol}": path for symbol, path in verified_specs.items()}
+        )
+        verified_inputs.update({f"aux:{name}": path for name, path in verified_aux.items()})
+        verified_inputs["aux:batch_manifest"] = manifest_path
+        frozen.verified_input_paths = verified_inputs
         return data, frozen
+
+    def _verified_kline_paths(
+        self,
+        manifest: DatasetManifest,
+        dataset_dir: Path,
+        symbols: list[str],
+    ) -> dict[str, Path]:
+        uses_storage = any(
+            entry.file_path.startswith("batches/") for entry in manifest.batches
+        )
+        root = (
+            self.storage.storage_dir
+            if uses_storage and self.storage is not None
+            else dataset_dir
+        )
+        wanted = set(symbols)
+        verified: dict[str, Path] = {}
+        for entry in manifest.batches:
+            if wanted and entry.symbol not in wanted:
+                continue
+            verified[entry.symbol] = root / entry.file_path
+        return verified
+
+    def _verify_hashed_files(
+        self,
+        files: dict | None,
+        symbols: list[str],
+        *,
+        field_name: str,
+        default_name: str,
+        required: bool,
+        allow_missing: bool = False,
+        base_dir: Path | None = None,
+    ) -> dict[str, Path]:
+        if not files:
+            if allow_missing or not required:
+                return {}
+            raise ValueError(
+                f"{field_name} missing from manifest; "
+                "freeze the files or set the matching allow_missing flag"
+            )
+        missing = [symbol for symbol in symbols if symbol not in files]
+        if missing and required and not allow_missing:
+            raise ValueError(
+                f"{field_name} missing symbols required for backtest: "
+                + ", ".join(missing)
+            )
+        raw_dir = base_dir or (self.datasets_dir.parent / "raw")
+        verified: dict[str, Path] = {}
+        for symbol in symbols:
+            if symbol not in files:
+                continue
+            info = files.get(symbol) or {}
+            rel = info.get("path") or default_name.format(symbol=symbol)
+            path = raw_dir / rel
+            if not path.exists():
+                raise ValueError(f"{field_name} file missing for {symbol}: {path}")
+            actual = f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+            expected = info.get("sha256")
+            if actual != expected:
+                if field_name == "funding_files":
+                    label = "Funding"
+                elif field_name == "spec_files":
+                    label = "Spec"
+                else:
+                    label = field_name
+                raise ValueError(
+                    f"{label} hash mismatch for {symbol}: expected {expected}, got {actual}"
+                )
+            verified[symbol] = path
+        return verified
+
+    def _verify_aux_files(
+        self,
+        files: dict | None,
+        dataset_dir: Path,
+    ) -> dict[str, Path]:
+        if not files:
+            return {}
+        verified: dict[str, Path] = {}
+        for name, info in files.items():
+            payload = info or {}
+            rel = payload.get("path") or f"{name}.json"
+            path = dataset_dir / rel
+            if not path.exists():
+                raise ValueError(f"aux file missing for {name}: {path}")
+            actual = f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+            expected = payload.get("sha256")
+            if actual != expected:
+                raise ValueError(
+                    f"aux hash mismatch for {name}: expected {expected}, got {actual}"
+                )
+            verified[name] = path
+        return verified
 
     def _verify_funding_files(
         self,
@@ -387,35 +540,11 @@ class DatasetManager:
         symbols: list[str],
         allow_missing_funding: bool = False,
     ) -> dict[str, Path]:
-        files = (manifest.metadata or {}).get("funding_files")
-        if not files:
-            if allow_missing_funding:
-                return {}
-            raise ValueError(
-                "funding_files missing from manifest; "
-                "freeze funding files or set allow_missing_funding=true"
-            )
-        missing = [symbol for symbol in symbols if symbol not in files]
-        if missing and not allow_missing_funding:
-            raise ValueError(
-                "funding_files missing symbols required for backtest: "
-                + ", ".join(missing)
-            )
-        raw_dir = self.datasets_dir.parent / "raw"
-        verified: dict[str, Path] = {}
-        for symbol in symbols:
-            if symbol not in files:
-                continue
-            info = files.get(symbol) or {}
-            rel = info.get("path") or f"{symbol}_funding.parquet"
-            path = raw_dir / rel
-            if not path.exists():
-                raise ValueError(f"Funding file missing for {symbol}: {path}")
-            actual = f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
-            expected = info.get("sha256")
-            if actual != expected:
-                raise ValueError(
-                    f"Funding hash mismatch for {symbol}: expected {expected}, got {actual}"
-                )
-            verified[symbol] = path
-        return verified
+        return self._verify_hashed_files(
+            (manifest.metadata or {}).get("funding_files"),
+            symbols,
+            field_name="funding_files",
+            default_name="{symbol}_funding.parquet",
+            required=not allow_missing_funding,
+            allow_missing=allow_missing_funding,
+        )

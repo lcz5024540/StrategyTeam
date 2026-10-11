@@ -110,11 +110,9 @@ def test_runner_binds_manifest(tmp_path):
     dataset_id = "test_manifest_bind"
     create_test_dataset(workspace, dataset_id)
 
-    dataset_dir = workspace / "data" / "datasets" / dataset_id
-    manifest = DatasetManifest.generate_from_dataset_dir(dataset_dir, dataset_id)
-    manifests_dir = workspace / "data" / "datasets" / "manifests"
-    manifest.save(manifests_dir / f"{dataset_id}.json")
-    manifest_hash = manifest.sha256()
+    from tests.research.helpers import write_batch_manifest
+
+    manifest_hash = write_batch_manifest(workspace, dataset_id)
 
     config = {
         "run_id": "MANIFEST001",

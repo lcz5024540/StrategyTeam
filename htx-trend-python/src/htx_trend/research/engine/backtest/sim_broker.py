@@ -175,6 +175,7 @@ class SimBroker:
                     leverage=5.0,
                     contract_size=contract_size,
                 )
+                self.equity -= fees + slippage_cost
             else:
                 position = self.positions.pop(order.symbol, None)
                 if position:

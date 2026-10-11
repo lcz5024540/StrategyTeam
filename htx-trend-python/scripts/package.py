@@ -386,6 +386,15 @@ def main():
     
     lock_file = generate_requirements_lock()
     print()
+
+    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+    from htx_trend.research.version_info import write_build_info
+
+    build_info_path = (
+        Path(__file__).parent.parent / "src" / "htx_trend" / "research" / "_build_info.py"
+    )
+    write_build_info(build_info_path, version, git_info)
+    print(f"Wrote build info: {build_info_path}")
     
     tar_path, sha256 = create_package(version, git_info)
     print()

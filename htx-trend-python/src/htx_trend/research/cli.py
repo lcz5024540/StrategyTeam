@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import UTC, datetime, timedelta
@@ -13,6 +14,7 @@ from .data import DataCollector, DatasetManager, DataStitcher
 from .data.collector import (
     BINANCE_VISION_START,
     hash_funding_files,
+    hash_spec_files,
     parse_lookback_days,
     summarize_funding_sources,
 )
@@ -217,6 +219,9 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     funding_files = hash_funding_files(raw_dir, contracts)
     if funding_files:
         extra_metadata["funding_files"] = funding_files
+    spec_files = hash_spec_files(raw_dir, contracts)
+    if spec_files:
+        extra_metadata["spec_files"] = spec_files
     if timeframe == "1day":
         extra_metadata.update(
             daily_resample_manifest_fields(daily_cut=args.daily_cut or "UTC00")
@@ -255,6 +260,22 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     batch_path = workspace / "data" / "datasets" / "manifests" / f"{frozen.dataset_id}.json"
     if batch_path.exists():
         batch = DatasetManifest.load(batch_path)
+        aux = dict(batch.metadata.get("aux_files") or {})
+        dataset_manifest = dataset_dir / "manifest.json"
+        if dataset_manifest.exists():
+            aux["dataset_manifest"] = {
+                "path": "manifest.json",
+                "sha256": f"sha256:{hashlib.sha256(dataset_manifest.read_bytes()).hexdigest()}",
+            }
+        overlap_path = dataset_dir / "overlap_deviation.json"
+        if overlap_path.exists():
+            aux["overlap_deviation"] = {
+                "path": "overlap_deviation.json",
+                "sha256": f"sha256:{hashlib.sha256(overlap_path.read_bytes()).hexdigest()}",
+            }
+        if aux:
+            batch.metadata["aux_files"] = aux
+            batch.save(batch_path)
         print(f"manifest_hash: {batch.sha256()}")
     
     print(f"Dataset frozen: {frozen.dataset_id}")

@@ -66,10 +66,6 @@ def _is_unfrozen_placeholder(value: Any) -> bool:
 
 def _marked_equity(broker: Any) -> float:
     equity = float(broker.get_account_equity())
-    for fill in getattr(broker, "fills", []) or []:
-        if getattr(fill, "is_entry", False):
-            equity -= float(getattr(fill, "fees", 0.0) or 0.0)
-            equity -= float(getattr(fill, "slippage", 0.0) or 0.0)
     for position in getattr(broker, "positions", {}).values():
         equity -= float(getattr(position, "accumulated_funding", 0.0) or 0.0)
     return equity
@@ -395,7 +391,9 @@ class BacktestRunner:
             run_id=self.run_id,
             strategy_version=self._strategy_version,
             allow_missing_funding=allow_missing_funding,
+            require_specs=True,
         )
+        self._frozen = frozen
 
         processed_data = {}
         self._funding_missing = []
@@ -480,23 +478,18 @@ class BacktestRunner:
         except Exception:
             return "unknown"
 
-    def _load_contract_spec(self, symbol: str) -> dict[str, Any]:
-        dataset_id = self.config["dataset_id"]
-        candidates = [
-            self.workspace_dir / "data" / "raw" / f"{symbol}_spec.json",
-            self.workspace_dir / "data" / "datasets" / "specs" / f"{symbol}_spec.json",
-            self.workspace_dir / "data" / "datasets" / dataset_id / f"{symbol}_spec.json",
-        ]
-        for path in candidates:
-            if path.exists():
-                spec = json.loads(path.read_text())
-                if "contract_size" not in spec or "min_order_size" not in spec:
-                    raise ValueError(f"Contract spec {path} missing contract_size/min_order_size")
-                return spec
-        raise ValueError(
-            f"Missing contract spec for {symbol}. Collect via collect_contract_spec "
-            f"and store at data/raw/{symbol}_spec.json"
-        )
+    def _load_contract_spec(self, symbol: str, frozen: Any = None) -> dict[str, Any]:
+        verified = getattr(frozen, "verified_spec_paths", None) or {}
+        path = verified.get(symbol)
+        if path is None:
+            raise ValueError(
+                f"Missing verified contract spec path for {symbol}. "
+                "Collect via collect_contract_spec and freeze spec_files into the manifest"
+            )
+        spec = json.loads(Path(path).read_text())
+        if "contract_size" not in spec or "min_order_size" not in spec:
+            raise ValueError(f"Contract spec {path} missing contract_size/min_order_size")
+        return spec
 
     def _run_backtest(
         self, data: dict[str, pd.DataFrame], frozen: Any
@@ -510,7 +503,7 @@ class BacktestRunner:
             maker_rate=fee_config.get("maker_rate"),
             taker_rate=fee_config.get("taker_rate"),
         )
-        specs = {symbol: self._load_contract_spec(symbol) for symbol in data}
+        specs = {symbol: self._load_contract_spec(symbol, frozen) for symbol in data}
         contract_sizes = {
             symbol: float(spec["contract_size"]) for symbol, spec in specs.items()
         }
@@ -521,6 +514,7 @@ class BacktestRunner:
             contract_sizes=contract_sizes,
         )
         self._broker = broker
+        self._contract_sizes = contract_sizes
         sizer = PositionSizer(
             risk_per_trade_pct=self.config["risk_per_trade"],
             max_total_risk_pct=self.config["max_total_risk"],
@@ -566,14 +560,23 @@ class BacktestRunner:
         equity_curve: list[dict[str, Any]] = []
         interval = frozen.timeframe if getattr(frozen, "timeframe", None) else "4hour"
 
+        from collections import defaultdict
+
+        events: dict[pd.Timestamp, list[tuple[str, int]]] = defaultdict(list)
         for symbol, df in data.items():
             log_event(LogComponent.ENGINE, f"Processing symbol: {symbol}", bars=len(df))
-            spec = specs[symbol]
             if self._is_smoke:
                 start_idx = max(0, len(df) - int(self.config["smoke_bar_window"]))
             else:
                 start_idx = 200
+            times = pd.to_datetime(df["bar_time"], utc=True)
             for idx in range(start_idx, len(df)):
+                events[times.iloc[idx]].append((symbol, idx))
+
+        for bar_time in sorted(events):
+            for symbol, idx in sorted(events[bar_time], key=lambda item: item[0]):
+                df = data[symbol]
+                spec = specs[symbol]
                 bar = df.iloc[idx]
                 incomplete = bool(bar.get("incomplete", False))
                 non_comparable = bool(bar.get("non_comparable", False))
@@ -607,13 +610,6 @@ class BacktestRunner:
                 funding_df = getattr(self, "_funding_by_symbol", {}).get(symbol)
                 if funding_df is not None:
                     apply_bar_settlements(broker, symbol, bar_payload, interval, funding_df)
-                equity_curve.append(
-                    {
-                        "symbol": symbol,
-                        "bar_time": bar["bar_time"],
-                        "equity": _marked_equity(broker),
-                    }
-                )
                 if skip_signals and not check_stop:
                     continue
 
@@ -839,6 +835,13 @@ class BacktestRunner:
 
                 all_decisions.append(decision_record)
 
+            equity_curve.append(
+                {
+                    "bar_time": bar_time,
+                    "equity": _marked_equity(broker),
+                }
+            )
+
         decisions_df = pd.DataFrame(all_decisions)
         fee_rates_record = {}
         for symbol, rates in broker.fee_rates_used.items():
@@ -992,25 +995,18 @@ class BacktestRunner:
         return sharpe, 0, path
 
     def _load_stitch_points(self) -> dict[str, Any] | None:
-        dataset_id = self.config.get("dataset_id")
-        if dataset_id:
-            path = (
-                self.workspace_dir / "data" / "datasets" / dataset_id / "manifest.json"
-            )
-            if path.exists():
-                payload = json.loads(path.read_text())
-                points = payload.get("stitch_points") or (payload.get("metadata") or {}).get(
-                    "stitch_points"
-                )
-                if points:
-                    return points
+        frozen = getattr(self, "_frozen", None)
+        points = getattr(frozen, "stitch_points", None) if frozen is not None else None
+        if points:
+            return points
         return self.config.get("stitch_points")
 
     def _load_overlap_deviation(self) -> dict[str, Any] | None:
-        dataset_id = self.config["dataset_id"]
-        path = self.workspace_dir / "data" / "datasets" / dataset_id / "overlap_deviation.json"
-        if path.exists():
-            return json.loads(path.read_text())
+        frozen = getattr(self, "_frozen", None)
+        aux = getattr(frozen, "verified_aux_paths", None) or {}
+        path = aux.get("overlap_deviation")
+        if path is not None:
+            return json.loads(Path(path).read_text())
         return self.config.get("overlap_deviation")
 
     def _generate_report(self, results: dict[str, Any]) -> Path:

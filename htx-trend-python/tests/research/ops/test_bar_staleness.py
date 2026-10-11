@@ -169,6 +169,41 @@ def test_health_cli_exit_code_unhealthy(tmp_path, monkeypatch):
     assert exc.value.code == 1
 
 
+def test_health_last_bar_open_plus_two_periods_is_stale_deadline(tmp_path):
+    last_open = datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc)
+    state = tmp_path / "state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "BTC-USDT": {
+                    "symbol": "BTC-USDT",
+                    "interval": "4hour",
+                    "last_bar_time": last_open.isoformat(),
+                }
+            }
+        )
+    )
+    threshold = 10
+    ok_mid, details_mid = check_health(
+        collector_state_path=state,
+        bar_staleness_threshold_minutes=threshold,
+        now=datetime(2026, 1, 2, 17, 13, tzinfo=timezone.utc),
+    )
+    assert ok_mid
+    assert not details_mid["bar_staleness"][0]["is_stale"]
+    assert details_mid["bar_staleness"][0]["expected_next_close"] == datetime(
+        2026, 1, 2, 20, 0, tzinfo=timezone.utc
+    ).isoformat()
+
+    ok_stale, details_stale = check_health(
+        collector_state_path=state,
+        bar_staleness_threshold_minutes=threshold,
+        now=datetime(2026, 1, 2, 20, 11, tzinfo=timezone.utc),
+    )
+    assert not ok_stale
+    assert details_stale["bar_staleness"][0]["is_stale"]
+
+
 def test_bar_staleness_per_timeframe(tmp_path):
     now = datetime(2026, 1, 2, 8, 30, tzinfo=timezone.utc)
     state = tmp_path / "state.json"
