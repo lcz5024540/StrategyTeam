@@ -138,6 +138,56 @@ class ImmutableKlineStorage:
                     f"不应存储为最终数据。请等待 bar 关闭后再写入。"
                 )
         
+        # ✅ P0-2: 检测修订 - 加载已存储数据并比较
+        existing_df = self.load_all_batches(symbol, interval, include_revisions=True)
+        revisions = []
+        
+        if not existing_df.empty:
+            # 为每个新 bar 检查是否已存在
+            for idx, row in df.iterrows():
+                bar_time = row["bar_time"]
+                if isinstance(bar_time, pd.Timestamp):
+                    bar_time_normalized = bar_time
+                else:
+                    bar_time_normalized = pd.Timestamp(bar_time)
+                
+                # 查找已存在的 bar
+                existing_row = existing_df[existing_df["bar_time"] == bar_time_normalized]
+                
+                if not existing_row.empty:
+                    # 比较 OHLCV 字段
+                    old_row = existing_row.iloc[0]
+                    changed_fields = []
+                    old_values = {}
+                    new_values = {}
+                    
+                    for field in ["open", "high", "low", "close", "volume"]:
+                        old_val = float(old_row[field])
+                        new_val = float(row[field])
+                        
+                        # 容差：1e-9（避免浮点精度误报）
+                        if abs(old_val - new_val) > 1e-9:
+                            changed_fields.append(field)
+                            old_values[field] = old_val
+                            new_values[field] = new_val
+                    
+                    if changed_fields:
+                        revisions.append({
+                            "bar_time": bar_time_normalized.isoformat(),
+                            "changed_fields": changed_fields,
+                            "old_values": old_values,
+                            "new_values": new_values,
+                            "detected_at": check_time.isoformat(),
+                        })
+        
+        # 如果有修订，记录日志
+        if revisions:
+            revision_log_path = self.metadata_dir / f"{symbol}_{interval}_revisions.jsonl"
+            
+            with open(revision_log_path, "a") as f:
+                for rev in revisions:
+                    f.write(json.dumps(rev) + "\n")
+        
         # 确保有 first_seen_at
         if "first_seen_at" not in df.columns:
             df = df.copy()
