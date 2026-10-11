@@ -146,6 +146,63 @@ def test_status_file_missing_returns_none():
         assert loaded is None
 
 
+def test_status_json_readable_by_cli_from_another_process():
+    """运行进程原子写入 status.json，另一进程 `status --json` 可读。"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        status_path = Path(tmpdir) / "status.json"
+        src_dir = Path(__file__).parent.parent.parent.parent / "src"
+        writer_script = f"""
+import sys
+from pathlib import Path
+from datetime import datetime, timezone
+sys.path.insert(0, '{src_dir}')
+from htx_trend.research.ops.status import (
+    HealthStatus, StatusInterface, set_status_file_path, update_status,
+)
+set_status_file_path(Path('{status_path}'))
+update_status(StatusInterface(
+    run_id="CLI_CROSS",
+    component="writer",
+    timestamp=datetime.now(timezone.utc),
+    health=HealthStatus.HEALTHY,
+    total_pnl=77.0,
+    account_equity=1077.0,
+    message="written-for-cli",
+))
+print("STATUS_WRITTEN")
+"""
+        writer = subprocess.run(
+            ["python3", "-c", writer_script],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert writer.returncode == 0, writer.stderr
+        assert "STATUS_WRITTEN" in writer.stdout
+
+        reader = subprocess.run(
+            [
+                "python3",
+                "-m",
+                "htx_trend.research.cli",
+                "status",
+                "--json",
+                "--status-file",
+                str(status_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=str(Path(__file__).resolve().parents[3]),
+            env={**__import__("os").environ, "PYTHONPATH": str(src_dir)},
+        )
+        assert reader.returncode == 0, reader.stderr
+        payload = json.loads(reader.stdout)
+        assert payload["run_id"] == "CLI_CROSS"
+        assert payload["total_pnl"] == 77.0
+        assert payload["message"] == "written-for-cli"
+
+
 def test_status_update_creates_parent_dirs():
     """测试更新状态时自动创建父目录"""
     with tempfile.TemporaryDirectory() as tmpdir:
