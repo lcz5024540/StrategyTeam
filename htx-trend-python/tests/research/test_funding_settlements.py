@@ -198,7 +198,28 @@ def test_settlement_on_frozen_bar_is_still_charged(tmp_path):
     raw = workspace / "data" / "raw"
     raw.mkdir(parents=True, exist_ok=True)
     funding.to_parquet(raw / "BTC-USDT_funding.parquet", index=False)
-    results = _stop_runner(workspace, "FUNDFRZ").run()
+    from tests.research.helpers import record_funding_files, runner_config
+
+    manifest_hash = record_funding_files(workspace, "ohlc", ["BTC-USDT"])
+    cfg = runner_config(
+        workspace,
+        "FUNDFRZ",
+        "ohlc",
+        symbols=["BTC-USDT"],
+        allow_missing_funding=False,
+        initial_equity=10_000.0,
+        conditions={
+            "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
+            "C02": {
+                "atr_period": 14,
+                "atr_multiplier": 2.0,
+                "tick_size": 0.1,
+                "stop_slippage_ticks": 1,
+            },
+        },
+    )
+    cfg["manifest_hash"] = manifest_hash
+    results = write_runner(workspace, cfg).run()
     events = results["funding_events"]
     times = [pd.Timestamp(item["settlement_time"]) for item in events]
     assert any(stamp == frozen_close for stamp in times)
@@ -224,18 +245,18 @@ def test_runner_does_not_charge_every_4h_asof_rate(tmp_path):
     funding = _funding_day(day.to_pydatetime())
     (workspace / "data" / "raw").mkdir(parents=True, exist_ok=True)
     funding.to_parquet(workspace / "data" / "raw" / "BTC-USDT_funding.parquet", index=False)
-    from tests.research.helpers import runner_config
+    from tests.research.helpers import record_funding_files, runner_config
 
-    results = write_runner(
+    manifest_hash = record_funding_files(workspace, "ohlc", ["BTC-USDT"])
+    cfg = runner_config(
         workspace,
-        runner_config(
-            workspace,
-            "ASOF6X",
-            "ohlc",
-            symbols=["BTC-USDT"],
-            allow_missing_funding=False,
-        ),
-    ).run()
+        "ASOF6X",
+        "ohlc",
+        symbols=["BTC-USDT"],
+        allow_missing_funding=False,
+    )
+    cfg["manifest_hash"] = manifest_hash
+    results = write_runner(workspace, cfg).run()
     events = results["funding_events"]
     # One calendar day of 4h processing must not produce 6 charges at the as-of rate.
     by_day = {}

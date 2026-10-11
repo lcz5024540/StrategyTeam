@@ -385,6 +385,7 @@ class BacktestRunner:
                 "Obtain approval first via CLI: approve --gate STAGE_ACCEPTANCE"
             )
 
+        allow_missing_funding = bool(self.config.get("allow_missing_funding", False))
         data, frozen = self.dataset_mgr.load_dataset_with_verification(
             dataset_id,
             self.config["manifest_hash"],
@@ -393,11 +394,13 @@ class BacktestRunner:
             approval_id=approval_id,
             run_id=self.run_id,
             strategy_version=self._strategy_version,
+            allow_missing_funding=allow_missing_funding,
         )
 
         processed_data = {}
         self._funding_missing = []
         self._funding_by_symbol: dict[str, pd.DataFrame] = {}
+        verified_funding = getattr(frozen, "verified_funding_paths", {}) or {}
         for symbol, df in data.items():
             df = df.copy()
             total_bars = len(df)
@@ -413,9 +416,8 @@ class BacktestRunner:
             if "incomplete" in df.columns:
                 df.loc[df["incomplete"] == True, "non_comparable"] = True
             df["_original_source"] = df.get("source", "htx")
-            funding_path = self.workspace_dir / "data" / "raw" / f"{symbol}_funding.parquet"
-            allow_missing_funding = bool(self.config.get("allow_missing_funding", False))
-            if funding_path.exists():
+            funding_path = verified_funding.get(symbol)
+            if funding_path is not None:
                 interval = frozen.timeframe if getattr(frozen, "timeframe", None) else "4hour"
                 funding_df = pd.read_parquet(funding_path)
                 self._funding_by_symbol[symbol] = funding_df
@@ -424,7 +426,7 @@ class BacktestRunner:
                 self._funding_missing.append(symbol)
             else:
                 raise ValueError(
-                    f"Missing funding file for {symbol}: {funding_path}. "
+                    f"Missing verified funding path for {symbol}. "
                     "Collect funding history or set allow_missing_funding=true"
                 )
             df = compute_all_features(df)

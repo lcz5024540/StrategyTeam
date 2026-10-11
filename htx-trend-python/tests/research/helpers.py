@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -39,6 +40,25 @@ def write_contract_specs(workspace: Path, specs: dict | None = None) -> None:
     payload = specs or DEFAULT_SPECS
     for symbol, spec in payload.items():
         (raw / f"{symbol}_spec.json").write_text(json.dumps(spec, indent=2))
+
+
+def record_funding_files(workspace: Path, dataset_id: str, symbols: list[str]) -> str:
+    raw = workspace / "data" / "raw"
+    path = workspace / "data" / "datasets" / "manifests" / f"{dataset_id}.json"
+    batch = DatasetManifest.load(path)
+    files: dict[str, dict[str, str]] = {}
+    for symbol in symbols:
+        funding = raw / f"{symbol}_funding.parquet"
+        if not funding.exists():
+            continue
+        digest = hashlib.sha256(funding.read_bytes()).hexdigest()
+        files[symbol] = {
+            "path": f"{symbol}_funding.parquet",
+            "sha256": f"sha256:{digest}",
+        }
+    batch.metadata["funding_files"] = files
+    batch.save(path)
+    return batch.sha256()
 
 
 def write_batch_manifest(workspace: Path, dataset_id: str) -> str:

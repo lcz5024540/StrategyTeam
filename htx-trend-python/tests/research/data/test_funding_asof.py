@@ -79,15 +79,18 @@ def test_runner_attaches_funding_as_of_bar_close(tmp_path, monkeypatch):
         }
     )
     funding.to_parquet(tmp_path / "data" / "raw" / "BTC-USDT_funding.parquet", index=False)
-    runner = write_runner(
+    from tests.research.helpers import record_funding_files
+
+    manifest_hash = record_funding_files(tmp_path, "fund-asof", ["BTC-USDT"])
+    cfg = runner_config(
         tmp_path,
-        runner_config(
-            tmp_path,
-            "FUND1",
-            "fund-asof",
-            symbols=["BTC-USDT"],
-        ),
+        "FUND1",
+        "fund-asof",
+        symbols=["BTC-USDT"],
+        allow_missing_funding=False,
     )
+    cfg["manifest_hash"] = manifest_hash
+    runner = write_runner(tmp_path, cfg)
     runner.run()
     assert seen["interval"] == "4hour"
     assert 0.5 not in {float(x) for x in seen["rates"] if pd.notna(x)}

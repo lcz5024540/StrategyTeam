@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -29,6 +29,7 @@ class FrozenDataset:
     val_end_idx: int
     manifest_hash: str
     created_at: datetime
+    verified_funding_paths: dict = field(default_factory=dict)
     
     VALID_SPLITS = ("train", "val", "validation", "test")
 
@@ -59,7 +60,7 @@ class FrozenDataset:
     
     @classmethod
     def from_dict(cls, data: dict) -> FrozenDataset:
-        allowed = {item.name for item in fields(cls)}
+        allowed = {item.name for item in fields(cls)} - {"verified_funding_paths"}
         filtered = {key: value for key, value in data.items() if key in allowed}
         filtered["start_date"] = datetime.fromisoformat(filtered["start_date"])
         filtered["end_date"] = datetime.fromisoformat(filtered["end_date"])
@@ -326,6 +327,7 @@ class DatasetManager:
         approval_id: str | None = None,
         run_id: str | None = None,
         strategy_version: str | None = None,
+        allow_missing_funding: bool = False,
     ) -> tuple[dict[str, pd.DataFrame], FrozenDataset]:
         manifest_path = self.manifests_dir / f"{dataset_id}.json"
         if not manifest_path.exists():
@@ -353,9 +355,22 @@ class DatasetManager:
                 f"Dataset {dataset_id} failed hash verification: "
                 f"mismatches={result.mismatches} missing={result.missing_files}"
             )
-        self._verify_funding_files(manifest)
+        required = list(symbols) if symbols else None
+        if required is None:
+            simple_path = dataset_dir / "manifest.json"
+            if simple_path.exists():
+                required = list(
+                    (json.loads(simple_path.read_text()) or {}).get("symbols") or []
+                )
+            else:
+                required = []
+        verified = self._verify_funding_files(
+            manifest,
+            required,
+            allow_missing_funding=allow_missing_funding,
+        )
 
-        return self.load_dataset(
+        data, frozen = self.load_dataset(
             dataset_id,
             symbols,
             split=split,
@@ -363,20 +378,44 @@ class DatasetManager:
             run_id=run_id,
             strategy_version=strategy_version,
         )
+        frozen.verified_funding_paths = verified
+        return data, frozen
 
-    def _verify_funding_files(self, manifest: DatasetManifest) -> None:
-        files = (manifest.metadata or {}).get("funding_files") or {}
+    def _verify_funding_files(
+        self,
+        manifest: DatasetManifest,
+        symbols: list[str],
+        allow_missing_funding: bool = False,
+    ) -> dict[str, Path]:
+        files = (manifest.metadata or {}).get("funding_files")
         if not files:
-            return
+            if allow_missing_funding:
+                return {}
+            raise ValueError(
+                "funding_files missing from manifest; "
+                "freeze funding files or set allow_missing_funding=true"
+            )
+        missing = [symbol for symbol in symbols if symbol not in files]
+        if missing and not allow_missing_funding:
+            raise ValueError(
+                "funding_files missing symbols required for backtest: "
+                + ", ".join(missing)
+            )
         raw_dir = self.datasets_dir.parent / "raw"
-        for symbol, info in files.items():
-            rel = (info or {}).get("path") or f"{symbol}_funding.parquet"
+        verified: dict[str, Path] = {}
+        for symbol in symbols:
+            if symbol not in files:
+                continue
+            info = files.get(symbol) or {}
+            rel = info.get("path") or f"{symbol}_funding.parquet"
             path = raw_dir / rel
             if not path.exists():
                 raise ValueError(f"Funding file missing for {symbol}: {path}")
             actual = f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
-            expected = (info or {}).get("sha256")
+            expected = info.get("sha256")
             if actual != expected:
                 raise ValueError(
                     f"Funding hash mismatch for {symbol}: expected {expected}, got {actual}"
                 )
+            verified[symbol] = path
+        return verified
