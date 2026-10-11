@@ -72,6 +72,17 @@ def test_hard_stop_does_not_depend_on_model_or_higher_timeframe_data():
     assert len(live.sent)==1 and live.sent[0].reduce_only
 
 
+def test_hard_stop_continues_when_evidence_store_is_unavailable():
+    class BrokenEvidence:
+        def put(self, *_args, **_kwargs): raise OSError('disk full')
+    repo,live=Repo(),Executor()
+    mgr=LivePositionManager(repo,RuntimeInstance('p','TREND','HTX_TREND_V1',7,'primary','LIVE',True,'unit',None),
+        TradeAccount(7,'primary','PRIMARY',True,False,'test'),Market(),Client(),live,
+        config=ExitConfig(engine_enabled=True,engine_live=True),evidence_store=BrokenEvidence())
+    mgr._manage(position(),144900,MarketContext())
+    assert len(live.sent)==1 and live.sent[0].reduce_only
+
+
 def test_pending_entry_is_cancelled_before_any_close():
     repo,live=Repo(),Executor(); repo.pending=[dict(position_id=1,leg='ENTRY',status='PARTIALLY_FILLED',exchange_order_id=77)]
     manager(repo=repo,executor=live)._manage(position(),144900,MarketContext())

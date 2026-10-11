@@ -1,7 +1,7 @@
 ---
 title: 趋势退出 v5 实验与验收合同
 type: validation-contract
-status: planned-not-executed
+status: implementation-complete-gates-blocked
 created: 2026-10-09
 author: Codex / Ray
 ---
@@ -21,7 +21,7 @@ author: Codex / Ray
 - [x] 编写图示、实验与实施验收方案。
 - [x] 验证／自检：设计覆盖、链接、draw.io XML、差异和仓库结构检查，提交前完成。
 
-后续 M1–M10 均是未实施计划，不能因上述设计清单完成而标记研发已完成。下列测试 ID 是测试规格，不是已经存在或已通过的测试代码。
+M1-M9 的本地安全边界已于 2026-10-10 实施并验证：Java/Python 共享 golden 已逐字段比较，状态/决策/意图事务、owner fencing、唯一 fill、再入场预算、OBSERVE/PAPER、费用分摊、证据门、只读 API 与 LIVE readiness 已落地。Java 模块 636 tests、Python 121 tests 通过。G0 当前仍为 `INSUFFICIENT_EVIDENCE`，T-01..T-36 也尚未全部自动化，故 G1-G6 均未晋级；没有回放收益或上线结论。详见 [输入与账本审计](../docs/architecture-refactor/evidence/HTX_TREND_EXIT_V5_M1_INPUT_AUDIT_20261010.md)和[本地实施与门禁结果](../docs/architecture-refactor/evidence/HTX_TREND_EXIT_V5_IMPLEMENTATION_20261010.md)。
 
 ## 2. 分层证据
 

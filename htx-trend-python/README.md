@@ -19,7 +19,21 @@ python -m venv .venv
 
 Python 不会启动即建表：需要在纸面环境中显式执行 `htx-trend init-ledger --database /path/paper.sqlite --schema sql/schema.sql`。运行时 K 线证据可用 `htx-trend replay --evidence /path/evidence --output /path/report.json` 生成完整性报告。Java 与 Python 决策导出为同一 JSON 后，可用 `htx-trend compare --java java.json --python python.json` 输出逐字段差异。
 
-这些命令只用于回放、纸面与差异验证。`compare` 发现任一字段差异时退出码为 `1`。回放必须包含同一 `run_id` 的 15m 与 60m 已完成 K 线；缺高周期证据会报告 `MISSING_TREND_WINDOW`，不会再用 15m 数据冒充 60m。
+这些命令只用于回放、纸面与差异验证。`compare` 发现任一字段差异时退出码为 `1`。正式冻结数据回放必须显式传入 `--manifest`；manifest 必须为 `COMPLETE`，请求的 HTX 文件必须唯一且内容 hash、K 线顺序、连续性、OHLC 和成交量审计全部通过。
+
+连续行情采集与运行 worker 解耦。以下命令不读取账户或交易密钥；它会保存 HTX 原始响应、标准化闭合 K 线、质量报告和内容寻址 manifest。生产定时器反复执行 `collect-tick` 即可断点续采，重叠读取最近两根闭合 K 线以保留交易所修订版本。
+
+```bash
+htx-trend collect-history --evidence /var/lib/coinstrategy/htx-python-evidence \
+  --symbols BTC-USDT ETH-USDT --start 2026-04-01T00:00:00Z --end 2026-10-01T00:00:00Z
+htx-trend collect-tick --evidence /var/lib/coinstrategy/htx-python-evidence \
+  --symbols BTC-USDT ETH-USDT
+htx-trend verify-evidence --evidence /var/lib/coinstrategy/htx-python-evidence --hash <manifest-sha256>
+```
+
+服务器连接模板见 [`deployment/htx-python.env.example`](deployment/htx-python.env.example)。模板只列连接字段；账户 API 密钥继续从 MySQL 的加密账户记录读取，真实密码和私钥文件不得进入仓库。
+
+研究、运行证据回放、OBSERVE、PAPER 与 LIVE 现在共用 `HtxStrategyDecisionEngine`，不会再分别调用两套信号 scorer。新策略版本还必须提供密封的 12 阶段准入产物：`htx-trend validate-admission --artifact /path/admission.json`。详细调用边界见 [`../docs/architecture-refactor/HTX_PYTHON_STRATEGY_IRON_LAW_CALL_FLOW_V1.md`](../docs/architecture-refactor/HTX_PYTHON_STRATEGY_IRON_LAW_CALL_FLOW_V1.md)。
 
 ## 生产运行平台
 
@@ -28,6 +42,8 @@ Python 的生产事实账本是现有 MySQL，不是本地 SQLite。订单查询
 每个实例对应一个独立 systemd 单元：[`deployment/systemd/coinstrategy-python-strategy@.service`](deployment/systemd/coinstrategy-python-strategy@.service)。实例、心跳与账户资金预算在 MySQL 的 `strategy_runtime_instance`、`strategy_runtime_heartbeat`、`strategy_capital_allocation` 中保存。趋势、单所 carry、跨所 carry 因此可分别启动、停止、回滚；共享账户只通过预算和最大并发仓位做硬约束。
 
 `OBSERVE` worker 并发读取公开行情、顺序写入同口径证据和心跳，不会创建订单。`LIVE` 代码路径已存在，但启动前必须同时满足：完成退出逐笔验收并显式设置 `HTX_PYTHON_EXIT_PARITY_APPROVED=true`；当前只允许 PRIMARY 且拒绝启用镜像账户；Java 与 Python 使用同一个 `coinstrategy:htx:trend:writer:v1` 生命周期锁；同源趋势和退出开关全部一致。会话已批准的混合市场消融必须显式保留：`HTX_TREND_MIXED_MARKET_REQUIRES_STRONG_CANDIDATE=false`，避免回到默认 `true`。
+
+`HTX_TREND_V1` 保留为存量兼容版本。其他 `strategy_name` 启动前必须设置 `HTX_TREND_STRATEGY_ADMISSION_PATH=/path/admission.json`；缺失、版本不匹配、证据阶段不足或内容 hash 被改写都会失败关闭。通过完整准入的新版本按止损距离和 `risk_per_trade` 先计算风险仓位，再受目标名义额和最大名义额约束。
 
 ```bash
 python -m htx_trend.worker --strategy-instance <instance-key>

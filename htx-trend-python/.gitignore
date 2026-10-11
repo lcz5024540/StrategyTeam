@@ -60,3 +60,6 @@ runs/*/
 
 # Heartbeats
 heartbeats/
+
+# Research data (from upstream)
+research-data/

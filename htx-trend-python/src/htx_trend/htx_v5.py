@@ -84,11 +84,22 @@ class HtxV5Client:
     def __exit__(self, *_: object) -> None:
         self.close()
 
+    def history_kline_envelope(self, contract_code: str, period: str, size: int | None = None,
+                               *, start: int | None = None, end: int | None = None) -> dict[str, Any]:
+        """Preserve the HTX envelope; size and from/to are mutually exclusive."""
+        params = {"contract_code": contract_code, "period": period}
+        if size is not None:
+            if start is not None or end is not None or not 1 <= size <= 2000:
+                raise ValueError("invalid size/range combination")
+            params["size"] = str(size)
+        else:
+            if start is None or end is None or start > end:
+                raise ValueError("explicit historical range required")
+            params.update({"from": str(start), "to": str(end)})
+        return self._public_get("/linear-swap-ex/market/history/kline", params)
+
     def history_kline(self, contract_code: str, period: str, size: int) -> list[dict[str, Any]]:
-        response = self._public_get("/linear-swap-ex/market/history/kline", {
-            "contract_code": contract_code, "period": period, "size": str(size),
-        })
-        return self._data_list(response)
+        return self._data_list(self.history_kline_envelope(contract_code, period, size))
 
     def depth(self, contract_code: str, depth: int) -> dict[str, Any]:
         response = self._public_get("/linear-swap-ex/market/depth", {

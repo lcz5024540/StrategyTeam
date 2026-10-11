@@ -1,7 +1,7 @@
 ---
 title: CoinStrategy 趋势退出系统技术设计 v5
 type: technical-design
-status: design-complete-implementation-pending
+status: implementation-in-progress
 created: 2026-10-09
 author: Codex / Ray
 tags: [htx, trend, exits, java, python]
@@ -14,14 +14,14 @@ tags: [htx, trend, exits, java, python]
 | 项 | 内容 |
 |---|---|
 | 文档类型 | 技术设计，交易规则和系统实现合同 |
-| 状态 | 设计已整理；代码、迁移、回放结果、上线均未交付 |
+| 状态 | M1 输入审计与 M2-M4 L0 纯核已交付；M5 持久化、迁移、回放结果和上线未交付 |
 | 授权 | 用户选择 B 全面重设计并要求入仓；不等同批准本文候选参数实盘运行 |
 | 作者 / 日期 | Codex / Ray；2026-10-09，Asia/Shanghai |
 | 目标读者 | 策略负责人、Java/Python 开发、执行与账本负责人、测试人员 |
 | 前置文档 | [ADR：全面重设计](../docs/design-docs/adr-20261009-redesign-trend-exits.md) |
 | 事实基线 | [短持仓证据](../docs/architecture-refactor/evidence/HTX_TREND_SHORT_HOLDING_20261009.md)；源码 `support_htx_python@0f07a492` |
 | 配套图示 | 图 11-1 架构、11-2 决策、11-3 执行泳道、11-4 发布；§11.1 有文件链接 |
-| 目标里程碑 | 本轮完成设计入仓；实施按 §10 顺序，发布日期未承诺 |
+| 目标里程碑 | 实施按 §10 顺序；当前完成无 I/O 的 Java/Python 合同与 golden，发布日期未承诺 |
 | 成功标准 | 扣费后表现与风险共同改善；不能用更长持仓或更少订单单独判定成功 |
 
 ## 1. 背景

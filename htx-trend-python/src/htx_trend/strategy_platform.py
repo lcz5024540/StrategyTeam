@@ -19,9 +19,12 @@ import json
 import uuid
 
 from .market_data import HtxMarketData
-from .models import TrendConfig, TrendSide, evaluate_signal, market_breadth, model_candidates, route_candidates
+from .java_entry_contract import JavaEntryConfig
+from .models import TrendSide, market_breadth, route_candidates
 from .policy import StrategyPolicy, select_policy
 from .mysql_store import HtxTrendMySqlRepository, RuntimeInstance
+from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
+from .strategy_decision import HtxStrategyDecisionEngine, LEGACY_STRATEGY_VERSION
 from .strategy_context import MarketContext, MarketRegime
 
 
@@ -104,6 +107,7 @@ class _TrendObservation:
     model_candidates: tuple[object, ...]
     funding_rate: Decimal | None
     spread_rate: Decimal | None
+    decision_hash: str
 
 
 class TrendObservationWorker:
@@ -114,13 +118,17 @@ class TrendObservationWorker:
     cannot silently switch the current Java live trader.
     """
     def __init__(self, instance: RuntimeInstance, repository: HtxTrendMySqlRepository, market: HtxMarketData,
-                 config: TrendObserverConfig, trend_config: TrendConfig = TrendConfig()) -> None:
+                 config: TrendObserverConfig, entry_config: JavaEntryConfig = JavaEntryConfig(),
+                 admission: StrategyAdmissionArtifact | None = None) -> None:
         if instance.execution_mode != ExecutionMode.OBSERVE:
             raise ValueError("TrendObservationWorker only supports OBSERVE; paper/live need an approved execution adapter")
         if not config.contracts:
             raise ValueError("trend observer requires at least one contract")
         self._instance, self._repository, self._market = instance, repository, market
-        self._config, self._trend_config, self._stopped = config, trend_config, False
+        self._config, self._stopped = config, False
+        self._decision = HtxStrategyDecisionEngine(strategy_version=instance.strategy_name or LEGACY_STRATEGY_VERSION,
+                                                   config=entry_config, admission=admission,
+                                                   evidence_store=market.evidence_store)
 
     def tick(self) -> WorkerHealth:
         if self._stopped:
@@ -159,14 +167,16 @@ class TrendObservationWorker:
 
     def _observe_one(self, contract: str, now_epoch: int) -> _TrendObservation:
         entry = self._market.kline_window(contract, self._config.entry_period, self._config.kline_size, now_epoch=now_epoch)
-        trend = self._market.kline_window(contract, self._config.trend_period, self._config.kline_size, now_epoch=now_epoch)
-        signal = evaluate_signal(entry.candles, trend.candles, self._trend_config)
+        decision = self._decision.decide(contract_code=contract, period=self._config.entry_period,
+                                         candles=entry.candles, surface=DecisionSurface.OBSERVE,
+                                         evidence_refs=entry.evidence_refs)
         book = self._market.top_of_book(contract)
         try:
             funding = self._market.funding_rate(contract).rate
         except Exception:
             funding = None
-        return _TrendObservation(contract, signal, model_candidates(entry.candles, trend.candles, self._trend_config), funding, book.spread_rate)
+        return _TrendObservation(contract, decision.signal, decision.candidates, funding, book.spread_rate,
+                                 decision.decision_hash)
 
     def _persist(self, run_id: str, result: _TrendObservation, context: MarketContext) -> int:
         signal = result.signal
@@ -184,7 +194,8 @@ class TrendObservationWorker:
         snapshot_key = sha256(json.dumps({"instance": self._instance.instance_key, "contract": result.contract,
             "period": self._config.entry_period, "bar": signal.bar_time, "factors": values}, default=str, sort_keys=True).encode()).hexdigest()
         factor_id = self._repository.record_factor_snapshot(snapshot_key=snapshot_key, contract_code=result.contract,
-            period=self._config.entry_period, bar_time=signal.bar_time, market_regime=signal.higher_timeframe_side.value, factors=values)
+            period=self._config.entry_period, bar_time=signal.bar_time, market_regime=signal.regime,
+            factors={**values, "strategy_decision_hash": result.decision_hash})
         route = route_candidates(result.model_candidates, market_context=context)
         policies = tuple(StrategyPolicy(value.policy_code, value.policy_version, value.primary_model, value.confirmation_models,
                                         value.base_notional_usdt, value.max_notional_usdt, value.score_threshold, value.box_window_bars)

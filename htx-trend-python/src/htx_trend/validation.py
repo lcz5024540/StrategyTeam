@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import Any, Iterable
 import json
 
-from .market_data import period_seconds
-from .models import TrendConfig, evaluate_signal, model_candidates, route_candidates
+from .java_entry_contract import JavaEntryConfig
+from .models import route_candidates
 from .replay import ReplaySnapshot
+from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
+from .strategy_decision import HtxStrategyDecisionEngine, LEGACY_STRATEGY_VERSION
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,38 +34,32 @@ class ReplayReport:
     rows: tuple[ReplayRow, ...]
 
 
-def replay_report(snapshots: Iterable[ReplaySnapshot], config: TrendConfig = TrendConfig(), *, entry_period: str = "15min", trend_period: str = "60min") -> ReplayReport:
+def replay_report(snapshots: Iterable[ReplaySnapshot], config: JavaEntryConfig = JavaEntryConfig(), *,
+                  entry_period: str = "15min", strategy_version: str = LEGACY_STRATEGY_VERSION,
+                  admission: StrategyAdmissionArtifact | None = None) -> ReplayReport:
     rows: list[ReplayRow] = []
     complete = insufficient = 0
     snapshots = tuple(snapshots)
     for item in (s for s in snapshots if s.window.period == entry_period):
-        # A single evidence window may not contain the configured higher timeframe.
-        # Mark that gap explicitly instead of inventing a backtest conclusion.
-        if not item.window.is_complete or len(item.window.candles) < max(config.slow_ema_period, config.breakout_lookback) + max(config.atr_period, config.adx_period) + 3:
+        # Replay the same bounded completed-bar input consumed by LIVE. Market
+        # breadth and anchor evidence remain separate runtime context inputs.
+        required = max(config.slow_ema_period, config.breakout_lookback, config.momentum_lookback,
+                       config.atr_period, config.adx_period, config.volume_lookback) + 5
+        if not item.window.is_complete or len(item.window.candles) < required:
             insufficient += 1
             rows.append(ReplayRow(item.key, item.window.contract_code, item.window.period, "PARTIAL_OR_INSUFFICIENT", None, (),
                                   "not enough complete frozen candles for signal evaluation"))
             continue
-        close_epoch = item.window.candles[-1].open_time + period_seconds(entry_period)
-        matched = [s for s in snapshots if s.window.contract_code == item.window.contract_code
-                   and s.window.period == trend_period and s.run_id == item.run_id and item.run_id is not None
-                   and s.window.is_complete and s.window.candles
-                   and s.window.candles[-1].open_time + period_seconds(trend_period) <= close_epoch
-                   and close_epoch - (s.window.candles[-1].open_time + period_seconds(trend_period)) < period_seconds(trend_period)]
-        if not matched or max(len(s.window.candles) for s in matched) < config.slow_ema_period:
-            insufficient += 1
-            rows.append(ReplayRow(item.key, item.window.contract_code, item.window.period, "MISSING_TREND_WINDOW", None, (),
-                                  "no same-run completed higher timeframe evidence; never substitute entry candles"))
-            continue
-        trend = max(matched, key=lambda s: s.window.candles[-1].open_time)
         complete += 1
-        signal = evaluate_signal(item.window.candles, trend.window.candles, config)
-        choices = model_candidates(item.window.candles, trend.window.candles, config)
+        decision = HtxStrategyDecisionEngine(strategy_version=strategy_version, config=config,
+            admission=admission).decide(contract_code=item.window.contract_code, period=item.window.period,
+                                        candles=item.window.candles, surface=DecisionSurface.BACKTEST)
+        signal, choices = decision.signal, decision.candidates
         route = route_candidates(choices)
         rows.append(ReplayRow(item.key, item.window.contract_code, item.window.period, "COMPLETE",
                               route.primary.side.value if route.primary else signal.side.value,
                               tuple(choice.model.value for choice in choices), route.reason))
-    return ReplayReport("htx-trend-python-replay-v2", len(rows), complete, insufficient, tuple(rows))
+    return ReplayReport("htx-trend-python-same-source-replay-v3", len(rows), complete, insufficient, tuple(rows))
 
 
 def to_json(value: Any) -> Any:
