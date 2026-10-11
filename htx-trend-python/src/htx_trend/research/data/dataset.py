@@ -89,6 +89,7 @@ class DatasetManager:
         timeframe: str,
         train_ratio: float = 0.6,
         val_ratio: float = 0.2,
+        extra_metadata: dict | None = None,
     ) -> FrozenDataset:
         symbols = sorted(data.keys())
         
@@ -166,6 +167,8 @@ class DatasetManager:
             "timeframe": timeframe,
             "frozen_manifest_hash": manifest_hash,
         })
+        if extra_metadata:
+            batch_manifest.metadata.update(extra_metadata)
         batch_manifest.save(self.manifests_dir / f"{dataset_id}.json")
         
         log_event(

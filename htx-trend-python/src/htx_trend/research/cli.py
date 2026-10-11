@@ -10,6 +10,17 @@ from pathlib import Path
 
 from .data import DataCollector, DatasetManager, DataStitcher
 from .data.collector import BINANCE_VISION_START, parse_lookback_days
+from .data.quality import (
+    DEFAULT_STITCH_POINT,
+    KNOWN_CANDIDATES,
+    STITCH_WINDOW_BARS,
+    apply_bad_ticks,
+    bad_ticks_hash,
+    load_bad_ticks,
+    load_stitch_points,
+    stitch_point_for,
+    write_quality_audit,
+)
 from .features.daily_resample import daily_resample_manifest_fields
 from .ledger import Approval, ApprovalDecision, ApprovalGate, LedgerManager
 from .ops import HeartbeatManager, get_status
@@ -67,10 +78,30 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     if args.timeframe == "1day" and not args.daily_cut:
         raise SystemExit("--daily-cut is required when freezing 1day (UTC00 or UTC16)")
 
-    stitcher = DataStitcher(close_deviation_threshold=args.overlap_threshold or 0.003)
+    stitch_override = getattr(args, "stitch_point", None)
+    stitch_config = getattr(args, "stitch_config", None)
+    window_bars = int(getattr(args, "non_comparable_window", None) or STITCH_WINDOW_BARS)
+    bad_ticks_path = getattr(args, "bad_ticks", None)
+    if bad_ticks_path:
+        ticks_file = Path(bad_ticks_path)
+    else:
+        ticks_file = workspace / "data" / "quality" / "bad_ticks.yaml"
+        if not ticks_file.exists():
+            ticks_file = Path(__file__).resolve().parents[3] / "data" / "quality" / "bad_ticks.yaml"
+    stitch_file = Path(stitch_config) if stitch_config else None
+    stitch_points = load_stitch_points(stitch_file, override=stitch_override)
+    ticks = load_bad_ticks(ticks_file if ticks_file.exists() else None)
+    ticks_digest = bad_ticks_hash(ticks_file if ticks_file.exists() else None, ticks)
+
+    stitcher = DataStitcher(
+        close_deviation_threshold=args.overlap_threshold or 0.003,
+        window_bars=window_bars,
+    )
     overlap_deviation: dict = {}
     source_counts: dict = {}
-    
+    overlap_audit: list[dict] = []
+    used_stitch_points: dict[str, str] = {}
+
     for contract in contracts:
         htx_file = raw_dir / f"{contract}_{timeframe}_htx.parquet"
         
@@ -93,43 +124,64 @@ def cmd_freeze(args: argparse.Namespace) -> None:
                 bn_4h_file = raw_dir / f"{binance_symbol}_4h_binance.parquet"
                 if bn_4h_file.exists():
                     binance_4h = pd.read_parquet(bn_4h_file)
+            point = stitch_point_for(contract, stitch_points, override=stitch_override)
+            used_stitch_points[contract] = point.isoformat()
             combined, stats = stitcher.stitch_daily_from_4h(
-                htx_4h, binance_4h, htx_1d=htx_df, daily_cut=args.daily_cut or "UTC00"
+                htx_4h,
+                binance_4h,
+                htx_1d=htx_df,
+                daily_cut=args.daily_cut or "UTC00",
+                stitch_point=point,
+                symbol=contract,
+                window_bars=window_bars,
             )
             print(f"{contract} canonical 1d (daily_cut={args.daily_cut or 'UTC00'}): {stats}")
             overlap_deviation[contract] = {"1day": stats.get("overlap_deviation", {})}
+            overlap_audit.extend(stats.get("overlap_audit") or [])
             source_counts[contract] = {
                 "htx_bars": stats.get("htx_bars", 0),
                 "binance_bars": stats.get("binance_bars", 0),
                 "binance_backfill_bars": stats.get("binance_backfill_bars", 0),
                 "overlap_bars": stats.get("overlap_bars", 0),
+                "non_comparable_bars": stats.get("non_comparable_bars", 0),
                 "total_bars": stats.get("total_bars", 0),
+                "stitch_point": stats.get("stitch_point", point.isoformat()),
             }
             if combined.empty:
                 print(f"{contract}: no complete daily bars after resample, skipping")
                 continue
-            data[contract] = combined
+            data[contract] = apply_bad_ticks(combined, contract, ticks)
         elif args.backfill_binance:
             binance_symbol = contract.replace("-", "")
             binance_file = raw_dir / f"{binance_symbol}_{timeframe.replace('hour', 'h')}_binance.parquet"
-            
+            point = stitch_point_for(contract, stitch_points, override=stitch_override)
+            used_stitch_points[contract] = point.isoformat()
             if binance_file.exists():
                 binance_df = pd.read_parquet(binance_file)
-                combined, stats = stitcher.stitch_klines(htx_df, binance_df)
+                combined, stats = stitcher.stitch_klines(
+                    htx_df,
+                    binance_df,
+                    stitch_point=point,
+                    symbol=contract,
+                    window_bars=window_bars,
+                )
                 print(f"{contract}: {stats}")
                 overlap_deviation[contract] = {timeframe: stats.get("overlap_deviation", {})}
+                overlap_audit.extend(stats.get("overlap_audit") or [])
                 source_counts[contract] = {
                     "htx_bars": stats.get("htx_bars", 0),
                     "binance_bars": stats.get("binance_bars", 0),
                     "binance_backfill_bars": stats.get("binance_backfill_bars", 0),
                     "overlap_bars": stats.get("overlap_bars", 0),
+                    "non_comparable_bars": stats.get("non_comparable_bars", 0),
                     "total_bars": stats.get("total_bars", 0),
+                    "stitch_point": stats.get("stitch_point", point.isoformat()),
                 }
-                data[contract] = combined
+                data[contract] = apply_bad_ticks(combined, contract, ticks)
             else:
-                data[contract] = htx_df
+                data[contract] = apply_bad_ticks(htx_df, contract, ticks)
         else:
-            data[contract] = htx_df
+            data[contract] = apply_bad_ticks(htx_df, contract, ticks)
     
     if not data:
         print("No data to freeze")
@@ -137,11 +189,28 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     
     dataset_mgr = DatasetManager(workspace / "data" / "datasets")
     
+    extra_metadata = {
+        "stitch_points": used_stitch_points or {
+            contract: stitch_point_for(contract, stitch_points, override=stitch_override).isoformat()
+            for contract in data
+        },
+        "non_comparable_window_bars": window_bars,
+        "bad_ticks_hash": ticks_digest,
+        "default_stitch_point": DEFAULT_STITCH_POINT.isoformat(),
+    }
+    if timeframe == "1day":
+        extra_metadata.update(
+            daily_resample_manifest_fields(daily_cut=args.daily_cut or "UTC00")
+        )
+    else:
+        extra_metadata["daily_cut"] = args.daily_cut
+
     frozen = dataset_mgr.freeze_dataset(
         data,
         timeframe=timeframe,
         train_ratio=args.train_ratio,
         val_ratio=args.val_ratio,
+        extra_metadata=extra_metadata,
     )
     dataset_dir = workspace / "data" / "datasets" / frozen.dataset_id
     if source_counts:
@@ -153,18 +222,20 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         (dataset_dir / "overlap_deviation.json").write_text(
             json.dumps(overlap_deviation, indent=2)
         )
+    write_quality_audit(
+        dataset_dir / "data_quality_audit.json",
+        {
+            "stitch_points": extra_metadata["stitch_points"],
+            "non_comparable_window_bars": window_bars,
+            "bad_ticks_hash": ticks_digest,
+            "overlap_audit": overlap_audit,
+            "known_candidates": KNOWN_CANDIDATES,
+        },
+    )
     from .data.manifest import DatasetManifest
     batch_path = workspace / "data" / "datasets" / "manifests" / f"{frozen.dataset_id}.json"
     if batch_path.exists():
         batch = DatasetManifest.load(batch_path)
-        if timeframe == "1day":
-            batch.metadata.update(
-                daily_resample_manifest_fields(daily_cut=args.daily_cut or "UTC00")
-            )
-        else:
-            batch.metadata["daily_cut"] = args.daily_cut
-        batch.metadata["overlap_deviation"] = overlap_deviation
-        batch.save(batch_path)
         print(f"manifest_hash: {batch.sha256()}")
     
     print(f"Dataset frozen: {frozen.dataset_id}")
@@ -375,6 +446,23 @@ def main() -> None:
     freeze_parser.add_argument("--backfill-binance", action="store_true")
     freeze_parser.add_argument("--overlap-threshold", type=float)
     freeze_parser.add_argument("--daily-cut", choices=["UTC00", "UTC16"])
+    freeze_parser.add_argument(
+        "--stitch-point",
+        default=None,
+        help="ISO UTC stitch instant (default 2020-11-01T00:00:00Z for BTC/ETH)",
+    )
+    freeze_parser.add_argument("--stitch-config", default=None, help="YAML map of symbol -> stitch point")
+    freeze_parser.add_argument(
+        "--non-comparable-window",
+        type=int,
+        default=STITCH_WINDOW_BARS,
+        help="Bars each side of the stitch point marked non_comparable (default 30)",
+    )
+    freeze_parser.add_argument(
+        "--bad-ticks",
+        default=None,
+        help="Versioned bad_ticks.yaml (confirmed rows excluded from signals)",
+    )
     
     run_parser = subparsers.add_parser("run", help="Run backtest")
     run_parser.add_argument("config", help="Path to run config YAML")

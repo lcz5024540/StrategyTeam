@@ -161,6 +161,10 @@ def test_freeze_writes_source_counts(tmp_path):
             "backfill_binance": True,
             "overlap_threshold": 0.003,
             "daily_cut": None,
+            "stitch_point": "2024-06-01T00:00:00Z",
+            "stitch_config": None,
+            "non_comparable_window": 30,
+            "bad_ticks": None,
         },
     )()
     cmd_freeze(args)

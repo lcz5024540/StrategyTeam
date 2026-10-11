@@ -1,0 +1,40 @@
+version: 1
+# Confirmed bad ticks only. A confirmed row (symbol + bar_time [+ optional end_time])
+# is excluded from signals and is part of the dataset manifest hash.
+# Do not auto-promote the ops candidates below.
+ticks: []
+candidates:
+  - symbol: BTC-USDT
+    bar_time: "2020-10-21T00:00:00Z"
+    end_time: "2020-10-27T23:59:59Z"
+    reason: "HTX USDT-M contract launch week"
+    confirmed: false
+  - symbol: ETH-USDT
+    bar_time: "2020-10-21T00:00:00Z"
+    end_time: "2020-10-27T23:59:59Z"
+    reason: "HTX USDT-M contract launch week"
+    confirmed: false
+  - symbol: BTC-USDT
+    bar_time: "2021-02-19T12:00:00Z"
+    reason: "frozen-price bar 12:00 UTC (identical closes on both symbols)"
+    confirmed: false
+  - symbol: BTC-USDT
+    bar_time: "2021-02-19T16:00:00Z"
+    reason: "frozen-price bar 16:00 UTC (identical closes on both symbols)"
+    confirmed: false
+  - symbol: BTC-USDT
+    bar_time: "2021-02-19T20:00:00Z"
+    reason: "frozen-price bar 20:00 UTC (identical closes on both symbols)"
+    confirmed: false
+  - symbol: ETH-USDT
+    bar_time: "2021-02-19T12:00:00Z"
+    reason: "frozen-price bar 12:00 UTC (identical closes on both symbols)"
+    confirmed: false
+  - symbol: ETH-USDT
+    bar_time: "2021-02-19T16:00:00Z"
+    reason: "frozen-price bar 16:00 UTC (identical closes on both symbols)"
+    confirmed: false
+  - symbol: ETH-USDT
+    bar_time: "2021-02-19T20:00:00Z"
+    reason: "frozen-price bar 20:00 UTC (identical closes on both symbols)"
+    confirmed: false

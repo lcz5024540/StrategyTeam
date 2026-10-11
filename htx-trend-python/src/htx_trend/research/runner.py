@@ -355,9 +355,12 @@ class BacktestRunner:
             df = df.copy()
             total_bars = len(df)
             non_comparable_count = df.get("non_comparable", pd.Series([False] * len(df))).sum()
+            bad_tick_count = df.get("bad_tick", pd.Series([False] * len(df))).sum()
             external_count = df.get("external", pd.Series([False] * len(df))).sum()
             if "non_comparable" not in df.columns:
                 df["non_comparable"] = False
+            if "bad_tick" not in df.columns:
+                df["bad_tick"] = False
             if "external" not in df.columns:
                 df["external"] = False
             if "incomplete" in df.columns:
@@ -389,8 +392,9 @@ class BacktestRunner:
                 split=split,
                 total_bars=total_bars,
                 non_comparable=int(non_comparable_count),
+                bad_tick=int(bad_tick_count),
                 external=int(external_count),
-                usable_bars=len(df[~df["non_comparable"]]),
+                usable_bars=len(df[~df["non_comparable"] & ~df["bad_tick"]]),
             )
         return processed_data, frozen
 
@@ -500,7 +504,11 @@ class BacktestRunner:
                 start_idx = 200
             for idx in range(start_idx, len(df)):
                 bar = df.iloc[idx]
-                if bar.get("incomplete", False) or bar.get("non_comparable", False):
+                if (
+                    bar.get("incomplete", False)
+                    or bar.get("non_comparable", False)
+                    or bar.get("bad_tick", False)
+                ):
                     broker.process_next_bar(symbol, bar.to_dict())
                     continue
 

@@ -1,0 +1,4 @@
+version: 1
+# HTX/Binance stitch: Binance-only before this instant, HTX from this instant on.
+BTC-USDT: "2020-11-01T00:00:00Z"
+ETH-USDT: "2020-11-01T00:00:00Z"
