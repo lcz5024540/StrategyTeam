@@ -2,6 +2,13 @@
 run_id: R0001
 parent_run_id: null
 
+# 账户配置（生产环境必需）
+account:
+  account_id: "MAIN"  # HTX MAIN 账户 ID（生产环境填写实际 ID）
+  account_type: "MAIN"  # 只允许 MAIN
+  margin_mode: "cross"  # 只允许 cross
+  # 注：子账户下单将被拒绝
+
 # 实验登记
 registration:
   change: "Initial baseline with C01 Donchian + C02 ATR stop"

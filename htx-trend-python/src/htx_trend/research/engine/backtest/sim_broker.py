@@ -1,4 +1,8 @@
-"""模拟经纪商 - t收盘信号, t+1成交"""
+"""模拟经纪商 - t收盘信号, t+1成交
+
+在回测模式下，账户守卫仅用于配置验证。
+在 PAPER/LIVE 模式下，每次下单前都会验证账户权限。
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from ...account_guard import AccountGuard
 from ...adapters.htx.fees import FeeProvider, FeeRates
 from ..interfaces import Broker, Order, OrderAck
 
@@ -50,12 +55,14 @@ class SimBroker:
         cost_scenario: CostScenario = CostScenario.BASE,
         funding_data: dict[str, Any] | None = None,
         fee_provider: FeeProvider | None = None,
+        account_guard: AccountGuard | None = None,
     ):
         self.initial_equity = initial_equity
         self.equity = initial_equity
         self.cost_scenario = cost_scenario
         self.funding_data = funding_data or {}
         self.fee_provider = fee_provider
+        self.account_guard = account_guard
         
         self.positions: dict[str, SimPosition] = {}
         self.fills: list[Fill] = []
