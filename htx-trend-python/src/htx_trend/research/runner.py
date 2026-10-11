@@ -317,20 +317,31 @@ class BacktestRunner:
         
         state_machines = {symbol: StateMachine() for symbol in data.keys()}
         
-        # 从配置读取条件参数（必须显式传递）
+        # ✅ 移除所有条件默认值（审查报告 080d 第5项）
         c01_config = self.config.get("conditions", {}).get("C01", {})
         if not c01_config.get("enabled", True):
             raise ValueError("C01 must be enabled (required entry condition)")
         
+        if not c01_config.get("periods"):
+            raise ValueError("C01 config missing required field 'periods'")
+        if "threshold" not in c01_config:
+            raise ValueError("C01 config missing required field 'threshold'")
+        
         c01 = C01DonchianEnsemble(
-            periods=c01_config.get("periods", [42, 84, 126, 168]),
-            threshold=c01_config.get("threshold", 0.25),
+            periods=c01_config["periods"],
+            threshold=c01_config["threshold"],
         )
         
         c02_config = self.config.get("conditions", {}).get("C02", {})
+        
+        if "atr_period" not in c02_config:
+            raise ValueError("C02 config missing required field 'atr_period'")
+        if "atr_multiplier" not in c02_config:
+            raise ValueError("C02 config missing required field 'atr_multiplier'")
+        
         c02 = C02ATRStop(
-            atr_period=c02_config.get("atr_period", 14),
-            atr_multiplier=c02_config.get("atr_multiplier", 2.0),
+            atr_period=c02_config["atr_period"],
+            atr_multiplier=c02_config["atr_multiplier"],
         )
         
         all_decisions = []
