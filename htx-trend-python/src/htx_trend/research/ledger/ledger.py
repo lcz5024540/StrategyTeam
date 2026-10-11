@@ -501,6 +501,12 @@ class LedgerManager:
             ).fetchone()
         if not row:
             return None
+        conclusion = row[10]
+        decision = row[11]
+        latest = self.get_latest_conclusion(run_id)
+        if latest:
+            conclusion = latest["conclusion"]
+            decision = latest["decision"]
         return ExperimentRegistration(
             run_id=row[0],
             parent_run_id=row[1],
@@ -512,8 +518,8 @@ class LedgerManager:
             evidence_ref=row[7],
             trial_count=row[8],
             uses_holdout=bool(row[9]),
-            conclusion=row[10],
-            decision=row[11],
+            conclusion=conclusion,
+            decision=decision,
         )
     
     def lock_test_set(

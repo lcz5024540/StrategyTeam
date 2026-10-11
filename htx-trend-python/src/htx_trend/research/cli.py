@@ -224,6 +224,18 @@ def cmd_approve(args: argparse.Namespace) -> None:
     print(f"  Approver: {args.approver}")
 
 
+def cmd_update_conclusion(args: argparse.Namespace) -> None:
+    workspace = Path(args.workspace)
+    ledger = LedgerManager(workspace / "ledger.db")
+    ledger.append_conclusion(
+        run_id=args.run_id,
+        conclusion=args.conclusion,
+        decision=args.decision,
+        created_at=datetime.now(UTC),
+    )
+    print(f"✓ Updated conclusion for {args.run_id}")
+
+
 def cmd_export_trials(args: argparse.Namespace) -> None:
     """导出试验记录供 DSR/PBO 计算。"""
     workspace = Path(args.workspace)
@@ -308,6 +320,13 @@ def main() -> None:
     export_parser.add_argument("--family-id", help="Filter by family_id")
     export_parser.add_argument("--format", choices=["csv", "json"], default="csv")
     export_parser.add_argument("--output", help="Output file path")
+
+    conclusion_parser = subparsers.add_parser("update-conclusion", help="Append conclusion and decision")
+    conclusion_parser.add_argument("--run-id", required=True)
+    conclusion_parser.add_argument("--conclusion", required=True)
+    conclusion_parser.add_argument(
+        "--decision", required=True, choices=["KEEP", "DROP", "INCONCLUSIVE"]
+    )
     
     args = parser.parse_args()
     
@@ -327,6 +346,8 @@ def main() -> None:
         cmd_check_approval(args)
     elif args.command == "export-trials":
         cmd_export_trials(args)
+    elif args.command == "update-conclusion":
+        cmd_update_conclusion(args)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ class ReportGenerator:
         fills: list[dict[str, Any]],
         decisions: pd.DataFrame,
         parent_comparison: dict[str, Any] | None = None,
+        registration: Any | None = None,
     ) -> Path:
         report_path = self.output_dir / "report.md"
         
@@ -32,6 +33,14 @@ class ReportGenerator:
             f.write("```yaml\n")
             f.write(self._format_config(config))
             f.write("```\n\n")
+
+            f.write("## 实验登记\n\n")
+            f.write(self._format_registration(config, registration))
+            f.write("\n\n")
+
+            f.write("## 结论与决策\n\n")
+            f.write(self._format_conclusion(registration))
+            f.write("\n\n")
             
             f.write("## 交易统计\n\n")
             f.write(self._format_trade_stats(fills))
@@ -64,6 +73,46 @@ class ReportGenerator:
         
         return report_path
     
+    def _format_registration(self, config: dict[str, Any], registration: Any | None) -> str:
+        if registration is None:
+            reg = config.get("registration") or {}
+            change = reg.get("change")
+            hypothesis = reg.get("hypothesis")
+            expected_effect = reg.get("expected_effect")
+            evidence_ref = reg.get("evidence_ref")
+            keep_rule = reg.get("keep_rule")
+            drop_rule = reg.get("drop_rule")
+            trial_count = reg.get("trial_count")
+            uses_holdout = config.get("split") == "test"
+        else:
+            change = registration.change
+            hypothesis = registration.hypothesis
+            expected_effect = registration.expected_effect
+            evidence_ref = registration.evidence_ref
+            keep_rule = registration.keep_rule
+            drop_rule = registration.drop_rule
+            trial_count = registration.trial_count
+            uses_holdout = registration.uses_holdout
+        return (
+            f"- change: {change}\n"
+            f"- hypothesis: {hypothesis}\n"
+            f"- expected_effect: {expected_effect}\n"
+            f"- evidence_ref: {evidence_ref}\n"
+            f"- keep_rule: {keep_rule}\n"
+            f"- drop_rule: {drop_rule}\n"
+            f"- trial_count: {trial_count}\n"
+            f"- uses_holdout: {uses_holdout}\n"
+        )
+
+    def _format_conclusion(self, registration: Any | None) -> str:
+        conclusion = getattr(registration, "conclusion", None) if registration else None
+        decision = getattr(registration, "decision", None) if registration else None
+        return (
+            f"- conclusion: {conclusion}\n"
+            f"- decision: {decision}\n"
+            f"- note: Fill via CLI: update-conclusion --run-id {self.run_id}\n"
+        )
+
     def _format_config(self, config: dict[str, Any]) -> str:
         import yaml
         return yaml.dump(config, default_flow_style=False, allow_unicode=True)
@@ -152,13 +201,16 @@ class ReportGenerator:
     def _format_comparison(self, comparison: dict[str, Any]) -> str:
         parent_id = comparison.get("parent_run_id", "unknown")
         
+        pct = comparison.get("pct_change")
+        pct_line = f"- 百分比变化: {pct:.2f}%\n" if pct is not None else "- 百分比变化: N/A\n"
         return f"""
 父运行: {parent_id}
 
-变化点: {comparison.get('change', 'N/A')}
+变化点: {comparison.get('changed_key') or comparison.get('change', 'N/A')}
 
 指标对比:
 - 当前PnL: ${comparison.get('current_pnl', 0):.2f}
 - 父运行PnL: ${comparison.get('parent_pnl', 0):.2f}
 - 差值: ${comparison.get('pnl_diff', 0):.2f}
+{pct_line}
 """

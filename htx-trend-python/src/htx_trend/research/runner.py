@@ -615,21 +615,35 @@ class BacktestRunner:
         
         generator = ReportGenerator(self.run_id, output_dir)
         
+        registration = self.ledger.get_registration(self.run_id)
+
         parent_comparison = None
-        if self.config.get("parent_run_id"):
-            parent_run = self.ledger.get_run(self.config["parent_run_id"])
+        parent_run_id = self.config.get("parent_run_id")
+        if parent_run_id:
+            parent_run = self.ledger.get_run(parent_run_id)
             if parent_run:
+                current_pnl = results["final_equity"] - results["initial_equity"]
+                parent_metrics = parent_run.metrics or {}
+                parent_pnl = float(parent_metrics.get("total_pnl", 0.0))
+                pnl_diff = current_pnl - parent_pnl
+                pct_change = (
+                    (pnl_diff / abs(parent_pnl) * 100.0) if parent_pnl != 0 else None
+                )
                 parent_comparison = {
                     "parent_run_id": parent_run.run_id,
+                    "changed_key": self._changed_key
+                    or self.config.get("registration", {}).get("change", "N/A"),
                     "change": self.config.get("registration", {}).get("change", "N/A"),
-                    "current_pnl": results["final_equity"] - results["initial_equity"],
-                    "parent_pnl": 0,
-                    "pnl_diff": 0,
+                    "current_pnl": current_pnl,
+                    "parent_pnl": parent_pnl,
+                    "pnl_diff": pnl_diff,
+                    "pct_change": pct_change,
                 }
-        
+
         return generator.generate_report(
             config=self.config,
             fills=fills_data,
             decisions=decisions_df,
             parent_comparison=parent_comparison,
+            registration=registration,
         )
