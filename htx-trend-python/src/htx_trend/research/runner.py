@@ -24,6 +24,7 @@ from .engine.contract_value import coin_notional, periods_per_year, require_cont
 from .engine.interfaces import Order
 from .ops.stable_hash import stable_frame_hash
 from .features import attach_funding_as_of, compute_all_features
+from .features.funding_asof import apply_bar_settlements
 from .features.indicators import FeatureCalculator, lift_valid_indicator, valid_feature_frame
 from .context import compute_regime_labels
 from .ledger import ExperimentRegistration, LedgerManager, RunRecord
@@ -353,6 +354,7 @@ class BacktestRunner:
 
         processed_data = {}
         self._funding_missing = []
+        self._funding_by_symbol: dict[str, pd.DataFrame] = {}
         for symbol, df in data.items():
             df = df.copy()
             total_bars = len(df)
@@ -372,7 +374,9 @@ class BacktestRunner:
             allow_missing_funding = bool(self.config.get("allow_missing_funding", False))
             if funding_path.exists():
                 interval = frozen.timeframe if getattr(frozen, "timeframe", None) else "4hour"
-                df = attach_funding_as_of(df, pd.read_parquet(funding_path), interval)
+                funding_df = pd.read_parquet(funding_path)
+                self._funding_by_symbol[symbol] = funding_df
+                df = attach_funding_as_of(df, funding_df, interval)
             elif allow_missing_funding:
                 self._funding_missing.append(symbol)
             else:
@@ -514,6 +518,7 @@ class BacktestRunner:
 
         state_machines = {symbol: StateMachine() for symbol in data}
         all_decisions = []
+        interval = frozen.timeframe if getattr(frozen, "timeframe", None) else "4hour"
 
         for symbol, df in data.items():
             log_event(LogComponent.ENGINE, f"Processing symbol: {symbol}", bars=len(df))
@@ -546,12 +551,16 @@ class BacktestRunner:
                 else:
                     allow_entry_fills = True
                     allow_exit_fills = True
+                bar_payload = bar.to_dict()
                 broker.process_next_bar(
                     symbol,
-                    bar.to_dict(),
+                    bar_payload,
                     allow_entry_fills=allow_entry_fills,
                     allow_exit_fills=allow_exit_fills,
                 )
+                funding_df = getattr(self, "_funding_by_symbol", {}).get(symbol)
+                if funding_df is not None:
+                    apply_bar_settlements(broker, symbol, bar_payload, interval, funding_df)
                 if skip_signals and not check_stop:
                     continue
 
@@ -768,9 +777,6 @@ class BacktestRunner:
                         decision_record["action"] = "CONFIRM_EXIT"
                         decision_record["position_id"] = position_id
 
-                if "funding_rate" in getattr(bar, "index", []) and pd.notna(bar["funding_rate"]):
-                    broker.apply_funding(symbol, float(bar["funding_rate"]))
-
                 all_decisions.append(decision_record)
 
         decisions_df = pd.DataFrame(all_decisions)
@@ -784,6 +790,7 @@ class BacktestRunner:
             "initial_equity": initial_equity,
             "fee_rates_used": fee_rates_record,
             "funding_missing": list(getattr(self, "_funding_missing", [])),
+            "funding_events": list(broker.funding_events),
         }
 
     def _fills_frame(self, fills: list[Any]) -> pd.DataFrame:

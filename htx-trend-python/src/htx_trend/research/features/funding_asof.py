@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from typing import Any
+
 from ..data.immutable_storage import _parse_interval_seconds
 
 
@@ -50,3 +52,59 @@ def attach_funding_as_of(
             raise AssertionError("Funding as-of leaked a settlement after bar close")
         merged = merged.drop(columns=["_funding_time"])
     return merged.drop(columns=["_bar_close"]).reset_index(drop=True)
+
+
+def _utc_ts(value) -> pd.Timestamp:
+    stamp = pd.Timestamp(value)
+    if stamp.tzinfo is None:
+        return stamp.tz_localize("UTC")
+    return stamp.tz_convert("UTC")
+
+
+def bar_close_time(bar_open, interval: str) -> pd.Timestamp:
+    return _utc_ts(bar_open) + pd.Timedelta(seconds=_parse_interval_seconds(interval))
+
+
+def settlements_in_bar(
+    funding: pd.DataFrame,
+    bar_open,
+    bar_close,
+) -> pd.DataFrame:
+    """Return history rows whose own settlement timestamp is in (bar_open, bar_close].
+
+    Times come only from the frozen funding records. No 8h (or any) schedule is assumed.
+    """
+    columns = ["funding_time", "funding_rate"]
+    if funding is None or funding.empty:
+        return pd.DataFrame(columns=columns)
+    fund = funding.copy()
+    time_col = "funding_time" if "funding_time" in fund.columns else "bar_time"
+    times = pd.to_datetime(fund[time_col], utc=True)
+    open_ts = _utc_ts(bar_open)
+    close_ts = _utc_ts(bar_close)
+    mask = (times > open_ts) & (times <= close_ts)
+    rows = fund.loc[mask].copy()
+    if rows.empty:
+        return pd.DataFrame(columns=columns)
+    rows["funding_time"] = pd.to_datetime(rows[time_col], utc=True)
+    return rows[columns].sort_values("funding_time").reset_index(drop=True)
+
+
+def apply_bar_settlements(
+    broker: Any,
+    symbol: str,
+    bar: dict,
+    interval: str,
+    funding: pd.DataFrame,
+) -> None:
+    """Charge each settlement in this bar if a position is open after open fills."""
+    bar_open = bar["bar_time"]
+    bar_close = bar_close_time(bar_open, interval)
+    mark = float(bar["close"])
+    for item in settlements_in_bar(funding, bar_open, bar_close).itertuples(index=False):
+        broker.apply_funding(
+            symbol,
+            float(item.funding_rate),
+            mark_price=mark,
+            settlement_time=item.funding_time,
+        )

@@ -79,6 +79,7 @@ class SimBroker:
 
         self.positions: dict[str, SimPosition] = {}
         self.fills: list[Fill] = []
+        self.funding_events: list[dict[str, Any]] = []
         self.pending_orders: list[tuple[Order, datetime]] = []
 
         self.fee_rates_used: dict[str, FeeRates] = {}
@@ -224,18 +225,33 @@ class SimBroker:
             ) * direction
         return acks
 
-    def apply_funding(self, symbol: str, funding_rate: float) -> None:
+    def apply_funding(
+        self,
+        symbol: str,
+        funding_rate: float,
+        mark_price: float | None = None,
+        settlement_time: Any = None,
+    ) -> None:
         if symbol not in self.positions:
             return
         position = self.positions[symbol]
-        notional = coin_notional(
-            position.entry_price, position.size, position.contract_size, symbol
-        )
+        price = float(mark_price) if mark_price is not None else position.entry_price
+        notional = coin_notional(price, position.size, position.contract_size, symbol)
         payment = notional * funding_rate
         if position.side == "LONG":
             position.accumulated_funding += payment
         else:
             position.accumulated_funding -= payment
+        self.funding_events.append(
+            {
+                "symbol": symbol,
+                "funding_rate": float(funding_rate),
+                "payment": payment,
+                "notional": notional,
+                "mark_price": price,
+                "settlement_time": settlement_time,
+            }
+        )
 
     def get_positions(self) -> list[dict[str, Any]]:
         return [

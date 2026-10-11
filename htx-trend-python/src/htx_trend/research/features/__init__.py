@@ -7,7 +7,7 @@ from .daily_resample import (
     resample_4h_to_daily,
     resample_4h_to_daily_utc00,
 )
-from .funding_asof import attach_funding_as_of
+from .funding_asof import apply_bar_settlements, attach_funding_as_of, settlements_in_bar
 
 # 向后兼容旧测试
 from ..legacy_features import donchian, performance, regression_slope
@@ -20,6 +20,8 @@ __all__ = [
     "resample_4h_to_daily",
     "resample_4h_to_daily_utc00",
     "attach_funding_as_of",
+    "apply_bar_settlements",
+    "settlements_in_bar",
     "donchian",
     "performance",
     "regression_slope",
