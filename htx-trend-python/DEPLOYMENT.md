@@ -4,6 +4,37 @@
 **Service Type**: Standalone Python Application  
 **Trading Platform**: HTX (Huobi)
 
+## 标准部署路径
+
+- **部署目录**: `/opt/coinstrategy/htx-trend-py`
+- **用户**: `ubuntu`（可配置，见下方「自定义用户」）
+- **数据目录**: `/opt/coinstrategy/htx-trend-py/data`
+- **日志目录**: `/opt/coinstrategy/htx-trend-py/logs`
+- **状态文件**: `/opt/coinstrategy/htx-trend-py/status.json`
+- **Heartbeat**: `/opt/coinstrategy/htx-trend-py/heartbeat.txt`
+- **采集状态**: `/opt/coinstrategy/htx-trend-py/collector_state.json`
+
+统一 systemd unit 位于仓库 `systemd/`：
+
+- `htx-trend-collector.service`
+- `htx-trend-heartbeat.service`
+
+```bash
+sudo mkdir -p /opt/coinstrategy/htx-trend-py/{data,logs}
+sudo chown -R ubuntu:ubuntu /opt/coinstrategy/htx-trend-py
+sudo cp systemd/*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now htx-trend-collector htx-trend-heartbeat
+```
+
+### 自定义用户
+
+如需使用非 `ubuntu` 用户：
+
+1. 修改 systemd unit 中的 `User=` 和 `Group=`
+2. 修改部署目录权限
+3. `sudo systemctl daemon-reload`
+
 ---
 
 ## ⚠️ Critical Deployment Notes

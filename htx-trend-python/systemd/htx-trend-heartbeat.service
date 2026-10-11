@@ -1,0 +1,29 @@
+[Unit]
+Description=HTX Trend Research Heartbeat Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/coinstrategy/htx-trend-py
+Environment="PYTHONPATH=/opt/coinstrategy/htx-trend-py/src"
+
+ReadWritePaths=/opt/coinstrategy/htx-trend-py/data
+ReadWritePaths=/opt/coinstrategy/htx-trend-py/logs
+ReadWritePaths=/opt/coinstrategy/htx-trend-py/status.json
+ReadWritePaths=/opt/coinstrategy/htx-trend-py/heartbeat.txt
+
+ExecStart=/usr/bin/python3 -m htx_trend.research.ops.heartbeat \
+    --interval 60 \
+    --file /opt/coinstrategy/htx-trend-py/heartbeat.txt
+
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=htx-trend-heartbeat
+
+[Install]
+WantedBy=multi-user.target

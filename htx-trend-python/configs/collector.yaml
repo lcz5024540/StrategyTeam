@@ -1,0 +1,15 @@
+collector:
+  symbols:
+    - BTC-USDT
+    - ETH-USDT
+  intervals:
+    - 4hour
+    - 1day
+  poll_interval_seconds: 300
+  storage:
+    base_path: /opt/coinstrategy/htx-trend-py/data/klines
+  state:
+    file_path: /opt/coinstrategy/htx-trend-py/collector_state.json
+  htx:
+    api_base_url: https://api.huobi.pro
+    rate_limit_requests_per_second: 10

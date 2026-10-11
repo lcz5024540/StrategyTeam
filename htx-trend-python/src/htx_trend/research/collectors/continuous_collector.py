@@ -72,6 +72,7 @@ class ContinuousCollector:
         self.state_file = state_file
         self.symbols = symbols
         self.interval = interval
+        self.intervals = [interval]
         self.collection_interval = collection_interval_seconds
         
         self.storage = ImmutableKlineStorage(storage_dir)
@@ -80,6 +81,36 @@ class ContinuousCollector:
         
         # 加载状态
         self._load_state()
+
+    @classmethod
+    def from_config(cls, config_path: Path) -> "ContinuousCollector":
+        import yaml
+
+        with open(config_path) as f:
+            raw = yaml.safe_load(f) or {}
+        cfg = raw.get("collector", raw)
+        symbols = cfg.get("symbols")
+        intervals = cfg.get("intervals")
+        if not symbols:
+            raise ValueError("Config missing 'collector.symbols'")
+        if not intervals:
+            raise ValueError("Config missing 'collector.intervals'")
+        if "1day" not in intervals and "1d" not in intervals:
+            raise ValueError(
+                "Collector must support 1day interval. "
+                "Add '1day' to collector.intervals in config."
+            )
+        storage_cfg = cfg.get("storage") or {}
+        state_cfg = cfg.get("state") or {}
+        inst = cls(
+            storage_dir=Path(storage_cfg.get("base_path", "./data/klines")),
+            state_file=Path(state_cfg.get("file_path", "./collector_state.json")),
+            symbols=list(symbols),
+            interval=str(intervals[0]),
+            collection_interval_seconds=int(cfg.get("poll_interval_seconds", 300)),
+        )
+        inst.intervals = [str(item) for item in intervals]
+        return inst
     
     def _load_state(self) -> None:
         """从状态文件加载断点信息"""
@@ -513,21 +544,27 @@ async def main() -> None:
     import argparse
     
     parser = argparse.ArgumentParser(description="HTX Continuous Kline Collector")
-    parser.add_argument("--storage-dir", type=Path, required=True, help="Storage directory")
-    parser.add_argument("--state-file", type=Path, required=True, help="State file path")
-    parser.add_argument("--symbols", nargs="+", required=True, help="Symbols to collect")
+    parser.add_argument("--config", type=Path, help="Collector YAML config")
+    parser.add_argument("--storage-dir", type=Path, help="Storage directory")
+    parser.add_argument("--state-file", type=Path, help="State file path")
+    parser.add_argument("--symbols", nargs="+", help="Symbols to collect")
     parser.add_argument("--interval", default="4h", help="Kline interval")
     parser.add_argument("--collection-interval", type=int, default=300, help="Collection interval (seconds)")
     
     args = parser.parse_args()
-    
-    collector = ContinuousCollector(
-        storage_dir=args.storage_dir,
-        state_file=args.state_file,
-        symbols=args.symbols,
-        interval=args.interval,
-        collection_interval_seconds=args.collection_interval,
-    )
+
+    if args.config:
+        collector = ContinuousCollector.from_config(args.config)
+    else:
+        if not args.storage_dir or not args.state_file or not args.symbols:
+            parser.error("--storage-dir, --state-file and --symbols are required without --config")
+        collector = ContinuousCollector(
+            storage_dir=args.storage_dir,
+            state_file=args.state_file,
+            symbols=args.symbols,
+            interval=args.interval,
+            collection_interval_seconds=args.collection_interval,
+        )
     
     # 信号处理
     def signal_handler(sig, frame):

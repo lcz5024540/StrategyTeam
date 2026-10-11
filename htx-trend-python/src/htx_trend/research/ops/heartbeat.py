@@ -177,3 +177,21 @@ def check_health(
                 is_healthy = False
 
     return is_healthy, details
+
+
+def _cli_heartbeat_loop() -> None:
+    import argparse
+    import time
+
+    parser = argparse.ArgumentParser(description="HTX Trend heartbeat writer")
+    parser.add_argument("--interval", type=int, default=60)
+    parser.add_argument("--file", type=Path, required=True)
+    args = parser.parse_args()
+    args.file.parent.mkdir(parents=True, exist_ok=True)
+    while True:
+        args.file.write_text(datetime.now(UTC).isoformat() + "\n")
+        time.sleep(args.interval)
+
+
+if __name__ == "__main__":
+    _cli_heartbeat_loop()

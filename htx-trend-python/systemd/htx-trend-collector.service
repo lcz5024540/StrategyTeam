@@ -1,49 +1,29 @@
 [Unit]
-Description=HTX Trend Continuous Kline Collector
-After=network-online.target
-Wants=network-online.target
+Description=HTX Trend Research Kline Collector
+After=network.target
 
 [Service]
 Type=simple
-User=htx-trend
-Group=htx-trend
-WorkingDirectory=/opt/htx-trend-python
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/coinstrategy/htx-trend-py
+Environment="PYTHONPATH=/opt/coinstrategy/htx-trend-py/src"
 
-# 采集器进程
-ExecStart=/opt/htx-trend-python/venv/bin/python -m htx_trend.research.collectors.continuous_collector \
-    --storage-dir /var/lib/htx-trend/klines \
-    --state-file /var/lib/htx-trend/collector-state.json \
-    --symbols BTC-USDT ETH-USDT \
-    --interval 4h \
-    --collection-interval 300
+ReadWritePaths=/opt/coinstrategy/htx-trend-py/data
+ReadWritePaths=/opt/coinstrategy/htx-trend-py/logs
+ReadWritePaths=/opt/coinstrategy/htx-trend-py/status.json
+ReadWritePaths=/opt/coinstrategy/htx-trend-py/heartbeat.txt
+ReadWritePaths=/opt/coinstrategy/htx-trend-py/collector_state.json
 
-# 重启策略（失败后自动重启）
-Restart=on-failure
-RestartSec=10s
-StartLimitInterval=5min
-StartLimitBurst=3
+ExecStart=/usr/bin/python3 -m htx_trend.research.collectors.continuous_collector \
+    --config /opt/coinstrategy/htx-trend-py/configs/collector.yaml
 
-# 资源限制
-MemoryMax=1G
-CPUQuota=50%
+Restart=always
+RestartSec=10
 
-# 日志
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=htx-trend-collector
-
-# 优雅停止
-TimeoutStopSec=30s
-KillMode=mixed
-KillSignal=SIGTERM
-
-# 安全加固
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/lib/htx-trend
-ReadOnlyPaths=/opt/htx-trend-python
 
 [Install]
 WantedBy=multi-user.target
