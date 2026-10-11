@@ -1,8 +1,9 @@
 """数据拼接器 - 合并 HTX 和 Binance 数据并检查偏差
 
 1d 不直接拼接原生日线：HTX 1d 开在 16:00 UTC，Binance 1d 开在 00:00 UTC。
-规范 1d 一律由已对齐的 4h 按 UTC 00:00 重采样（daily_resample v1.0.0）。
-原生 HTX 1d 只保存，不进入信号。
+规范 1d 一律由已对齐的 4h 按可配置 daily_cut（UTC00 默认 / UTC16）重采样
+（daily_resample v1.0.0）。原生 HTX 1d 只保存，不进入信号。各源分开重采样，
+禁止把 Binance 与 HTX 的 4h 混进同一根日线。
 """
 
 from __future__ import annotations

@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .data import DataCollector, DatasetManager, DataStitcher
+from .features.daily_resample import daily_resample_manifest_fields
 from .ledger import Approval, ApprovalDecision, ApprovalGate, LedgerManager
 from .ops import HeartbeatManager, get_status
 from .ops.heartbeat import check_health as check_system_health
@@ -92,6 +93,9 @@ def cmd_freeze(args: argparse.Namespace) -> None:
             )
             print(f"{contract} canonical 1d (daily_cut={args.daily_cut or 'UTC00'}): {stats}")
             overlap_deviation[contract] = {"1day": stats.get("overlap_deviation", {})}
+            if combined.empty:
+                print(f"{contract}: no complete daily bars after resample, skipping")
+                continue
             data[contract] = combined
         elif args.backfill_binance:
             binance_symbol = contract.replace("-", "")
@@ -129,10 +133,13 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     batch_path = workspace / "data" / "datasets" / "manifests" / f"{frozen.dataset_id}.json"
     if batch_path.exists():
         batch = DatasetManifest.load(batch_path)
-        batch.metadata.update({
-            "daily_cut": args.daily_cut or ("UTC00" if timeframe == "1day" else None),
-            "overlap_deviation": overlap_deviation,
-        })
+        if timeframe == "1day":
+            batch.metadata.update(
+                daily_resample_manifest_fields(daily_cut=args.daily_cut or "UTC00")
+            )
+        else:
+            batch.metadata["daily_cut"] = args.daily_cut
+        batch.metadata["overlap_deviation"] = overlap_deviation
         batch.save(batch_path)
         print(f"manifest_hash: {batch.sha256()}")
     

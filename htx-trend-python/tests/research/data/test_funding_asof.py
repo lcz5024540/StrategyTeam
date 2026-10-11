@@ -50,3 +50,44 @@ def test_funding_after_bar_close_is_not_used():
     )
     out = attach_funding_as_of(bars, funding, "4hour")
     assert pd.isna(out.loc[0, "funding_rate"])
+
+
+def test_runner_attaches_funding_as_of_bar_close(tmp_path, monkeypatch):
+    from htx_trend.research.features.funding_asof import attach_funding_as_of as real_attach
+    from tests.research.helpers import create_test_dataset, runner_config, write_runner
+
+    seen = {}
+
+    def _wrap(bars, funding, interval):
+        out = real_attach(bars, funding, interval)
+        seen["interval"] = interval
+        seen["rates"] = list(out["funding_rate"])
+        return out
+
+    monkeypatch.setattr(
+        "htx_trend.research.runner.attach_funding_as_of", _wrap
+    )
+    create_test_dataset(tmp_path, "fund-asof", n_bars=48, symbols=["BTC-USDT"])
+    funding = pd.DataFrame(
+        {
+            "funding_time": [
+                pd.Timestamp("2024-01-01 00:00", tz="UTC"),
+                pd.Timestamp("2024-01-01 04:00", tz="UTC"),
+                pd.Timestamp("2099-01-01 00:00", tz="UTC"),
+            ],
+            "funding_rate": [0.001, 0.002, 0.5],
+        }
+    )
+    funding.to_parquet(tmp_path / "data" / "raw" / "BTC-USDT_funding.parquet", index=False)
+    runner = write_runner(
+        tmp_path,
+        runner_config(
+            tmp_path,
+            "FUND1",
+            "fund-asof",
+            symbols=["BTC-USDT"],
+        ),
+    )
+    runner.run()
+    assert seen["interval"] == "4hour"
+    assert 0.5 not in {float(x) for x in seen["rates"] if pd.notna(x)}

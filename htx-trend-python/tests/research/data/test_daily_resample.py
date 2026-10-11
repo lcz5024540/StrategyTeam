@@ -114,3 +114,98 @@ def test_manifest_records_daily_cut_and_versioned_feature():
     assert fields["daily_resample"]["version"] == DAILY_RESAMPLE_FEATURE["version"]
     assert fields["htx_native_1d_used_for_signals"] is False
     assert fields["htx_detected_daily_open_hour"] == 16
+
+
+def _write_raw_klines(workspace, contract, interval, times, source="htx"):
+    raw = workspace / "data" / "raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    df = _bars(times, source=source)
+    suffix = "binance" if source == "binance" else "htx"
+    symbol = contract.replace("-", "") if source == "binance" else contract
+    interval_name = {"4hour": "4h", "1day": "1d"}.get(interval, interval) if source == "binance" else interval
+    df.to_parquet(raw / f"{symbol}_{interval_name}_{suffix}.parquet", index=False)
+
+
+def test_freeze_1day_writes_daily_cut_and_resample_to_manifest(tmp_path):
+    from argparse import Namespace
+
+    from htx_trend.research.cli import cmd_freeze
+    from htx_trend.research.data.manifest import DatasetManifest
+
+    times = [
+        pd.Timestamp("2024-01-01 16:00", tz="UTC"),
+        pd.Timestamp("2024-01-01 20:00", tz="UTC"),
+        pd.Timestamp("2024-01-02 00:00", tz="UTC"),
+        pd.Timestamp("2024-01-02 04:00", tz="UTC"),
+        pd.Timestamp("2024-01-02 08:00", tz="UTC"),
+        pd.Timestamp("2024-01-02 12:00", tz="UTC"),
+    ]
+    _write_raw_klines(tmp_path, "BTC-USDT", "4hour", times, "htx")
+    _write_raw_klines(
+        tmp_path,
+        "BTC-USDT",
+        "1day",
+        [pd.Timestamp("2024-01-01 16:00", tz="UTC")],
+        "htx",
+    )
+    cmd_freeze(
+        Namespace(
+            workspace=str(tmp_path),
+            contracts="BTC-USDT",
+            timeframe="1day",
+            train_ratio=0.6,
+            val_ratio=0.2,
+            backfill_binance=False,
+            overlap_threshold=None,
+            daily_cut="UTC16",
+        )
+    )
+    manifests = list((tmp_path / "data" / "datasets" / "manifests").glob("*.json"))
+    assert len(manifests) == 1
+    batch = DatasetManifest.load(manifests[0])
+    assert batch.metadata["daily_cut"] == "UTC16"
+    assert batch.metadata["daily_resample"]["name"] == "daily_resample"
+    assert batch.metadata["daily_resample"]["version"] == DAILY_RESAMPLE_FEATURE["version"]
+    assert batch.metadata["daily_resample"]["daily_cut"] == "UTC16"
+    assert batch.metadata["htx_native_1d_used_for_signals"] is False
+
+
+def test_freeze_1day_excludes_incomplete_and_does_not_cross_source_resample(tmp_path):
+    from argparse import Namespace
+
+    from htx_trend.research.cli import cmd_freeze
+
+    incomplete = pd.date_range("2024-01-03 00:00", periods=4, freq="4h", tz="UTC")
+    htx_mix = pd.date_range("2024-01-02 00:00", periods=3, freq="4h", tz="UTC")
+    bn_mix = pd.date_range("2024-01-02 12:00", periods=3, freq="4h", tz="UTC")
+    _write_raw_klines(
+        tmp_path, "BTC-USDT", "4hour", list(htx_mix) + list(incomplete), "htx"
+    )
+    _write_raw_klines(tmp_path, "BTC-USDT", "4hour", list(bn_mix), "binance")
+    _write_raw_klines(
+        tmp_path,
+        "BTC-USDT",
+        "1day",
+        [pd.Timestamp("2024-01-01 16:00", tz="UTC")],
+        "htx",
+    )
+    cmd_freeze(
+        Namespace(
+            workspace=str(tmp_path),
+            contracts="BTC-USDT",
+            timeframe="1day",
+            train_ratio=0.6,
+            val_ratio=0.2,
+            backfill_binance=True,
+            overlap_threshold=0.003,
+            daily_cut="UTC00",
+        )
+    )
+    datasets_root = tmp_path / "data" / "datasets"
+    datasets = [
+        path
+        for path in datasets_root.iterdir()
+        if path.is_dir() and path.name != "manifests"
+    ] if datasets_root.exists() else []
+    assert datasets == []
+    assert not (tmp_path / "data" / "datasets" / "manifests").exists()
