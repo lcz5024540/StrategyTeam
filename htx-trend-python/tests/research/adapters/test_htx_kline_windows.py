@@ -278,3 +278,36 @@ def test_funding_pagination_stops_after_consecutive_empty_pages():
     )
     assert len(rates) == 1
     assert seen["n"] == 3
+
+
+def test_funding_pagination_continues_until_exhausted():
+    """BTC-USDT has ~131 pages / 6544 rows; default must not stop at 20 pages."""
+    client = HtxMarketDataClient()
+    page_count = 25
+    per_page = 2
+    seen = {"n": 0}
+
+    def funding_history(contract_code, page_size=50, page_index=1):
+        seen["n"] += 1
+        if page_index > page_count:
+            return []
+        base = END_TS - (page_index - 1) * 8 * 3600 * per_page
+        return [
+            {
+                "symbol": "BTC-USDT",
+                "funding_time": (base - i * 8 * 3600) * 1000,
+                "funding_rate": "0.0001",
+            }
+            for i in range(per_page)
+        ]
+
+    client.client.funding_history = funding_history
+    rates = client.fetch_funding_history_paginated(
+        "BTC-USDT",
+        page_size=50,
+        page_sleep=0,
+    )
+    assert seen["n"] == page_count + 2
+    assert len(rates) == page_count * per_page
+    earliest = min(row.funding_time for row in rates)
+    assert earliest < datetime(2024, 1, 1, tzinfo=UTC)

@@ -140,6 +140,34 @@ def test_charges_follow_history_when_frequency_changes_8h_to_4h():
     assert broker.positions["BTC-USDT"].accumulated_funding == pytest.approx(expected)
 
 
+def test_short_with_positive_rate_receives_funding():
+    broker = _broker()
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    broker.submit_order(Order(symbol="BTC-USDT", side="SHORT", size=1, order_type="MARKET"))
+    broker.process_next_bar(
+        "BTC-USDT",
+        {"open": PRICE, "high": PRICE, "low": PRICE, "close": PRICE, "bar_time": start},
+    )
+    expected = coin_notional(PRICE, 1, CS, "BTC-USDT") * RATE
+    broker.apply_funding("BTC-USDT", RATE, mark_price=PRICE)
+    pos = broker.positions["BTC-USDT"]
+    assert pos.side == "SHORT"
+    assert pos.accumulated_funding == pytest.approx(-expected)
+    broker.submit_order(Order(symbol="BTC-USDT", side="LONG", size=1, order_type="MARKET"))
+    broker.process_next_bar(
+        "BTC-USDT",
+        {
+            "open": PRICE,
+            "high": PRICE,
+            "low": PRICE,
+            "close": PRICE,
+            "bar_time": start + timedelta(hours=8),
+        },
+    )
+    assert broker.equity == pytest.approx(10_000.0 + expected)
+    assert broker.fills[-1].funding == pytest.approx(-expected)
+
+
 def test_flat_at_settlement_is_not_charged():
     start = datetime(2024, 1, 1, tzinfo=UTC)
     funding = _funding_day(start)

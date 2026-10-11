@@ -112,7 +112,7 @@ class DatasetManager:
             "total_bars": total_bars,
         }
         if extra_metadata:
-            for key in ("stitch_points", "bad_ticks_hash"):
+            for key in ("stitch_points", "bad_ticks_hash", "funding_sources"):
                 if key in extra_metadata:
                     manifest[key] = extra_metadata[key]
         

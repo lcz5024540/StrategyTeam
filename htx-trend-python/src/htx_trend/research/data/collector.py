@@ -177,30 +177,54 @@ class DataCollector:
 
         return df
 
-    def collect_funding_history(self, contract_code: str) -> pd.DataFrame:
+    def collect_funding_history(
+        self,
+        contract_code: str,
+        client: HtxMarketDataClient | None = None,
+        binance_client: BinanceVisionClient | None = None,
+        stitch_point: datetime | None = None,
+    ) -> pd.DataFrame:
         log_event(
             LogComponent.DATA,
             f"Collecting funding history: {contract_code}",
             contract=contract_code,
         )
 
-        with HtxMarketDataClient() as client:
-            rates = client.fetch_funding_history(contract_code, page_size=200)
+        owned = client is None
+        market = client or HtxMarketDataClient()
+        try:
+            rates = market.fetch_funding_history_paginated(
+                contract_code,
+                page_size=50,
+                page_sleep=0.2 if owned else 0.0,
+            )
+        finally:
+            if owned:
+                market.close()
 
-        if not rates:
-            return pd.DataFrame()
+        htx_df = _funding_frame(rates, contract_code, default_source="htx")
+        if stitch_point is not None:
+            owned_bn = binance_client is None
+            vision = binance_client or BinanceVisionClient()
+            try:
+                bn_symbol = contract_code.replace("-", "")
+                bn_rates = vision.download_funding_history(
+                    bn_symbol,
+                    BINANCE_VISION_START,
+                    stitch_point,
+                )
+            finally:
+                if owned_bn:
+                    vision.close()
+            bn_df = _funding_frame(
+                bn_rates, contract_code, default_source="binance_external"
+            )
+            df = stitch_funding_history(htx_df, bn_df, stitch_point)
+        else:
+            df = htx_df
 
-        df = pd.DataFrame(
-            [
-                {
-                    "symbol": r.symbol,
-                    "funding_time": r.funding_time,
-                    "funding_rate": r.funding_rate,
-                    "realized_rate": r.realized_rate,
-                }
-                for r in rates
-            ]
-        )
+        if df.empty:
+            return df
 
         output_path = self.raw_data_dir / f"{contract_code}_funding.parquet"
         df.to_parquet(output_path, index=False)
@@ -248,3 +272,80 @@ class DataCollector:
         )
 
         return spec_dict
+
+
+def _funding_frame(
+    rates,
+    contract_code: str,
+    default_source: str,
+) -> pd.DataFrame:
+    if not rates:
+        return pd.DataFrame(
+            columns=["symbol", "funding_time", "funding_rate", "realized_rate", "source"]
+        )
+    return pd.DataFrame(
+        [
+            {
+                "symbol": contract_code,
+                "funding_time": row.funding_time,
+                "funding_rate": row.funding_rate,
+                "realized_rate": getattr(row, "realized_rate", None),
+                "source": getattr(row, "source", None) or default_source,
+            }
+            for row in rates
+        ]
+    )
+
+
+def stitch_funding_history(
+    htx: pd.DataFrame,
+    binance: pd.DataFrame,
+    stitch_point: datetime,
+) -> pd.DataFrame:
+    stitch = pd.Timestamp(stitch_point)
+    if stitch.tzinfo is None:
+        stitch = stitch.tz_localize("UTC")
+    else:
+        stitch = stitch.tz_convert("UTC")
+
+    frames = []
+    if binance is not None and not binance.empty:
+        bn = binance.copy()
+        bn["funding_time"] = pd.to_datetime(bn["funding_time"], utc=True)
+        if "source" not in bn.columns:
+            bn["source"] = "binance_external"
+        else:
+            bn["source"] = bn["source"].fillna("binance_external")
+        frames.append(bn[bn["funding_time"] < stitch])
+    if htx is not None and not htx.empty:
+        hx = htx.copy()
+        hx["funding_time"] = pd.to_datetime(hx["funding_time"], utc=True)
+        if "source" not in hx.columns:
+            hx["source"] = "htx"
+        else:
+            hx["source"] = hx["source"].fillna("htx")
+        frames.append(hx[hx["funding_time"] >= stitch])
+    if not frames:
+        return pd.DataFrame(
+            columns=["symbol", "funding_time", "funding_rate", "realized_rate", "source"]
+        )
+    combined = pd.concat(frames, ignore_index=True)
+    combined = combined.drop_duplicates(subset=["funding_time"]).sort_values("funding_time")
+    return combined.reset_index(drop=True)
+
+
+def summarize_funding_sources(raw_dir, contracts: list[str]) -> dict:
+    payload: dict[str, dict[str, int]] = {}
+    for contract in contracts:
+        path = raw_dir / f"{contract}_funding.parquet"
+        if not path.exists():
+            continue
+        fund = pd.read_parquet(path)
+        if fund.empty:
+            continue
+        if "source" in fund.columns:
+            counts = {str(key): int(value) for key, value in fund["source"].value_counts().items()}
+        else:
+            counts = {"htx": int(len(fund))}
+        payload[contract] = counts
+    return payload

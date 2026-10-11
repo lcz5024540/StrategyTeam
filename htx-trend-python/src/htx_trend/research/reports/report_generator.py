@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,7 @@ class ReportGenerator:
         overlap_deviation: dict[str, Any] | None = None,
         smoke: bool = False,
         funding_missing: list[str] | None = None,
+        stitch_points: dict[str, Any] | None = None,
     ) -> Path:
         report_path = self.output_dir / "report.md"
         
@@ -60,6 +61,11 @@ class ReportGenerator:
                 f.write("## 分品种统计\n\n")
                 f.write(self._format_by_symbol(fills))
                 f.write("\n\n")
+
+                if stitch_points:
+                    f.write("## 绩效分段（stitch point）\n\n")
+                    f.write(self._format_stitch_segments(fills, stitch_points))
+                    f.write("\n\n")
                 
                 f.write("## 市场状态切片\n\n")
                 f.write(self._format_by_regime(fills, decisions))
@@ -217,6 +223,70 @@ class ReportGenerator:
 - Profit Factor: {profit_factor:.2f}
 """
     
+    def _format_stitch_segments(
+        self,
+        fills: list[dict[str, Any]],
+        stitch_points: dict[str, Any],
+    ) -> str:
+        before: list[float] = []
+        after: list[float] = []
+        labels: list[str] = []
+        for symbol, exit_time, pnl in self._closed_trades(fills):
+            stitch = _stitch_for(symbol, stitch_points)
+            if stitch is None:
+                continue
+            labels.append(stitch.isoformat())
+            if exit_time < stitch:
+                before.append(pnl)
+            else:
+                after.append(pnl)
+        stitch_label = labels[0] if labels else "unknown"
+        return (
+            f"Stitch point: {stitch_label}\n\n"
+            f"### Before {stitch_label}\n"
+            f"{self._format_segment_stats(before)}\n"
+            f"### After {stitch_label}\n"
+            f"{self._format_segment_stats(after)}\n"
+        )
+
+    def _format_segment_stats(self, pnls: list[float]) -> str:
+        if not pnls:
+            return "- 交易笔数: 0\n- 总PnL: $0.00\n- 胜率: 0.0%\n"
+        total = sum(pnls)
+        wins = [p for p in pnls if p > 0]
+        win_rate = len(wins) / len(pnls)
+        return (
+            f"- 交易笔数: {len(pnls)}\n"
+            f"- 总PnL: ${total:.2f}\n"
+            f"- 胜率: {win_rate * 100:.1f}%\n"
+        )
+
+    def _closed_trades(
+        self, fills: list[dict[str, Any]]
+    ) -> list[tuple[str, datetime, float]]:
+        pending: dict[str, list[dict[str, Any]]] = {}
+        trades: list[tuple[str, datetime, float]] = []
+        ordered = sorted(fills, key=lambda item: pd.Timestamp(item["time"]))
+        for fill in ordered:
+            symbol = fill["symbol"]
+            if fill.get("is_entry"):
+                pending.setdefault(symbol, []).append(fill)
+                continue
+            entries = pending.get(symbol)
+            if not entries:
+                continue
+            entry = entries.pop(0)
+            size = float(fill["size"])
+            if entry["side"] == "LONG":
+                pnl = (float(fill["price"]) - float(entry["price"])) * size
+            else:
+                pnl = (float(entry["price"]) - float(fill["price"])) * size
+            pnl -= float(entry.get("fees", 0) or 0) + float(fill.get("fees", 0) or 0)
+            pnl -= float(entry.get("slippage", 0) or 0) + float(fill.get("slippage", 0) or 0)
+            pnl -= float(fill.get("funding", 0) or 0)
+            trades.append((symbol, pd.Timestamp(fill["time"]).to_pydatetime(), float(pnl)))
+        return trades
+
     def _format_by_symbol(self, fills: list[dict[str, Any]]) -> str:
         symbols = set(f["symbol"] for f in fills)
         
@@ -276,3 +346,18 @@ class ReportGenerator:
 {diff_line}
 {pct_line}
 """
+
+
+def _stitch_for(symbol: str, stitch_points: dict[str, Any]) -> datetime | None:
+    raw = stitch_points.get(symbol)
+    if raw is None and stitch_points:
+        raw = next(iter(stitch_points.values()))
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        parsed = raw
+    else:
+        parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)

@@ -81,3 +81,31 @@ def test_checksum_mismatch_raises():
 def test_spot_url_rejected():
     with pytest.raises(ValueError, match="Spot"):
         BinanceVisionClient(base_url="https://data.binance.vision/data/spot")
+
+
+def test_vision_downloads_um_funding_rate_tagged_binance_external():
+    ts = int(datetime(2020, 10, 21, 16, tzinfo=UTC).timestamp() * 1000)
+    csv_rows = [
+        "calc_time,funding_interval_hours,last_funding_rate",
+        f"{ts},8,0.0001",
+    ]
+    payload = _zip_csv("BTCUSDT-fundingRate-2020-10.csv", csv_rows)
+    digest = hashlib.sha256(payload).hexdigest()
+    zip_url = f"{VISION_BASE}/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2020-10.zip"
+    files = {
+        zip_url: payload,
+        f"{zip_url}.CHECKSUM": f"{digest}  BTCUSDT-fundingRate-2020-10.zip\n",
+    }
+    transport = FakeTransport(files)
+    client = BinanceVisionClient(client=httpx.Client(transport=transport))
+    rates = client.download_funding_history(
+        "BTCUSDT",
+        datetime(2020, 10, 1, tzinfo=UTC),
+        datetime(2020, 11, 1, tzinfo=UTC),
+    )
+    assert len(rates) == 1
+    assert rates[0].source == "binance_external"
+    assert rates[0].funding_rate == pytest.approx(0.0001)
+    assert rates[0].funding_time == datetime(2020, 10, 21, 16, tzinfo=UTC)
+    assert all("/futures/um/monthly/fundingRate/" in url for url in transport.requested)
+    assert all("/spot/" not in url for url in transport.requested)

@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .data import DataCollector, DatasetManager, DataStitcher
-from .data.collector import BINANCE_VISION_START, parse_lookback_days
+from .data.collector import BINANCE_VISION_START, parse_lookback_days, summarize_funding_sources
 from .data.quality import (
     DEFAULT_STITCH_POINT,
     KNOWN_CANDIDATES,
@@ -42,7 +42,8 @@ def cmd_collect(args: argparse.Namespace) -> None:
         htx_4h = collector.collect_htx_klines(contract, "4hour", args.lookback_days)
         htx_1d = collector.collect_htx_klines(contract, "1day", args.lookback_days)
         
-        collector.collect_funding_history(contract)
+        stitch = stitch_point_for(contract) if args.backfill_binance else None
+        collector.collect_funding_history(contract, stitch_point=stitch)
         collector.collect_contract_spec(contract)
         
         if args.backfill_binance:
@@ -198,6 +199,9 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         "bad_ticks_hash": ticks_digest,
         "default_stitch_point": DEFAULT_STITCH_POINT.isoformat(),
     }
+    funding_sources = summarize_funding_sources(raw_dir, contracts)
+    if funding_sources:
+        extra_metadata["funding_sources"] = funding_sources
     if timeframe == "1day":
         extra_metadata.update(
             daily_resample_manifest_fields(daily_cut=args.daily_cut or "UTC00")

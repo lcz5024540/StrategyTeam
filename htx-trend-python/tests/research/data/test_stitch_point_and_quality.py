@@ -214,6 +214,48 @@ def test_written_dataset_manifest_json_contains_stitch_points_and_bad_ticks_hash
     assert "stitch_points" in json.dumps(batch_written, sort_keys=True)
 
 
+def test_freeze_records_funding_sources_in_manifest_and_hash(tmp_path):
+    times = _around_stitch(before=8, after=8)
+    _write_raw(tmp_path, times)
+    raw = tmp_path / "data" / "raw"
+    funding = pd.DataFrame(
+        {
+            "symbol": ["BTC-USDT"] * 3,
+            "funding_time": pd.to_datetime(
+                [
+                    "2020-10-21T16:00:00Z",
+                    "2020-10-31T16:00:00Z",
+                    "2020-11-01T08:00:00Z",
+                ],
+                utc=True,
+            ),
+            "funding_rate": [0.0001, 0.0002, 0.0003],
+            "source": ["binance_external", "binance_external", "htx"],
+        }
+    )
+    funding.to_parquet(raw / "BTC-USDT_funding.parquet", index=False)
+    cmd_freeze(_freeze_args(tmp_path, stitch_point="2020-11-01T00:00:00Z"))
+    dataset_dir = next(
+        path
+        for path in (tmp_path / "data" / "datasets").iterdir()
+        if path.is_dir() and path.name != "manifests"
+    )
+    written = json.loads((dataset_dir / "manifest.json").read_text())
+    sources = written["funding_sources"]["BTC-USDT"]
+    assert sources["binance_external"] == 2
+    assert sources["htx"] == 1
+    batch = DatasetManifest.load(
+        tmp_path / "data" / "datasets" / "manifests" / f"{dataset_dir.name}.json"
+    )
+    assert batch.metadata["funding_sources"]["BTC-USDT"]["binance_external"] == 2
+    assert batch.metadata["funding_sources"]["BTC-USDT"]["htx"] == 1
+    baseline = batch.sha256()
+    batch.metadata["funding_sources"] = {
+        "BTC-USDT": {"binance_external": 0, "htx": 1}
+    }
+    assert batch.sha256() != baseline
+
+
 def test_freeze_records_stitch_point_and_bad_ticks_in_manifest_hash(tmp_path):
     times = _around_stitch(before=8, after=8)
     _write_raw(tmp_path, times)

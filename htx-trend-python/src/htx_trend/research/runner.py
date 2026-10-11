@@ -927,6 +927,21 @@ class BacktestRunner:
         pd.DataFrame(columns=columns).to_parquet(path, index=False)
         return None, 0, path
 
+    def _load_stitch_points(self) -> dict[str, Any] | None:
+        dataset_id = self.config.get("dataset_id")
+        if dataset_id:
+            path = (
+                self.workspace_dir / "data" / "datasets" / dataset_id / "manifest.json"
+            )
+            if path.exists():
+                payload = json.loads(path.read_text())
+                points = payload.get("stitch_points") or (payload.get("metadata") or {}).get(
+                    "stitch_points"
+                )
+                if points:
+                    return points
+        return self.config.get("stitch_points")
+
     def _load_overlap_deviation(self) -> dict[str, Any] | None:
         dataset_id = self.config["dataset_id"]
         path = self.workspace_dir / "data" / "datasets" / dataset_id / "overlap_deviation.json"
@@ -991,4 +1006,5 @@ class BacktestRunner:
             overlap_deviation=self._load_overlap_deviation(),
             smoke=self._is_smoke,
             funding_missing=results.get("funding_missing") or [],
+            stitch_points=self._load_stitch_points(),
         )

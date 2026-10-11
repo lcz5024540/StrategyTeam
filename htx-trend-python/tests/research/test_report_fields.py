@@ -149,6 +149,67 @@ def test_parent_comparison_calculates_diff(tmp_path):
     assert "百分比变化: 100.00%" in text
 
 
+def test_report_splits_performance_before_and_after_stitch(tmp_path):
+    fills = [
+        {
+            "symbol": "BTC-USDT",
+            "side": "LONG",
+            "size": 1,
+            "price": 100.0,
+            "time": datetime(2020, 10, 1, tzinfo=timezone.utc),
+            "fees": 0.0,
+            "slippage": 0.0,
+            "is_entry": True,
+        },
+        {
+            "symbol": "BTC-USDT",
+            "side": "SHORT",
+            "size": 1,
+            "price": 110.0,
+            "time": datetime(2020, 10, 15, tzinfo=timezone.utc),
+            "fees": 0.0,
+            "slippage": 0.0,
+            "is_entry": False,
+        },
+        {
+            "symbol": "BTC-USDT",
+            "side": "LONG",
+            "size": 1,
+            "price": 100.0,
+            "time": datetime(2020, 11, 2, tzinfo=timezone.utc),
+            "fees": 0.0,
+            "slippage": 0.0,
+            "is_entry": True,
+        },
+        {
+            "symbol": "BTC-USDT",
+            "side": "SHORT",
+            "size": 1,
+            "price": 90.0,
+            "time": datetime(2020, 11, 10, tzinfo=timezone.utc),
+            "fees": 0.0,
+            "slippage": 0.0,
+            "is_entry": False,
+        },
+    ]
+    path = ReportGenerator("SEG1", tmp_path).generate_report(
+        config={"run_id": "SEG1"},
+        fills=fills,
+        decisions=pd.DataFrame(),
+        stitch_points={"BTC-USDT": "2020-11-01T00:00:00+00:00"},
+    )
+    text = path.read_text()
+    assert "绩效分段" in text or "stitch" in text.lower()
+    assert "2020-11-01" in text
+    before_idx = text.lower().find("before")
+    after_idx = text.lower().find("after")
+    assert before_idx != -1
+    assert after_idx != -1
+    assert before_idx < after_idx
+    assert "$10.00" in text
+    assert "$-10.00" in text or "-$10.00" in text
+
+
 def test_update_conclusion_cli(tmp_path, monkeypatch):
     workspace = tmp_path / "ws"
     workspace.mkdir()

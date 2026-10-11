@@ -51,6 +51,7 @@ class FundingRate:
     funding_time: datetime
     funding_rate: float
     realized_rate: float | None = None
+    source: str = "htx"
 
 
 @dataclass(frozen=True)
@@ -319,6 +320,7 @@ class HtxMarketDataClient:
                         funding_time=datetime.fromtimestamp(float(funding_time), UTC),
                         funding_rate=float(item["funding_rate"]),
                         realized_rate=float(item.get("realized_rate", item["funding_rate"])),
+                        source="htx",
                     )
                 )
 
@@ -332,16 +334,19 @@ class HtxMarketDataClient:
         contract_code: str,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
-        max_pages: int = 20,
+        max_pages: int | None = None,
         page_size: int = 50,
         empty_pages_to_stop: int = DEFAULT_EMPTY_PAGES_TO_STOP,
         page_sleep: float = 0.5,
     ) -> list[FundingRate]:
-        """按页向后取资金费率；连续空页停止，边界去重。"""
+        """按页向后取资金费率直到耗尽；连续空页停止，边界去重。"""
         all_rates: list[FundingRate] = []
         empty_streak = 0
+        page = 0
 
-        for page in range(max_pages):
+        while True:
+            if max_pages is not None and page >= max_pages:
+                break
             batch = self.fetch_funding_history(
                 contract_code, page_size=page_size, page_index=page + 1
             )
@@ -349,16 +354,17 @@ class HtxMarketDataClient:
                 batch = [row for row in batch if row.funding_time >= start_time]
             if end_time:
                 batch = [row for row in batch if row.funding_time <= end_time]
+            page += 1
             if not batch:
                 empty_streak += 1
                 if empty_streak >= max(1, int(empty_pages_to_stop)):
                     break
-                if page_sleep and page + 1 < max_pages:
+                if page_sleep:
                     time.sleep(page_sleep)
                 continue
             empty_streak = 0
             all_rates.extend(batch)
-            if page_sleep and page + 1 < max_pages:
+            if page_sleep:
                 time.sleep(page_sleep)
 
         seen: set[datetime] = set()

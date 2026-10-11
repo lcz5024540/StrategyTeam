@@ -49,6 +49,7 @@ class DatasetManifest:
             "metadata": self.metadata,
             "stitch_points": self.metadata.get("stitch_points"),
             "bad_ticks_hash": self.metadata.get("bad_ticks_hash"),
+            "funding_sources": self.metadata.get("funding_sources"),
         }
         digest = hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -151,6 +152,7 @@ class DatasetManifest:
             "metadata": self.metadata,
             "stitch_points": self.metadata.get("stitch_points"),
             "bad_ticks_hash": self.metadata.get("bad_ticks_hash"),
+            "funding_sources": self.metadata.get("funding_sources"),
             "manifest_hash": self.sha256(),
         }
         path.write_text(json.dumps(payload, indent=2))

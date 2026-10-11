@@ -16,7 +16,7 @@ from typing import Iterable
 
 import httpx
 
-from .htx.market_data import Kline
+from .htx.market_data import FundingRate, Kline
 
 VISION_BASE = "https://data.binance.vision/data/futures/um"
 ALLOWED_SYMBOLS = frozenset({"BTCUSDT", "ETHUSDT"})
@@ -84,11 +84,71 @@ class BinanceVisionClient:
                 unique[item.bar_time] = item
         return [unique[key] for key in sorted(unique)]
 
+    def download_funding_history(
+        self,
+        symbol: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> list[FundingRate]:
+        if symbol not in ALLOWED_SYMBOLS:
+            raise ValueError(f"Unsupported Binance vision symbol: {symbol}")
+        start = _as_utc(start_date)
+        end = _as_utc(end_date)
+        rates: list[FundingRate] = []
+        for year, month in _iter_months(start, end):
+            try:
+                archive = self._download_monthly_funding(symbol, year, month)
+            except httpx.HTTPStatusError as exc:
+                if exc.response is not None and exc.response.status_code == 404:
+                    continue
+                raise
+            rates.extend(self._parse_funding_archive(archive, symbol))
+
+        unique: dict[datetime, FundingRate] = {}
+        for item in rates:
+            if start <= item.funding_time <= end:
+                unique[item.funding_time] = item
+        return [unique[key] for key in sorted(unique)]
+
     def _download_monthly(self, symbol: str, interval: str, year: int, month: int) -> bytes:
         name = f"{symbol}-{interval}-{year:04d}-{month:02d}.zip"
         url = f"{self.base_url}/monthly/klines/{symbol}/{interval}/{name}"
         checksum_url = f"{url}.CHECKSUM"
         return self._get_and_verify(url, checksum_url)
+
+    def _download_monthly_funding(self, symbol: str, year: int, month: int) -> bytes:
+        name = f"{symbol}-fundingRate-{year:04d}-{month:02d}.zip"
+        url = f"{self.base_url}/monthly/fundingRate/{symbol}/{name}"
+        checksum_url = f"{url}.CHECKSUM"
+        return self._get_and_verify(url, checksum_url)
+
+    def _parse_funding_archive(self, payload: bytes, symbol: str) -> list[FundingRate]:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            names = [n for n in archive.namelist() if n.endswith(".csv")]
+            if not names:
+                raise ValueError("Vision funding archive contains no CSV")
+            raw = archive.read(names[0]).decode("utf-8")
+        rates: list[FundingRate] = []
+        for line in raw.splitlines():
+            if not line.strip():
+                continue
+            parts = [item.strip() for item in line.split(",")]
+            if not parts or not parts[0] or not parts[0][0].isdigit():
+                continue
+            timestamp = float(parts[0])
+            if timestamp > 10**12:
+                timestamp = timestamp / 1000
+            rate = float(parts[-1])
+            rates.append(
+                FundingRate(
+                    symbol=symbol,
+                    funding_time=datetime.fromtimestamp(timestamp, UTC),
+                    funding_rate=rate,
+                    realized_rate=rate,
+                    source="binance_external",
+                )
+            )
+        return rates
 
     def _download_daily(
         self, symbol: str, interval: str, year: int, month: int, day: int
