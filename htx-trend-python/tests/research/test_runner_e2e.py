@@ -363,8 +363,10 @@ def test_sharpe_numeric_from_known_equity_curve():
     rets = equity.pct_change().dropna()
     expected = float(rets.mean() / rets.std(ddof=1) * (ppy ** 0.5))
     assert sharpe == pytest.approx(expected)
+    known = pd.Series([0.1, -0.1, 0.1])
+    assert list(rets.round(12)) == [0.1, -0.1, 0.1]
     assert sharpe == pytest.approx(
-        (0.1 / float(pd.Series([0.1, -0.1, 0.1]).std(ddof=1))) * (ppy ** 0.5)
+        (float(known.mean()) / float(known.std(ddof=1))) * (ppy ** 0.5)
     )
 
 
