@@ -65,7 +65,10 @@ def test_heartbeat_stale_detection(tmp_path):
     assert "stale" in msg.lower()
 
 
-def test_status_interface():
+def test_status_interface(tmp_path):
+    from htx_trend.research.ops.status import set_status_file_path
+
+    set_status_file_path(tmp_path / "run" / "status.json")
     status = StatusInterface(
         run_id="TEST001",
         component="backtest",

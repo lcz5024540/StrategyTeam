@@ -109,7 +109,8 @@ def test_health_check_stale_1day_bar(tmp_path):
 def test_health_cli_exit_code_healthy(tmp_path, monkeypatch):
     now = datetime.now(timezone.utc)
     last = now - timedelta(hours=4, minutes=2)
-    state = tmp_path / "collector_state.json"
+    state = tmp_path / "run" / "collector_state.json"
+    state.parent.mkdir(parents=True)
     state.write_text(
         json.dumps(
             {
@@ -139,7 +140,9 @@ def test_health_cli_exit_code_healthy(tmp_path, monkeypatch):
 
 def test_health_cli_exit_code_unhealthy(tmp_path, monkeypatch):
     last = datetime.now(timezone.utc) - timedelta(hours=12)
-    (tmp_path / "collector_state.json").write_text(
+    state = tmp_path / "run" / "collector_state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text(
         json.dumps(
             {
                 "BTC-USDT": {

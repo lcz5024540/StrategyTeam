@@ -9,14 +9,14 @@ Group=ubuntu
 WorkingDirectory=/opt/coinstrategy/htx-trend-py
 Environment="PYTHONPATH=/opt/coinstrategy/htx-trend-py/src"
 
-ReadWritePaths=/opt/coinstrategy/htx-trend-py/data
-ReadWritePaths=/opt/coinstrategy/htx-trend-py/logs
-ReadWritePaths=/opt/coinstrategy/htx-trend-py/status.json
-ReadWritePaths=/opt/coinstrategy/htx-trend-py/heartbeat.txt
+ExecStartPre=/bin/mkdir -p /opt/coinstrategy/htx-trend-py/data /opt/coinstrategy/htx-trend-py/logs /opt/coinstrategy/htx-trend-py/run
+ReadWritePaths=-/opt/coinstrategy/htx-trend-py/data
+ReadWritePaths=-/opt/coinstrategy/htx-trend-py/logs
+ReadWritePaths=-/opt/coinstrategy/htx-trend-py/run
 
 ExecStart=/opt/coinstrategy/htx-trend-py/.venv/bin/python -m htx_trend.research.ops.heartbeat \
     --interval 60 \
-    --file /opt/coinstrategy/htx-trend-py/heartbeat.txt
+    --file /opt/coinstrategy/htx-trend-py/run/heartbeat.txt
 
 Restart=always
 RestartSec=5

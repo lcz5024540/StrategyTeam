@@ -10,19 +10,20 @@
 - **用户**: `ubuntu`（可配置，见下方「自定义用户」）
 - **数据目录**: `/opt/coinstrategy/htx-trend-py/data`
 - **日志目录**: `/opt/coinstrategy/htx-trend-py/logs`
-- **状态文件**: `/opt/coinstrategy/htx-trend-py/status.json`
-- **Heartbeat**: `/opt/coinstrategy/htx-trend-py/heartbeat.txt`
-- **采集状态**: `/opt/coinstrategy/htx-trend-py/collector_state.json`
+- **运行目录**: `/opt/coinstrategy/htx-trend-py/run`（status / heartbeat / collector_state）
+- **状态文件**: `/opt/coinstrategy/htx-trend-py/run/status.json`
+- **Heartbeat**: `/opt/coinstrategy/htx-trend-py/run/heartbeat.txt`
+- **采集状态**: `/opt/coinstrategy/htx-trend-py/run/collector_state.json`
 
 统一 systemd unit 只有一套，位于仓库 `deployment/systemd/`：
 
 - `htx-trend-collector.service`
 - `htx-trend-heartbeat.service`
 
-`WorkingDirectory=/opt/coinstrategy/htx-trend-py`，`User=ubuntu`，`ExecStart` 使用 `/opt/coinstrategy/htx-trend-py/.venv/bin/python`。采集器走配置 `/opt/coinstrategy/htx-trend-py/configs/collector.yaml`。仓库里不得再放第二套 `.service`。
+`WorkingDirectory=/opt/coinstrategy/htx-trend-py`，`User=ubuntu`，`ExecStart` 使用 `/opt/coinstrategy/htx-trend-py/.venv/bin/python`。采集器走配置 `/opt/coinstrategy/htx-trend-py/configs/collector.yaml`。`ReadWritePaths` 只挂目录（`data/`、`logs/`、`run/`）并加 `-` 前缀；不要把尚未创建的文件列进去。`python -m htx_trend health|status` 默认读 `run/` 下与采集器/心跳写入相同的文件。
 
 ```bash
-sudo mkdir -p /opt/coinstrategy/htx-trend-py/{data,logs}
+sudo mkdir -p /opt/coinstrategy/htx-trend-py/{data,logs,run}
 sudo chown -R ubuntu:ubuntu /opt/coinstrategy/htx-trend-py
 sudo cp deployment/systemd/*.service /etc/systemd/system/
 sudo systemctl daemon-reload

@@ -31,6 +31,8 @@ from ..data.immutable_storage import (
     _parse_interval_seconds,
 )
 from ..ops import log_event, LogComponent, LogLevel
+from ..ops.runtime_paths import STATUS_FILENAME, collector_state_file
+from ..ops.status import HealthStatus, StatusInterface, update_status
 
 
 INTERVAL_MAP = {
@@ -123,7 +125,7 @@ class ContinuousCollector:
         state_cfg = cfg.get("state") or {}
         return cls(
             storage_dir=Path(storage_cfg.get("base_path", "./data/klines")),
-            state_file=Path(state_cfg.get("file_path", "./collector_state.json")),
+            state_file=Path(state_cfg.get("file_path", str(collector_state_file(".")))),
             symbols=list(symbols),
             interval=str(intervals[0]),
             intervals=[str(item) for item in intervals],
@@ -209,12 +211,25 @@ class ContinuousCollector:
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
                 raise
+            self._write_runtime_status()
         except Exception as e:
             log_event(
                 LogComponent.DATA,
                 f"Failed to save collector state: {e}",
                 level=LogLevel.ERROR,
             )
+
+    def _write_runtime_status(self) -> None:
+        update_status(
+            StatusInterface(
+                run_id="collector",
+                component="collector",
+                timestamp=datetime.now(timezone.utc),
+                health=HealthStatus.HEALTHY,
+                message=f"symbols={self.symbols} intervals={self.intervals}",
+            ),
+            path=self.state_file.parent / STATUS_FILENAME,
+        )
 
     def _closed_bars_only(self, df: pd.DataFrame, interval: str) -> pd.DataFrame:
         if df.empty:

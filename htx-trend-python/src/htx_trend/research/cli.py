@@ -31,6 +31,12 @@ from .features.daily_resample import daily_resample_manifest_fields
 from .ledger import Approval, ApprovalDecision, ApprovalGate, LedgerManager
 from .ops import HeartbeatManager, get_status
 from .ops.heartbeat import check_health as check_system_health
+from .ops.runtime_paths import (
+    collector_state_file,
+    heartbeat_file,
+    heartbeats_dir,
+    status_file,
+)
 from .ops.status import StatusInterface, set_status_file_path
 from .runner import BacktestRunner
 from .version_info import get_version_info
@@ -275,12 +281,18 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 def cmd_health(args: argparse.Namespace) -> None:
     workspace = Path(args.workspace)
-    heartbeat_dir = workspace / "heartbeats"
-    state_file = Path(args.collector_state) if getattr(args, "collector_state", None) else workspace / "collector_state.json"
+    heartbeat_dir = heartbeats_dir(workspace)
+    hb_txt = heartbeat_file(workspace)
+    state_file = (
+        Path(args.collector_state)
+        if getattr(args, "collector_state", None)
+        else collector_state_file(workspace)
+    )
 
     hb_dir = heartbeat_dir if heartbeat_dir.exists() else None
+    hb_file = hb_txt if hb_txt.exists() else None
     state_path = state_file if state_file.exists() else None
-    if hb_dir is None and state_path is None:
+    if hb_dir is None and hb_file is None and state_path is None:
         print("No heartbeat files found")
         sys.exit(1)
 
@@ -289,6 +301,7 @@ def cmd_health(args: argparse.Namespace) -> None:
         collector_state_path=state_path,
         max_heartbeat_age_seconds=args.max_age,
         bar_staleness_threshold_minutes=getattr(args, "threshold_minutes", 10),
+        heartbeat_file=hb_file,
     )
 
     version_info = get_version_info()
@@ -304,6 +317,8 @@ def cmd_health(args: argparse.Namespace) -> None:
 def cmd_status(args: argparse.Namespace) -> None:
     if getattr(args, "status_file", None):
         set_status_file_path(args.status_file)
+    elif getattr(args, "workspace", None):
+        set_status_file_path(status_file(args.workspace))
     version_info = get_version_info()
     status = get_status()
     

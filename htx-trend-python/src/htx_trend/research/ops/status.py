@@ -17,6 +17,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from .runtime_paths import status_file
+
 
 class HealthStatus(str, Enum):
     HEALTHY = "healthy"
@@ -130,8 +132,8 @@ class StatusInterface:
         }
 
 
-# ✅ 状态文件路径（可配置）
-_status_file_path: Path = Path("/tmp/htx_trend_status.json")
+# ✅ 状态文件路径（可配置）；默认 workspace/run/status.json
+_status_file_path: Path = status_file(".")
 
 
 def set_status_file_path(path: Path | str) -> None:
@@ -145,7 +147,7 @@ def get_status_file_path() -> Path:
     return _status_file_path
 
 
-def update_status(status: StatusInterface) -> None:
+def update_status(status: StatusInterface, path: Path | str | None = None) -> None:
     """更新状态并原子化写入磁盘
     
     使用 tempfile + os.replace 保证原子性：
@@ -156,7 +158,7 @@ def update_status(status: StatusInterface) -> None:
     status_dict = status.to_dict()
     
     # 1. 写入临时文件（与目标文件同目录，保证同文件系统）
-    target_path = get_status_file_path()
+    target_path = Path(path) if path is not None else get_status_file_path()
     target_path.parent.mkdir(parents=True, exist_ok=True)
     
     fd, temp_path = tempfile.mkstemp(

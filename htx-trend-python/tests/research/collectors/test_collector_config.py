@@ -105,7 +105,11 @@ def test_systemd_units_use_unified_paths():
         assert "User=ubuntu" in text
         assert "Group=ubuntu" in text
         assert "WorkingDirectory=/opt/coinstrategy/htx-trend-py" in text
-        assert "ReadWritePaths=/opt/coinstrategy/htx-trend-py/data" in text
-        assert "ReadWritePaths=/opt/coinstrategy/htx-trend-py/status.json" in text
-        assert "ReadWritePaths=/opt/coinstrategy/htx-trend-py/heartbeat.txt" in text
+        assert "ReadWritePaths=-/opt/coinstrategy/htx-trend-py/data" in text
+        assert "ReadWritePaths=-/opt/coinstrategy/htx-trend-py/logs" in text
+        assert "ReadWritePaths=-/opt/coinstrategy/htx-trend-py/run" in text
+        assert "status.json" not in text or "ReadWritePaths=" + "/opt/coinstrategy/htx-trend-py/status.json" not in text
+        assert "ReadWritePaths=/opt/coinstrategy/htx-trend-py/status.json" not in text
+        assert "ReadWritePaths=/opt/coinstrategy/htx-trend-py/heartbeat.txt" not in text
+        assert "ReadWritePaths=/opt/coinstrategy/htx-trend-py/collector_state.json" not in text
     assert "--config /opt/coinstrategy/htx-trend-py/configs/collector.yaml" in collector

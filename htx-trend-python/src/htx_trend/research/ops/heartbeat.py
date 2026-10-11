@@ -113,17 +113,51 @@ def _as_utc(value: datetime | str) -> datetime:
     return value.astimezone(UTC)
 
 
+def check_heartbeat_file(
+    path: Path,
+    max_age_seconds: int = 300,
+    now: datetime | None = None,
+) -> tuple[bool, str]:
+    if not path.exists():
+        return False, f"No heartbeat file at {path}"
+    now = now or datetime.now(UTC)
+    text = path.read_text().strip()
+    try:
+        stamp = datetime.fromisoformat(text)
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=UTC)
+    except ValueError:
+        stamp = datetime.fromtimestamp(path.stat().st_mtime, UTC)
+    age = (now - stamp).total_seconds()
+    if age > max_age_seconds:
+        return False, f"Heartbeat stale: {age:.0f}s old (max {max_age_seconds}s)"
+    return True, "healthy"
+
+
 def check_health(
     heartbeat_dir: Path | None = None,
     collector_state_path: Path | None = None,
     max_heartbeat_age_seconds: int = 300,
     bar_staleness_threshold_minutes: int = 10,
     now: datetime | None = None,
+    heartbeat_file: Path | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     """心跳 + 各 timeframe 的 last_bar_time 新鲜度。"""
     now = now or datetime.now(UTC)
     is_healthy = True
     details: dict[str, Any] = {"heartbeat": {}, "bar_staleness": []}
+
+    if heartbeat_file is not None:
+        ok, message = check_heartbeat_file(
+            heartbeat_file, max_heartbeat_age_seconds, now=now
+        )
+        details["heartbeat"]["file"] = {
+            "path": str(heartbeat_file),
+            "status": "ok" if ok else "stale",
+            "message": message,
+        }
+        if not ok:
+            is_healthy = False
 
     if heartbeat_dir is not None:
         mgr = HeartbeatManager(heartbeat_dir)

@@ -32,3 +32,11 @@ def test_repo_has_only_unified_venv_systemd_units():
     collector = next(path for path in services if path.name == "htx-trend-collector.service")
     assert "--config" in collector.read_text()
     assert "configs/collector.yaml" in collector.read_text()
+    for path in services:
+        text = path.read_text()
+        for line in text.splitlines():
+            if line.startswith("ReadWritePaths="):
+                value = line.split("=", 1)[1]
+                assert value.startswith("-")
+                assert value.endswith(("/data", "/logs", "/run"))
+                assert not value.endswith((".json", ".txt"))
