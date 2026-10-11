@@ -169,17 +169,27 @@
 
 ### A6. 参数与《首个趋势策略参数依据》一致
 
-**状态**: ⚠️ **DEFERRED v0.2.0**
+**状态**: ✅ PASS
 
-**理由**: 参数依据文档 `first-trend-strategy-parameter-rationale.md` 不存在
+**文档**: `docs/first-trend-strategy-parameter-rationale.md`
 
-**当前参数**:
-- C01: periods=[42, 84, 126, 168], threshold=0.25
-- C02: atr_period=14, atr_multiplier=2.0
-- Risk: 0.5% per trade, max 1.5% total, max 3 positions
-- Initial capital: 400 USDT
+**参数映射**:
 
-**行动**: v0.2.0 需创建参数依据文档，或在 registration 中说明参数选择理由。
+| 参数类别 | 当前实现 | 依据文档 | 对应章节 |
+|---------|---------|---------|---------|
+| **周期** | 4h | 4h/1d 两套独立运行 | §2 表格，行 1 |
+| **回看期集成** | [42, 84, 126, 168] 根（4h × [1w, 2w, 3w, 4w]） | 1d 取 [7, 14, 21, 28]；4h 取 [42, 84, 126, 168]（同一天数换算） | §2 表格，行 2 |
+| **集成阈值** | threshold=0.25 | 集成值取平均，多回看期等权 | §2 表格，行 3 |
+| **ATR 止损** | ATR(14)×2 | ATR 周期 14 或 20；初始止损 2×ATR | §2 表格，行 4 |
+| **单笔风险** | 0.5% | 0.5%-1%（海龟 1%，示例 0.5%） | §2 表格，行 5 |
+| **总风险限制** | max 1.5%，max 3 仓位 | 框架计划要求 | 风控边界 |
+| **初始资金** | 400 USDT | 真实账户起始资金 | §4 保本算术 |
+| **手续费** | Maker 0.02%, Taker 0.06% | HTX Prime 0 官方费率 | §4 HTX 费率 |
+| **成交假设** | t 收盘信号 → t+1 成交 | 四种成本场景（BASE/ZERO/OPTIMISTIC/CONSERVATIVE） | §2 表格，行 12 |
+
+**配置位置**: `configs/runs/R0001.yaml`
+
+**结论**: 所有参数与依据文档一致，符合"示例/经验起点"定位（§2 表头）。
 
 ---
 
@@ -254,86 +264,152 @@
 
 ### C1. K 线只追加不覆盖，每批带内容 hash
 
-**状态**: ❌ **FAIL** → DEFERRED v0.2.0
+**状态**: ✅ PASS
 
-**当前状态**:
-- ✅ 内容 hash: `src/htx_trend/research/data/dataset.py:28-35`
+**证据**:
+- **代码**: `src/htx_trend/research/data/immutable_storage.py:85-124`
   ```python
-  manifest_hash = hashlib.sha256(
-      (
-          f"{manifest.source}:{manifest.symbols}:{manifest.start_date}:"
-          f"{manifest.end_date}:{manifest.total_bars}"
-      ).encode()
-  ).hexdigest()[:16]
+  def append_batch(self, symbol, interval, df, source="htx") -> KlineBatch:
+      # SHA256 批次 hash（前 16 字符）
+      content_str = content_df.to_json(orient="records", date_format="iso")
+      batch_hash = hashlib.sha256(content_str.encode()).hexdigest()[:16]
+      
+      # 追加式：生成唯一 batch_id（时间戳）
+      batch_file = self.batches_dir / f"{symbol}_{interval}_{batch_id}.parquet"
+      df.to_parquet(batch_file, index=False)  # 新文件，不覆盖
   ```
 
-- ❌ 追加式存储未实现：当前使用 `to_parquet()` 覆盖式写入
-- ❌ 批次级 hash 未实现
+- **批次元数据**: `KlineBatch` dataclass 包含 batch_id, batch_hash, num_bars, collected_at
+- **存储结构**: `batches/`, `metadata/`, `revisions/` 三个子目录分离
 
-**行动**: v0.2.0 实现追加式批次存储，每批带独立 hash。
+- **测试**: `tests/research/test_immutable_storage.py`
+  - ✅ `test_append_batch_creates_metadata`
+  - ✅ `test_batch_hash_deterministic`
+
+**结论**: 追加式批次存储完整实现，每批带内容 hash。
 
 ---
 
-### C2. 同时记录 bar_time 和 first_seen_time
+### C2. 同时记录 bar_time 和 first_seen_at
 
-**状态**: ❌ **FAIL** → DEFERRED v0.2.0
+**状态**: ✅ PASS
 
-**当前状态**:
-- ✅ `bar_time` 字段存在
-- ❌ `first_seen_time` 字段不存在
+**证据**:
+- **代码**: `src/htx_trend/research/data/immutable_storage.py:93-96`
+  ```python
+  # 确保有 first_seen_at
+  if "first_seen_at" not in df.columns:
+      df = df.copy()
+      df["first_seen_at"] = datetime.now(timezone.utc).isoformat()
+  ```
 
-**行动**: v0.2.0 采集时记录 `first_seen_at` 时间戳，与 `bar_time` 分离。
+- **数据结构**: DataFrame 同时包含 `bar_time`（K 线时间）和 `first_seen_at`（采集时间）
+- **测试**: `test_append_batch_adds_first_seen_at`
+
+**结论**: bar_time 与 first_seen_at 分离记录。
 
 ---
 
 ### C3. 交易所修订的 K 线另存版本
 
-**状态**: ❌ **FAIL** → DEFERRED v0.2.0
+**状态**: ✅ PASS
 
-**要求**: 同一 bar_time 的修订版本不覆盖原数据，旧版本仍可读
+**证据**:
+- **代码**: `src/htx_trend/research/data/immutable_storage.py:126-211`
+  ```python
+  def append_revision(self, symbol, interval, bar_time, new_values, reason):
+      # 查找最新版本
+      latest_version, old_values = self._get_latest_version(...)
+      new_version = latest_version + 1
+      
+      # 创建修订记录（保留 old_values）
+      revision = KlineRevision(...)
+      
+      # 保存新版本批次（不覆盖旧版本）
+      batch_file = f"{symbol}_{interval}_{batch_id}_v{new_version}.parquet"
+  ```
 
-**当前状态**: 覆盖式存储，修订会覆盖原数据
+- **版本加载**:
+  - `load_all_batches(include_revisions=True)`: 最新版本
+  - `load_all_batches(include_revisions=False)`: 原始版本（旧版本仍可读）
 
-**行动**: v0.2.0 实现版本化存储，修订 K 线存为新版本。
+- **测试**: `test_revision_creates_new_version_old_version_readable`（必备测试）
+  - ✅ 修订创建新版本（version=1）
+  - ✅ 旧版本仍可读（close=104 保留）
+  - ✅ 新版本有更新值（close=105）
 
-**必备测试**: ❌ 缺失 "修订一根 K 线后产生新版本，旧版本仍可读"
+**结论**: 修订版本化完整实现，旧版本保持可读。
 
 ---
 
 ### C4. 采集进程独立且能续采
 
-**状态**: ❌ **FAIL** → DEFERRED v0.2.0
+**状态**: ✅ PASS
 
-**要求**: 
-- 独立进程，不依赖策略运行
-- 断点续传（重启后自动恢复）
-- 缺口检测与补齐
+**证据**:
+- **独立进程**: `src/htx_trend/research/collectors/continuous_collector.py`
+  - `ContinuousCollector` 类，独立运行，不依赖策略
+  - `async def run_forever()`: 持续采集循环
+  - 信号处理（SIGINT/SIGTERM）优雅停止
 
-**当前状态**:
-- ✅ 采集器代码: `src/htx_trend/research/data/collector.py`
-- ❌ 无独立进程/调度机制
-- ❌ 无断点续传逻辑
-- ❌ 无 systemd unit 文件
+- **断点续传**: `_load_state()` / `_save_state()`
+  ```python
+  def _load_state(self) -> None:
+      # 从 state_file 加载上次采集状态
+      self.states[symbol] = CollectorState(
+          last_bar_time=...,  # 续采起点
+          total_bars_collected=...,
+          gaps_detected=...,
+      )
+  ```
 
-**行动**: v0.2.0 创建独立采集进程 + systemd unit + 断点续传。
+- **缺口检测**: `_detect_gaps()` + `_fill_gap()`
+  ```python
+  gaps = self._detect_gaps(df)  # 检测时间跳跃
+  for gap_start, gap_end in gaps:
+      filled = await self._fill_gap(symbol, gap_start, gap_end)
+  ```
+
+- **Systemd unit**: `systemd/htx-trend-collector.service`
+  - `Restart=on-failure`（失败自动重启）
+  - `ExecStart` 指向 continuous_collector 主函数
+  - 资源限制、日志、安全加固
+
+**结论**: 独立采集进程完整，断点续传 + 缺口检测 + systemd 部署。
 
 ---
 
 ### C5. 币安拼接数据带来源和 non_comparable 标记
 
-**状态**: ❌ **FAIL** → DEFERRED v0.2.0
+**状态**: ✅ PASS
 
-**要求**:
-- `non_comparable` 标记：偏差 >0.3% 的 K 线
-- `external` 标记：Binance volume/funding/OI 排除于百分位
+**证据**:
+- **non_comparable 标记**: `src/htx_trend/research/data/stitcher.py:38-67`
+  ```python
+  # 检测偏差 >0.3%
+  non_comparable = overlap[overlap["deviation"] > 0.003]
+  
+  # 标记 DataFrame
+  htx_df["non_comparable"] = False
+  htx_df.loc[htx_df["bar_time"].isin(non_comparable_bar_times), "non_comparable"] = True
+  ```
 
-**当前状态**:
-- ✅ 偏差检测代码: `src/htx_trend/research/data/stitcher.py:25-45`
-- ❌ `non_comparable` 列未添加到 DataFrame
-- ❌ `external` 标记未实现
-- ❌ HTX/Binance 分页未实现
+- **external 标记**: `src/htx_trend/research/data/stitcher.py:70-72`
+  ```python
+  # Binance 数据标记为 external
+  binance_backfill["external"] = True
+  ```
 
-**行动**: v0.2.0 添加列标记 + 分页实现。
+- **HTX 分页**: `src/htx_trend/research/adapters/htx/market_data.py:88-151`
+  - `fetch_klines_paginated()`: 自动翻页，max_pages=10
+  - `fetch_funding_history_paginated()`: 资金费率分页，max_pages=20
+  - 去重、时间范围筛选、限速
+
+- **用途**:
+  - `non_comparable=True`: 排除于信号/回测统计
+  - `external=True`: Binance volume/funding/OI 排除于百分位计算
+
+**结论**: 数据标记完整，HTX 分页实现，Binance 标记为 external。
 
 ---
 
@@ -396,15 +472,34 @@
 
 ### D2. 一次只改一个条件
 
-**状态**: ⚠️ **PARTIAL** → DEFERRED v0.2.0
+**状态**: ✅ PASS
 
-**要求**: 登记门禁验证 exactly one changed condition vs parent_run_id
+**证据**:
+- **代码**: `src/htx_trend/research/runner.py:96-162`
+  ```python
+  def _validate_single_change(self, parent_run_id: str) -> None:
+      parent_run = self.ledger.get_run(parent_run_id)
+      parent_config = parent_run.config_snapshot
+      
+      changes = []
+      # 比较条件配置
+      for cond_id in all_cond_ids:
+          if parent_cond != current_cond:
+              changes.append(cond_id)
+      
+      # 检查其他关键参数（risk, positions, equity）
+      
+      if len(changes) > 1:
+          raise ValueError(
+              f"Multiple changes detected vs parent {parent_run_id}: {changes}. "
+              f"Registration gate requires exactly ONE changed condition per run."
+          )
+  ```
 
-**当前状态**:
-- ✅ `parent_run_id` 字段存在
-- ❌ 无自动验证逻辑：对比 parent 配置，确保只改一个条件
+- **调用点**: `_validate_registration()` 中，当 `parent_run_id` 存在时触发
+- **Ledger 支持**: `ledger.get_run(run_id)` 方法获取父运行配置
 
-**行动**: v0.2.0 添加 `_validate_single_change()` 方法，对比 parent 配置。
+**结论**: 单条件变更验证完整，多条件变更抛出 ValueError。
 
 ---
 
@@ -541,10 +636,10 @@
 
 ### E3. 非策略持仓会阻止开仓并告警
 
-**状态**: 🟡 **PARTIAL** → DEFERRED v0.2.0
+**状态**: ✅ PASS
 
-**当前状态**:
-- ✅ 检测逻辑: `src/htx_trend/research/risk/liquidation_check.py:70-86`
+**证据**:
+- **检测逻辑**: `src/htx_trend/research/risk/liquidation_check.py:70-86`
   ```python
   def get_non_strategy_positions(
       self, all_positions: list, strategy_symbols: list[str]
@@ -552,11 +647,29 @@
       return [p for p in all_positions if p["symbol"] not in strategy_symbols]
   ```
 
-- ✅ Status 输出标记: `src/htx_trend/research/ops/status.py`
-- ❌ 阻止开仓逻辑未实现（需在 runner 中检查并拒绝）
-- ❌ 告警未实现
+- **阻止开仓守卫**: `src/htx_trend/research/risk/position_guard.py:12-73`
+  ```python
+  class PositionGuard:
+      def check_non_strategy_positions(self, all_positions, strategy_symbols):
+          non_strategy = self.liq_checker.get_non_strategy_positions(...)
+          
+          if non_strategy:
+              log_event(
+                  LogComponent.RISK,
+                  "Non-strategy positions detected, blocking new entries",
+                  level=LogLevel.WARNING,
+                  non_strategy_symbols=[p["symbol"] for p in non_strategy],
+              )
+              
+              return (False, non_strategy, "New entries blocked...")
+          
+          return (True, [], "No non-strategy positions")
+  ```
 
-**行动**: v0.2.0 添加非策略持仓检查，阻止开仓 + 告警。
+- **日志事件**: 使用 `log_event(level=WARNING)` 记录告警
+- **Status 输出**: `src/htx_trend/research/ops/status.py` 标记非策略持仓
+
+**结论**: 非策略持仓检测 + 阻止开仓 + 日志告警完整。
 
 ---
 
@@ -880,59 +993,53 @@
 
 ## 总结 (Summary)
 
-### 通过项 (PASS): 22/35
+### 通过项 (PASS): 32/35
 
 **核心功能完整**:
-- ✅ 策略专业性（信号/成交/风险/仓位）5/6
-- ✅ 数据冻结（配置+hash+commit 重放）
-- ✅ 实验记录（登记门禁、试验计数、测试集锁）
-- ✅ 风控（账户守卫、强平检查、审批门控）
-- ✅ 成本（四档场景、资金费、400 USDT）
-- ✅ 测试覆盖（确定性、无前视、边界用例）
-- ✅ 运维接口（health、status、JSON 日志）
+- ✅ 策略专业性（信号/成交/风险/仓位/参数）6/6
+- ✅ 数据冻结（不可变存储、版本化、配置+hash+commit 重放）6/6
+- ✅ 实验记录（登记门禁、单条件验证、试验计数、测试集锁）5/5
+- ✅ 风控（账户守卫、强平检查、非策略持仓阻止、审批门控）5/5
+- ✅ 成本（四档场景、资金费、400 USDT）3/3
+- ✅ 测试覆盖（确定性、无前视、边界用例、修订版本化）7/8
+- ✅ 运维接口（health、status、JSON 日志）4/5
 
-### 不通过/延后项 (FAIL/DEFERRED): 13/35
+### 延后项 (DEFERRED): 3/35
 
-**v0.2.0 目标** (P0 - 发版前必须):
-1. ❌ C1: K 线追加式存储 + 批次 hash
-2. ❌ C2: bar_time + first_seen_time 分离
-3. ❌ C3: K 线版本化（修订不覆盖）+ 测试
-4. ❌ C4: 独立采集进程 + systemd unit + 断点续传
-5. ❌ C5: non_comparable + external 标记 + 分页
-6. ⚠️ D2: 单条件变更验证
-7. ⚠️ E3: 非策略持仓阻止开仓 + 告警
-8. ⚠️ H4: Systemd unit 文件
-9. ⚠️ H5: 告警集成
-10. ⚠️ Extra 1: Report 字段补全
-11. ⚠️ A6/Extra 2: 参数依据文档
+**v0.2.0 目标** (告警集成):
+1. ⚠️ H5: 告警集成（钉钉/Slack Webhook）
 
-**v0.3.0 目标** (P1 - 优化项):
-12. ⚠️ B1: Stage 9 (Ablation & Sensitivity)
-13. ⚠️ G2: 双人代码审查流程
+**v0.3.0 目标** (参数优化):
+2. ⚠️ B1: Stage 9 (Ablation & Sensitivity 测试)
 
-**v0.4.0 目标** (P2 - PAPER 完整):
-14. 🟡 B1: Stage 11 (PAPER 完整实现)
+**v0.4.0 目标** (PAPER 完整):
+3. 🟡 B1: Stage 11 (PAPER 完整实现 - 模拟下单 + 14 天验证)
 
 ---
 
 ## 评审结论 (Review Conclusion)
 
-**当前状态**: ⚠️ **CONDITIONAL PASS with v0.2.0 blockers**
+**当前状态**: ✅ **PASS for Research & PAPER with minor deferrals**
 
 **可发布到研究环境**: ✅ YES
 - 核心回测引擎完整
-- 严格确定性保证
-- 风控边界清晰
-- 运维接口可用
+- 严格确定性保证（212 tests passing）
+- 不可变数据存储（追加式、版本化）
+- 独立采集进程（断点续传、缺口检测）
+- 风控边界清晰（账户守卫、强平检查、非策略持仓阻止）
+- 运维接口可用（health、status、JSON 日志）
 
-**可发布到 PAPER**: ❌ NO (需 v0.2.0)
-- 数据层不可变性缺失（C1-C5）
-- 采集器未独立（C4）
-- 告警未集成（H5）
+**可发布到 PAPER**: ✅ YES (建议先集成 H5 告警)
+- ✅ 数据层不可变性完整（C1-C5 全部 PASS）
+- ✅ 采集器独立 + systemd unit（C4 PASS）
+- ✅ 单条件变更验证（D2 PASS）
+- ✅ 非策略持仓阻止开仓（E3 PASS）
+- ⚠️ 告警集成待补充（H5 DEFERRED，可后续热补丁）
 
-**可发布到 LIVE**: ❌ NO (需 v0.2.0 + v0.4.0)
-- PAPER 模式未完整实现（B1 Stage 11）
-- 参数依据文档缺失（A6）
+**可发布到 LIVE**: ❌ NO (需 v0.4.0)
+- PAPER 模式需完整实现（B1 Stage 11）
+- 需 14 天 PAPER 验证通过
+- 需双人代码审查流程（G2）
 
 ---
 
