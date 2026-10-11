@@ -186,7 +186,7 @@ class BacktestRunner:
             drop_rule=reg_config["drop_rule"],
             evidence_ref=reg_config.get("evidence_ref"),
             trial_count=self.ledger.count_trials(self._family_id),
-            uses_holdout=self.config.get("stage_acceptance", False),
+            uses_holdout=self.config.get("split") == "test",
             conclusion=None,
             decision=None,
         )
@@ -275,26 +275,36 @@ class BacktestRunner:
     def _load_dataset(self) -> tuple[dict[str, pd.DataFrame], Any]:
         dataset_id = self.config["dataset_id"]
         symbols = self.config.get("symbols", ["BTC-USDT", "ETH-USDT"])
-        
+        split = self.config.get("split", "train")
+        approval_id = self.config.get("stage_acceptance_approval_id")
+        if split == "test" and not approval_id:
+            raise ValueError(
+                "Test set access requires stage_acceptance_approval_id in config. "
+                "Obtain approval first via CLI: approve --gate STAGE_ACCEPTANCE"
+            )
+
         manifest_hash = self.config.get("manifest_hash")
         if manifest_hash:
             data, frozen = self.dataset_mgr.load_dataset_with_verification(
-                dataset_id, manifest_hash, symbols
+                dataset_id,
+                manifest_hash,
+                symbols,
+                split=split,
+                approval_id=approval_id,
+                run_id=self.run_id,
             )
         else:
-            data, frozen = self.dataset_mgr.load_dataset(dataset_id, symbols)
+            data, frozen = self.dataset_mgr.load_dataset(
+                dataset_id,
+                symbols,
+                split=split,
+                approval_id=approval_id,
+                run_id=self.run_id,
+            )
 
-        split = self.config.get("split", "train")
-        
-        if split == "test":
-            if not self.config.get("stage_acceptance", False):
-                raise ValueError("Cannot use test split without stage_acceptance=true")
-        
-        start_idx, end_idx = frozen.get_split(split)
-        
         processed_data = {}
         for symbol, df in data.items():
-            df = df.iloc[start_idx:end_idx].copy()
+            df = df.copy()
             
             # 记录原始统计（用于报告分离）
             total_bars = len(df)

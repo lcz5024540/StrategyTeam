@@ -20,6 +20,7 @@ class ApprovalGate(str, Enum):
     PRE_PAPER = "PRE_PAPER"
     PRE_LIVE = "PRE_LIVE"
     BREAKER_RESTART = "BREAKER_RESTART"
+    STAGE_ACCEPTANCE = "STAGE_ACCEPTANCE"
 
 
 class ApprovalDecision(str, Enum):
@@ -217,6 +218,27 @@ class LedgerManager:
             BEGIN
                 SELECT RAISE(ABORT, 'registrations table is append-only');
             END;
+
+            CREATE TABLE IF NOT EXISTS holdout_access_log (
+                access_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                dataset_id TEXT NOT NULL,
+                dataset_hash TEXT NOT NULL,
+                approval_id TEXT NOT NULL,
+                accessed_at TEXT NOT NULL,
+                split_requested TEXT NOT NULL
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_holdout_one_access_per_dataset
+            ON holdout_access_log(dataset_hash, approval_id);
+
+            CREATE TABLE IF NOT EXISTS conclusions (
+                event_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                conclusion TEXT NOT NULL,
+                decision TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )
     
@@ -519,6 +541,120 @@ class LedgerManager:
             count = cursor.fetchone()[0]
         
         return count > 0
+
+    def get_approval(self, approval_id: int | str) -> Approval | None:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT approval_id, gate, run_id, strategy_version,
+                       approver, decision, rationale, created_at
+                FROM approvals WHERE approval_id = ?
+                """,
+                (int(approval_id),),
+            ).fetchone()
+        if not row:
+            return None
+        return Approval(
+            approval_id=row[0],
+            gate=ApprovalGate(row[1]),
+            run_id=row[2],
+            strategy_version=row[3],
+            approver=row[4],
+            decision=ApprovalDecision(row[5]),
+            rationale=row[6],
+            created_at=datetime.fromisoformat(row[7]),
+        )
+
+    def is_holdout_accessed(self, dataset_hash: str, approval_id: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            count = conn.execute(
+                """
+                SELECT COUNT(*) FROM holdout_access_log
+                WHERE dataset_hash = ? AND approval_id = ?
+                """,
+                (dataset_hash, str(approval_id)),
+            ).fetchone()[0]
+        return count > 0
+
+    def log_holdout_access(
+        self,
+        run_id: str,
+        dataset_id: str,
+        dataset_hash: str,
+        approval_id: str,
+        accessed_at: datetime,
+        split_requested: str,
+    ) -> str:
+        access_id = str(uuid.uuid4())
+        with sqlite3.connect(self.db_path) as conn:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO holdout_access_log (
+                        access_id, run_id, dataset_id, dataset_hash,
+                        approval_id, accessed_at, split_requested
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        access_id,
+                        run_id,
+                        dataset_id,
+                        dataset_hash,
+                        str(approval_id),
+                        accessed_at.isoformat(),
+                        split_requested,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError(
+                    f"Dataset {dataset_id} (hash {dataset_hash}) "
+                    f"has already been accessed with this approval. "
+                    f"Test set can only be used once per approval."
+                ) from exc
+        return access_id
+
+    def list_holdout_access(self, dataset_hash: str | None = None) -> list[dict[str, Any]]:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            if dataset_hash:
+                rows = conn.execute(
+                    "SELECT * FROM holdout_access_log WHERE dataset_hash = ?",
+                    (dataset_hash,),
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM holdout_access_log").fetchall()
+        return [dict(row) for row in rows]
+
+    def append_conclusion(
+        self,
+        run_id: str,
+        conclusion: str,
+        decision: str,
+        created_at: datetime | None = None,
+    ) -> str:
+        event_id = str(uuid.uuid4())
+        when = created_at or datetime.now()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO conclusions (event_id, run_id, conclusion, decision, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (event_id, run_id, conclusion, decision, when.isoformat()),
+            )
+        return event_id
+
+    def get_latest_conclusion(self, run_id: str) -> dict[str, Any] | None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT * FROM conclusions WHERE run_id = ?
+                ORDER BY rowid DESC LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+        return dict(row) if row else None
     
     def create_approval(self, approval: Approval) -> int:
         """记录审批决策"""

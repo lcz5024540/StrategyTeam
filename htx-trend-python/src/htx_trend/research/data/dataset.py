@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
 import pandas as pd
 
+from ..ledger.ledger import ApprovalDecision, ApprovalGate
 from ..ops.logging import LogComponent, log_event
 from .immutable_storage import ImmutableKlineStorage
 from .manifest import DatasetManifest, VerificationResult
@@ -174,8 +175,18 @@ class DatasetManager:
         return frozen
     
     def load_dataset(
-        self, dataset_id: str, symbols: list[str] | None = None
+        self,
+        dataset_id: str,
+        symbols: list[str] | None = None,
+        split: str = "train",
+        approval_id: str | None = None,
+        run_id: str | None = None,
     ) -> tuple[dict[str, pd.DataFrame], FrozenDataset]:
+        if split not in FrozenDataset.VALID_SPLITS:
+            raise ValueError(
+                f"Invalid split name: {split}. Must be one of: train, val, test"
+            )
+
         dataset_dir = self.datasets_dir / dataset_id
         
         if not dataset_dir.exists():
@@ -185,23 +196,74 @@ class DatasetManager:
         manifest = json.loads(manifest_path.read_text())
         
         frozen = FrozenDataset.from_dict(manifest)
+
+        if split == "test":
+            self._enforce_holdout_gate(
+                dataset_id=dataset_id,
+                dataset_hash=frozen.manifest_hash,
+                approval_id=approval_id,
+                run_id=run_id or self.current_run_id,
+            )
         
         symbols_to_load = symbols or frozen.symbols
+        start_idx, end_idx = frozen.get_split(split)
         data = {}
         
         for symbol in symbols_to_load:
             parquet_path = dataset_dir / f"{symbol}.parquet"
             if parquet_path.exists():
-                data[symbol] = pd.read_parquet(parquet_path)
+                data[symbol] = pd.read_parquet(parquet_path).iloc[start_idx:end_idx].copy()
         
         log_event(
             LogComponent.DATA,
             f"Dataset loaded: {dataset_id}",
             dataset_id=dataset_id,
             symbols=list(data.keys()),
+            split=split,
         )
         
         return data, frozen
+
+    def _enforce_holdout_gate(
+        self,
+        dataset_id: str,
+        dataset_hash: str,
+        approval_id: str | None,
+        run_id: str | None,
+    ) -> None:
+        if not approval_id:
+            raise ValueError(
+                "Test set access requires an approval_id. "
+                "Run must have an APPROVED STAGE_ACCEPTANCE approval."
+            )
+        if self.ledger is None:
+            raise ValueError("Test set access requires a ledger on DatasetManager")
+
+        approval = self.ledger.get_approval(approval_id)
+        if approval is None:
+            raise ValueError(f"Approval {approval_id} not found")
+        if approval.gate != ApprovalGate.STAGE_ACCEPTANCE:
+            raise ValueError(
+                f"Test set requires STAGE_ACCEPTANCE approval, got {approval.gate.value}"
+            )
+        if approval.decision != ApprovalDecision.APPROVED:
+            raise ValueError(
+                f"Approval {approval_id} is {approval.decision.value}, not APPROVED"
+            )
+        if self.ledger.is_holdout_accessed(dataset_hash, str(approval_id)):
+            raise ValueError(
+                f"Dataset {dataset_id} (hash {dataset_hash}) "
+                f"has already been accessed with this approval. "
+                f"Test set can only be used once per approval."
+            )
+        self.ledger.log_holdout_access(
+            run_id=run_id or "unknown",
+            dataset_id=dataset_id,
+            dataset_hash=dataset_hash,
+            approval_id=str(approval_id),
+            accessed_at=datetime.now(timezone.utc),
+            split_requested="test",
+        )
     
     def _compute_split_hash(
         self, data: dict[str, pd.DataFrame], symbols: list[str], start: int, end: int
@@ -229,6 +291,9 @@ class DatasetManager:
         dataset_id: str,
         manifest_hash: str,
         symbols: list[str] | None = None,
+        split: str = "train",
+        approval_id: str | None = None,
+        run_id: str | None = None,
     ) -> tuple[dict[str, pd.DataFrame], FrozenDataset]:
         manifest_path = self.manifests_dir / f"{dataset_id}.json"
         if not manifest_path.exists():
@@ -257,4 +322,10 @@ class DatasetManager:
                 f"mismatches={result.mismatches} missing={result.missing_files}"
             )
 
-        return self.load_dataset(dataset_id, symbols)
+        return self.load_dataset(
+            dataset_id,
+            symbols,
+            split=split,
+            approval_id=approval_id,
+            run_id=run_id,
+        )

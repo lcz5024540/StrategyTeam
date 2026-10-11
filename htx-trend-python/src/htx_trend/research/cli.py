@@ -292,7 +292,7 @@ def main() -> None:
     status_parser.add_argument("--json", action="store_true")
     
     approve_parser = subparsers.add_parser("approve", help="Create approval record")
-    approve_parser.add_argument("--gate", required=True, choices=["PRE_PAPER", "PRE_LIVE", "BREAKER_RESTART"])
+    approve_parser.add_argument("--gate", required=True, choices=["PRE_PAPER", "PRE_LIVE", "BREAKER_RESTART", "STAGE_ACCEPTANCE"])
     approve_parser.add_argument("--run-id", required=True)
     approve_parser.add_argument("--strategy-version", required=True)
     approve_parser.add_argument("--approver", required=True, help="Name or email of approver")
@@ -300,7 +300,7 @@ def main() -> None:
     approve_parser.add_argument("--rationale", required=True, help="Reason for decision")
     
     check_parser = subparsers.add_parser("check-approval", help="Check approval gate")
-    check_parser.add_argument("--gate", required=True, choices=["PRE_PAPER", "PRE_LIVE", "BREAKER_RESTART"])
+    check_parser.add_argument("--gate", required=True, choices=["PRE_PAPER", "PRE_LIVE", "BREAKER_RESTART", "STAGE_ACCEPTANCE"])
     check_parser.add_argument("--run-id", required=True)
     check_parser.add_argument("--strategy-version", required=True)
 
