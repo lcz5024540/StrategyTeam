@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import httpx
@@ -311,3 +311,97 @@ def test_funding_pagination_continues_until_exhausted():
     assert len(rates) == page_count * per_page
     earliest = min(row.funding_time for row in rates)
     assert earliest < datetime(2024, 1, 1, tzinfo=UTC)
+
+
+def test_funding_pagination_end_time_does_not_count_filtered_pages_as_empty():
+    """Newest API pages after end_time must not trip the empty-page stop."""
+    client = HtxMarketDataClient()
+    now = datetime(2026, 10, 11, 16, tzinfo=UTC)
+    end_time = now - timedelta(days=90)
+    earliest = datetime(2020, 10, 21, 16, tzinfo=UTC)
+    page_count = 131
+    seen = {"n": 0}
+
+    def funding_history(contract_code, page_size=50, page_index=1):
+        seen["n"] += 1
+        if page_index > page_count:
+            return []
+        span = (now - earliest).total_seconds()
+        stamp = now - timedelta(seconds=span * (page_index - 1) / (page_count - 1))
+        return [
+            {
+                "symbol": "BTC-USDT",
+                "funding_time": int(stamp.timestamp() * 1000),
+                "funding_rate": "0.0001",
+            }
+        ]
+
+    client.client.funding_history = funding_history
+    rates = client.fetch_funding_history_paginated(
+        "BTC-USDT",
+        end_time=end_time,
+        page_sleep=0,
+    )
+    assert seen["n"] == page_count + 2
+    assert min(row.funding_time for row in rates) == earliest
+    assert max(row.funding_time for row in rates) <= end_time
+
+
+def test_kline_pagination_empty_stop_uses_raw_api_window():
+    """Kline stop must use raw empty windows, not a post-filter of bars."""
+    calls = []
+
+    def envelope(contract_code, period, size=None, *, start=None, end=None):
+        calls.append((start, end))
+        if start is None or end is None:
+            return {"status": "ok", "data": [_bar(END_TS)]}
+        if start >= END_TS - 8 * FOUR_H:
+            return {"status": "ok", "data": [_bar(END_TS - FOUR_H)]}
+        return {"status": "ok", "data": []}
+
+    client = _recording_client(envelope)
+    start = datetime(2020, 10, 21, 16, tzinfo=UTC)
+    client.fetch_klines_paginated(
+        "BTC-USDT",
+        "4hour",
+        start_time=start,
+        end_time=datetime.fromtimestamp(END_TS, UTC),
+        max_pages=20,
+        page_size=2,
+        empty_pages_to_stop=2,
+        page_sleep=0,
+    )
+    assert len(calls) > 2
+
+
+def test_fetch_contract_info_raises_on_exception():
+    client = HtxMarketDataClient()
+    client.client.contract_info = MagicMock(side_effect=RuntimeError("htx down"))
+    with pytest.raises(RuntimeError, match="htx down"):
+        client.fetch_contract_info("BTC-USDT")
+
+
+def test_fetch_contract_info_defaults_min_order_to_htx_constant():
+    from htx_trend.research.adapters.htx.market_data import HTX_MIN_ORDER_CONTRACTS
+
+    assert HTX_MIN_ORDER_CONTRACTS == 1
+    client = HtxMarketDataClient()
+    client.client.contract_info = MagicMock(
+        return_value=[
+            {
+                "contract_code": "BTC-USDT",
+                "symbol": "BTC",
+                "contract_size": "0.001",
+                "price_tick": "0.1",
+                "create_date": 0,
+            }
+        ]
+    )
+    spec = client.fetch_contract_info("BTC-USDT")
+    assert spec.min_order_size == HTX_MIN_ORDER_CONTRACTS
+    source = (
+        __import__("pathlib").Path(__file__).resolve().parents[3]
+        / "src/htx_trend/research/adapters/htx/market_data.py"
+    ).read_text()
+    assert "HTX_MIN_ORDER_CONTRACTS" in source
+    assert "contract_info has no such field" in source

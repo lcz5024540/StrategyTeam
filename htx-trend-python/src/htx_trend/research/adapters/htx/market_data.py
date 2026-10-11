@@ -17,13 +17,29 @@ import httpx
 
 from ....htx_v5 import HtxApiError, HtxV5Client
 
+RESEARCH_YEAR_MIN = 2019
+RESEARCH_YEAR_MAX = 2026
+
+
+def require_research_timestamp(value: datetime, *, field: str = "timestamp") -> datetime:
+    """Reject timestamps outside the research window [2019, 2026]."""
+    year = int(value.year)
+    if year < RESEARCH_YEAR_MIN or year > RESEARCH_YEAR_MAX:
+        raise ValueError(
+            f"{field} year {year} out of range [{RESEARCH_YEAR_MIN}, {RESEARCH_YEAR_MAX}]"
+        )
+    return value
+
 
 def parse_htx_funding_time(value: Any) -> datetime:
     """HTX funding_time is milliseconds since epoch (e.g. 1791763200000)."""
     timestamp = float(value)
     if timestamp > 10**12:
         timestamp = timestamp / 1000.0
-    return datetime.fromtimestamp(timestamp, UTC)
+    return require_research_timestamp(
+        datetime.fromtimestamp(timestamp, UTC),
+        field="funding_time",
+    )
 
 
 class HtxAPIError(Exception):
@@ -87,6 +103,8 @@ KLINE_PERIOD_SECONDS = {
 # (400d of 4h fails; inclusive endpoints can count as 2001).
 SAFE_KLINE_BARS = 1990
 DEFAULT_EMPTY_PAGES_TO_STOP = 2
+# HTX swap_contract_info has no such field; linear USDT-M min is 1 contract.
+HTX_MIN_ORDER_CONTRACTS = 1
 
 
 def kline_window_seconds(period: str, bars: int = SAFE_KLINE_BARS) -> int:
@@ -169,9 +187,15 @@ class HtxMarketDataClient:
         first_seen = datetime.now(UTC)
         klines = []
         for item in raw_data:
+            timestamp = float(item["id"])
+            if timestamp > 10**12:
+                timestamp = timestamp / 1000.0
             klines.append(
                 Kline(
-                    bar_time=datetime.fromtimestamp(item["id"], UTC),
+                    bar_time=require_research_timestamp(
+                        datetime.fromtimestamp(timestamp, UTC),
+                        field="id",
+                    ),
                     open=float(item["open"]),
                     high=float(item["high"]),
                     low=float(item["low"]),
@@ -276,6 +300,7 @@ class HtxMarketDataClient:
                 from_timestamp=cursor_start,
                 to_timestamp=cursor_end,
             )
+            # Only a raw empty API window counts; do not filter before this check.
             if not batch:
                 empty_streak += 1
                 if empty_streak >= max(1, int(empty_pages_to_stop)):
@@ -324,12 +349,15 @@ class HtxMarketDataClient:
 
         rates = []
         for item in raw_data:
+            realized = item.get("realized_rate")
+            if realized is None:
+                realized = item["funding_rate"]
             rates.append(
                 FundingRate(
-                    symbol=item["symbol"],
+                    symbol=item.get("contract_code") or item["symbol"],
                     funding_time=parse_htx_funding_time(item["funding_time"]),
                     funding_rate=float(item["funding_rate"]),
-                    realized_rate=float(item.get("realized_rate", item["funding_rate"])),
+                    realized_rate=float(realized),
                     source="htx",
                 )
             )
@@ -360,10 +388,6 @@ class HtxMarketDataClient:
                 page_index=page + 1,
                 strict=strict,
             )
-            if start_time:
-                batch = [row for row in batch if row.funding_time >= start_time]
-            if end_time:
-                batch = [row for row in batch if row.funding_time <= end_time]
             page += 1
             if not batch:
                 empty_streak += 1
@@ -373,6 +397,10 @@ class HtxMarketDataClient:
                     time.sleep(page_sleep)
                 continue
             empty_streak = 0
+            if start_time:
+                batch = [row for row in batch if row.funding_time >= start_time]
+            if end_time:
+                batch = [row for row in batch if row.funding_time <= end_time]
             all_rates.extend(batch)
             if page_sleep:
                 time.sleep(page_sleep)
@@ -386,24 +414,18 @@ class HtxMarketDataClient:
         return unique_rates
     
     def fetch_contract_info(self, contract_code: str) -> ContractSpec | None:
-        try:
-            raw_data = self.client.contract_info(contract_code)
-            
-            if not raw_data:
-                return None
-            
-            item = raw_data[0]
-            return ContractSpec(
-                contract_code=item["contract_code"],
-                symbol=item["symbol"],
-                contract_size=float(item["contract_size"]),
-                price_tick=float(item["price_tick"]),
-                min_order_size=int(item.get("min_order_size", 1)),
-                create_date=int(item["create_date"]),
-            )
-        
-        except Exception:
+        raw_data = self.client.contract_info(contract_code)
+        if not raw_data:
             return None
+        item = raw_data[0]
+        return ContractSpec(
+            contract_code=item["contract_code"],
+            symbol=item["symbol"],
+            contract_size=float(item["contract_size"]),
+            price_tick=float(item["price_tick"]),
+            min_order_size=int(item.get("min_order_size", HTX_MIN_ORDER_CONTRACTS)),
+            create_date=int(item["create_date"]),
+        )
     
     def close(self) -> None:
         self.client.close()

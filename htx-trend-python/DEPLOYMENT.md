@@ -120,6 +120,22 @@ export HTX_MAIN_ACCOUNT_ID="your_main_account_id"
 
 ## Installation
 
+### Packaging environment
+
+Build the tarball in a **Python 3.12** venv that already has
+`requirements.lock` installed (the deploy venv is the usual choice):
+
+```bash
+source /opt/coinstrategy/htx-trend-py/.venv/bin/activate
+python scripts/package.py --branch <release-branch>
+```
+
+If HEAD is detached, `--branch` is required; the script will not write `HEAD`.
+`--version` overrides `_version.py` when needed.
+
+When syncing onto the server, **anchor** runtime excludes (`/data`, not `data`)
+so `src/htx_trend/research/data/` is not skipped. Use `scripts/deploy_sync.sh`.
+
 ### From Package
 
 ```bash

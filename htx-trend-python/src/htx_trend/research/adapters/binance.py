@@ -10,13 +10,14 @@ from __future__ import annotations
 import atexit
 import hashlib
 import io
+import math
 import zipfile
 from datetime import UTC, datetime, timedelta
 from typing import Iterable
 
 import httpx
 
-from .htx.market_data import FundingRate, Kline
+from .htx.market_data import FundingRate, Kline, require_research_timestamp
 
 VISION_BASE = "https://data.binance.vision/data/futures/um"
 ALLOWED_SYMBOLS = frozenset({"BTCUSDT", "ETHUSDT"})
@@ -128,27 +129,35 @@ class BinanceVisionClient:
             if not names:
                 raise ValueError("Vision funding archive contains no CSV")
             raw = archive.read(names[0]).decode("utf-8")
-        rates: list[FundingRate] = []
+        columns: list[str] | None = None
+        rows: list[tuple[datetime, float, float | None]] = []
         for line in raw.splitlines():
             if not line.strip():
                 continue
             parts = [item.strip() for item in line.split(",")]
-            if not parts or not parts[0] or not parts[0][0].isdigit():
+            if not parts or not parts[0]:
                 continue
-            timestamp = float(parts[0])
-            if timestamp > 10**12:
-                timestamp = timestamp / 1000
-            rate = float(parts[-1])
-            rates.append(
-                FundingRate(
-                    symbol=symbol,
-                    funding_time=datetime.fromtimestamp(timestamp, UTC),
-                    funding_rate=rate,
-                    realized_rate=rate,
-                    source="binance_external",
-                )
+            if _is_csv_header(parts[0]):
+                columns = [item.lower() for item in parts]
+                continue
+            timestamp, rate, interval_hours = _funding_fields(parts, columns)
+            funding_time = require_research_timestamp(
+                datetime.fromtimestamp(_floor_epoch_seconds(timestamp), UTC),
+                field="calc_time",
             )
-        return rates
+            rows.append((funding_time, rate, interval_hours))
+        rows.sort(key=lambda item: item[0])
+        _assert_funding_intervals(rows)
+        return [
+            FundingRate(
+                symbol=symbol,
+                funding_time=funding_time,
+                funding_rate=rate,
+                realized_rate=rate,
+                source="binance_external",
+            )
+            for funding_time, rate, _interval in rows
+        ]
 
     def _download_daily(
         self, symbol: str, interval: str, year: int, month: int, day: int
@@ -186,14 +195,17 @@ class BinanceVisionClient:
             raw = archive.read(names[0]).decode("utf-8")
         klines: list[Kline] = []
         for line in raw.splitlines():
-            if not line.strip() or line.lower().startswith("open_time"):
+            if not line.strip():
                 continue
             parts = line.split(",")
-            if len(parts) < 6:
+            if len(parts) < 6 or _is_csv_header(parts[0]):
                 continue
             klines.append(
                 Kline(
-                    bar_time=datetime.fromtimestamp(int(parts[0]) / 1000, UTC),
+                    bar_time=require_research_timestamp(
+                        datetime.fromtimestamp(_floor_epoch_seconds(float(parts[0])), UTC),
+                        field="open_time",
+                    ),
                     open=float(parts[1]),
                     high=float(parts[2]),
                     low=float(parts[3]),
@@ -241,6 +253,51 @@ def _iter_months(start: datetime, end: datetime) -> Iterable[tuple[int, int]]:
         if month == 13:
             month = 1
             year += 1
+
+
+def _is_csv_header(first: str) -> bool:
+    try:
+        float(first.strip())
+    except ValueError:
+        return True
+    return False
+
+
+def _floor_epoch_seconds(value: float) -> float:
+    if value > 10**12:
+        value = value / 1000.0
+    return math.floor(value)
+
+
+def _funding_fields(
+    parts: list[str],
+    columns: list[str] | None,
+) -> tuple[float, float, float | None]:
+    if columns:
+        index = {name: i for i, name in enumerate(columns)}
+        timestamp = float(parts[index.get("calc_time", 0)])
+        if "last_funding_rate" in index:
+            rate = float(parts[index["last_funding_rate"]])
+        else:
+            rate = float(parts[-1])
+        interval = None
+        if "funding_interval_hours" in index:
+            interval = float(parts[index["funding_interval_hours"]])
+        return timestamp, rate, interval
+    return float(parts[0]), float(parts[-1]), None
+
+
+def _assert_funding_intervals(rows: list[tuple[datetime, float, float | None]]) -> None:
+    for previous, current in zip(rows, rows[1:]):
+        interval = current[2] if current[2] is not None else previous[2]
+        if interval is None:
+            continue
+        actual = (current[0] - previous[0]).total_seconds()
+        expected = float(interval) * 3600.0
+        if abs(actual - expected) > 1.0:
+            raise ValueError(
+                f"funding_interval_hours={interval} but gap is {actual:.0f}s"
+            )
 
 
 def _parse_checksum(text: str) -> str:

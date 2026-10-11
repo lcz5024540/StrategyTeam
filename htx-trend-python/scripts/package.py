@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """打包脚本 - 创建可复现的分发包"""
 
+import argparse
 import hashlib
 import json
 import os
@@ -29,6 +30,34 @@ def get_version() -> str:
             return line.split("=")[1].strip().strip('"').strip("'")
     
     raise ValueError("Version not found in _version.py")
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build the HTX trend research tarball")
+    parser.add_argument(
+        "--branch",
+        help="Branch name to embed. Required when HEAD is detached.",
+    )
+    parser.add_argument(
+        "--version",
+        help="Override version from src/htx_trend/research/_version.py",
+    )
+    return parser.parse_args(argv)
+
+
+def resolve_branch(detected: str, override: str | None) -> str:
+    """Never persist detached HEAD as the packaged branch name."""
+    branch = (override or detected or "").strip()
+    if override is not None:
+        branch = override.strip()
+    else:
+        branch = (detected or "").strip()
+    if not branch or branch == "HEAD":
+        raise SystemExit(
+            "HEAD is detached; pass --branch <name> so the package "
+            "does not record branch='HEAD'"
+        )
+    return branch
 
 
 def get_git_info() -> dict:
@@ -107,6 +136,8 @@ def create_package(version: str, git_info: dict) -> tuple[Path, str]:
             "scripts/compile_lock.sh",
             "scripts/check_lock_hygiene.py",
             "scripts/smoke_e2e.sh",
+            "scripts/package.py",
+            "scripts/deploy_sync.sh",
         ]:
             for file_path in repo_root.glob(pattern):
                 if "__pycache__" in str(file_path):
@@ -219,8 +250,35 @@ fees:
 ## Installation
 
 ### Prerequisites
-- Python 3.11+
+- Python 3.12
 - pip
+- A venv with `requirements.lock` already installed (the deploy venv is fine)
+
+### Packaging environment
+
+Build the tarball inside a **Python 3.12** virtualenv that has
+`requirements.lock` installed. Reuse the deploy venv rather than
+`pip freeze` of the host:
+
+```bash
+source /opt/coinstrategy/htx-trend-py/.venv/bin/activate
+python scripts/package.py --branch <release-branch>
+# optional: --version 0.2.0
+```
+
+Detached HEAD must pass `--branch`; the script refuses to write `branch='HEAD'`.
+
+### Sync excludes
+
+When rsyncing onto the server, **anchor** runtime excludes so they only
+match the deploy root. Unanchored `data` also skips
+`src/htx_trend/research/data/`.
+
+```bash
+scripts/deploy_sync.sh ./ ubuntu@host:/opt/coinstrategy/htx-trend-py
+# equivalent:
+# rsync -a --delete --exclude '/data' --exclude '/logs' --exclude '/run' --exclude '/.venv' ./ dest/
+```
 
 ### Steps
 ```bash
@@ -366,17 +424,19 @@ For issues or questions:
     return delivery_path
 
 
-def main():
+def main(argv: list[str] | None = None) -> int:
     """主打包流程"""
+    args = parse_args(argv)
     print("=" * 60)
     print("HTX Trend Research System - Package Builder")
     print("=" * 60)
     print()
     
-    version = get_version()
+    version = args.version or get_version()
     print(f"Version: {version}")
     
     git_info = get_git_info()
+    git_info["branch"] = resolve_branch(git_info["branch"], args.branch)
     print(f"Git: {git_info['branch']}@{git_info['short_sha']}")
     
     if git_info['dirty']:

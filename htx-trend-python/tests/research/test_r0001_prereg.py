@@ -44,3 +44,5 @@ def test_todo_placeholders_are_rejected_until_data_frozen(tmp_path):
     runner = BacktestRunner(path, workspace)
     with pytest.raises(ValueError, match="TODO|placeholder|freeze"):
         runner.run()
+    assert runner.ledger.get_all_trials() == []
+    assert runner.ledger.count_trials(runner.run_id) == 0

@@ -277,7 +277,10 @@ class SimBroker:
         ]
 
     def get_account_equity(self) -> float:
-        return self.equity + sum(p.unrealized_pnl for p in self.positions.values())
+        return self.equity + sum(
+            p.unrealized_pnl - float(p.accumulated_funding or 0.0)
+            for p in self.positions.values()
+        )
 
     def close(self) -> None:
         if getattr(self, "_closed", False):

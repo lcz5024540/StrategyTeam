@@ -65,10 +65,7 @@ def _is_unfrozen_placeholder(value: Any) -> bool:
 
 
 def _marked_equity(broker: Any) -> float:
-    equity = float(broker.get_account_equity())
-    for position in getattr(broker, "positions", {}).values():
-        equity -= float(getattr(position, "accumulated_funding", 0.0) or 0.0)
-    return equity
+    return float(broker.get_account_equity())
 
 
 def annualized_sharpe_from_equity(equity: Any, ppy: float) -> float:
@@ -144,6 +141,7 @@ class BacktestRunner:
         family_id = self._determine_family_id()
         self._family_id = family_id
         self._changed_key = None
+        self._require_run_fields()
 
         if not self._is_smoke:
             self.ledger.start_trial(
@@ -163,7 +161,6 @@ class BacktestRunner:
         n_trades = 0
         return_series_path = None
         try:
-            self._require_run_fields()
             self._validate_conditions()
             self._validate_registration()
 
