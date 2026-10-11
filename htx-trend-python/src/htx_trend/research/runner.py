@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -54,39 +55,99 @@ class BacktestRunner:
     
     def run(self) -> dict[str, Any]:
         log_event(LogComponent.ENGINE, f"Starting backtest run: {self.run_id}")
-        
-        self._validate_registration()
-        
-        data, frozen = self._load_dataset()
-        
-        git_commit = self._get_git_commit()
-        
-        run_record = RunRecord(
+
+        trial_id = str(uuid.uuid4())
+        self._trial_id = trial_id
+        family_id = self._determine_family_id()
+        self._family_id = family_id
+        self._changed_key = None
+
+        self.ledger.start_trial(
+            trial_id=trial_id,
             run_id=self.run_id,
             parent_run_id=self.config.get("parent_run_id"),
-            git_commit=git_commit,
-            dataset_hash=frozen.manifest_hash,
-            environment="BACKTEST",
-            config_snapshot=self.config,
-            cost_scenario=self.config.get("cost_scenario", "base"),
-            created_at=datetime.now(),
-            manifest_hash=self.config.get("manifest_hash") or getattr(frozen, "batch_manifest_hash", None),
+            family_id=family_id,
+            changed_key=None,
+            status="started",
+            started_at=datetime.now(timezone.utc),
         )
-        
-        self.ledger.register_run(run_record)
-        
-        results = self._run_backtest(data, frozen)
-        
-        report_path = self._generate_report(results)
-        
-        log_event(
-            LogComponent.ENGINE,
-            f"Backtest complete: {self.run_id}",
-            total_trades=len(results["fills"]),
-            report=str(report_path),
-        )
-        
-        return results
+
+        results: dict[str, Any] | None = None
+        status = "failed"
+        error_message: str | None = None
+        try:
+            self._validate_registration()
+
+            data, frozen = self._load_dataset()
+
+            git_commit = self._get_git_commit()
+
+            run_record = RunRecord(
+                run_id=self.run_id,
+                parent_run_id=self.config.get("parent_run_id"),
+                git_commit=git_commit,
+                dataset_hash=frozen.manifest_hash,
+                environment="BACKTEST",
+                config_snapshot=self.config,
+                cost_scenario=self.config.get("cost_scenario", "base"),
+                created_at=datetime.now(timezone.utc),
+                manifest_hash=self.config.get("manifest_hash")
+                or getattr(frozen, "batch_manifest_hash", None),
+            )
+
+            self.ledger.register_run(run_record)
+
+            results = self._run_backtest(data, frozen)
+            current_pnl = results["final_equity"] - results["initial_equity"]
+            self.ledger.update_run_metrics(
+                self.run_id,
+                {
+                    "total_pnl": current_pnl,
+                    "final_equity": results["final_equity"],
+                    "initial_equity": results["initial_equity"],
+                },
+            )
+
+            report_path = self._generate_report(results)
+
+            log_event(
+                LogComponent.ENGINE,
+                f"Backtest complete: {self.run_id}",
+                total_trades=len(results["fills"]),
+                report=str(report_path),
+            )
+            status = "completed"
+            return results
+        except Exception as exc:
+            error_message = str(exc)
+            status = "failed"
+            raise
+        finally:
+            pnl = None
+            if results is not None:
+                pnl = results["final_equity"] - results["initial_equity"]
+            self.ledger.finalize_trial(
+                trial_id=trial_id,
+                status=status,
+                completed_at=datetime.now(timezone.utc),
+                final_pnl=pnl,
+                error_message=error_message,
+                changed_key=self._changed_key,
+            )
+
+    def _determine_family_id(self) -> str:
+        parent_id = self.config.get("parent_run_id")
+        if not parent_id:
+            return self.run_id
+        current = parent_id
+        seen: set[str] = set()
+        while current and current not in seen:
+            seen.add(current)
+            parent_run = self.ledger.get_run(current)
+            if not parent_run or not parent_run.parent_run_id:
+                return current
+            current = parent_run.parent_run_id
+        return parent_id
     
     def _validate_registration(self) -> None:
         reg_config = self.config.get("registration", {})
@@ -112,6 +173,9 @@ class BacktestRunner:
         if parent_run_id:
             self._validate_single_change(parent_run_id)
         
+        if self._changed_key is None:
+            self._changed_key = "baseline" if not self.config.get("parent_run_id") else reg_config["change"]
+
         exp = ExperimentRegistration(
             run_id=self.run_id,
             parent_run_id=self.config.get("parent_run_id"),
@@ -121,7 +185,7 @@ class BacktestRunner:
             keep_rule=reg_config["keep_rule"],
             drop_rule=reg_config["drop_rule"],
             evidence_ref=reg_config.get("evidence_ref"),
-            trial_count=1,  # TODO: P0 - 应从 trials 表计数，而非写死
+            trial_count=self.ledger.count_trials(self._family_id),
             uses_holdout=self.config.get("stage_acceptance", False),
             conclusion=None,
             decision=None,
@@ -195,6 +259,7 @@ class BacktestRunner:
                 f"If this is an exact replication, use a different parent_run_id."
             )
         elif len(changes) == 1:
+            self._changed_key = changes[0]
             log_event(
                 LogComponent.ENGINE,
                 f"Single change validated vs parent {parent_run_id}",

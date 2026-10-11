@@ -224,6 +224,18 @@ def cmd_approve(args: argparse.Namespace) -> None:
     print(f"  Approver: {args.approver}")
 
 
+def cmd_export_trials(args: argparse.Namespace) -> None:
+    """导出试验记录供 DSR/PBO 计算。"""
+    workspace = Path(args.workspace)
+    ledger = LedgerManager(workspace / "ledger.db")
+    text = ledger.export_trials(family_id=args.family_id, fmt=args.format)
+    if args.output:
+        Path(args.output).write_text(text)
+        print(f"Exported {args.format} to {args.output}")
+    else:
+        print(text)
+
+
 def cmd_check_approval(args: argparse.Namespace) -> None:
     """检查审批门禁"""
     workspace = Path(args.workspace)
@@ -291,6 +303,11 @@ def main() -> None:
     check_parser.add_argument("--gate", required=True, choices=["PRE_PAPER", "PRE_LIVE", "BREAKER_RESTART"])
     check_parser.add_argument("--run-id", required=True)
     check_parser.add_argument("--strategy-version", required=True)
+
+    export_parser = subparsers.add_parser("export-trials", help="Export trial records for DSR/PBO")
+    export_parser.add_argument("--family-id", help="Filter by family_id")
+    export_parser.add_argument("--format", choices=["csv", "json"], default="csv")
+    export_parser.add_argument("--output", help="Output file path")
     
     args = parser.parse_args()
     
@@ -308,6 +325,8 @@ def main() -> None:
         cmd_approve(args)
     elif args.command == "check-approval":
         cmd_check_approval(args)
+    elif args.command == "export-trials":
+        cmd_export_trials(args)
 
 
 if __name__ == "__main__":
