@@ -127,11 +127,12 @@ cd htx-trend-python-0.1.0-<sha>
 # Verify integrity
 sha256sum -c htx-trend-python-0.1.0-<sha>.tar.gz.sha256
 
-# Install dependencies (use requirements.lock for reproducibility)
-pip install -r requirements.lock
-
-# Or install from source
-pip install -e .
+# Install pinned deps, then the package without resolving again
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.lock
+python -m pip install --no-deps -e .
 ```
 
 ### Configuration

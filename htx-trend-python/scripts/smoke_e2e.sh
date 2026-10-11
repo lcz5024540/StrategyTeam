@@ -17,12 +17,13 @@ mkdir -p "$WS"
 exec > >(tee -a "$LOG") 2>&1
 
 echo "== smoke e2e start $(date -u +%Y-%m-%dT%H:%M:%SZ) =="
-python3 -m venv "$VENV"
+python3.12 -m venv "$VENV"
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
 python -m pip install --upgrade pip
+python "$ROOT/scripts/check_lock_hygiene.py" "$ROOT/requirements.lock"
 python -m pip install -r "$ROOT/requirements.lock"
-python -m pip install -e "$ROOT"
+python -m pip install --no-deps -e "$ROOT"
 
 python -m htx_trend.research.cli --workspace "$WS" collect \
   --contracts BTC-USDT,ETH-USDT \

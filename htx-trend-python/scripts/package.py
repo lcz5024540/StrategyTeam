@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tarfile
@@ -58,23 +59,29 @@ def get_git_info() -> dict:
 
 
 def generate_requirements_lock() -> Path:
-    """生成 requirements.lock 文件"""
+    """Use the committed pip-compile lock. Never `pip freeze` the host."""
     repo_root = Path(__file__).parent.parent
-    
-    try:
-        installed = run_command(["python3", "-m", "pip", "freeze"], repo_root)
-        
-        lock_file = repo_root / "requirements.lock"
-        lock_file.write_text(installed)
-        
-        print(f"Generated requirements.lock with {len(installed.splitlines())} packages")
-        return lock_file
-    
-    except Exception as e:
-        print(f"Warning: Could not generate requirements.lock: {e}", file=sys.stderr)
-        lock_file = repo_root / "requirements.lock"
-        lock_file.write_text("# Could not generate lock file\n")
-        return lock_file
+    lock_file = repo_root / "requirements.lock"
+    compile_script = repo_root / "scripts" / "compile_lock.sh"
+    check_script = repo_root / "scripts" / "check_lock_hygiene.py"
+
+    if os.environ.get("COMPILE_LOCK") == "1":
+        if not compile_script.is_file():
+            raise SystemExit(f"Missing {compile_script}")
+        subprocess.run(["bash", str(compile_script)], check=True, cwd=repo_root)
+
+    if not lock_file.is_file():
+        raise SystemExit(
+            "requirements.lock is missing. Run scripts/compile_lock.sh "
+            "in a clean Python 3.12 venv (do not pip freeze the host)."
+        )
+    subprocess.run(
+        [sys.executable, str(check_script), str(lock_file)],
+        check=True,
+        cwd=repo_root,
+    )
+    print(f"Using committed lock: {lock_file}")
+    return lock_file
 
 
 def create_package(version: str, git_info: dict) -> tuple[Path, str]:
@@ -97,6 +104,9 @@ def create_package(version: str, git_info: dict) -> tuple[Path, str]:
             "README.md",
             "RESEARCH_SYSTEM.md",
             "requirements.lock",
+            "scripts/compile_lock.sh",
+            "scripts/check_lock_hygiene.py",
+            "scripts/smoke_e2e.sh",
         ]:
             for file_path in repo_root.glob(pattern):
                 if "__pycache__" in str(file_path):
@@ -218,11 +228,12 @@ fees:
 tar -xzf {tar_path.name}
 cd htx-trend-python-{version}-{git_info['short_sha']}
 
-# Install dependencies
-pip install -r requirements.lock
-
-# Or install from pyproject.toml
-pip install -e .
+# Install pinned runtime+test deps, then the package without resolving again
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.lock
+python -m pip install --no-deps -e .
 
 # Verify installation
 python -m htx_trend.research --help
@@ -253,8 +264,8 @@ python -m htx_trend.research --help
    tar -xzf htx-trend-python-<previous-version>-<sha>.tar.gz
    cd htx-trend-python-<previous-version>-<sha>
    
-   # Install
-   pip install -e .
+   python -m pip install -r requirements.lock
+   python -m pip install --no-deps -e .
    ```
 
 4. **Verify rollback**:
