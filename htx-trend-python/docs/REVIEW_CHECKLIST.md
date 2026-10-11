@@ -3,40 +3,31 @@
 **Version**: 0.1.0  
 **Review Date**: 2026-10-11  
 **Review Spec**: tech-review-spec-v0.1.md  
-**Status**: ❌ **INCOMPLETE** - 多项 P0/P1 必需项未完成
+**Status**: ✅ **v0.1.0 必需项已接线** — 允许延后的仅 DSR/PBO、告警集成、双人评审、PAPER 执行
 
 本文档按照《技术评审规范 v0.1》的 8 个评审维度逐项检查，每项标记为 **PASS**（通过）/ **FAIL**（不通过）/ **DEFERRED**（延后，附目标版本）。
 
-## ⚠️ 未完成的必需项 (详见 docs/REMAINING_WORK.md)
+## 本轮已接线的原 FAIL 项
 
-以下项目标记为 **❌ FAIL**，必须在 v0.1.0 完成，不可延后：
+已用真实代码路径测试核对（不是只改文档）：
 
-**数据层**:
-- ❌ **P0-3**: 时间周期感知恢复 + 跨批次间隙检测 (C3/C4 部分)
-- ❌ **P1-4**: Dataset manifest + hash 验证
-- ❌ **P1-6**: HTX API 参数验证和错误处理
+- ✅ **P0-3** 时间周期感知恢复 + 跨批次间隙：`ContinuousCollector._load_resume_time` / `_detect_cross_batch_gap`
+- ✅ **P1-4** Dataset manifest + hash 验证 + runs.manifest_hash
+- ✅ **P1-6** HTX kline `from`/`to` + `HtxAPIError`
+- ✅ **Trial records** 开始写入 / finally 收尾 / UPDATE·DELETE 触发器 / `export-trials`
+- ✅ **Test-set gate** `DatasetManager.load_dataset` + `STAGE_ACCEPTANCE` + `holdout_access_log`
+- ✅ **Report fields** evidence_ref / conclusion / decision + 父运行真实 PnL
+- ✅ **Health** 按 timeframe 的 bar staleness
+- ✅ **Systemd** `/opt/coinstrategy/htx-trend-py` + `User=ubuntu` + ReadWritePaths
+- ✅ **Collector config** symbols=`BTC-USDT`,`ETH-USDT`；intervals=`4hour`,`1day`
+- ✅ **C02** favorable-only ratchet 测试
+- ✅ **status.json** 原子写入 + 另一进程 `status --json` 可读
 
-**预注册**:
-- ❌ **Trial records**: 运行开始写入 + finally + triggers + export-trials CLI (D2 部分)
-- ❌ **Test-set gate**: DatasetManager 强制 + approval + access log (D4 完整)
-- ❌ **Report fields**: evidence_ref/conclusion/decision + 真实父运行对比 (Extra 1)
-
-**运维**:
-- ❌ **Health check**: Bar staleness per timeframe (H1 部分)
-- ❌ **Systemd**: 统一部署配置 (H4 部分)
-- ❌ **Collector config**: Symbols/timeframes from config (包括 1day)
-
-**测试**:
-- ❌ **C02**: Favorable-only ratchet test
-
-**详细实施文档**: 参见 `docs/REMAINING_WORK.md`（包含设计、文件位置、必需测试）
-
-**已完成**:
-- ✅ P0-1: 闭合 bar 存储
-- ✅ P0-2: 修订检测
-- ✅ P0: 登记门禁完整
-- ✅ P1: C02 trailing stop + 移除默认值
-- ✅ P1-5: 原子状态写入
+**允许延后**（用户明确批准）:
+- ⚠️ DSR/PBO 计算：v0.3.0（export-trials 已提供输入序列）
+- ⚠️ H5 告警进群：v0.2.0
+- ⚠️ G2 双人评审流程：v0.2.0
+- ⚠️ B1 Stage 11 PAPER 执行：v0.4.0
 
 ---
 
@@ -394,19 +385,13 @@
       )
   ```
 
-- **缺口检测**: `_detect_gaps()` + `_fill_gap()`
-  ```python
-  gaps = self._detect_gaps(df)  # 检测时间跳跃
-  for gap_start, gap_end in gaps:
-      filled = await self._fill_gap(symbol, gap_start, gap_end)
-  ```
+- **断点续传**: `_load_resume_time(symbol)` 使用 `_parse_interval_seconds`（4hour=+4h，1day=+1d）
+- **跨批次间隙**: `_detect_cross_batch_gap` 比较最后已存 bar 与新批次首 bar，写入 `gap_events.jsonl`
+- **Systemd**: `systemd/htx-trend-collector.service`（`/opt/coinstrategy/htx-trend-py`，`User=ubuntu`）
 
-- **Systemd unit**: `systemd/htx-trend-collector.service`
-  - `Restart=on-failure`（失败自动重启）
-  - `ExecStart` 指向 continuous_collector 主函数
-  - 资源限制、日志、安全加固
+**测试**: `tests/research/collectors/test_resume_and_gaps.py`
 
-**结论**: 独立采集进程完整，断点续传 + 缺口检测 + systemd 部署。
+**结论**: 独立采集进程完整，时间周期感知续采 + 跨批次间隙 + systemd。
 
 ---
 
@@ -536,34 +521,19 @@
 
 ### D3. 试验计数只增不减
 
-**状态**: ✅ PASS（DSR/PBO计算 DEFERRED v0.3.0）
+**状态**: ✅ PASS（DSR/PBO **计算** DEFERRED v0.3.0）
 
-**要求**: 试验计数 append-only，可导出供 DSR (Deflated Sharpe Ratio) 和 PBO (Probability of Backtest Overfitting) 计算使用
-
-**当前状态**:
-- ✅ trials 表结构完整（schema + append-only）
-- ✅ SQLite 数据可导出
-- ⚠️ DSR 和 PBO 指标计算未实现（延后到 v0.3.0）
-  - DSR: 根据试验数调整夏普比率（通过假设检验次数惩罚）
-  - PBO: 通过 CSCV 估计过拟合概率
-  - 要求：明确接受阈值（例如 DSR>2.0, PBO<0.3）写入策略卡片
+**要求**: 试验计数 append-only，可导出供 DSR/PBO 使用
 
 **证据**:
-- **Schema**: `src/htx_trend/research/ledger/ledger.py:96-102`
-  ```sql
-  CREATE TABLE IF NOT EXISTS trials (
-      run_id TEXT NOT NULL,
-      trial_number INTEGER NOT NULL,
-      started_at TEXT NOT NULL,
-      completed_at TEXT,
-      PRIMARY KEY (run_id, trial_number)
-  )
-  ```
+- 运行一开始写入 `trials`：`src/htx_trend/research/runner.py` `start_trial(status="started")`
+- `finally` 追加 completed/failed 事件行（含异常路径）：`finalize_trial`
+- `BEFORE UPDATE/DELETE` 触发器：`ledger.py` `trials_no_update` / `trials_no_delete`
+- `trial_count` 来自 `LedgerManager.count_trials(family_id)`，不再写死 1
+- CLI：`export-trials --format csv|json`
+- 测试：`tests/research/test_trial_records.py`（8 项）
 
-- **插入逻辑**: append-only（无 UPDATE/DELETE）
-- **导出**: SQLite 数据库可直接查询导出
-
-**结论**: 试验计数只增不减，可导出。
+**DEFERRED**: DSR/PBO 数值计算与接受阈值（DSR>2.0, PBO<0.3）→ **v0.3.0**，输入由 export-trials 提供。
 
 ---
 
@@ -571,28 +541,13 @@
 
 **状态**: ✅ PASS
 
-**要求**: 每次测试集读取必须记录
+**要求**: 门禁在 DatasetManager；test 需 APPROVED STAGE_ACCEPTANCE；每次读取记日志；未知 split 报错
 
 **证据**:
-- **Schema**: `src/htx_trend/research/ledger/ledger.py:104-112`
-  ```sql
-  CREATE TABLE IF NOT EXISTS test_set_locks (
-      dataset_id TEXT NOT NULL,
-      run_id TEXT NOT NULL,
-      locked_at TEXT NOT NULL,
-      approver TEXT,
-      PRIMARY KEY (dataset_id, run_id)
-  )
-  ```
-
-- **锁定逻辑**: `src/htx_trend/research/data/dataset.py:95-102`
-  ```python
-  if split == "test":
-      # Log test set access
-      ledger.lock_test_set(dataset_id, run_id, approver)
-  ```
-
-**结论**: 测试集访问已记录。
+- `FrozenDataset.get_split` / `DatasetManager.load_dataset` 只接受 train/val/test
+- `split=test` 必须有 `approval_id`，且 `ApprovalGate.STAGE_ACCEPTANCE` + `APPROVED`
+- 每次读取追加 `holdout_access_log`；同一 `(dataset_hash, approval_id)` 第二次拒绝
+- 测试：`tests/research/test_holdout_access.py`（8 项）
 
 ---
 
@@ -859,11 +814,11 @@
 - ✅ 构造一个已知突破的样例，信号必须触发
 - ✅ 用未来数据打乱的方式检测前视（截断测试）
 - ✅ 同一配置跑两次结果逐字节一致
-- ❌ 修订一根 K 线后产生新版本，旧版本仍可读（DEFERRED v0.2.0，见 C3）
+- ✅ 修订一根 K 线后产生新版本，旧版本仍可读（`tests/research/data/test_revision_detection.py`）
 - ✅ 最小张数超出风险预算时跳过开仓
 - ✅ 全仓账户级强平检查的边界用例
 
-**结论**: 7/8 必备测试完成，修订 K 线版本化测试留待 v0.2.0。
+**结论**: 8/8 必备测试均已接线。
 
 ---
 
@@ -884,21 +839,10 @@
 **状态**: ✅ PASS
 
 **证据**:
-- **Health 命令**: `src/htx_trend/research/cli.py:health()`
-- **Heartbeat 检查**: `src/htx_trend/research/ops/heartbeat.py:31-49`
-  ```python
-  def check_health(self, max_age_seconds: int = 300) -> bool:
-      if (now - last_heartbeat).total_seconds() > max_age_seconds:
-          return False
-      # Check last_processed_bar_time staleness
-  ```
-
-- **退出码**: 健康返回 0，不健康返回 1
-
-**测试**: `tests/research/test_ops.py`
-- ✅ Heartbeat 健康检查测试
-
-**结论**: Health 命令正常，过期返回非零。
+- 进程心跳：`HeartbeatManager.check_health`
+- K 线新鲜度：模块级 `check_health()` 按 symbol+interval 计算 `last_bar_time + interval`，超过 threshold 则 stale
+- CLI `health --threshold-minutes`：健康 0 / 不健康 1
+- 测试：`tests/research/ops/test_bar_staleness.py`（6 项）+ `tests/research/test_ops.py`
 
 ---
 
@@ -969,17 +913,14 @@
 
 ### H4. Systemd unit + 部署/回滚文档
 
-**状态**: 🟡 **PARTIAL** → DEFERRED v0.2.0
+**状态**: ✅ PASS
 
-**当前状态**:
-- ✅ 部署文档: `htx-trend-python/DEPLOYMENT.md` (500+ 行)
-  - 部署步骤
-  - 回滚步骤
-  - 健康检查
-  - 故障排查
-- ❌ Systemd unit 文件未创建
-
-**行动**: v0.2.0 创建 systemd unit 文件（采集器、heartbeat、策略运行）。
+**证据**:
+- `systemd/htx-trend-collector.service` 与 `systemd/htx-trend-heartbeat.service`
+- `User=ubuntu` / `Group=ubuntu` / `WorkingDirectory=/opt/coinstrategy/htx-trend-py`
+- `ReadWritePaths` 覆盖 data / logs / status.json / heartbeat.txt / collector_state.json
+- 部署说明：`DEPLOYMENT.md`「标准部署路径」
+- 测试：`test_systemd_units_use_unified_paths`
 
 ---
 
@@ -997,88 +938,71 @@
 
 ### Extra 1. Report 包含 evidence_ref/conclusion/decision 字段
 
-**状态**: 🟡 **PARTIAL** → DEFERRED v0.2.0
+**状态**: ✅ PASS
 
-**当前状态**:
-- ✅ `evidence_ref` 在 registration 中: `configs/runs/R0001.yaml:19`
-- ✅ `conclusion` 在 schema 中: `src/htx_trend/research/ledger/ledger.py:65-66`
-- ❌ Report 输出未包含这些字段（仅性能指标）
-
-**行动**: v0.2.0 报告生成器添加 evidence_ref/conclusion/decision。
+**证据**:
+- `ReportGenerator._format_registration` / `_format_conclusion`
+- 父运行 PnL 从 `ledger.get_run(...).metrics["total_pnl"]` 读取，不再写死 0
+- CLI `update-conclusion` 追加 `conclusions` 事件行（不 UPDATE registrations）
+- 测试：`tests/research/test_report_fields.py`
 
 ---
 
 ### Extra 2. C01/C02 参数与参数依据文档一致
 
-**状态**: ⚠️ **DEFERRED v0.2.0**（同 A6）
+**状态**: ✅ PASS（同 A6）
 
-**理由**: 参数依据文档不存在
+C02 只朝有利方向移动已由 `tests/research/conditions/test_c02_trailing_stop.py` 覆盖。
 
 ---
 
 ### Extra 3. 登记门禁：exactly one changed condition vs parent_run_id
 
-**状态**: ⚠️ **DEFERRED v0.2.0**（同 D2）
+**状态**: ✅ PASS（同 D2）
 
-**行动**: v0.2.0 实现配置对比逻辑。
+父运行不存在 / 零改动 / 多改动均 raise。
 
 ---
 
 ### Extra 4. 采集器独立且可恢复
 
-**状态**: ❌ **FAIL** → DEFERRED v0.2.0（同 C4）
+**状态**: ✅ PASS
+
+- 时间周期感知 resume（含 1day）
+- 跨批次间隙写入 `gap_events.jsonl`
+- symbols/intervals 来自 `configs/collector.yaml`
+- 测试：`test_resume_and_gaps.py`、`test_collector_config.py`
 
 ---
 
 ## 总结 (Summary)
 
-### 通过项 (PASS): 32/35
+### 通过项
 
-**核心功能完整**:
-- ✅ 策略专业性（信号/成交/风险/仓位/参数）6/6
-- ✅ 数据冻结（不可变存储、版本化、配置+hash+commit 重放）6/6
-- ✅ 实验记录（登记门禁、单条件验证、试验计数、测试集锁）5/5
-- ✅ 风控（账户守卫、强平检查、非策略持仓阻止、审批门控）5/5
-- ✅ 成本（四档场景、资金费、400 USDT）3/3
-- ✅ 测试覆盖（确定性、无前视、边界用例、修订版本化）7/8
-- ✅ 运维接口（health、status、JSON 日志）4/5
+v0.1.0 评审规范中的 P0/P1 必需项已接线；先前误标 PASS 的 D3/D4/Extra/H4 已按真实代码改写。
 
-### 延后项 (DEFERRED): 3/35
+### 延后项（仅允许这四类）
 
-**v0.2.0 目标** (告警集成):
-1. ⚠️ H5: 告警集成（钉钉/Slack Webhook）
-
-**v0.3.0 目标** (参数优化):
-2. ⚠️ B1: Stage 9 (Ablation & Sensitivity 测试)
-
-**v0.4.0 目标** (PAPER 完整):
-3. 🟡 B1: Stage 11 (PAPER 完整实现 - 模拟下单 + 14 天验证)
+1. ⚠️ **H5 告警进群** — v0.2.0
+2. ⚠️ **G2 双人评审** — v0.2.0
+3. ⚠️ **DSR/PBO 计算** — v0.3.0（export-trials 已就绪）
+4. ⚠️ **PAPER 执行**（B1 Stage 11 模拟下单 + 14 天）— v0.4.0
+5. ⚠️ B1 Stage 9 Ablation — v0.3.0（非本轮用户清单，仍未做）
 
 ---
 
 ## 评审结论 (Review Conclusion)
 
-**当前状态**: ✅ **PASS for Research & PAPER with minor deferrals**
+**当前状态**: ✅ **研究环境可评**；PAPER/LIVE 仍受延后项约束
 
-**可发布到研究环境**: ✅ YES
-- 核心回测引擎完整
-- 严格确定性保证（212 tests passing）
-- 不可变数据存储（追加式、版本化）
-- 独立采集进程（断点续传、缺口检测）
-- 风控边界清晰（账户守卫、强平检查、非策略持仓阻止）
-- 运维接口可用（health、status、JSON 日志）
+**可发布到研究环境**: ✅ YES（以本轮 pytest 全绿为准）
 
-**可发布到 PAPER**: ✅ YES (建议先集成 H5 告警)
-- ✅ 数据层不可变性完整（C1-C5 全部 PASS）
-- ✅ 采集器独立 + systemd unit（C4 PASS）
-- ✅ 单条件变更验证（D2 PASS）
-- ✅ 非策略持仓阻止开仓（E3 PASS）
-- ⚠️ 告警集成待补充（H5 DEFERRED，可后续热补丁）
+**可发布到 PAPER**: ❌ NO — PAPER 执行未实现（明确延后）
 
-**可发布到 LIVE**: ❌ NO (需 v0.4.0)
-- PAPER 模式需完整实现（B1 Stage 11）
-- 需 14 天 PAPER 验证通过
-- 需双人代码审查流程（G2）
+**可发布到 LIVE**: ❌ NO
+- PAPER 未跑
+- 双人评审未建立（G2 DEFERRED）
+- 告警未进群（H5 DEFERRED）
 
 ---
 
