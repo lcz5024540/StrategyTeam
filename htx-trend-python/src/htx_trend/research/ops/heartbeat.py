@@ -6,7 +6,9 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
+
+from ..data.immutable_storage import _parse_interval_seconds
 
 
 @dataclass
@@ -90,3 +92,88 @@ class HeartbeatManager:
     
     def list_components(self) -> list[str]:
         return [f.stem for f in self.heartbeat_dir.glob("*.json")]
+
+
+@dataclass
+class BarStalenessCheck:
+    symbol: str
+    interval: str
+    last_bar_time: datetime
+    expected_next_close: datetime
+    lag_minutes: float
+    is_stale: bool
+    threshold_minutes: float
+
+
+def _as_utc(value: datetime | str) -> datetime:
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def check_health(
+    heartbeat_dir: Path | None = None,
+    collector_state_path: Path | None = None,
+    max_heartbeat_age_seconds: int = 300,
+    bar_staleness_threshold_minutes: int = 10,
+    now: datetime | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    """心跳 + 各 timeframe 的 last_bar_time 新鲜度。"""
+    now = now or datetime.now(UTC)
+    is_healthy = True
+    details: dict[str, Any] = {"heartbeat": {}, "bar_staleness": []}
+
+    if heartbeat_dir is not None:
+        mgr = HeartbeatManager(heartbeat_dir)
+        components = mgr.list_components()
+        if not components:
+            details["heartbeat"] = {"status": "missing", "message": "No heartbeat files found"}
+            is_healthy = False
+        for component in components:
+            ok, message = mgr.check_health(component, max_age_seconds=max_heartbeat_age_seconds)
+            details["heartbeat"][component] = {
+                "status": "ok" if ok else "stale",
+                "message": message,
+            }
+            if not ok:
+                is_healthy = False
+
+    if collector_state_path and collector_state_path.exists():
+        try:
+            state = json.loads(collector_state_path.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            details["bar_staleness_error"] = str(exc)
+            return False, details
+
+        for key, info in state.items():
+            if not isinstance(info, dict):
+                continue
+            symbol = info.get("symbol") or str(key)
+            interval = info.get("interval") or "4hour"
+            last_raw = info.get("last_bar_time")
+            if not last_raw:
+                continue
+            last_bar_time = _as_utc(last_raw)
+            interval_seconds = _parse_interval_seconds(interval)
+            expected_next_close = last_bar_time + timedelta(seconds=interval_seconds)
+            lag_minutes = (now - expected_next_close).total_seconds() / 60.0
+            is_stale = lag_minutes > bar_staleness_threshold_minutes
+            check = BarStalenessCheck(
+                symbol=symbol,
+                interval=interval,
+                last_bar_time=last_bar_time,
+                expected_next_close=expected_next_close,
+                lag_minutes=lag_minutes,
+                is_stale=is_stale,
+                threshold_minutes=float(bar_staleness_threshold_minutes),
+            )
+            payload = asdict(check)
+            payload["last_bar_time"] = last_bar_time.isoformat()
+            payload["expected_next_close"] = expected_next_close.isoformat()
+            details["bar_staleness"].append(payload)
+            if is_stale:
+                is_healthy = False
+
+    return is_healthy, details

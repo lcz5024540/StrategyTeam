@@ -11,7 +11,8 @@ from pathlib import Path
 from .data import DataCollector, DatasetManager, DataStitcher
 from .ledger import Approval, ApprovalDecision, ApprovalGate, LedgerManager
 from .ops import HeartbeatManager, get_status
-from .ops.status import StatusInterface
+from .ops.heartbeat import check_health as check_system_health
+from .ops.status import StatusInterface, set_status_file_path
 from .runner import BacktestRunner
 from .version_info import get_version_info
 
@@ -116,35 +117,35 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 def cmd_health(args: argparse.Namespace) -> None:
     workspace = Path(args.workspace)
-    heartbeat_mgr = HeartbeatManager(workspace / "heartbeats")
-    
-    version_info = get_version_info()
-    print(f"HTX Trend Research System {version_info}")
-    print()
-    
-    components = heartbeat_mgr.list_components()
-    
-    if not components:
+    heartbeat_dir = workspace / "heartbeats"
+    state_file = Path(args.collector_state) if getattr(args, "collector_state", None) else workspace / "collector_state.json"
+
+    hb_dir = heartbeat_dir if heartbeat_dir.exists() else None
+    state_path = state_file if state_file.exists() else None
+    if hb_dir is None and state_path is None:
         print("No heartbeat files found")
         sys.exit(1)
-    
-    all_healthy = True
-    
-    for component in components:
-        healthy, message = heartbeat_mgr.check_health(
-            component, max_age_seconds=args.max_age
-        )
-        
-        status_str = "✓" if healthy else "✗"
-        print(f"{status_str} {component}: {message}")
-        
-        if not healthy:
-            all_healthy = False
-    
-    sys.exit(0 if all_healthy else 1)
+
+    is_healthy, details = check_system_health(
+        heartbeat_dir=hb_dir,
+        collector_state_path=state_path,
+        max_heartbeat_age_seconds=args.max_age,
+        bar_staleness_threshold_minutes=getattr(args, "threshold_minutes", 10),
+    )
+
+    version_info = get_version_info()
+    print(f"HTX Trend Research System {version_info}")
+    if is_healthy:
+        print("✓ Healthy")
+        sys.exit(0)
+    print("✗ Unhealthy")
+    print(json.dumps(details, indent=2, default=str))
+    sys.exit(1)
 
 
 def cmd_status(args: argparse.Namespace) -> None:
+    if getattr(args, "status_file", None):
+        set_status_file_path(args.status_file)
     version_info = get_version_info()
     status = get_status()
     
@@ -299,9 +300,12 @@ def main() -> None:
     
     health_parser = subparsers.add_parser("health", help="Check component health")
     health_parser.add_argument("--max-age", type=int, default=300)
+    health_parser.add_argument("--threshold-minutes", type=int, default=10)
+    health_parser.add_argument("--collector-state", help="Collector state JSON path")
     
     status_parser = subparsers.add_parser("status", help="Get system status")
     status_parser.add_argument("--json", action="store_true")
+    status_parser.add_argument("--status-file", help="Path to status.json written by a running process")
     
     approve_parser = subparsers.add_parser("approve", help="Create approval record")
     approve_parser.add_argument("--gate", required=True, choices=["PRE_PAPER", "PRE_LIVE", "BREAKER_RESTART", "STAGE_ACCEPTANCE"])
