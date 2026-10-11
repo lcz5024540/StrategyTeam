@@ -89,6 +89,24 @@ def test_holdout_access_log_is_append_only(tmp_path):
             conn.execute("UPDATE holdout_access_log SET run_id = 'OTHER'")
 
 
+def test_smoke_runs_append_only(tmp_path):
+    ledger = LedgerManager(tmp_path / "ledger.db")
+    ledger.record_smoke_run(
+        run_id="SMOKE-20261011-01",
+        dataset_id="ds",
+        manifest_hash="abc",
+        bar_window=200,
+        decisions_hash="d",
+        fills_hash="f",
+        status="completed",
+    )
+    with sqlite3.connect(tmp_path / "ledger.db") as conn:
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            conn.execute("UPDATE smoke_runs SET status = 'failed'")
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            conn.execute("DELETE FROM smoke_runs")
+
+
 def test_holdout_approval_bound_to_run_id_and_strategy_version(tmp_path):
     mgr, ledger, dataset_id = _mgr(tmp_path)
     approval_id = _approve(ledger)

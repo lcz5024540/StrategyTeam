@@ -59,6 +59,7 @@ def create_test_dataset(
     symbols: list[str] | None = None,
     specs: dict | None = None,
     close_series: dict[str, np.ndarray] | None = None,
+    ohlc: dict[str, dict[str, np.ndarray]] | None = None,
 ) -> str:
     np.random.seed(seed)
     dates = pd.date_range("2024-01-01", periods=n_bars, freq="4h", tz="UTC")
@@ -68,15 +69,19 @@ def create_test_dataset(
     symbols = symbols or ["BTC-USDT", "ETH-USDT"]
 
     for symbol in symbols:
-        if close_series and symbol in close_series:
+        if ohlc and symbol in ohlc:
+            frame = ohlc[symbol]
+            close = np.asarray(frame["close"], dtype=float)
+            high = np.asarray(frame["high"], dtype=float)
+            low = np.asarray(frame["low"], dtype=float)
+            open_prices = np.asarray(frame["open"], dtype=float)
+        elif close_series and symbol in close_series:
             close = np.asarray(close_series[symbol], dtype=float)
-        else:
-            close = 100 + np.cumsum(np.random.randn(n_bars) * 0.5)
-        if close_series and symbol in close_series:
             high = close + 0.5
             low = close - 0.5
             open_prices = close
         else:
+            close = 100 + np.cumsum(np.random.randn(n_bars) * 0.5)
             high = close + np.abs(np.random.rand(len(close)) * 2)
             low = close - np.abs(np.random.rand(len(close)) * 2)
             open_prices = close + (np.random.rand(len(close)) - 0.5) * 1

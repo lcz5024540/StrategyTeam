@@ -19,6 +19,7 @@ def test_account_liquidation_safe():
             "side": "LONG",
             "size": 0.02,
             "entry_price": 50000.0,
+            "contract_size": 1.0,
         },
     ]
     
@@ -29,6 +30,7 @@ def test_account_liquidation_safe():
             "size": 0.02,
             "entry_price": 50000.0,
             "stop_loss": 49000.0,
+            "contract_size": 1.0,
         },
     ]
     
@@ -51,6 +53,7 @@ def test_account_liquidation_unsafe():
             "side": "LONG",
             "size": 1.0,
             "entry_price": 50000.0,
+            "contract_size": 1.0,
         },
     ]
     
@@ -61,6 +64,7 @@ def test_account_liquidation_unsafe():
             "size": 1.0,
             "entry_price": 50000.0,
             "stop_loss": 49500.0,
+            "contract_size": 1.0,
         },
     ]
     
@@ -102,12 +106,14 @@ def test_multiple_positions_with_stops():
             "side": "LONG",
             "size": 0.5,
             "entry_price": 50000.0,
+            "contract_size": 1.0,
         },
         {
             "symbol": "ETH-USDT",
             "side": "LONG",
             "size": 5.0,
             "entry_price": 3000.0,
+            "contract_size": 1.0,
         },
     ]
     
@@ -118,6 +124,7 @@ def test_multiple_positions_with_stops():
             "size": 0.5,
             "entry_price": 50000.0,
             "stop_loss": 49000.0,
+            "contract_size": 1.0,
         },
         {
             "symbol": "ETH-USDT",
@@ -125,6 +132,7 @@ def test_multiple_positions_with_stops():
             "size": 5.0,
             "entry_price": 3000.0,
             "stop_loss": 2900.0,
+            "contract_size": 1.0,
         },
     ]
     

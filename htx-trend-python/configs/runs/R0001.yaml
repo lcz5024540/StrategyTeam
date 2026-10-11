@@ -36,7 +36,9 @@ fees:
   # maker_rate: 0.0002  # 如不指定，按 cost_scenario 默认
   # taker_rate: 0.0006
   # 注：base scenario 默认为 maker 0.02% / taker 0.06%
+  # 市价开盘入场（market-on-open）一律按 taker 计费；限价/止损成交按 maker
   # 真实费率来源将在报告中标注
+  # Sharpe 年化：4hour = 6*365=2190，1day = 365（periods_per_year）
 
 # 风险管理
 risk_per_trade: 0.005  # 0.5%

@@ -51,7 +51,7 @@ class ReportGenerator:
             f.write(self._format_trade_stats(fills))
             f.write("\n\n")
             
-            if fills:
+            if fills and not (smoke or config.get("run_type") == "SMOKE"):
                 f.write("## 绩效指标\n\n")
                 f.write(self._format_metrics(fills))
                 f.write("\n\n")

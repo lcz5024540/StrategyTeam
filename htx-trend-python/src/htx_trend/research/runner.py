@@ -19,7 +19,9 @@ from .adapters.htx.fees import create_fee_provider
 from .conditions import C01DonchianEnsemble, C02ATRStop, DecisionContext
 from .data import DatasetManager
 from .engine.backtest import CostScenario, SimBroker
+from .engine.contract_value import coin_notional, periods_per_year, require_contract_size
 from .engine.interfaces import Order
+from .ops.stable_hash import stable_frame_hash
 from .features import attach_funding_as_of, compute_all_features
 from .features.indicators import FeatureCalculator
 from .context import compute_regime_labels
@@ -94,6 +96,11 @@ class BacktestRunner:
         split = self.config.get("split")
         if split != "train":
             raise ValueError("SMOKE runs may only use split=train")
+        window = self.config.get("smoke_bar_window")
+        if window is None:
+            raise ValueError("SMOKE requires smoke_bar_window (e.g. 200)")
+        if int(window) <= 0:
+            raise ValueError("smoke_bar_window must be > 0")
         return True
 
     def run(self) -> dict[str, Any]:
@@ -147,18 +154,27 @@ class BacktestRunner:
 
             results = self._run_backtest(data, frozen)
             current_pnl = results["final_equity"] - results["initial_equity"]
-            sharpe, n_trades, return_series_path = self._write_return_series(results)
-            self.ledger.update_run_metrics(
-                self.run_id,
-                {
-                    "total_pnl": current_pnl,
-                    "final_equity": results["final_equity"],
-                    "initial_equity": results["initial_equity"],
-                    "sharpe": sharpe,
-                    "n_trades": n_trades,
-                    "return_series_path": str(return_series_path) if return_series_path else None,
-                },
-            )
+            if self._is_smoke:
+                self._record_smoke_outcome(results, status="completed")
+            else:
+                sharpe, n_trades, return_series_path = self._write_return_series(
+                    results, frozen
+                )
+                results["sharpe"] = sharpe
+                results["n_trades"] = n_trades
+                self.ledger.update_run_metrics(
+                    self.run_id,
+                    {
+                        "total_pnl": current_pnl,
+                        "final_equity": results["final_equity"],
+                        "initial_equity": results["initial_equity"],
+                        "sharpe": sharpe,
+                        "n_trades": n_trades,
+                        "return_series_path": str(return_series_path)
+                        if return_series_path
+                        else None,
+                    },
+                )
 
             report_path = self._generate_report(results)
             log_event(
@@ -172,11 +188,12 @@ class BacktestRunner:
         except Exception as exc:
             error_message = str(exc)
             status = "failed"
+            if self._is_smoke:
+                self._record_smoke_outcome(results, status="failed", error_message=error_message)
             raise
         finally:
-            if self._is_smoke:
-                pass
-            else:
+            self.close()
+            if not self._is_smoke:
                 pnl = None
                 if results is not None:
                     pnl = results["final_equity"] - results["initial_equity"]
@@ -420,7 +437,17 @@ class BacktestRunner:
             maker_rate=fee_config.get("maker_rate"),
             taker_rate=fee_config.get("taker_rate"),
         )
-        broker = SimBroker(initial_equity, cost_scenario, fee_provider=fee_provider)
+        specs = {symbol: self._load_contract_spec(symbol) for symbol in data}
+        contract_sizes = {
+            symbol: float(spec["contract_size"]) for symbol, spec in specs.items()
+        }
+        broker = SimBroker(
+            initial_equity,
+            cost_scenario,
+            fee_provider=fee_provider,
+            contract_sizes=contract_sizes,
+        )
+        self._broker = broker
         sizer = PositionSizer(
             risk_per_trade_pct=self.config["risk_per_trade"],
             max_total_risk_pct=self.config["max_total_risk"],
@@ -461,14 +488,17 @@ class BacktestRunner:
         atr_col = f"atr{c02.atr_period}"
         slippage_amount = c02.slippage_amount()
 
-        specs = {symbol: self._load_contract_spec(symbol) for symbol in data}
         state_machines = {symbol: StateMachine() for symbol in data}
         all_decisions = []
 
         for symbol, df in data.items():
             log_event(LogComponent.ENGINE, f"Processing symbol: {symbol}", bars=len(df))
             spec = specs[symbol]
-            for idx in range(200, len(df)):
+            if self._is_smoke:
+                start_idx = max(0, len(df) - int(self.config["smoke_bar_window"]))
+            else:
+                start_idx = 200
+            for idx in range(start_idx, len(df)):
                 bar = df.iloc[idx]
                 if bar.get("incomplete", False) or bar.get("non_comparable", False):
                     broker.process_next_bar(symbol, bar.to_dict())
@@ -518,11 +548,11 @@ class BacktestRunner:
                             decision_record["action"] = "SKIP"
                             decision_record["skip_reason"] = pos_size.skip_reason
                         else:
-                            coin_size = pos_size.size * float(spec["contract_size"])
                             proposed = {
                                 "symbol": symbol,
                                 "side": side,
-                                "size": coin_size,
+                                "size": pos_size.size,
+                                "contract_size": float(spec["contract_size"]),
                                 "entry_price": bar["close"],
                                 "stop_loss": stop_loss,
                             }
@@ -532,10 +562,9 @@ class BacktestRunner:
                                 sm_pos = state_machines[existing["symbol"]].get_position(
                                     existing["symbol"]
                                 )
-                                existing_spec = specs[existing["symbol"]]
                                 item = dict(existing)
-                                item["size"] = existing["size"] * float(
-                                    existing_spec["contract_size"]
+                                item["contract_size"] = float(
+                                    specs[existing["symbol"]]["contract_size"]
                                 )
                                 if sm_pos:
                                     item["stop_loss"] = sm_pos.stop_loss
@@ -564,14 +593,18 @@ class BacktestRunner:
                                     entry_time=bar["bar_time"],
                                     stop_loss=stop_loss,
                                     leverage=pos_size.leverage,
-                                    metadata={"position_id": position_id},
+                                    metadata={
+                                        "position_id": position_id,
+                                        "signal_atr": float(atr),
+                                    },
                                 )
                                 broker.submit_order(
                                     Order(
                                         symbol=symbol,
                                         side=side,
                                         size=pos_size.size,
-                                        order_type="LIMIT",
+                                        order_type="MARKET",
+                                        stop_slippage=slippage_amount,
                                     )
                                 )
                                 decision_record["action"] = "ENTER"
@@ -584,8 +617,54 @@ class BacktestRunner:
                                 decision_record["skip_reason"] = msg
 
                 elif current_state == StrategyState.ENTRY_PENDING:
-                    sm.confirm_entry(symbol)
+                    current_position = sm.get_position(symbol)
+                    entry_fills = [
+                        fill
+                        for fill in broker.fills
+                        if fill.symbol == symbol and fill.is_entry
+                    ]
+                    actual_price = (
+                        float(entry_fills[-1].price)
+                        if entry_fills
+                        else float(bar["open"])
+                    )
+                    signal_atr = float((current_position.metadata or {}).get("signal_atr") or bar[atr_col])
+                    fill_stop = c02.calculate_stop_loss(
+                        actual_price, signal_atr, current_position.side
+                    )
+                    sm.confirm_entry(symbol, actual_entry_price=actual_price)
+                    current_position = sm.get_position(symbol)
+                    current_position.stop_loss = fill_stop
+                    position_id = current_position.metadata.get("position_id")
+                    c02.initialize_position_stop(position_id, fill_stop)
+                    ctx.current_position = {
+                        "entry_price": actual_price,
+                        "side": current_position.side,
+                        "position_id": position_id,
+                        "stop_loss": fill_stop,
+                    }
+                    c02_result = c02.evaluate(ctx, {})
                     decision_record["action"] = "CONFIRM_ENTRY"
+                    decision_record["stop_loss"] = fill_stop
+                    decision_record["entry_price"] = actual_price
+                    decision_record["position_id"] = position_id
+                    if c02_result.status == "PASS":
+                        sm.signal_exit(symbol, "stop_loss")
+                        broker.submit_order(
+                            Order(
+                                symbol=symbol,
+                                side="SHORT" if current_position.side == "LONG" else "LONG",
+                                size=current_position.size,
+                                order_type="MARKET",
+                                reduce_only=True,
+                                is_stop=True,
+                                stop_price=fill_stop,
+                                stop_slippage=slippage_amount,
+                            )
+                        )
+                        decision_record["action"] = "EXIT"
+                        decision_record["exit_reason"] = "stop_loss"
+                        decision_record["entry_bar_stop"] = True
 
                 elif current_state == StrategyState.OPEN:
                     if current_position:
@@ -632,6 +711,9 @@ class BacktestRunner:
                         decision_record["action"] = "CONFIRM_EXIT"
                         decision_record["position_id"] = position_id
 
+                if "funding_rate" in getattr(bar, "index", []) and pd.notna(bar["funding_rate"]):
+                    broker.apply_funding(symbol, float(bar["funding_rate"]))
+
                 all_decisions.append(decision_record)
 
         decisions_df = pd.DataFrame(all_decisions)
@@ -646,8 +728,65 @@ class BacktestRunner:
             "fee_rates_used": fee_rates_record,
         }
 
+    def _fills_frame(self, fills: list[Any]) -> pd.DataFrame:
+        if not fills:
+            return pd.DataFrame()
+        return pd.DataFrame(
+            [
+                {
+                    "symbol": fill.symbol,
+                    "side": fill.side,
+                    "size": fill.size,
+                    "price": fill.price,
+                    "time": fill.time,
+                    "fees": fill.fees,
+                    "slippage": fill.slippage,
+                    "is_entry": fill.is_entry,
+                    "contract_size": fill.contract_size,
+                    "notional": fill.notional,
+                    "funding": fill.funding,
+                }
+                for fill in fills
+            ]
+        )
+
+    def _hash_decisions(self, decisions: pd.DataFrame | None) -> str:
+        if decisions is None:
+            return "unavailable"
+        return stable_frame_hash(decisions)
+
+    def _hash_fills(self, fills: list[Any] | None) -> str:
+        if fills is None:
+            return "unavailable"
+        return stable_frame_hash(self._fills_frame(fills))
+
+    def _record_smoke_outcome(
+        self,
+        results: dict[str, Any] | None,
+        status: str,
+        error_message: str | None = None,
+    ) -> None:
+        decisions = results["decisions"] if results else None
+        fills = results["fills"] if results else None
+        self.ledger.record_smoke_run(
+            run_id=self.run_id,
+            dataset_id=self.config.get("dataset_id"),
+            manifest_hash=self.config.get("manifest_hash"),
+            bar_window=int(self.config.get("smoke_bar_window") or 0),
+            decisions_hash=self._hash_decisions(decisions),
+            fills_hash=self._hash_fills(fills),
+            status=status,
+            error_message=error_message,
+        )
+
+    def close(self) -> None:
+        broker = getattr(self, "_broker", None)
+        if broker is not None:
+            broker.close()
+            self._broker = None
+
     def _write_return_series(
-        self, results: dict[str, Any]
+        self, results: dict[str, Any], frozen: Any
     ) -> tuple[float | None, int, Path | None]:
         output_dir = self.workspace_dir / "runs" / self.run_id
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -661,10 +800,29 @@ class BacktestRunner:
             entry = open_fills.pop(fill.symbol, None)
             if entry is None:
                 continue
+            contract_size = require_contract_size(
+                getattr(entry, "contract_size", None), entry.symbol
+            )
+            entry_notional = coin_notional(
+                entry.price, entry.size, contract_size, entry.symbol
+            )
             if entry.side == "LONG":
-                ret = (fill.price - entry.price) / entry.price
+                price_pnl = coin_notional(
+                    fill.price - entry.price, entry.size, contract_size, entry.symbol
+                )
             else:
-                ret = (entry.price - fill.price) / entry.price
+                price_pnl = coin_notional(
+                    entry.price - fill.price, entry.size, contract_size, entry.symbol
+                )
+            costs = (
+                float(entry.fees)
+                + float(fill.fees)
+                + float(entry.slippage)
+                + float(fill.slippage)
+                + float(getattr(fill, "funding", 0.0) or 0.0)
+            )
+            net_pnl = price_pnl - costs
+            ret = net_pnl / entry_notional if entry_notional else 0.0
             trades.append(
                 {
                     "symbol": fill.symbol,
@@ -672,19 +830,36 @@ class BacktestRunner:
                     "exit_time": fill.time,
                     "side": entry.side,
                     "return": ret,
+                    "net_pnl": net_pnl,
+                    "fees": float(entry.fees) + float(fill.fees),
+                    "funding": float(getattr(fill, "funding", 0.0) or 0.0),
                 }
             )
         n_trades = len(trades)
         path = output_dir / "return_series.parquet"
+        ppy = periods_per_year(
+            getattr(frozen, "timeframe", None) or self.config.get("timeframe") or "4hour"
+        )
+        columns = [
+            "symbol",
+            "entry_time",
+            "exit_time",
+            "side",
+            "return",
+            "net_pnl",
+            "fees",
+            "funding",
+        ]
         if trades:
             df = pd.DataFrame(trades)
             df.to_parquet(path, index=False)
             std = float(df["return"].std(ddof=1)) if len(df) > 1 else 0.0
-            sharpe = float(df["return"].mean() / std) if std > 0 else 0.0
+            if std > 0:
+                sharpe = float(df["return"].mean() / std * np.sqrt(ppy))
+            else:
+                sharpe = 0.0
             return sharpe, n_trades, path
-        pd.DataFrame(columns=["symbol", "entry_time", "exit_time", "side", "return"]).to_parquet(
-            path, index=False
-        )
+        pd.DataFrame(columns=columns).to_parquet(path, index=False)
         return None, 0, path
 
     def _load_overlap_deviation(self) -> dict[str, Any] | None:
@@ -698,20 +873,8 @@ class BacktestRunner:
         output_dir = self.workspace_dir / "runs" / self.run_id
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        fills_data = [
-            {
-                "symbol": f.symbol,
-                "side": f.side,
-                "size": f.size,
-                "price": f.price,
-                "time": f.time,
-                "fees": f.fees,
-                "slippage": f.slippage,
-                "is_entry": f.is_entry,
-            }
-            for f in results["fills"]
-        ]
-        fills_df = pd.DataFrame(fills_data)
+        fills_df = self._fills_frame(results["fills"])
+        fills_data = fills_df.to_dict(orient="records") if not fills_df.empty else []
         if not fills_df.empty:
             fills_df.to_parquet(output_dir / "fills.parquet", index=False)
         decisions_df = results["decisions"]

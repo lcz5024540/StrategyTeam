@@ -7,6 +7,7 @@ behind an explicit live-trading boundary.
 
 from __future__ import annotations
 
+import atexit
 import base64
 import hashlib
 import hmac
@@ -73,10 +74,19 @@ class HtxV5Client:
         self._live_trading_enabled = live_trading_enabled
         self._client = client or httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0))
         self._owns_client = client is None
+        self._closed = False
+        if self._owns_client:
+            atexit.register(self.close)
 
     def close(self) -> None:
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
         if self._owns_client:
-            self._client.close()
+            try:
+                self._client.close()
+            except Exception:
+                pass
 
     def __enter__(self) -> "HtxV5Client":
         return self

@@ -63,6 +63,18 @@ class ContractSpec:
     create_date: int
 
 
+KLINE_PERIOD_SECONDS = {
+    "1min": 60,
+    "5min": 300,
+    "15min": 900,
+    "30min": 1800,
+    "60min": 3600,
+    "4hour": 4 * 3600,
+    "1day": 24 * 3600,
+    "1mon": 30 * 24 * 3600,
+}
+
+
 class HtxMarketDataClient:
     MAX_KLINE_SIZE = 2000
 
@@ -173,48 +185,57 @@ class HtxMarketDataClient:
         from_timestamp: int | None = None,
         to_timestamp: int | None = None,
     ) -> list[Kline]:
-        """分页抓取 K 线，向官方接口传递 from/to。"""
+        """向后分页抓取 K 线（from/to 窗口，每页最多 2000 根）。"""
+        if period not in KLINE_PERIOD_SECONDS:
+            raise ValueError(f"Unsupported HTX kline period: {period}")
         page_size = min(int(page_size), self.MAX_KLINE_SIZE)
+        period_sec = KLINE_PERIOD_SECONDS[period]
         start_ts = from_timestamp
         end_ts = to_timestamp
         if start_ts is None and start_time is not None:
             start_ts = int(start_time.timestamp())
         if end_ts is None and end_time is not None:
             end_ts = int(end_time.timestamp())
-
-        if start_ts is not None and end_ts is not None:
-            envelope = self._request_kline_envelope(
-                contract_code,
-                period,
-                from_timestamp=start_ts,
-                to_timestamp=end_ts,
-            )
-            raw_data = envelope.get("data") or []
-            if not isinstance(raw_data, list):
-                raise HtxAPIError("HTX response data is not a list")
-            return self._parse_klines(raw_data)
+        if end_ts is None:
+            end_ts = int(datetime.now(UTC).timestamp())
 
         all_klines: list[Kline] = []
-        for _page in range(max_pages):
-            batch = self.fetch_klines(contract_code, period, size=page_size)
-            if not batch:
+        cursor_end = int(end_ts)
+        for page in range(max_pages):
+            window = page_size * period_sec
+            cursor_start = cursor_end - window
+            if start_ts is not None:
+                cursor_start = max(int(start_ts), cursor_start)
+            if cursor_start >= cursor_end:
                 break
-            if start_time:
-                batch = [k for k in batch if k.bar_time >= start_time]
-            if end_time:
-                batch = [k for k in batch if k.bar_time <= end_time]
+            batch = self.fetch_klines(
+                contract_code,
+                period,
+                from_timestamp=cursor_start,
+                to_timestamp=cursor_end,
+            )
             if not batch:
                 break
             all_klines.extend(batch)
-            if start_time and batch[0].bar_time <= start_time:
+            earliest_ts = int(min(k.bar_time for k in batch).timestamp())
+            if start_ts is not None and earliest_ts <= int(start_ts):
                 break
             if len(batch) < page_size:
                 break
-            time.sleep(0.5)
+            next_end = earliest_ts - 1
+            if next_end >= cursor_end:
+                break
+            cursor_end = next_end
+            if page + 1 < max_pages:
+                time.sleep(0.2)
 
         seen: set[datetime] = set()
         unique_klines = []
         for k in sorted(all_klines, key=lambda x: x.bar_time):
+            if start_ts is not None and int(k.bar_time.timestamp()) < int(start_ts):
+                continue
+            if int(k.bar_time.timestamp()) > int(end_ts):
+                continue
             if k.bar_time not in seen:
                 seen.add(k.bar_time)
                 unique_klines.append(k)

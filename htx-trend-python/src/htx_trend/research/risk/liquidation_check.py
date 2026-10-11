@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from ..engine.contract_value import coin_notional, require_contract_size
+
 
 class LiquidationChecker:
     def __init__(
@@ -96,10 +98,12 @@ class AccountLiquidationChecker:
         if not all_positions:
             return True, 1.0, "No positions"
         
-        total_notional = sum(
-            abs(p.get("size", 0) * p.get("entry_price", 0))
-            for p in all_positions
-        )
+        total_notional = 0.0
+        for pos in all_positions:
+            contract_size = require_contract_size(pos.get("contract_size"), pos.get("symbol", ""))
+            total_notional += abs(
+                coin_notional(pos.get("entry_price", 0), pos.get("size", 0), contract_size)
+            )
         
         if total_notional == 0:
             return True, 1.0, "Zero notional"
@@ -116,11 +120,9 @@ class AccountLiquidationChecker:
             entry_price = pos.get("entry_price", 0)
             size = pos.get("size", 0)
             side = pos.get("side", "LONG")
-            
-            if side == "LONG":
-                loss = max(0, (entry_price - stop_loss) * size)
-            else:
-                loss = max(0, (stop_loss - entry_price) * size)
+            contract_size = require_contract_size(pos.get("contract_size"), pos.get("symbol", ""))
+            price_move = (entry_price - stop_loss) if side == "LONG" else (stop_loss - entry_price)
+            loss = max(0.0, coin_notional(price_move, size, contract_size))
             
             max_simultaneous_loss += loss
         

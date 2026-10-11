@@ -63,6 +63,7 @@ class DataStitcher:
             return binance_df, {
                 "htx_bars": 0,
                 "binance_bars": len(binance_df),
+                "binance_backfill_bars": len(binance_df),
                 "overlap_deviation": overlap_deviation_distribution(
                     pd.Series(dtype=float), self.close_deviation_threshold
                 ),
@@ -72,6 +73,7 @@ class DataStitcher:
             return htx_df, {
                 "htx_bars": len(htx_df),
                 "binance_bars": 0,
+                "binance_backfill_bars": 0,
                 "overlap_deviation": overlap_deviation_distribution(
                     pd.Series(dtype=float), self.close_deviation_threshold
                 ),

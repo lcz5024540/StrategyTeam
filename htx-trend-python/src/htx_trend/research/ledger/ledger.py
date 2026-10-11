@@ -295,6 +295,37 @@ class LedgerManager:
             conn.execute("ALTER TABLE trials ADD COLUMN n_trades INTEGER")
         if "return_series_path" not in trial_cols:
             conn.execute("ALTER TABLE trials ADD COLUMN return_series_path TEXT")
+
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS smoke_runs (
+                event_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                dataset_id TEXT,
+                manifest_hash TEXT,
+                bar_window INTEGER,
+                decisions_hash TEXT,
+                fills_hash TEXT,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                recorded_at TEXT NOT NULL
+            );
+
+            CREATE TRIGGER IF NOT EXISTS smoke_runs_no_update
+            BEFORE UPDATE ON smoke_runs
+            FOR EACH ROW
+            BEGIN
+                SELECT RAISE(ABORT, 'smoke_runs table is append-only');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS smoke_runs_no_delete
+            BEFORE DELETE ON smoke_runs
+            FOR EACH ROW
+            BEGIN
+                SELECT RAISE(ABORT, 'smoke_runs table is append-only');
+            END;
+            """
+        )
     
     def register_run(self, run: RunRecord) -> None:
         with sqlite3.connect(self.db_path) as conn:
@@ -558,6 +589,55 @@ class LedgerManager:
         for trial in trials:
             writer.writerow({k: trial.get(k) for k in fields})
         return buf.getvalue()
+
+    def record_smoke_run(
+        self,
+        run_id: str,
+        dataset_id: str | None,
+        manifest_hash: str | None,
+        bar_window: int,
+        decisions_hash: str,
+        fills_hash: str,
+        status: str,
+        error_message: str | None = None,
+    ) -> str:
+        event_id = str(uuid.uuid4())
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO smoke_runs (
+                    event_id, run_id, dataset_id, manifest_hash, bar_window,
+                    decisions_hash, fills_hash, status, error_message, recorded_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    run_id,
+                    dataset_id,
+                    manifest_hash,
+                    bar_window,
+                    decisions_hash,
+                    fills_hash,
+                    status,
+                    error_message,
+                    datetime.now().isoformat(),
+                ),
+            )
+        return event_id
+
+    def list_smoke_runs(self, run_id: str | None = None) -> list[dict[str, Any]]:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            if run_id:
+                rows = conn.execute(
+                    "SELECT * FROM smoke_runs WHERE run_id = ? ORDER BY rowid",
+                    (run_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM smoke_runs ORDER BY rowid"
+                ).fetchall()
+        return [dict(row) for row in rows]
 
     def update_run_metrics(self, run_id: str, metrics: dict[str, Any]) -> None:
         with sqlite3.connect(self.db_path) as conn:

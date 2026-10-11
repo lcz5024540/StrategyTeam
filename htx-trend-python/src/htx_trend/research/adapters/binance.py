@@ -7,6 +7,7 @@ instead. Spot paths are rejected.
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import io
 import zipfile
@@ -32,7 +33,10 @@ class BinanceVisionClient:
         self.base_url = base_url.rstrip("/")
         self._owns_client = client is None
         self.client = client or httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0))
+        self._closed = False
         self._assert_not_spot(self.base_url)
+        if self._owns_client:
+            atexit.register(self.close)
 
     def _assert_not_spot(self, url: str) -> None:
         lowered = url.lower()
@@ -143,8 +147,14 @@ class BinanceVisionClient:
         return klines
 
     def close(self) -> None:
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
         if self._owns_client:
-            self.client.close()
+            try:
+                self.client.close()
+            except Exception:
+                pass
 
     def __enter__(self) -> "BinanceVisionClient":
         return self

@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .data import DataCollector, DatasetManager, DataStitcher
+from .data.collector import BINANCE_VISION_START, parse_lookback_days
 from .features.daily_resample import daily_resample_manifest_fields
 from .ledger import Approval, ApprovalDecision, ApprovalGate, LedgerManager
 from .ops import HeartbeatManager, get_status
@@ -35,7 +36,10 @@ def cmd_collect(args: argparse.Namespace) -> None:
         
         if args.backfill_binance:
             end_date = datetime.now(UTC)
-            start_date = end_date - timedelta(days=args.lookback_days)
+            if args.lookback_days == "max":
+                start_date = BINANCE_VISION_START
+            else:
+                start_date = end_date - timedelta(days=int(args.lookback_days))
             
             binance_symbol = contract.replace("-", "")
             
@@ -65,6 +69,7 @@ def cmd_freeze(args: argparse.Namespace) -> None:
 
     stitcher = DataStitcher(close_deviation_threshold=args.overlap_threshold or 0.003)
     overlap_deviation: dict = {}
+    source_counts: dict = {}
     
     for contract in contracts:
         htx_file = raw_dir / f"{contract}_{timeframe}_htx.parquet"
@@ -93,6 +98,13 @@ def cmd_freeze(args: argparse.Namespace) -> None:
             )
             print(f"{contract} canonical 1d (daily_cut={args.daily_cut or 'UTC00'}): {stats}")
             overlap_deviation[contract] = {"1day": stats.get("overlap_deviation", {})}
+            source_counts[contract] = {
+                "htx_bars": stats.get("htx_bars", 0),
+                "binance_bars": stats.get("binance_bars", 0),
+                "binance_backfill_bars": stats.get("binance_backfill_bars", 0),
+                "overlap_bars": stats.get("overlap_bars", 0),
+                "total_bars": stats.get("total_bars", 0),
+            }
             if combined.empty:
                 print(f"{contract}: no complete daily bars after resample, skipping")
                 continue
@@ -106,6 +118,13 @@ def cmd_freeze(args: argparse.Namespace) -> None:
                 combined, stats = stitcher.stitch_klines(htx_df, binance_df)
                 print(f"{contract}: {stats}")
                 overlap_deviation[contract] = {timeframe: stats.get("overlap_deviation", {})}
+                source_counts[contract] = {
+                    "htx_bars": stats.get("htx_bars", 0),
+                    "binance_bars": stats.get("binance_bars", 0),
+                    "binance_backfill_bars": stats.get("binance_backfill_bars", 0),
+                    "overlap_bars": stats.get("overlap_bars", 0),
+                    "total_bars": stats.get("total_bars", 0),
+                }
                 data[contract] = combined
             else:
                 data[contract] = htx_df
@@ -125,6 +144,11 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         val_ratio=args.val_ratio,
     )
     dataset_dir = workspace / "data" / "datasets" / frozen.dataset_id
+    if source_counts:
+        (dataset_dir / "source_counts.json").write_text(
+            json.dumps(source_counts, indent=2)
+        )
+        print(f"source_counts: {json.dumps(source_counts)}")
     if overlap_deviation:
         (dataset_dir / "overlap_deviation.json").write_text(
             json.dumps(overlap_deviation, indent=2)
@@ -155,7 +179,10 @@ def cmd_run(args: argparse.Namespace) -> None:
     workspace = Path(args.workspace)
     
     runner = BacktestRunner(config_path, workspace)
-    results = runner.run()
+    try:
+        results = runner.run()
+    finally:
+        runner.close()
     
     print(f"Backtest complete: {runner.run_id}")
     print(f"Final equity: ${results['final_equity']:.2f}")
@@ -332,7 +359,12 @@ def main() -> None:
     
     collect_parser = subparsers.add_parser("collect", help="Collect market data")
     collect_parser.add_argument("--contracts", required=True, help="Comma-separated contract codes")
-    collect_parser.add_argument("--lookback-days", type=int, default=1095)
+    collect_parser.add_argument(
+        "--lookback-days",
+        type=parse_lookback_days,
+        required=True,
+        help="History window in days, or 'max' (HTX paginate + Binance from 2020-01-01)",
+    )
     collect_parser.add_argument("--backfill-binance", action="store_true")
     
     freeze_parser = subparsers.add_parser("freeze", help="Freeze dataset")

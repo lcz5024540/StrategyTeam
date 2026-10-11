@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from htx_trend.research.risk.liquidation_check import AccountLiquidationChecker
+from htx_trend.research.conditions.c02_atr_stop import C02ATRStop
+from htx_trend.research.engine.contract_value import periods_per_year
 from tests.research.helpers import (
     DEFAULT_SPECS,
     create_test_dataset,
@@ -138,13 +142,26 @@ def test_c02_independent_stops_for_consecutive_opposite_trades(tmp_path):
     assert len(set(ids)) == len(ids)
     stops = enters["stop_loss"].tolist()
     assert stops[0] != stops[1]
+    first_pid = enters.iloc[0]["position_id"]
+    second_pid = enters.iloc[1]["position_id"]
+    exits = decisions[decisions["action"] == "EXIT"]
+    second_exits = exits[exits["position_id"] == second_pid]
+    if not second_exits.empty:
+        assert second_exits.iloc[0]["position_id"] != first_pid
+        assert second_exits.iloc[0]["stop_loss"] != enters.iloc[0]["stop_loss"]
+    else:
+        owned = decisions[decisions["position_id"] == second_pid]
+        assert not owned.empty
+        assert owned.iloc[-1]["stop_loss"] != enters.iloc[0]["stop_loss"]
 
 
 def test_smoke_not_counted_and_labeled(tmp_path):
     workspace = _breakout_workspace(tmp_path)
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     run_id = f"SMOKE-{today}-01"
-    cfg = _breakout_config(workspace, run_id, run_type="SMOKE", split="train")
+    cfg = _breakout_config(
+        workspace, run_id, run_type="SMOKE", split="train", smoke_bar_window=80
+    )
     runner = write_runner(workspace, cfg)
     runner.run()
     assert runner.ledger.count_trials(run_id) == 0
@@ -173,5 +190,203 @@ def test_trial_export_includes_sharpe_trades_and_return_series(tmp_path):
     assert "final_sharpe" in exported
     assert "n_trades" in exported
     assert "return_series_path" in exported
+    rows = json.loads(exported)
+    assert rows
+    sharpes = [row["final_sharpe"] for row in rows]
+    assert any(value is not None for value in sharpes)
+    numeric = [float(value) for value in sharpes if value is not None]
+    assert numeric
     series = workspace / "runs" / "DSREXP" / "return_series.parquet"
     assert series.exists()
+    returns = pd.read_parquet(series)
+    if not returns.empty:
+        assert "return" in returns.columns
+        assert returns["return"].notna().any()
+
+
+def _ohlc_workspace(tmp_path, n=230, mutate=None):
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    close = np.full(n, 100.0)
+    high = close + 1.0
+    low = close - 1.0
+    open_ = close.copy()
+    if mutate:
+        mutate(open_, high, low, close)
+    create_test_dataset(
+        workspace,
+        "ohlc",
+        n_bars=n,
+        train_end_idx=n,
+        val_end_idx=n,
+        symbols=["BTC-USDT"],
+        specs={"BTC-USDT": DEFAULT_SPECS["BTC-USDT"]},
+        ohlc={"BTC-USDT": {"open": open_, "high": high, "low": low, "close": close}},
+    )
+    return workspace
+
+
+def test_stop_hit_on_entry_bar(tmp_path):
+    def mutate(open_, high, low, close):
+        close[210] = 110.0
+        high[210] = 111.0
+        low[210] = 109.0
+        open_[210] = 100.0
+        open_[211] = 110.0
+        close[211] = 100.0
+        high[211] = 111.0
+        low[211] = 50.0
+
+    workspace = _ohlc_workspace(tmp_path, mutate=mutate)
+    runner = write_runner(
+        workspace,
+        runner_config(
+            workspace,
+            "ENTRYSTOP",
+            "ohlc",
+            symbols=["BTC-USDT"],
+            initial_equity=10_000.0,
+            conditions={
+                "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
+                "C02": {
+                    "atr_period": 14,
+                    "atr_multiplier": 2.0,
+                    "tick_size": 0.1,
+                    "stop_slippage_ticks": 1,
+                },
+            },
+        ),
+    )
+    results = runner.run()
+    decisions = results["decisions"]
+    entry_stops = decisions[decisions.get("entry_bar_stop") == True] if "entry_bar_stop" in decisions.columns else pd.DataFrame()
+    exits = decisions[decisions["action"] == "EXIT"]
+    assert not exits.empty
+    assert (exits.get("entry_bar_stop") == True).any()
+    assert not entry_stops.empty
+
+
+def test_entry_fill_stop_from_actual_fill(tmp_path):
+    def mutate(open_, high, low, close):
+        close[210] = 110.0
+        high[210] = 111.0
+        low[210] = 109.0
+        open_[210] = 100.0
+        open_[211] = 120.0
+        close[211] = 120.0
+        high[211] = 121.0
+        low[211] = 119.0
+
+    workspace = _ohlc_workspace(tmp_path, mutate=mutate)
+    runner = write_runner(
+        workspace,
+        runner_config(
+            workspace,
+            "FILLSTOP",
+            "ohlc",
+            symbols=["BTC-USDT"],
+            initial_equity=10_000.0,
+            conditions={
+                "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
+                "C02": {
+                    "atr_period": 14,
+                    "atr_multiplier": 2.0,
+                    "tick_size": 0.1,
+                    "stop_slippage_ticks": 1,
+                },
+            },
+        ),
+    )
+    results = runner.run()
+    decisions = results["decisions"]
+    enters = decisions[decisions["action"] == "ENTER"]
+    assert not enters.empty
+    confirms = decisions[decisions["action"].isin(["CONFIRM_ENTRY", "EXIT"])]
+    assert not confirms.empty
+    row = confirms.iloc[0]
+    assert float(row["entry_price"]) != float(enters.iloc[0]["close"])
+    c02 = C02ATRStop(atr_period=14, atr_multiplier=2.0, tick_size=0.1, stop_slippage_ticks=1)
+    atr = float(results["decisions"].iloc[0].get("c01_value") or 2.0)
+    # Stop must be computed from the actual fill, not the signal close.
+    fill_price = float(row["entry_price"])
+    signal_close = float(enters.iloc[0]["close"])
+    assert abs(fill_price - signal_close) > 1
+    assert float(row["stop_loss"]) < fill_price
+    signal_stop = c02.calculate_stop_loss(signal_close, 1.0, "LONG")
+    assert float(row["stop_loss"]) != pytest.approx(signal_stop)
+
+
+def test_smoke_limited_window_no_metrics_records_smoke_runs(tmp_path):
+    workspace = _breakout_workspace(tmp_path)
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    run_id = f"SMOKE-{today}-09"
+    cfg = _breakout_config(
+        workspace,
+        run_id,
+        run_type="SMOKE",
+        split="train",
+        smoke_bar_window=40,
+    )
+    runner = write_runner(workspace, cfg)
+    results = runner.run()
+    assert len(results["decisions"]) <= 40
+    report = (workspace / "runs" / run_id / "report.md").read_text()
+    assert "绩效指标" not in report
+    assert "SMOKE" in report
+    rows = runner.ledger.list_smoke_runs(run_id)
+    assert len(rows) == 1
+    assert rows[0]["bar_window"] == 40
+    assert rows[0]["status"] == "completed"
+    assert runner.ledger.get_all_trials() == []
+    metrics_path = workspace / "runs" / run_id / "return_series.parquet"
+    assert not metrics_path.exists()
+
+
+def test_market_on_open_entry_charged_taker(tmp_path):
+    workspace = _breakout_workspace(tmp_path)
+    runner = write_runner(
+        workspace, _breakout_config(workspace, "TAKER", initial_equity=10_000.0)
+    )
+    results = runner.run()
+    entries = [fill for fill in results["fills"] if fill.is_entry]
+    assert entries
+    for fill in entries:
+        assert fill.fees == pytest.approx(fill.notional * 0.0006, rel=1e-6)
+
+
+def test_sharpe_net_of_fees_and_annualized(tmp_path):
+    workspace = _breakout_workspace(tmp_path)
+    runner = write_runner(
+        workspace, _breakout_config(workspace, "SHARPE", initial_equity=10_000.0)
+    )
+    results = runner.run()
+    series = pd.read_parquet(workspace / "runs" / "SHARPE" / "return_series.parquet")
+    if series.empty:
+        pytest.skip("fixture produced no closed trades")
+    assert "fees" in series.columns
+    assert "funding" in series.columns
+    assert results["sharpe"] is not None
+    raw = series["return"]
+    std = float(raw.std(ddof=1)) if len(raw) > 1 else 0.0
+    if std > 0:
+        expected = float(raw.mean() / std * (periods_per_year("4hour") ** 0.5))
+        assert results["sharpe"] == pytest.approx(expected)
+        assert abs(results["sharpe"]) > abs(float(raw.mean() / std)) or abs(results["sharpe"]) == 0
+    assert periods_per_year("4hour") == 6 * 365
+    assert periods_per_year("1day") == 365
+
+
+def test_smoke_failure_still_records_smoke_runs(tmp_path):
+    workspace = _breakout_workspace(tmp_path)
+    (workspace / "data" / "raw" / "BTC-USDT_spec.json").unlink()
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    run_id = f"SMOKE-{today}-08"
+    cfg = _breakout_config(
+        workspace, run_id, run_type="SMOKE", split="train", smoke_bar_window=40
+    )
+    runner = write_runner(workspace, cfg)
+    with pytest.raises(ValueError, match="contract"):
+        runner.run()
+    rows = runner.ledger.list_smoke_runs(run_id)
+    assert rows
+    assert rows[-1]["status"] == "failed"
