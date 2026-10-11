@@ -10,7 +10,7 @@ from htx_trend.research.features.indicators import FeatureCalculator
 @pytest.fixture
 def sample_ohlcv():
     np.random.seed(42)
-    dates = pd.date_range("2024-01-01", periods=200, freq="4H")
+    dates = pd.date_range("2024-01-01", periods=200, freq="4h")
     
     close = 100 + np.cumsum(np.random.randn(200) * 0.5)
     high = close + np.random.rand(200) * 2
@@ -66,7 +66,7 @@ def test_adx_calculation(sample_ohlcv):
 
 
 def test_no_lookahead():
-    dates = pd.date_range("2024-01-01", periods=100, freq="4H")
+    dates = pd.date_range("2024-01-01", periods=100, freq="4h")
     close = list(range(100))
     
     df = pd.DataFrame({

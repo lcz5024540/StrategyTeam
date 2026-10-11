@@ -13,6 +13,7 @@ from .ledger import Approval, ApprovalDecision, ApprovalGate, LedgerManager
 from .ops import HeartbeatManager, get_status
 from .ops.status import StatusInterface
 from .runner import BacktestRunner
+from .version_info import get_version_info
 
 
 def cmd_collect(args: argparse.Namespace) -> None:
@@ -117,6 +118,10 @@ def cmd_health(args: argparse.Namespace) -> None:
     workspace = Path(args.workspace)
     heartbeat_mgr = HeartbeatManager(workspace / "heartbeats")
     
+    version_info = get_version_info()
+    print(f"HTX Trend Research System {version_info}")
+    print()
+    
     components = heartbeat_mgr.list_components()
     
     if not components:
@@ -140,6 +145,7 @@ def cmd_health(args: argparse.Namespace) -> None:
 
 
 def cmd_status(args: argparse.Namespace) -> None:
+    version_info = get_version_info()
     status = get_status()
     
     if status is None:
@@ -147,8 +153,12 @@ def cmd_status(args: argparse.Namespace) -> None:
         sys.exit(1)
     
     if args.json:
-        print(json.dumps(status.to_dict(), indent=2, default=str))
+        status_dict = status.to_dict()
+        status_dict["version_info"] = version_info.to_dict()
+        print(json.dumps(status_dict, indent=2, default=str))
     else:
+        print(f"HTX Trend Research System {version_info}")
+        print()
         print(f"Run ID: {status.run_id}")
         print(f"Component: {status.component}")
         print(f"Health: {status.health.value}")

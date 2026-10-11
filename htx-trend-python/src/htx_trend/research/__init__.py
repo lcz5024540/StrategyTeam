@@ -4,4 +4,6 @@
 与现有的 live trading 代码分离，共享 HTX 客户端。
 """
 
-__version__ = "0.1.0"
+from ._version import __version__
+
+__all__ = ["__version__"]

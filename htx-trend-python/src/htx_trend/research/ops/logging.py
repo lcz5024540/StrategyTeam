@@ -78,6 +78,9 @@ def setup_logging(
     logger.addHandler(console_handler)
     
     if log_file:
+        from pathlib import Path
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(StructuredJsonFormatter())
         logger.addHandler(file_handler)

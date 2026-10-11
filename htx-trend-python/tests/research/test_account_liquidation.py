@@ -11,13 +11,13 @@ def test_account_liquidation_safe():
         safety_buffer_multiplier=1.5,
     )
     
-    account_equity = 1000.0
+    account_equity = 2000.0
     
     all_positions = [
         {
             "symbol": "BTC-USDT",
             "side": "LONG",
-            "size": 1.0,
+            "size": 0.02,
             "entry_price": 50000.0,
         },
     ]
@@ -26,7 +26,7 @@ def test_account_liquidation_safe():
         {
             "symbol": "BTC-USDT",
             "side": "LONG",
-            "size": 1.0,
+            "size": 0.02,
             "entry_price": 50000.0,
             "stop_loss": 49000.0,
         },

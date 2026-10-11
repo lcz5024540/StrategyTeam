@@ -14,7 +14,7 @@ from htx_trend.research.runner import BacktestRunner
 
 def create_fixture_dataset(workspace: Path) -> str:
     np.random.seed(42)
-    dates = pd.date_range("2024-01-01", periods=300, freq="4H")
+    dates = pd.date_range("2024-01-01", periods=300, freq="4h")
     
     datasets_dir = workspace / "data" / "datasets"
     datasets_dir.mkdir(parents=True, exist_ok=True)
