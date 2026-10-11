@@ -63,6 +63,7 @@ class RunRecord:
     created_at: datetime
     total_trades: int = 0
     metrics: dict[str, Any] | None = None
+    manifest_hash: str | None = None
 
 
 @dataclass
@@ -148,6 +149,12 @@ class LedgerManager:
                 CREATE INDEX IF NOT EXISTS idx_approvals_gate_decision 
                 ON approvals(gate, decision, created_at DESC);
             """)
+            self._migrate_schema(conn)
+
+    def _migrate_schema(self, conn: sqlite3.Connection) -> None:
+        run_cols = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+        if "manifest_hash" not in run_cols:
+            conn.execute("ALTER TABLE runs ADD COLUMN manifest_hash TEXT")
     
     def register_run(self, run: RunRecord) -> None:
         with sqlite3.connect(self.db_path) as conn:
@@ -156,8 +163,8 @@ class LedgerManager:
                 INSERT INTO runs (
                     run_id, parent_run_id, git_commit, dataset_hash,
                     environment, config_snapshot, cost_scenario,
-                    created_at, total_trades, metrics
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_at, total_trades, metrics, manifest_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run.run_id,
@@ -170,6 +177,7 @@ class LedgerManager:
                     run.created_at.isoformat(),
                     run.total_trades,
                     json.dumps(run.metrics) if run.metrics else None,
+                    run.manifest_hash,
                 ),
             )
     
@@ -187,7 +195,7 @@ class LedgerManager:
                 """
                 SELECT run_id, parent_run_id, git_commit, dataset_hash,
                        environment, config_snapshot, cost_scenario, created_at,
-                       total_trades, metrics
+                       total_trades, metrics, manifest_hash
                 FROM runs
                 WHERE run_id = ?
                 """,
@@ -210,6 +218,7 @@ class LedgerManager:
                 created_at=datetime.fromisoformat(row[7]),
                 total_trades=row[8],
                 metrics=json.loads(row[9]) if row[9] else {},
+                manifest_hash=row[10] if len(row) > 10 else None,
             )
     
     def register_experiment(self, exp: ExperimentRegistration) -> None:
@@ -286,29 +295,6 @@ class LedgerManager:
             count = cursor.fetchone()[0]
         
         return count > 0
-    
-    def get_run(self, run_id: str) -> RunRecord | None:
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT * FROM runs WHERE run_id = ?", (run_id,)
-            )
-            row = cursor.fetchone()
-        
-        if not row:
-            return None
-        
-        return RunRecord(
-            run_id=row[0],
-            parent_run_id=row[1],
-            git_commit=row[2],
-            dataset_hash=row[3],
-            environment=row[4],
-            config_snapshot=json.loads(row[5]),
-            cost_scenario=row[6],
-            created_at=datetime.fromisoformat(row[7]),
-            total_trades=row[8],
-            metrics=json.loads(row[9]) if row[9] else None,
-        )
     
     def create_approval(self, approval: Approval) -> int:
         """记录审批决策"""

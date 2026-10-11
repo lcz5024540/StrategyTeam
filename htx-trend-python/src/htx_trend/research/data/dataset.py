@@ -7,11 +7,13 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 
 from ..ops.logging import LogComponent, log_event
+from .immutable_storage import ImmutableKlineStorage
+from .manifest import DatasetManifest, VerificationResult
 
 
 @dataclass
@@ -27,15 +29,18 @@ class FrozenDataset:
     manifest_hash: str
     created_at: datetime
     
-    def get_split(
-        self, split: Literal["train", "validation", "test"]
-    ) -> tuple[int, int]:
+    VALID_SPLITS = ("train", "val", "validation", "test")
+
+    def get_split(self, split: str) -> tuple[int, int]:
+        if split not in self.VALID_SPLITS:
+            raise ValueError(
+                f"Invalid split name: {split}. Must be one of: train, val, test"
+            )
         if split == "train":
             return 0, self.train_end_idx
-        elif split == "validation":
+        if split in ("val", "validation"):
             return self.train_end_idx, self.val_end_idx
-        else:
-            return self.val_end_idx, self.total_bars
+        return self.val_end_idx, self.total_bars
     
     def to_dict(self) -> dict:
         return {
@@ -61,9 +66,20 @@ class FrozenDataset:
 
 
 class DatasetManager:
-    def __init__(self, datasets_dir: Path):
+    def __init__(
+        self,
+        datasets_dir: Path,
+        storage: ImmutableKlineStorage | None = None,
+        ledger: Any = None,
+        current_run_id: str | None = None,
+    ):
         self.datasets_dir = datasets_dir
         self.datasets_dir.mkdir(parents=True, exist_ok=True)
+        self.manifests_dir = datasets_dir / "manifests"
+        self.manifests_dir.mkdir(parents=True, exist_ok=True)
+        self.storage = storage
+        self.ledger = ledger
+        self.current_run_id = current_run_id
     
     def freeze_dataset(
         self,
@@ -199,3 +215,46 @@ class DatasetManager:
             hasher.update(df["close"].astype(str).str.cat().encode())
         
         return hasher.hexdigest()[:16]
+
+    def freeze_storage_dataset(self, dataset_id: str) -> DatasetManifest:
+        """冻结底层不可变存储，生成带 SHA256 的批次清单。"""
+        if self.storage is None:
+            raise ValueError("DatasetManager.storage is required to freeze from storage")
+        manifest = DatasetManifest.generate_from_storage(self.storage, dataset_id)
+        manifest.save(self.manifests_dir / f"{dataset_id}.json")
+        return manifest
+
+    def load_dataset_with_verification(
+        self,
+        dataset_id: str,
+        manifest_hash: str,
+        symbols: list[str] | None = None,
+    ) -> tuple[dict[str, pd.DataFrame], FrozenDataset]:
+        manifest_path = self.manifests_dir / f"{dataset_id}.json"
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"Manifest not found for dataset {dataset_id}")
+
+        manifest = DatasetManifest.load(manifest_path)
+        actual_hash = manifest.sha256()
+        if actual_hash != manifest_hash:
+            raise ValueError(
+                f"Manifest hash mismatch for {dataset_id}: "
+                f"expected {manifest_hash}, got {actual_hash}"
+            )
+
+        dataset_dir = self.datasets_dir / dataset_id
+        uses_storage_paths = any(
+            entry.file_path.startswith("batches/") for entry in manifest.batches
+        )
+        if uses_storage_paths and self.storage is not None:
+            result: VerificationResult = manifest.verify(self.storage)
+        else:
+            result = manifest.verify(base_path=dataset_dir)
+
+        if not result.is_valid:
+            raise ValueError(
+                f"Dataset {dataset_id} failed hash verification: "
+                f"mismatches={result.mismatches} missing={result.missing_files}"
+            )
+
+        return self.load_dataset(dataset_id, symbols)

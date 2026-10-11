@@ -43,7 +43,14 @@ class BacktestRunner:
         )
         
         self.ledger = LedgerManager(workspace_dir / "ledger.db")
-        self.dataset_mgr = DatasetManager(workspace_dir / "data" / "datasets")
+        from .data.immutable_storage import ImmutableKlineStorage
+
+        self.dataset_mgr = DatasetManager(
+            workspace_dir / "data" / "datasets",
+            storage=ImmutableKlineStorage(workspace_dir / "data" / "klines"),
+            ledger=self.ledger,
+            current_run_id=self.run_id,
+        )
     
     def run(self) -> dict[str, Any]:
         log_event(LogComponent.ENGINE, f"Starting backtest run: {self.run_id}")
@@ -63,6 +70,7 @@ class BacktestRunner:
             config_snapshot=self.config,
             cost_scenario=self.config.get("cost_scenario", "base"),
             created_at=datetime.now(),
+            manifest_hash=self.config.get("manifest_hash") or getattr(frozen, "batch_manifest_hash", None),
         )
         
         self.ledger.register_run(run_record)
@@ -203,8 +211,14 @@ class BacktestRunner:
         dataset_id = self.config["dataset_id"]
         symbols = self.config.get("symbols", ["BTC-USDT", "ETH-USDT"])
         
-        data, frozen = self.dataset_mgr.load_dataset(dataset_id, symbols)
-        
+        manifest_hash = self.config.get("manifest_hash")
+        if manifest_hash:
+            data, frozen = self.dataset_mgr.load_dataset_with_verification(
+                dataset_id, manifest_hash, symbols
+            )
+        else:
+            data, frozen = self.dataset_mgr.load_dataset(dataset_id, symbols)
+
         split = self.config.get("split", "train")
         
         if split == "test":
