@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal, ROUND_DOWN
 from enum import StrEnum
 from os import environ
-from typing import Sequence
+from typing import Any, Callable, Sequence
 
 from .market_data import Candle, ContractSpec, FundingRate, TopOfBook, period_seconds
 from .models import ModelCandidate, ModelCode, TrendSide
@@ -257,6 +257,7 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
                   momentum_quality: Decimal | None = None, ema_fast: Decimal | None = None,
                   ema_slow: Decimal | None = None, adx: Decimal | None = None,
                   strong_profit_reentry: bool = False,
+                  condition_trace: Callable[[str, str, Any, Any, str], None] | None = None,
                   config: ExecutionConfig = ExecutionConfig()) -> GateResult:
     """Execute Java's combination-entry Gate in its production order.
 
@@ -277,62 +278,110 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
                                       adx=current_adx, ema_fast=fast, ema_slow=slow,
                                       confirmations=confirmations, config=state_config)
     state = candidate_state or CandidateTrendState.from_candidate(candidate.score, candidate.expected_r, context, candidate.side)
+    def emit(condition_id: str, passed: bool, actual: Any = None, threshold: Any = None, reason: str = "",
+             status: str | None = None) -> None:
+        if condition_trace is not None:
+            condition_trace(condition_id, status or ("PASS" if passed else "FAIL"), actual, threshold, reason)
 
     # Historical paper tests retain their deliberately relaxed contract. Live
     # execution always sets require_execution_facts=True and follows Java below.
     if not config.require_execution_facts and candidate.score < config.min_score:
+        emit("gate.model_score", False, candidate.score, config.min_score, "below minimum score")
         return GateResult(False, "MODEL_POLICY", f"candidate score {candidate.score} below {config.min_score}")
+    emit("gate.model_score", True, candidate.score, config.min_score)
     # Java requests funding before checking freshness.
     if funding is None:
+        emit("gate.funding_available", False, None, "required", "funding unavailable")
         return GateResult(False, "FUNDING", "funding unavailable; skip directional entry")
+    emit("gate.funding_available", True, funding.rate, "required")
     side_cost = funding.rate if candidate.side is TrendSide.LONG else -funding.rate
     if side_cost > config.max_adverse_funding_rate:
+        emit("gate.funding_cost", False, side_cost, config.max_adverse_funding_rate, "adverse funding")
         return GateResult(False, "FUNDING", f"funding cost blocked side={candidate.side.value} funding={funding.rate}")
+    emit("gate.funding_cost", True, side_cost, config.max_adverse_funding_rate)
     close_epoch = candidate.bar_time + period_seconds(period)
     age = now_epoch - close_epoch
     if age < 0:
+        emit("data.signal_freshness", False, age, {"minimum": 0}, "bar not closed")
         return GateResult(False, "DATA_FRESHNESS", f"entry signal bar not closed ageSeconds={age}")
     if config.signal_freshness_seconds > 0 and age > config.signal_freshness_seconds:
+        emit("data.signal_freshness", False, age, config.signal_freshness_seconds, "signal stale")
         return GateResult(False, "DATA_FRESHNESS", f"entry signal too stale ageSeconds={age} max={config.signal_freshness_seconds}")
+    emit("data.signal_freshness", True, age, config.signal_freshness_seconds)
     cooldown_result = cooldown(candidate, prior_trade, now_epoch=now_epoch,
                                strong_profit_reentry=strong_profit_reentry, config=config)
     if not cooldown_result.allowed:
+        emit("gate.cooldown", False, cooldown_result.remaining_seconds, 0, cooldown_result.reason)
         return GateResult(False, "COOLDOWN", f"{cooldown_result.reason}; remaining={cooldown_result.remaining_seconds}s")
+    emit("gate.cooldown", True, cooldown_result.remaining_seconds, 0, cooldown_result.override_reason or cooldown_result.reason)
     if config.require_execution_facts and counter.blocks_entry:
+        emit("gate.counter_market", False, counter.reason, "not blocked")
         return GateResult(False, "COUNTER_MARKET", f"counter-market candidate rejected: {counter.reason}")
+    emit("gate.counter_market", True, counter.reason, "not blocked")
     if config.require_execution_facts and config.candidate_trend_state_gate_enabled and not state.tradable:
+        emit("gate.candidate_state", False, state.reason, "tradable")
         return GateResult(False, "CANDIDATE_STATE", f"candidate trend state not tradable; {state.reason}")
+    emit("gate.candidate_state", True, state.reason, "tradable")
     if (config.require_execution_facts and config.mixed_market_requires_strong_candidate and context.regime.value == "MIXED"
             and not (candidate.score >= config.mixed_market_min_model_score
                      and candidate.expected_r >= config.mixed_market_min_expected_r
                      and quality_score >= config.mixed_market_min_momentum_score)):
+        emit("gate.mixed_market_quality", False,
+             {"score": candidate.score, "expected_r": candidate.expected_r, "momentum": quality_score},
+             {"score": config.mixed_market_min_model_score, "expected_r": config.mixed_market_min_expected_r,
+              "momentum": config.mixed_market_min_momentum_score})
         return GateResult(False, "MIXED_MARKET", "mixed market requires A-grade candidate")
+    emit("gate.mixed_market_quality", True, context.regime.value, "A-grade when MIXED")
     if candidate.model is ModelCode.FIB_PULLBACK_CONTINUATION and config.require_execution_facts:
         quality = fibonacci_quality
         if quality is None:
+            emit("gate.fib_quality", False, None, "complete", "evidence unavailable")
             return GateResult(False, "FIB_QUALITY", "Fibonacci execution quality evidence unavailable")
         if not quality.ema_reclaimed:
+            emit("gate.fib_quality", False, {"ema_reclaimed": False}, {"ema_reclaimed": True})
             return GateResult(False, "FIB_QUALITY", "Fibonacci retest has not reclaimed EMA structure")
         if quality.volume_ratio is None or quality.volume_ratio < config.min_fib_volume_ratio:
+            emit("gate.fib_quality", False, quality.volume_ratio, config.min_fib_volume_ratio, "volume ratio")
             return GateResult(False, "FIB_QUALITY", f"Fibonacci relative volume below threshold ratio={quality.volume_ratio}")
         if quality.body_to_range is None or quality.body_to_range < config.min_fib_body_to_range:
+            emit("gate.fib_quality", False, quality.body_to_range, config.min_fib_body_to_range, "body/range")
             return GateResult(False, "FIB_QUALITY", "Fibonacci retest wick-only body")
         if quality.range_to_atr is None or quality.range_to_atr > config.max_fib_entry_range_atr:
+            emit("gate.fib_quality", False, quality.range_to_atr, config.max_fib_entry_range_atr, "range/ATR")
             return GateResult(False, "FIB_QUALITY", "Fibonacci retest one-bar spike")
         if quality.counter_wick_to_range is None or quality.counter_wick_to_range > config.max_fib_counter_wick_to_range:
+            emit("gate.fib_quality", False, quality.counter_wick_to_range,
+                 config.max_fib_counter_wick_to_range, "counter wick/range")
             return GateResult(False, "FIB_QUALITY", "Fibonacci retest counter wick too large")
+    if candidate.model is ModelCode.FIB_PULLBACK_CONTINUATION:
+        emit("gate.fib_quality", True, "complete", "complete")
+    else:
+        emit("gate.fib_quality", True, candidate.model.value, "required for Fibonacci only",
+             "not a Fibonacci candidate", status="SKIPPED")
     if candidate.structure_key and candidate.structure_key in claimed_structure_keys:
+        emit("gate.unique_structure", False, candidate.structure_key, "unclaimed")
         return GateResult(False, "STRUCTURE", "identical model structure already claimed")
+    emit("gate.unique_structure", True, candidate.structure_key, "unclaimed")
     if order_book.spread_rate > config.max_spread_rate:
+        emit("gate.book_spread", False, order_book.spread_rate, config.max_spread_rate)
         return GateResult(False, "BOOK_SPREAD", f"spread {order_book.spread_rate} above {config.max_spread_rate}")
+    emit("gate.book_spread", True, order_book.spread_rate, config.max_spread_rate)
     if atr > ZERO and atr / candidate.entry_price > config.max_atr_pct:
+        emit("gate.atr_pct", False, atr / candidate.entry_price, config.max_atr_pct)
         return GateResult(False, "LIQUIDITY", f"ATR percentage {atr / candidate.entry_price} above {config.max_atr_pct}")
+    emit("gate.atr_pct", True, atr / candidate.entry_price if candidate.entry_price else None, config.max_atr_pct)
     if facts.same_direction_open_order or facts.contract_open_order:
+        emit("gate.open_orders", False, True, False)
         return GateResult(False, "ORDER_POSITION", "contract has open orders; wait")
+    emit("gate.open_orders", True, False, False)
     if facts.external_position_side is not None:
+        emit("gate.external_position", False, facts.external_position_side.value, None)
         return GateResult(False, "ORDER_POSITION", f"external {facts.external_position_side.value} position needs manual reconciliation")
+    emit("gate.external_position", True, None, None)
     if facts.active_position_count is not None and facts.max_active_positions is not None and facts.active_position_count >= facts.max_active_positions:
+        emit("gate.position_capacity", False, facts.active_position_count, facts.max_active_positions)
         return GateResult(False, "POSITION_CAPACITY", "max active trend positions reached")
+    emit("gate.position_capacity", True, facts.active_position_count, facts.max_active_positions)
     fill = order_book.ask if candidate.side is TrendSide.LONG else order_book.bid
     adverse = fill - candidate.entry_price if candidate.side is TrendSide.LONG else candidate.entry_price - fill
     if adverse > ZERO:
@@ -341,36 +390,53 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
             rate_limit = candidate.entry_price * config.max_entry_chase_rate
             max_chase = min(max_chase, rate_limit) if max_chase > ZERO else rate_limit
         if max_chase > ZERO and adverse > max_chase:
+            emit("gate.entry_chase", False, adverse, max_chase)
             return GateResult(False, "CHASE", f"entry price chased signal too far entryPrice={fill} signalClose={candidate.entry_price}")
+    emit("gate.entry_chase", True, adverse, max_chase if adverse > ZERO else ZERO)
     planned_price = price_plan(candidate, atr=atr, execution_price=fill,
                                fee_rate=facts.actual_taker_fee_rate or config.fee_rate, config=config)
     planned_size = size_plan(candidate, contract, planned_price, config=config)
     if planned_size.contracts <= 0:
+        emit("sizing.valid_contracts", False, planned_size.contracts, ">0", planned_size.reason)
         return GateResult(False, "SIZING", planned_size.reason, planned_price, planned_size)
+    emit("sizing.valid_contracts", True, planned_size.contracts, ">0", planned_size.reason)
     if config.min_average_turnover > ZERO:
         values = [item.turnover for item in recent_candles[-config.liquidity_lookback:] if item.turnover is not None]
         average = sum(values, ZERO) / Decimal(len(values)) if values else None
         if average is None:
+            emit("gate.average_turnover", False, None, config.min_average_turnover, "unavailable")
             return GateResult(False, "LIQUIDITY", "liquidity turnover unavailable", planned_price, planned_size)
         if average < config.min_average_turnover:
+            emit("gate.average_turnover", False, average, config.min_average_turnover)
             return GateResult(False, "LIQUIDITY", f"liquidity turnover too low avgTurnover={average}", planned_price, planned_size)
+        emit("gate.average_turnover", True, average, config.min_average_turnover)
     if config.require_execution_facts and facts.executable_depth_contracts is None:
+        emit("gate.executable_depth", False, None, "available")
         return GateResult(False, "LIQUIDITY", "executable multi-level depth unavailable", planned_price, planned_size)
     if config.require_execution_facts and facts.executable_depth_contracts < Decimal(planned_size.contracts) * config.min_depth_multiple:
+        emit("gate.executable_depth", False, facts.executable_depth_contracts,
+             Decimal(planned_size.contracts) * config.min_depth_multiple)
         return GateResult(False, "LIQUIDITY", "top book depth below planned-order multiplier", planned_price, planned_size)
+    emit("gate.executable_depth", True, facts.executable_depth_contracts,
+         Decimal(planned_size.contracts) * config.min_depth_multiple if config.require_execution_facts else None)
     fee_rate = facts.actual_taker_fee_rate if facts.actual_taker_fee_rate is not None else config.fee_rate
     if config.fee_protection_enabled:
         expected_move = atr * config.min_expected_move_atr_multiplier
         required_move = fill * (order_book.spread_rate + fee_rate * Decimal("2") + config.min_net_profit_rate)
         if expected_move < required_move:
+            emit("gate.fee_protection", False, expected_move, required_move)
             return GateResult(False, "COST", f"expected move too small after fees expectedMove={expected_move} requiredMove={required_move}", planned_price, planned_size)
+        emit("gate.fee_protection", True, expected_move, required_move)
     if config.require_execution_facts:
         required_margin = (planned_size.notional / facts.leverage * config.margin_safety_ratio
                            if facts.leverage is not None and facts.leverage > ZERO else None)
         if required_margin is None or facts.available_margin_usdt is None:
+            emit("gate.margin", False, facts.available_margin_usdt, required_margin, "unavailable")
             return GateResult(False, "MARGIN", "contract margin unavailable", planned_price, planned_size)
         if required_margin < config.min_available_margin:
             required_margin = config.min_available_margin
         if facts.available_margin_usdt < required_margin:
+            emit("gate.margin", False, facts.available_margin_usdt, required_margin, "insufficient")
             return GateResult(False, "MARGIN", "contract margin insufficient", planned_price, planned_size)
+        emit("gate.margin", True, facts.available_margin_usdt, required_margin)
     return GateResult(True, "READY", cooldown_result.override_reason or "all Java entry gates passed", planned_price, planned_size)

@@ -41,6 +41,18 @@ def test_gate_returns_explainable_rejection_and_success() -> None:
     assert passed.allowed and passed.size_plan is not None and passed.size_plan.contracts > 0
 
 
+def test_gate_trace_preserves_short_circuit_order() -> None:
+    observed = []
+    result = evaluate_gate(candidate(), condition_trace=lambda *row: observed.append(row), **inputs())
+    assert result.allowed
+    assert observed[0][0] == "gate.model_score"
+    blocked = []
+    result = evaluate_gate(candidate(), condition_trace=lambda *row: blocked.append(row),
+                           **{**inputs(), "funding": None})
+    assert result.stage == "FUNDING"
+    assert [row[0] for row in blocked] == ["gate.model_score", "gate.funding_available"]
+
+
 def test_gate_refuses_reused_structure_before_any_execution_check() -> None:
     item = candidate()
     item = ModelCandidate(item.model, item.side, item.bar_time, item.score, item.entry_price, item.invalidation_price,

@@ -127,7 +127,8 @@ class TrendObservationWorker:
         self._instance, self._repository, self._market = instance, repository, market
         self._config, self._stopped = config, False
         self._decision = HtxStrategyDecisionEngine(strategy_version=instance.strategy_name or LEGACY_STRATEGY_VERSION,
-                                                   config=entry_config, admission=admission)
+                                                   config=entry_config, admission=admission,
+                                                   evidence_store=market.evidence_store)
 
     def tick(self) -> WorkerHealth:
         if self._stopped:
@@ -167,7 +168,8 @@ class TrendObservationWorker:
     def _observe_one(self, contract: str, now_epoch: int) -> _TrendObservation:
         entry = self._market.kline_window(contract, self._config.entry_period, self._config.kline_size, now_epoch=now_epoch)
         decision = self._decision.decide(contract_code=contract, period=self._config.entry_period,
-                                         candles=entry.candles, surface=DecisionSurface.OBSERVE)
+                                         candles=entry.candles, surface=DecisionSurface.OBSERVE,
+                                         evidence_refs=entry.evidence_refs)
         book = self._market.top_of_book(contract)
         try:
             funding = self._market.funding_rate(contract).rate

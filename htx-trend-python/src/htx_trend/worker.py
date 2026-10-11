@@ -20,6 +20,7 @@ from .mysql_store import HtxTrendMySqlRepository, MySqlSettings, connect
 from .strategy_platform import DisabledStrategyWorker, ExecutionMode, StrategySupervisor, TrendObservationWorker, TrendObserverConfig
 from .strategy_admission import StrategyAdmissionArtifact
 from .strategy_decision import LEGACY_STRATEGY_VERSION
+from .research.store import FileEvidenceStore
 
 
 def _account_client(repository: HtxTrendMySqlRepository, account_id: int, *, live: bool) -> HtxV5Client:
@@ -62,6 +63,7 @@ def main() -> None:
     repository = HtxTrendMySqlRepository(connect(MySqlSettings.from_env()))
     instance = None
     writer_lock = None
+    evidence_store = None
     started = False
     try:
         repository.validate_runtime_schema()
@@ -72,10 +74,13 @@ def main() -> None:
             raise SystemExit(f"strategy instance is disabled: {args.strategy_instance}")
         family = instance.strategy_family.upper()
         admission = _load_admission(instance.strategy_name) if family == "TREND" else None
+        if family == "TREND":
+            evidence_store = FileEvidenceStore(Path(os.environ.get(
+                "HTX_PYTHON_EVIDENCE_DIR", "./research-data/evidence")))
         if family == "TREND" and instance.execution_mode == ExecutionMode.OBSERVE:
             contracts = tuple(dict.fromkeys(item.strip().upper() for item in os.environ.get("HTX_TREND_CONTRACTS", "").split(",") if item.strip()))
             market_client = HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com"))
-            worker = TrendObservationWorker(instance, repository, HtxMarketData(market_client),
+            worker = TrendObservationWorker(instance, repository, HtxMarketData(market_client, evidence_store=evidence_store),
                                             TrendObserverConfig(contracts), admission=admission)
         elif family == "TREND" and instance.execution_mode == ExecutionMode.LIVE:
             if instance.account_id is None:
@@ -91,15 +96,16 @@ def main() -> None:
             writer_lock = TrendWriterLock(connect(MySqlSettings.from_env()))
             writer_lock.acquire()
             private_client = _account_client(repository, account.account_id, live=True)
-            market = HtxMarketData(private_client)
+            market = HtxMarketData(private_client, evidence_store=evidence_store)
             live = HtxLiveExecutor(private_client, LiveAuthority(True, str(account.account_id)), str(account.account_id), writer_guard=writer_lock.assert_owned)
             entry_config = EntryExecutionConfig.from_env()
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
                 facts=HtxAccountFactsAdapter(private_client), executor=live, execution=ExecutionConfig.from_env(),
-                config=entry_config, admission=admission)
+                config=entry_config, admission=admission, evidence_store=evidence_store)
             scan_config = LiveTrendWorkerConfig.from_env()
             manager = LivePositionManager(repository, instance, account, market, private_client, live,
-                period=scan_config.entry_period, java_config=scan_config.java_entry, config=ExitConfig.from_env())
+                period=scan_config.entry_period, java_config=scan_config.java_entry, config=ExitConfig.from_env(),
+                evidence_store=evidence_store)
             worker = LiveTrendWorker(instance, repository, market, entry, scan_config,
                 position_manager=manager, writer_guard=writer_lock.assert_owned, admission=admission)
         elif family in {"CARRY_SINGLE", "CARRY_CROSS"}:
@@ -120,6 +126,8 @@ def main() -> None:
                 repository.mark_runtime_stopped(instance.instance_key)
         finally:
             repository.close()
+            if evidence_store is not None:
+                evidence_store.close()
             if writer_lock is not None:
                 writer_lock.close()
 

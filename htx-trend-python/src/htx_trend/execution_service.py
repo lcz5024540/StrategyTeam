@@ -70,6 +70,7 @@ class EntrySubmission:
     client_order_id: str | None
     exchange_order_id: int | None
     reason: str
+    evidence_ref: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,20 +108,21 @@ class HtxTrendEntryExecutor:
                  execution: ExecutionConfig = ExecutionConfig(), config: EntryExecutionConfig = EntryExecutionConfig(),
                  on_confirmed_entry: Callable[[ConfirmedEntryFill], None] | None = None,
                  on_confirmed_reduction: Callable[[ConfirmedReductionFill], None] | None = None,
-                 admission: StrategyAdmissionArtifact | None = None) -> None:
+                 admission: StrategyAdmissionArtifact | None = None, evidence_store=None) -> None:
         if instance.account_id != account.account_id:
             raise ValueError("strategy instance and execution account differ")
         self._repository, self._instance, self._account = repository, instance, account
         self._facts, self._executor, self._execution, self._config = facts, executor, execution, config
         self._on_confirmed_entry, self._on_confirmed_reduction = on_confirmed_entry, on_confirmed_reduction
         self._admission = admission
+        self._evidence_store = evidence_store
 
     def submit(self, *, run_id: str, candidate: ModelCandidate, period: str, atr: Decimal,
                ema_fast: Decimal, ema_slow: Decimal, adx: Decimal, recent_candles, book: OrderBook, contract: ContractSpec,
                funding: FundingRate | None, market_context: MarketContext,
                prior_trade=None, claimed_structure_keys: frozenset[str] = frozenset(),
                factor_snapshot_id: int | None = None, timeframe_profile: str = "INTRADAY_15M",
-               now_epoch: int | None = None) -> EntrySubmission:
+               now_epoch: int | None = None, evidence_refs: tuple[str, ...] = ()) -> EntrySubmission:
         new_strategy = self._instance.strategy_name != LEGACY_STRATEGY_VERSION
         if new_strategy:
             if self._admission is None or self._admission.strategy_version != self._instance.strategy_name:
@@ -175,14 +177,28 @@ class HtxTrendEntryExecutor:
                                         max_active_positions=self._config.max_active_positions,
                                         reserved_notional_usdt=Decimal("0"), risk_capacity_usdt=Decimal("0"))
         quality = FibonacciQuality.from_candles(recent_candles, candidate.side, atr, ema_fast)
+        condition_results: list[dict[str, Any]] = []
+        def condition_trace(condition_id, status, actual, threshold, reason):
+            condition_results.append({"condition_id": condition_id, "status": status, "actual": actual,
+                                      "threshold": threshold, "reason": reason})
         gate = evaluate_gate(candidate, period=period, now_epoch=int(time.time()) if now_epoch is None else now_epoch, atr=atr, order_book=book.top,
                              contract=contract, funding=funding, recent_candles=recent_candles, prior_trade=prior_trade,
                              market_context=market_context, candidate_state=state, fibonacci_quality=quality,
                              execution_facts=snapshot.facts, claimed_structure_keys=claimed_structure_keys,
                              momentum_quality=momentum_quality, ema_fast=ema_fast, ema_slow=ema_slow, adx=adx,
+                             condition_trace=condition_trace,
                              config=effective)
+        gate_ref = None
+        if self._evidence_store is not None:
+            gate_ref = self._evidence_store.put("entry_gate_trace", {
+                "run_id": run_id, "strategy_version": self._instance.strategy_name,
+                "account_id": self._account.account_id, "candidate": candidate, "period": period,
+                "market_context": market_context, "contract": contract, "funding": funding,
+                "order_book": book, "execution_facts": snapshot.facts, "policy": policy,
+                "conditions": condition_results, "result": gate,
+            }, refs=evidence_refs)
         if not gate.allowed:
-            return EntrySubmission(False, gate, None, None, None, gate.reason)
+            return EntrySubmission(False, gate, None, None, None, gate.reason, gate_ref)
         assert gate.price_plan is not None and gate.size_plan is not None
         try:
             self._executor.set_leverage(contract.contract_code, "long" if candidate.side is TrendSide.LONG else "short",
@@ -247,7 +263,7 @@ class HtxTrendEntryExecutor:
                                                  exchange_order_id=exchange_id, exchange_client_order_id=_client_id(response),
                                                  message="entry accepted by exchange")
             self._repository.mark_position_status(position_id=position_id, status="ENTRY_SENT", message="entry sent")
-            return EntrySubmission(True, gate, position_id, client_order_id, exchange_id, "entry accepted")
+            return EntrySubmission(True, gate, position_id, client_order_id, exchange_id, "entry accepted", gate_ref)
         except Exception as error:
             # Once the request may have left the process, rejection is unknowable.
             # Keep both intent and structure occupied until exchange reconciliation.
@@ -262,7 +278,8 @@ class HtxTrendEntryExecutor:
                 self._repository.mark_position_status(position_id=position_id, status=state, message=f"entry {state}: {type(error).__name__}")
             if structure_claimed and not submission_started:
                 self._repository.abandon_entry_cycle(structure_key=structure_key, reason="entry not sent")
-            return EntrySubmission(False, gate, position_id, client_order_id, None, f"entry {state}: {type(error).__name__}")
+            return EntrySubmission(False, gate, position_id, client_order_id, None,
+                                   f"entry {state}: {type(error).__name__}", gate_ref)
 
     def reconcile(self, *, client_order_id: str, contract_code: str, position_id: int, leg: str,
                   factor_snapshot_id: int | None, model: str, contract_size: Decimal,

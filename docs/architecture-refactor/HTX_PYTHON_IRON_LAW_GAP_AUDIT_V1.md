@@ -1,5 +1,7 @@
 # HTX Python 策略铁律符合度与冻结数据闭环审计 V1
 
+> 2026-10-11 更新：本文件记录实施前差距，运行冻结断点已由 [`HTX_PYTHON_RESEARCH_FRAMEWORK_IMPLEMENTATION_20261011.md`](HTX_PYTHON_RESEARCH_FRAMEWORK_IMPLEMENTATION_20261011.md) 修复。十二阶段仍因完整生命周期回测和至少14天 PAPER 缺失而保持未准入。
+
 > 审计日期：2026-10-11  
 > 审计基线：`support_htx_python@db458da3`  
 > 规范基线：`support_htx/docs/architecture-refactor/COINSTRATEGY_STRATEGY_DEVELOPMENT_IRON_LAW_V1.md`  
@@ -245,4 +247,3 @@ HTX response
 - `htx-trend/tools/htx_trend_runtime_evidence_archive.py`
 - `htx-trend/backtest-runs/20260901-21-mtf-profitability/dataset-manifest.json`
 - `sql/htx/2026-09-30b__htx_trend_runtime_kline_evidence.sql`
-

@@ -261,7 +261,8 @@ class LiveTrendWorker(StrategyWorker):
                     atr=scan.signal.indicators.atr, ema_fast=scan.signal.indicators.ema_fast,
                     ema_slow=scan.signal.indicators.ema_slow, adx=scan.signal.indicators.adx,
                     recent_candles=scan.entry.candles, book=scan.book, contract=scan.contract_spec, funding=scan.funding,
-                    market_context=context, factor_snapshot_id=factor_id, now_epoch=now_epoch)
+                    market_context=context, factor_snapshot_id=factor_id, now_epoch=now_epoch,
+                    evidence_refs=scan.entry.evidence_refs + scan.trend.evidence_refs)
                 self._repository.mark_candidate_execution_gate(run_id, scan.contract, candidate.model.value,
                     "PASSED" if gate.accepted else gate.gate.stage, gate.reason)
                 accepted += int(gate.accepted)
@@ -389,11 +390,13 @@ class LiveTrendWorker(StrategyWorker):
     def _scan_one(self, contract: str, now_epoch: int, java_config: JavaEntryConfig) -> _Scan:
         entry = self._market.kline_window(contract, self._config.entry_period, self._config.kline_size, now_epoch=now_epoch)
         trend = self._market.kline_window(contract, self._config.trend_period, self._config.kline_size, now_epoch=now_epoch)
+        if entry.evidence_status == "FAILED" or trend.evidence_status == "FAILED":
+            raise RuntimeError("evidence persistence unavailable; new risk is paused")
         decision = HtxStrategyDecisionEngine(
             strategy_version=self._instance.strategy_name or LEGACY_STRATEGY_VERSION,
-            config=java_config, admission=self._admission,
+            config=java_config, admission=self._admission, evidence_store=self._market.evidence_store,
         ).decide(contract_code=contract, period=self._config.entry_period, candles=entry.candles,
-                 surface=DecisionSurface.RANKING)
+                 surface=DecisionSurface.RANKING, evidence_refs=entry.evidence_refs + trend.evidence_refs)
         try:
             funding = self._market.funding_rate(contract)
         except Exception:

@@ -70,6 +70,8 @@ class KlineWindow:
     period: str
     candles: tuple[Candle, ...]
     expected_size: int
+    evidence_refs: tuple[str, ...] = ()
+    evidence_status: str = "NOT_CONFIGURED"
 
     @property
     def is_complete(self) -> bool:
@@ -92,6 +94,11 @@ def period_seconds(period: str) -> int:
         raise ValueError(f"unsupported HTX K-line period: {period}")
     scale = {"min": 60, "hour": 3_600, "day": 86_400}[matched.group("unit").lower()]
     return int(matched.group("count")) * scale
+
+
+def period_anchor_seconds(period: str) -> int:
+    """HTX daily bars open at Asia/Shanghai midnight (16:00 UTC)."""
+    return 16 * 3_600 if period.lower() == "1day" else 0
 
 
 def completed_candles(candles: Iterable[Candle], period: str, *, now_epoch: int | None = None,
@@ -158,17 +165,46 @@ class FundingRate:
 class HtxMarketData:
     """Public market adapter.  No private credential or execution path is used here."""
 
-    def __init__(self, client: HtxV5Client, *, close_grace_seconds: int = 10) -> None:
+    def __init__(self, client: HtxV5Client, *, close_grace_seconds: int = 10, evidence_store=None) -> None:
         self._client = client
         self._close_grace_seconds = close_grace_seconds
+        self._evidence_store = evidence_store
+
+    @property
+    def evidence_store(self):
+        return self._evidence_store
 
     def kline_window(self, contract_code: str, period: str, size: int, *, now_epoch: int | None = None) -> KlineWindow:
         if size < 1:
             raise ValueError("K-line size must be positive")
-        raw = self._client.history_kline(contract_code, period, size + 1)
+        observed_at = int(datetime.now(UTC).timestamp())
+        envelope = self._client.history_kline_envelope(contract_code, period, size + 1)
+        raw = envelope.get("data")
+        if not isinstance(raw, list):
+            raise ValueError(f"HTX K-line response has no data list for {contract_code}")
         candles = completed_candles((Candle.from_htx(item) for item in raw), period, now_epoch=now_epoch,
                                    close_grace_seconds=self._close_grace_seconds)
-        return KlineWindow(contract_code, period, candles[-size:], size)
+        selected = candles[-size:]
+        refs: tuple[str, ...] = ()
+        status = "NOT_CONFIGURED"
+        if self._evidence_store is not None:
+            try:
+                raw_ref = self._evidence_store.put("runtime_raw_kline", {
+                    "exchange": "HTX", "contract_code": contract_code, "period": period,
+                    "requested_size": size + 1, "observed_at": observed_at,
+                    "decision_as_of": now_epoch, "response": envelope,
+                })
+                window_ref = self._evidence_store.put("runtime_kline_window", {
+                    "contract_code": contract_code, "period": period, "expected_size": size,
+                    "observed_at": observed_at, "candles": selected,
+                    "complete": KlineWindow(contract_code, period, selected, size).is_complete,
+                }, refs=(raw_ref,))
+                refs, status = (raw_ref, window_ref), "COMPLETE"
+            except Exception:
+                # Market reads remain available to existing-position protection.
+                # Entry callers inspect this status and fail closed for new risk.
+                status = "FAILED"
+        return KlineWindow(contract_code, period, selected, size, refs, status)
 
     def top_of_book(self, contract_code: str) -> TopOfBook:
         return self.order_book(contract_code).top

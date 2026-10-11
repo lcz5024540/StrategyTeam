@@ -21,6 +21,18 @@ Python 不会启动即建表：需要在纸面环境中显式执行 `htx-trend i
 
 这些命令只用于回放、纸面与差异验证。`compare` 发现任一字段差异时退出码为 `1`。正式冻结数据回放必须显式传入 `--manifest`；manifest 必须为 `COMPLETE`，请求的 HTX 文件必须唯一且内容 hash、K 线顺序、连续性、OHLC 和成交量审计全部通过。
 
+连续行情采集与运行 worker 解耦。以下命令不读取账户或交易密钥；它会保存 HTX 原始响应、标准化闭合 K 线、质量报告和内容寻址 manifest。生产定时器反复执行 `collect-tick` 即可断点续采，重叠读取最近两根闭合 K 线以保留交易所修订版本。
+
+```bash
+htx-trend collect-history --evidence /var/lib/coinstrategy/htx-python-evidence \
+  --symbols BTC-USDT ETH-USDT --start 2026-04-01T00:00:00Z --end 2026-10-01T00:00:00Z
+htx-trend collect-tick --evidence /var/lib/coinstrategy/htx-python-evidence \
+  --symbols BTC-USDT ETH-USDT
+htx-trend verify-evidence --evidence /var/lib/coinstrategy/htx-python-evidence --hash <manifest-sha256>
+```
+
+服务器连接模板见 [`deployment/htx-python.env.example`](deployment/htx-python.env.example)。模板只列连接字段；账户 API 密钥继续从 MySQL 的加密账户记录读取，真实密码和私钥文件不得进入仓库。
+
 研究、运行证据回放、OBSERVE、PAPER 与 LIVE 现在共用 `HtxStrategyDecisionEngine`，不会再分别调用两套信号 scorer。新策略版本还必须提供密封的 12 阶段准入产物：`htx-trend validate-admission --artifact /path/admission.json`。详细调用边界见 [`../docs/architecture-refactor/HTX_PYTHON_STRATEGY_IRON_LAW_CALL_FLOW_V1.md`](../docs/architecture-refactor/HTX_PYTHON_STRATEGY_IRON_LAW_CALL_FLOW_V1.md)。
 
 ## 生产运行平台

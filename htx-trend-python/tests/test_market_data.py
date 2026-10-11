@@ -3,7 +3,9 @@ from decimal import Decimal
 import httpx
 
 from htx_trend.htx_v5 import HtxV5Client
-from htx_trend.market_data import Candle, HtxMarketData, KlineWindow, completed_candles, period_seconds
+from htx_trend.market_data import (Candle, HtxMarketData, KlineWindow, completed_candles,
+                                   period_anchor_seconds, period_seconds)
+from htx_trend.research.store import FileEvidenceStore
 
 
 def candle(open_time: int, close: str = "101") -> Candle:
@@ -13,6 +15,7 @@ def candle(open_time: int, close: str = "101") -> Candle:
 
 def test_period_and_completed_filter_exclude_forming_bar() -> None:
     assert period_seconds("4hour") == 14_400
+    assert period_anchor_seconds("1day") == 57_600
     assert completed_candles((candle(0), candle(900), candle(1800)), "15min", now_epoch=2702, close_grace_seconds=3) == (candle(0), candle(900))
 
 
@@ -32,6 +35,21 @@ def test_market_data_requests_one_extra_bar_and_removes_open_bar() -> None:
     client = HtxV5Client(client=httpx.Client(transport=httpx.MockTransport(handler)))
     result = HtxMarketData(client, close_grace_seconds=3).kline_window("BTC-USDT", "15min", 2, now_epoch=2702)
     assert [item.open_time for item in result.candles] == [0, 900]
+
+
+def test_market_data_freezes_raw_response_and_normalized_window(tmp_path) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "ok", "data": [
+            {"id": 900, "open": "1", "high": "2", "low": ".5", "close": "1.5"},
+            {"id": 0, "open": "1", "high": "2", "low": ".5", "close": "1.5"},
+        ]})
+    with FileEvidenceStore(tmp_path) as store:
+        market = HtxMarketData(HtxV5Client(client=httpx.Client(transport=httpx.MockTransport(handler))),
+                               evidence_store=store)
+        result = market.kline_window("BTC-USDT", "15min", 2, now_epoch=1800)
+        assert result.evidence_status == "COMPLETE"
+        assert len(result.evidence_refs) == 2
+        assert store.verify(result.evidence_refs[-1])["objects"] == 2
 
 
 def test_typed_book_contract_and_funding_inputs() -> None:

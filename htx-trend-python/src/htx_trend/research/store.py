@@ -1,0 +1,188 @@
+"""Durable content-addressed evidence with a transactional delivery outbox.
+
+Files are published without replacement, fsynced before their SQLite index is
+committed. Remote delivery is retryable and never the durability boundary.
+"""
+from __future__ import annotations
+
+from dataclasses import asdict, is_dataclass
+from datetime import datetime, timezone
+from decimal import Decimal
+from enum import Enum
+from hashlib import sha256
+import json
+import os
+from pathlib import Path
+import re
+import sqlite3
+import tempfile
+from threading import RLock
+from typing import Any, Protocol
+
+
+class IntegrityError(ValueError):
+    pass
+
+
+def primitive(value: Any) -> Any:
+    if is_dataclass(value):
+        return primitive(asdict(value))
+    if isinstance(value, Enum):
+        return primitive(value.value)
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise ValueError('non-finite evidence decimal')
+        return format(value.normalize(), 'f')
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            raise ValueError('evidence datetime requires timezone')
+        return value.astimezone(timezone.utc).isoformat()
+    if isinstance(value, dict):
+        if not all(isinstance(k, str) for k in value):
+            raise ValueError('evidence keys must be strings')
+        return {k: primitive(v) for k, v in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [primitive(v) for v in value]
+    return value
+
+
+def canonical(value: Any) -> bytes:
+    return json.dumps(primitive(value), sort_keys=True, separators=(',', ':'),
+                      ensure_ascii=False, allow_nan=False).encode()
+
+
+def digest(value: Any) -> str:
+    return sha256(canonical(value)).hexdigest()
+
+
+class EvidenceStore(Protocol):
+    def put(self, kind: str, payload: Any, *, refs: tuple[str, ...] = ()) -> str: ...
+    def get(self, key: str) -> dict: ...
+
+
+class FileEvidenceStore:
+    def __init__(self, root: Path):
+        self.root = Path(root)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._lock = RLock()
+        self.db = sqlite3.connect(self.root / 'index.sqlite3', check_same_thread=False)
+        self.db.execute('PRAGMA journal_mode=WAL')
+        self.db.execute('PRAGMA synchronous=FULL')
+        self.db.executescript('''
+        CREATE TABLE IF NOT EXISTS evidence (
+          hash TEXT PRIMARY KEY, kind TEXT NOT NULL, recorded_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS outbox (
+          hash TEXT PRIMARY KEY REFERENCES evidence(hash), attempts INTEGER NOT NULL DEFAULT 0,
+          delivered INTEGER NOT NULL DEFAULT 0, last_error TEXT);
+        CREATE TABLE IF NOT EXISTS checkpoints (name TEXT PRIMARY KEY, value TEXT NOT NULL);
+        ''')
+
+    def close(self):
+        with self._lock:
+            self.db.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+    def _path(self, key: str) -> Path:
+        if not re.fullmatch('[0-9a-f]{64}', key):
+            raise IntegrityError('invalid evidence digest')
+        return self.root / 'objects' / key[:2] / (key + '.json')
+
+    def put(self, kind: str, payload: Any, *, refs: tuple[str, ...] = ()) -> str:
+        if not kind:
+            raise ValueError('evidence kind required')
+        with self._lock:
+            for ref in refs:
+                self.verify(ref)
+            value = {'schema': 'htx-python-evidence-v1', 'kind': kind,
+                     'refs': sorted(set(refs)), 'payload': primitive(payload)}
+            data = canonical(value)
+            key = sha256(data).hexdigest()
+            path = self._path(key)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists():
+                self.get(key)
+            else:
+                fd, temp = tempfile.mkstemp(dir=path.parent, prefix='.pending-')
+                try:
+                    with os.fdopen(fd, 'wb') as f:
+                        f.write(data)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    try:
+                        os.link(temp, path)
+                    except FileExistsError:
+                        self.get(key)
+                    directory = os.open(path.parent, os.O_RDONLY)
+                    try:
+                        os.fsync(directory)
+                    finally:
+                        os.close(directory)
+                finally:
+                    os.unlink(temp)
+            with self.db:
+                self.db.execute('INSERT OR IGNORE INTO evidence VALUES (?,?,?)',
+                                (key, kind, datetime.now(timezone.utc).isoformat()))
+                self.db.execute('INSERT OR IGNORE INTO outbox(hash) VALUES (?)', (key,))
+            return key
+
+    def get(self, key: str) -> dict:
+        path = self._path(key)
+        try:
+            data = path.read_bytes()
+        except FileNotFoundError as error:
+            raise IntegrityError(f'missing evidence {key}') from error
+        if sha256(data).hexdigest() != key:
+            raise IntegrityError(f'evidence hash mismatch {key}')
+        value = json.loads(data)
+        if value.get('schema') != 'htx-python-evidence-v1':
+            raise IntegrityError('unknown evidence schema')
+        return value
+
+    def verify(self, key: str) -> dict:
+        seen = set()
+        def visit(current):
+            if current in seen:
+                return
+            seen.add(current)
+            value = self.get(current)
+            for ref in value['refs']:
+                visit(ref)
+        visit(key)
+        return {'root': key, 'objects': len(seen), 'integrity': 'VERIFIED'}
+
+    def keys(self, kind: str) -> tuple[str, ...]:
+        with self._lock:
+            return tuple(row[0] for row in self.db.execute(
+                'SELECT hash FROM evidence WHERE kind=? ORDER BY recorded_at, hash', (kind,)))
+
+    def checkpoint(self, name: str, value: Any = None) -> Any:
+        with self._lock:
+            if value is not None:
+                with self.db:
+                    self.db.execute('INSERT INTO checkpoints VALUES (?,?) ON CONFLICT(name) '
+                                    'DO UPDATE SET value=excluded.value', (name, canonical(value).decode()))
+            row = self.db.execute('SELECT value FROM checkpoints WHERE name=?', (name,)).fetchone()
+            return json.loads(row[0]) if row else None
+
+    def deliver(self, sink, *, limit: int = 100) -> dict:
+        """Sink must be idempotent by digest; acknowledgement follows remote commit."""
+        with self._lock:
+            rows = list(self.db.execute('SELECT hash FROM outbox WHERE delivered=0 ORDER BY rowid LIMIT ?', (limit,)))
+            sent = 0
+            for (key,) in rows:
+                error = None
+                try:
+                    self.verify(key)
+                    sink(key, self.get(key))
+                    sent += 1
+                except Exception as exc:
+                    error = type(exc).__name__
+                with self.db:
+                    self.db.execute('UPDATE outbox SET attempts=attempts+1,delivered=?,last_error=? WHERE hash=?',
+                                    (int(error is None), error, key))
+            return {'attempted': len(rows), 'delivered': sent}

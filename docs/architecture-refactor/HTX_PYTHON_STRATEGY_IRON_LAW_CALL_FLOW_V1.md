@@ -1,6 +1,6 @@
 ---
 title: HTX Python 策略铁律调用链 v1
-status: implemented-local
+status: implemented-framework-research-incomplete
 created: 2026-10-11
 updated: 2026-10-11
 scope: htx-trend-python
@@ -50,11 +50,13 @@ StrategyCard
 ```text
 worker.main
   -> _load_admission(strategy_name)
+  -> FileEvidenceStore
   -> TrendObservationWorker.tick
-  -> HTX completed K-line window
+  -> HTX raw response + completed K-line window evidence
   -> HtxStrategyDecisionEngine.decide(OBSERVE)
   -> java_entry_contract.evaluate
   -> java_entry_contract.candidates
+  -> condition-level DecisionTrace
   -> market breadth/context
   -> policy route observation
   -> signal/factor/candidate evidence
@@ -98,12 +100,14 @@ LiveTrendWorker.tick
   -> reconcile pending orders
   -> v4 position management and hard-risk exits
   -> HTX completed K-line window
+  -> evidence failure blocks new risk
   -> HtxStrategyDecisionEngine.decide(RANKING)
   -> policy selection
   -> HtxTrendEntryExecutor.submit
        -> admission RANKING/GATE/SIZING (new versions)
        -> account/order/position/fee/funding/book facts
        -> evaluate_gate
+       -> ordered PASS/FAIL/SKIPPED entry_gate_trace
        -> risk-first sizing (new versions)
        -> leverage
        -> structure claim
@@ -134,6 +138,9 @@ V5 仍拒绝 LIVE。`exit_experiment_v5` 的成功状态改为 `STRUCTURALLY_COM
 htx-trend validate-admission --artifact /path/admission.json
 htx-trend dataset-replay --data-dir /path/frozen --manifest /path/manifest.json --contract BTC-USDT
 htx-trend replay --evidence /path/evidence --output /path/report.json
+htx-trend collect-history --evidence /path/cas --symbols BTC-USDT ETH-USDT --start 2026-04-11T00:00:00Z --end 2026-10-11T00:00:00Z
+htx-trend collect-tick --evidence /path/cas --symbols BTC-USDT ETH-USDT
+htx-trend evidence-entry-replay --evidence /path/cas --manifest-hash <sha256> --symbol BTC-USDT
 ```
 
 本次只实现本地代码和验证合同；未生成虚假的 PASS 证据，未执行 SQL，未部署，未交易，也未把 V5 接入 LIVE。

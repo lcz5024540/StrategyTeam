@@ -10,6 +10,7 @@ from htx_trend.market_data import Candle
 from htx_trend.strategy_admission import (DecisionSurface, ResearchStage, StageEvidence, StageStatus,
                                           StrategyAdmissionArtifact, build_artifact)
 from htx_trend.strategy_decision import HtxStrategyDecisionEngine
+from htx_trend.research.store import FileEvidenceStore
 
 
 DIGEST = "a" * 64
@@ -85,3 +86,18 @@ def test_new_strategy_is_fail_closed_and_decisions_are_content_addressed():
     assert first.decision_hash == second.decision_hash
     with pytest.raises(ValueError, match="not admitted"):
         engine.require(DecisionSurface.RANKING)
+
+
+def test_legacy_decision_can_persist_complete_condition_trace(tmp_path):
+    input_ref = "a" * 64
+    with FileEvidenceStore(tmp_path) as store:
+        # Use a real store object as the input reference so recursive verification succeeds.
+        input_ref = store.put("runtime_kline_window", {"complete": True})
+        engine = HtxStrategyDecisionEngine(config=config(), evidence_store=store)
+        decision = engine.decide(contract_code="BTC-USDT", period="15min", candles=candles(),
+                                 surface=DecisionSurface.OBSERVE, evidence_refs=(input_ref,))
+        assert decision.trace_ref
+        value = store.get(decision.trace_ref)
+        assert value["kind"] == "decision_trace"
+        assert value["payload"]["context"]["decision_id"] == decision.decision_hash
+        assert store.verify(decision.trace_ref)["objects"] == 2

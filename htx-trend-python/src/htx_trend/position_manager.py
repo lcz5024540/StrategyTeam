@@ -79,10 +79,20 @@ def timeframe_side(candles):
 
 class LivePositionManager:
     def __init__(self, repository, instance, account, market, client, executor, *,
-                 period='15min', java_config=JavaEntryConfig(), config=ExitConfig()):
+                 period='15min', java_config=JavaEntryConfig(), config=ExitConfig(), evidence_store=None):
         self.repo,self.instance,self.account=repository,instance,account
         self.market,self.client,self.executor=market,client,executor
         self.period,self.java_config,self.config=period,java_config,config
+        self.evidence_store=evidence_store
+
+    def _evidence(self, kind, payload, refs=()):
+        if self.evidence_store is None:
+            return None
+        try:
+            return self.evidence_store.put(kind, payload, refs=tuple(refs))
+        except Exception:
+            # Evidence outages must never suppress a protective reduction.
+            return None
 
     def manage(self, now_epoch: int, market_context) -> list[str]:
         failures=[]
@@ -123,6 +133,9 @@ class LivePositionManager:
         hard_stop=(reference<=boundary if side is TrendSide.LONG else reference>=boundary)
         if hard_stop:
             run_id=f'python-hard-stop:{row["id"]}:{now_epoch}'
+            self._evidence('exit_decision_trace', {'run_id': run_id, 'position_id': row['id'],
+                'condition_id': 'position.hard_stop', 'status': 'PASS', 'reference': reference,
+                'boundary': boundary, 'action': 'FULL_CLOSE'})
             if pending:
                 for order in pending:
                     if order.get('exchange_order_id') is None:
@@ -138,9 +151,11 @@ class LivePositionManager:
         last_bar=window.candles[-1].open_time
         if now_epoch-last_bar>2*period_seconds(self.period): raise ValueError('stale management candles')
         opposition=0
+        evidence_refs=list(window.evidence_refs)
         for period in ('30min','60min','4hour','1day'):
             higher=self.market.kline_window(code,period,80,now_epoch=now_epoch)
             if not higher.is_complete: raise ValueError('incomplete confirmation candles')
+            evidence_refs.extend(higher.evidence_refs)
             direction=timeframe_side(higher.candles)
             opposition += direction not in (side,TrendSide.FLAT)
         try: rate=_taker_fee(self.client.swap_fee(code)); fee_source='HTX_ACCOUNT'
@@ -176,6 +191,10 @@ class LivePositionManager:
         use_v4=self.config.engine_enabled and input_.primary_model is ModelCode.FIB_PULLBACK_CONTINUATION
         decision=decide_v4(input_) if use_v4 else decide_legacy(input_,trailing_atr_multiplier=(self.config.swing_trailing_atr
             if row.get('timeframe_profile') in {'SWING_4H','TREND_1D'} else self.config.trailing_atr),trailing_activation_r=self.config.trailing_activation_r)
+        self._evidence('exit_decision_trace', {'position_id': row['id'], 'strategy_version': self.instance.strategy_name,
+            'engine_version': 'fib-exit-engine-v4' if use_v4 else 'legacy', 'input': input_, 'decision': decision,
+            'conditions': {'hard_stop': False, 'management_data_complete': True,
+                           'higher_timeframe_opposition': opposition, 'funding_reason': funding_reason}}, evidence_refs)
         state.update(highest=highest,lowest=lowest,protection=decision.protection_price,
             armed_at=decision.trailing_armed_at.isoformat() if decision.trailing_armed_at else None,
             arm_reason=decision.trailing_arm_reason,max_r=decision.max_favorable_r,last_bar=last_bar,flat=flat,breach=breach)

@@ -32,6 +32,7 @@ class ResearchStage(IntEnum):
 class StageStatus(StrEnum):
     PASS = "PASS"
     FAIL = "FAIL"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
     NOT_RUN = "NOT_RUN"
 
 
