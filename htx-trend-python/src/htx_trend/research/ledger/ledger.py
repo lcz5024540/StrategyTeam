@@ -173,6 +173,45 @@ class LedgerManager:
                 ),
             )
     
+    def get_run(self, run_id: str) -> RunRecord | None:
+        """获取运行记录
+        
+        Args:
+            run_id: 运行 ID
+        
+        Returns:
+            RunRecord or None if not found
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                SELECT run_id, parent_run_id, git_commit, dataset_hash,
+                       environment, config_snapshot, cost_scenario, created_at,
+                       total_trades, metrics
+                FROM runs
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            )
+            
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            return RunRecord(
+                run_id=row[0],
+                parent_run_id=row[1],
+                git_commit=row[2],
+                dataset_hash=row[3],
+                environment=row[4],
+                config_snapshot=json.loads(row[5]),
+                cost_scenario=row[6],
+                created_at=datetime.fromisoformat(row[7]),
+                total_trades=row[8],
+                metrics=json.loads(row[9]) if row[9] else {},
+            )
+    
     def register_experiment(self, exp: ExperimentRegistration) -> None:
         if not exp.hypothesis or not exp.keep_rule or not exp.drop_rule:
             raise ValueError(

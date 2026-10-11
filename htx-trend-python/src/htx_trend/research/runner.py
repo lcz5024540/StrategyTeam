@@ -92,6 +92,11 @@ class BacktestRunner:
         if not reg_config.get("drop_rule"):
             raise ValueError("Registration incomplete: 'drop_rule' is required")
         
+        # 验证单条件变更（vs parent_run_id）
+        parent_run_id = self.config.get("parent_run_id")
+        if parent_run_id:
+            self._validate_single_change(parent_run_id)
+        
         exp = ExperimentRegistration(
             run_id=self.run_id,
             parent_run_id=self.config.get("parent_run_id"),
@@ -108,6 +113,75 @@ class BacktestRunner:
         )
         
         self.ledger.register_experiment(exp)
+    
+    def _validate_single_change(self, parent_run_id: str) -> None:
+        """验证相对于 parent_run_id 只改变了一个条件
+        
+        Args:
+            parent_run_id: 父运行 ID
+        
+        Raises:
+            ValueError: 如果改变了多个条件或无法验证
+        """
+        # 查找父运行的配置
+        parent_run = self.ledger.get_run(parent_run_id)
+        
+        if not parent_run:
+            log_event(
+                LogComponent.ENGINE,
+                f"Parent run {parent_run_id} not found, skipping single-change validation",
+                level=LogLevel.WARNING,
+            )
+            return
+        
+        parent_config = parent_run.config_snapshot
+        current_config = self.config
+        
+        # 比较条件配置
+        parent_conditions = parent_config.get("conditions", {})
+        current_conditions = current_config.get("conditions", {})
+        
+        changes = []
+        
+        # 检查所有条件键
+        all_cond_ids = set(parent_conditions.keys()) | set(current_conditions.keys())
+        
+        for cond_id in all_cond_ids:
+            parent_cond = parent_conditions.get(cond_id, {})
+            current_cond = current_conditions.get(cond_id, {})
+            
+            if parent_cond != current_cond:
+                changes.append(cond_id)
+        
+        # 检查其他关键参数
+        if parent_config.get("risk_per_trade") != current_config.get("risk_per_trade"):
+            changes.append("risk_per_trade")
+        
+        if parent_config.get("max_positions") != current_config.get("max_positions"):
+            changes.append("max_positions")
+        
+        if parent_config.get("initial_equity") != current_config.get("initial_equity"):
+            changes.append("initial_equity")
+        
+        # 验证只改变了一个条件
+        if len(changes) == 0:
+            log_event(
+                LogComponent.ENGINE,
+                f"No changes detected vs parent {parent_run_id}",
+                level=LogLevel.WARNING,
+            )
+        elif len(changes) == 1:
+            log_event(
+                LogComponent.ENGINE,
+                f"Single change validated vs parent {parent_run_id}",
+                changed_param=changes[0],
+            )
+        else:
+            raise ValueError(
+                f"Multiple changes detected vs parent {parent_run_id}: {changes}. "
+                f"Registration gate requires exactly ONE changed condition per run. "
+                f"Changed parameters: {', '.join(changes)}"
+            )
     
     def _load_dataset(self) -> tuple[dict[str, pd.DataFrame], Any]:
         dataset_id = self.config["dataset_id"]

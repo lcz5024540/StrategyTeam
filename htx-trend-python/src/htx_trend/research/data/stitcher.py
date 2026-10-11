@@ -34,12 +34,18 @@ class DataStitcher:
         htx_start = htx_df["bar_time"].min()
         binance_backfill = binance_df[binance_df["bar_time"] < htx_start].copy()
         
+        # 初始化标记列
+        htx_df["non_comparable"] = False
+        htx_df["external"] = False
+        
         overlap = pd.merge(
             htx_df[["bar_time", "close"]],
             binance_df[["bar_time", "close"]],
             on="bar_time",
             suffixes=("_htx", "_binance"),
         )
+        
+        non_comparable_bar_times = []
         
         if not overlap.empty:
             overlap["deviation"] = abs(
@@ -51,6 +57,8 @@ class DataStitcher:
             ]
             
             if not non_comparable.empty:
+                non_comparable_bar_times = non_comparable["bar_time"].tolist()
+                
                 log_event(
                     LogComponent.DATA,
                     f"Found {len(non_comparable)} bars with close price deviation >{self.close_deviation_threshold*100:.1f}%",
@@ -69,10 +77,17 @@ class DataStitcher:
                         binance_close=float(row["close_binance"]),
                         deviation_pct=float(row["deviation"] * 100),
                     )
+                
+                # 标记 non_comparable（偏差 >0.3%）
+                htx_df.loc[htx_df["bar_time"].isin(non_comparable_bar_times), "non_comparable"] = True
         
         if not binance_backfill.empty:
             binance_backfill["source"] = "binance"
             binance_backfill["is_backfill"] = True
+            
+            # Binance 数据标记为 external（volume/funding/OI 排除于百分位）
+            binance_backfill["external"] = True
+            binance_backfill["non_comparable"] = False
         
         htx_df["is_backfill"] = False
         

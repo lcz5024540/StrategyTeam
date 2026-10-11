@@ -52,6 +52,7 @@ class HtxMarketDataClient:
         size: int = 2000,
         max_retries: int = 3,
     ) -> list[Kline]:
+        """获取单批 K 线数据"""
         for attempt in range(max_retries):
             try:
                 raw_data = self.client.history_kline(contract_code, period, size)
@@ -82,9 +83,78 @@ class HtxMarketDataClient:
         
         return []
     
+    def fetch_klines_paginated(
+        self,
+        contract_code: str,
+        period: str,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        max_pages: int = 10,
+        page_size: int = 2000,
+    ) -> list[Kline]:
+        """分页获取 K 线数据，获取最大可用历史深度
+        
+        Args:
+            contract_code: 合约代码
+            period: 周期
+            start_time: 起始时间（可选）
+            end_time: 结束时间（可选）
+            max_pages: 最大页数
+            page_size: 每页大小
+        
+        Returns:
+            所有 K 线数据（按时间升序）
+        """
+        all_klines: list[Kline] = []
+        current_end = end_time or datetime.now(UTC)
+        
+        for page in range(max_pages):
+            # 获取一批数据
+            batch = self.fetch_klines(contract_code, period, size=page_size)
+            
+            if not batch:
+                break
+            
+            # 筛选时间范围
+            if start_time:
+                batch = [k for k in batch if k.bar_time >= start_time]
+            
+            if end_time:
+                batch = [k for k in batch if k.bar_time <= end_time]
+            
+            if not batch:
+                break
+            
+            all_klines.extend(batch)
+            
+            # 检查是否已达到起始时间
+            if start_time and batch[0].bar_time <= start_time:
+                break
+            
+            # 更新结束时间，获取更早的数据
+            current_end = batch[0].bar_time
+            
+            # 如果返回的数据量 < page_size，说明已经没有更多历史数据
+            if len(batch) < page_size:
+                break
+            
+            # 限速
+            time.sleep(0.5)
+        
+        # 去重并排序
+        seen = set()
+        unique_klines = []
+        for k in sorted(all_klines, key=lambda x: x.bar_time):
+            if k.bar_time not in seen:
+                seen.add(k.bar_time)
+                unique_klines.append(k)
+        
+        return unique_klines
+    
     def fetch_funding_history(
         self, contract_code: str, page_size: int = 50
     ) -> list[FundingRate]:
+        """获取单页资金费率历史"""
         try:
             raw_data = self.client.funding_history(contract_code, page_size)
             
@@ -105,6 +175,67 @@ class HtxMarketDataClient:
         
         except Exception:
             return []
+    
+    def fetch_funding_history_paginated(
+        self,
+        contract_code: str,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        max_pages: int = 20,
+        page_size: int = 50,
+    ) -> list[FundingRate]:
+        """分页获取资金费率历史，获取最大可用深度
+        
+        Args:
+            contract_code: 合约代码
+            start_time: 起始时间（可选）
+            end_time: 结束时间（可选）
+            max_pages: 最大页数
+            page_size: 每页大小
+        
+        Returns:
+            所有资金费率记录（按时间升序）
+        """
+        all_rates: list[FundingRate] = []
+        
+        for page in range(max_pages):
+            batch = self.fetch_funding_history(contract_code, page_size)
+            
+            if not batch:
+                break
+            
+            # 筛选时间范围
+            if start_time:
+                batch = [r for r in batch if r.funding_time >= start_time]
+            
+            if end_time:
+                batch = [r for r in batch if r.funding_time <= end_time]
+            
+            if not batch:
+                break
+            
+            all_rates.extend(batch)
+            
+            # 检查是否已达到起始时间
+            if start_time and batch[-1].funding_time <= start_time:
+                break
+            
+            # 如果返回的数据量 < page_size，说明已经没有更多历史数据
+            if len(batch) < page_size:
+                break
+            
+            # 限速
+            time.sleep(0.5)
+        
+        # 去重并排序
+        seen = set()
+        unique_rates = []
+        for r in sorted(all_rates, key=lambda x: x.funding_time):
+            if r.funding_time not in seen:
+                seen.add(r.funding_time)
+                unique_rates.append(r)
+        
+        return unique_rates
     
     def fetch_contract_info(self, contract_code: str) -> ContractSpec | None:
         try:
