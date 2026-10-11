@@ -86,6 +86,17 @@ def test_deterministic_backtest(tmp_path):
         "risk_per_trade": 0.005,
         "max_total_risk": 0.015,
         "max_positions": 3,
+        "conditions": {
+            "C01": {
+                "enabled": True,
+                "periods": [42, 84, 126, 168],
+                "threshold": 0.25,
+            },
+            "C02": {
+                "atr_period": 14,
+                "atr_multiplier": 2.0,
+            },
+        },
     }
     
     config_path = workspace / "test_config.yaml"
