@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pandas as pd
+import pytest
 
 from htx_trend.research.conditions.base import DecisionContext
 from htx_trend.research.conditions.c02_atr_stop import C02ATRStop
@@ -39,6 +40,7 @@ def test_c02_long_stop_only_moves_up():
         ]
     )
 
+    c02.initialize_position_stop(position_id, initial_stop)
     c02.evaluate(_ctx(df, 0, "LONG", position_id, entry_price), {})
     assert c02._position_stops[position_id] == initial_stop
 
@@ -67,6 +69,7 @@ def test_c02_short_stop_only_moves_down():
         ]
     )
 
+    c02.initialize_position_stop(position_id, initial_stop)
     c02.evaluate(_ctx(df, 0, "SHORT", position_id, entry_price), {})
     assert c02._position_stops[position_id] == initial_stop
 
@@ -104,5 +107,9 @@ def test_c02_stop_initialized_at_entry():
         [{"close": 100.0, "high": 101.0, "low": 99.0, "atr14": atr}]
     )
     assert position_id not in c02._position_stops
-    c02.evaluate(_ctx(df, 0, "LONG", position_id, entry_price), {})
+    with pytest.raises(ValueError, match="current bar ATR"):
+        c02.evaluate(_ctx(df, 0, "LONG", position_id, entry_price), {})
+    ctx = _ctx(df, 0, "LONG", position_id, entry_price)
+    ctx.current_position["stop_loss"] = entry_price - (atr * 2.0)
+    c02.evaluate(ctx, {})
     assert c02._position_stops[position_id] == entry_price - (atr * 2.0)

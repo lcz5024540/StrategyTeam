@@ -52,9 +52,13 @@ class PositionSizer:
                 skip_reason=f"Max positions reached ({self.max_positions})",
             )
         
-        existing_risk = sum(
-            p.get("risk_amount", 0) / account_equity for p in existing_positions
-        )
+        existing_risk = 0.0
+        for pos in existing_positions:
+            if "risk_amount" not in pos or pos["risk_amount"] is None:
+                raise ValueError(
+                    "existing position missing risk_amount; refusing to default risk to 0"
+                )
+            existing_risk += float(pos["risk_amount"]) / account_equity
         
         if existing_risk >= self.max_total_risk_pct:
             return PositionSize(

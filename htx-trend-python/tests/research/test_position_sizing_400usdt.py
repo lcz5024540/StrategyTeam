@@ -1,5 +1,7 @@
 """测试仓位计算在 400 USDT 初始资金下的最小合约检查"""
 
+import pytest
+
 from htx_trend.research.risk.position_sizing import PositionSizer
 
 
@@ -187,3 +189,18 @@ def test_position_sizing_eth_with_400_usdt():
     
     assert pos.size == 1, f"Expected 1 ETH contract, got {pos.size}"
     assert pos.skip_reason is None
+
+
+def test_existing_position_missing_risk_amount_raises():
+    sizer = PositionSizer()
+    with pytest.raises(ValueError, match="risk_amount"):
+        sizer.calculate_position(
+            symbol="BTC-USDT",
+            side="LONG",
+            entry_price=50000.0,
+            stop_loss=49000.0,
+            account_equity=400.0,
+            contract_size=0.001,
+            min_order_size=1,
+            existing_positions=[{"symbol": "ETH-USDT", "size": 1}],
+        )

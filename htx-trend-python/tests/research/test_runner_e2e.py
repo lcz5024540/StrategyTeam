@@ -14,6 +14,7 @@ from htx_trend.research.risk.liquidation_check import AccountLiquidationChecker
 from htx_trend.research.conditions.c02_atr_stop import C02ATRStop
 from htx_trend.research.engine.contract_value import periods_per_year
 from htx_trend.research.features.indicators import FeatureCalculator
+from htx_trend.research.strategy.state_machine import StateMachine
 from tests.research.helpers import (
     DEFAULT_SPECS,
     create_test_dataset,
@@ -396,17 +397,69 @@ def test_entry_stop_atr_uses_signal_bar_only_not_next_close(tmp_path):
     assert float(confirm_a["entry_price"]) == pytest.approx(float(fill_a.price))
     assert float(confirm_b["stop_loss"]) == pytest.approx(float(confirm_a["stop_loss"]))
     assert float(confirm_b["entry_price"]) == pytest.approx(float(confirm_a["entry_price"]))
-    next_close_atr = FeatureCalculator.atr(
-        pd.concat(
-            [
-                df.iloc[: signal_idx + 1],
-                df.iloc[signal_idx + 1 : signal_idx + 2].assign(close=999.0),
-            ]
-        ).reset_index(drop=True),
-        14,
-    ).iloc[signal_idx + 1]
-    poisoned_stop = c02.calculate_stop_loss(float(fill_b.price), float(next_close_atr), "LONG")
-    assert float(confirm_b["stop_loss"]) != pytest.approx(poisoned_stop)
+    close_based_stop = c02.calculate_stop_loss(float(enter_a["close"]), float(truncated), "LONG")
+    assert float(confirm_a["stop_loss"]) != pytest.approx(close_based_stop)
+    assert float(fill_a.price) != pytest.approx(float(enter_a["close"]))
+
+
+def _run_with_signal_atr(tmp_path, run_id, atr_value):
+    original = StateMachine.signal_entry
+
+    def wrapped(self, *args, **kwargs):
+        metadata = dict(kwargs.get("metadata") or {})
+        if atr_value is Ellipsis:
+            metadata.pop("signal_atr", None)
+        else:
+            metadata["signal_atr"] = atr_value
+        kwargs["metadata"] = metadata
+        return original(self, *args, **kwargs)
+
+    def mutate(open_, high, low, close):
+        close[210] = 110.0
+        high[210] = 111.0
+        low[210] = 109.0
+        open_[210] = 100.0
+        open_[211] = 120.0
+        close[211] = 120.0
+        high[211] = 121.0
+        low[211] = 119.0
+
+    with patch.object(StateMachine, "signal_entry", wrapped):
+        return _entry_workspace(tmp_path, run_id, mutate)
+
+
+def test_missing_signal_atr_raises_instead_of_next_bar_atr(tmp_path):
+    with pytest.raises(ValueError, match="signal_atr"):
+        _run_with_signal_atr(tmp_path, "NOATR", Ellipsis)
+
+
+def test_zero_signal_atr_raises_instead_of_next_bar_atr(tmp_path):
+    with pytest.raises(ValueError, match="signal_atr"):
+        _run_with_signal_atr(tmp_path, "ZEROATR", 0)
+
+
+def test_missing_position_id_raises_instead_of_synthesizing(tmp_path):
+    original = StateMachine.signal_entry
+
+    def wrapped(self, *args, **kwargs):
+        metadata = dict(kwargs.get("metadata") or {})
+        metadata.pop("position_id", None)
+        kwargs["metadata"] = metadata
+        return original(self, *args, **kwargs)
+
+    def mutate(open_, high, low, close):
+        close[210] = 110.0
+        high[210] = 111.0
+        low[210] = 109.0
+        open_[210] = 100.0
+        open_[211] = 120.0
+        close[211] = 120.0
+        high[211] = 121.0
+        low[211] = 119.0
+
+    with patch.object(StateMachine, "signal_entry", wrapped):
+        with pytest.raises(ValueError, match="position_id"):
+            _entry_workspace(tmp_path, "NOPOSID", mutate)
 
 
 def test_entry_fill_stop_from_actual_fill(tmp_path):
@@ -420,43 +473,26 @@ def test_entry_fill_stop_from_actual_fill(tmp_path):
         high[211] = 121.0
         low[211] = 119.0
 
-    workspace = _ohlc_workspace(tmp_path, mutate=mutate)
-    runner = write_runner(
-        workspace,
-        runner_config(
-            workspace,
-            "FILLSTOP",
-            "ohlc",
-            symbols=["BTC-USDT"],
-            initial_equity=10_000.0,
-            conditions={
-                "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
-                "C02": {
-                    "atr_period": 14,
-                    "atr_multiplier": 2.0,
-                    "tick_size": 0.1,
-                    "stop_slippage_ticks": 1,
-                },
-            },
-        ),
-    )
-    results = runner.run()
+    workspace, results, df = _entry_workspace(tmp_path, "FILLSTOP", mutate)
     decisions = results["decisions"]
     enters = decisions[decisions["action"] == "ENTER"]
     assert not enters.empty
     confirms = decisions[decisions["action"].isin(["CONFIRM_ENTRY", "EXIT"])]
     assert not confirms.empty
     row = confirms.iloc[0]
-    assert float(row["entry_price"]) != float(enters.iloc[0]["close"])
+    fills = [fill for fill in results["fills"] if fill.is_entry]
+    assert fills
+    signal_idx = df.index[pd.to_datetime(df["bar_time"]) == pd.to_datetime(enters.iloc[0]["bar_time"])][0]
+    atr_t = float(FeatureCalculator.atr(df.iloc[: signal_idx + 1], 14).iloc[-1])
     c02 = C02ATRStop(atr_period=14, atr_multiplier=2.0, tick_size=0.1, stop_slippage_ticks=1)
-    atr = float(results["decisions"].iloc[0].get("c01_value") or 2.0)
-    # Stop must be computed from the actual fill, not the signal close.
-    fill_price = float(row["entry_price"])
+    fill_price = float(fills[0].price)
     signal_close = float(enters.iloc[0]["close"])
-    assert abs(fill_price - signal_close) > 1
-    assert float(row["stop_loss"]) < fill_price
-    signal_stop = c02.calculate_stop_loss(signal_close, 1.0, "LONG")
-    assert float(row["stop_loss"]) != pytest.approx(signal_stop)
+    expected_stop = c02.calculate_stop_loss(fill_price, atr_t, "LONG")
+    close_based_stop = c02.calculate_stop_loss(signal_close, atr_t, "LONG")
+    assert fill_price != pytest.approx(signal_close)
+    assert float(row["entry_price"]) == pytest.approx(fill_price)
+    assert float(row["stop_loss"]) == pytest.approx(expected_stop)
+    assert float(row["stop_loss"]) != pytest.approx(close_based_stop)
 
 
 def test_smoke_limited_window_no_metrics_records_smoke_runs(tmp_path):

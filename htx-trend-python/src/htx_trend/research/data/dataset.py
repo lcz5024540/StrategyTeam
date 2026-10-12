@@ -16,7 +16,6 @@ from ..ops.logging import LogComponent, log_event
 from .immutable_storage import ImmutableKlineStorage
 from .manifest import DatasetManifest, VerificationResult
 
-DEFAULT_DATA_CUTOFF_CLOSE_UTC = datetime(2026, 10, 12, 0, 0, tzinfo=timezone.utc)
 BAR_DURATION = {
     "4hour": timedelta(hours=4),
     "4h": timedelta(hours=4),
@@ -96,14 +95,32 @@ def compute_split_boundaries(
             "validation_start_utc and test_start_utc must be passed together"
         )
     if validation_start_utc is not None:
-        return (
-            require_utc_midnight(validation_start_utc, field_name="validation_start_utc"),
-            require_utc_midnight(test_start_utc, field_name="test_start_utc"),
+        validation_start = require_utc_midnight(
+            validation_start_utc, field_name="validation_start_utc"
         )
-    n_days = len(days)
-    val_idx = min(int(n_days * train_ratio), n_days - 1)
-    test_idx = min(int(n_days * (train_ratio + val_ratio)), n_days - 1)
-    return parse_utc_datetime(days[val_idx]), parse_utc_datetime(days[test_idx])
+        test_start = require_utc_midnight(test_start_utc, field_name="test_start_utc")
+    else:
+        n_days = len(days)
+        val_idx = min(int(n_days * train_ratio), n_days - 1)
+        test_idx = min(int(n_days * (train_ratio + val_ratio)), n_days - 1)
+        validation_start = parse_utc_datetime(days[val_idx])
+        test_start = parse_utc_datetime(days[test_idx])
+    return validation_start, test_start
+
+
+def assert_split_bounds(
+    validation_start: datetime,
+    test_start: datetime,
+    cutoff: datetime,
+) -> None:
+    val = parse_utc_datetime(validation_start)
+    test = parse_utc_datetime(test_start)
+    cut = parse_utc_datetime(cutoff)
+    if not (val < test <= cut):
+        raise ValueError(
+            "split bounds must satisfy validation_start < test_start <= cutoff, "
+            f"got {utc_iso(val)} / {utc_iso(test)} / {utc_iso(cut)}"
+        )
 
 
 def load_split_from_manifest(path: Path | str) -> tuple[str, str, str]:
@@ -174,8 +191,6 @@ class FrozenDataset:
     start_date: datetime
     end_date: datetime
     total_bars: int
-    train_end_idx: int
-    val_end_idx: int
     manifest_hash: str
     created_at: datetime
     data_cutoff_close_utc: datetime | None = None
@@ -215,8 +230,6 @@ class FrozenDataset:
             "start_date": self.start_date.isoformat(),
             "end_date": self.end_date.isoformat(),
             "total_bars": self.total_bars,
-            "train_end_idx": self.train_end_idx,
-            "val_end_idx": self.val_end_idx,
             "manifest_hash": self.manifest_hash,
             "created_at": self.created_at.isoformat(),
             "data_cutoff_close_utc": (
@@ -282,9 +295,9 @@ class DatasetManager:
         test_start_utc: datetime | str | None = None,
         validation_start_utc: datetime | str | None = None,
     ) -> FrozenDataset:
-        cutoff = parse_utc_datetime(
-            data_cutoff_close_utc or DEFAULT_DATA_CUTOFF_CLOSE_UTC
-        )
+        if data_cutoff_close_utc is None:
+            raise ValueError("data_cutoff_close_utc is required")
+        cutoff = parse_utc_datetime(data_cutoff_close_utc)
         filtered: dict[str, pd.DataFrame] = {}
         for symbol, df in data.items():
             kept = filter_closed_by_cutoff(df, timeframe, cutoff)
@@ -310,6 +323,7 @@ class DatasetManager:
             test_start_utc=test_start_utc,
             validation_start_utc=validation_start_utc,
         )
+        assert_split_bounds(validation_start, test_start, cutoff)
         assert_stitch_in_train((extra_metadata or {}).get("stitch_points"), validation_start)
 
         all_dates = sorted(set(all_dates))
@@ -369,11 +383,6 @@ class DatasetManager:
                 )
                 for name in ("train", "val", "test")
             }
-        first = segment_counts[symbols[0]]
-        train_end_idx = first["train"]
-        val_end_idx = first["train"] + first["val"]
-        n_bars = first["train"] + first["val"] + first["test"]
-
         train_hash = self._compute_split_hash_by_time(
             data, symbols, "train", validation_start, test_start, cutoff, timeframe
         )
@@ -391,8 +400,6 @@ class DatasetManager:
             start_date=start_date,
             end_date=end_date,
             total_bars=total_bars,
-            train_end_idx=train_end_idx,
-            val_end_idx=val_end_idx,
             manifest_hash=manifest_hash,
             created_at=datetime.now(),
             data_cutoff_close_utc=cutoff,
@@ -406,8 +413,6 @@ class DatasetManager:
         manifest_with_splits = manifest.copy()
         manifest_with_splits.update({
             "dataset_id": dataset_id,
-            "train_end_idx": train_end_idx,
-            "val_end_idx": val_end_idx,
             "manifest_hash": manifest_hash,
             "train_hash": train_hash,
             "val_hash": val_hash,
@@ -448,9 +453,9 @@ class DatasetManager:
             symbols=symbols,
             timeframe=timeframe,
             total_bars=total_bars,
-            train_bars=train_end_idx,
-            val_bars=val_end_idx - train_end_idx,
-            test_bars=n_bars - val_end_idx,
+            train_bars=sum(item["train"] for item in segment_counts.values()),
+            val_bars=sum(item["val"] for item in segment_counts.values()),
+            test_bars=sum(item["test"] for item in segment_counts.values()),
         )
 
         return frozen
@@ -589,19 +594,6 @@ class DatasetManager:
             split_requested="test",
         )
     
-    def _compute_split_hash(
-        self, data: dict[str, pd.DataFrame], symbols: list[str], start: int, end: int
-    ) -> str:
-        hasher = hashlib.sha256()
-        
-        for symbol in sorted(symbols):
-            df = data[symbol].iloc[start:end]
-            hasher.update(symbol.encode())
-            hasher.update(df["bar_time"].astype(str).str.cat().encode())
-            hasher.update(df["close"].astype(str).str.cat().encode())
-        
-        return hasher.hexdigest()[:16]
-
     def _compute_split_hash_by_time(
         self,
         data: dict[str, pd.DataFrame],

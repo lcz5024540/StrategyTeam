@@ -141,3 +141,54 @@ def test_multiple_positions_with_stops():
     )
     
     assert is_safe or not is_safe
+
+
+def test_liquidation_missing_stop_loss_raises():
+    checker = AccountLiquidationChecker()
+    with pytest.raises(ValueError, match="stop_loss"):
+        checker.check_account_liquidation_risk(
+            2000.0,
+            [
+                {
+                    "symbol": "BTC-USDT",
+                    "side": "LONG",
+                    "size": 0.02,
+                    "entry_price": 50000.0,
+                    "contract_size": 1.0,
+                }
+            ],
+            [
+                {
+                    "symbol": "BTC-USDT",
+                    "side": "LONG",
+                    "size": 0.02,
+                    "entry_price": 50000.0,
+                    "contract_size": 1.0,
+                }
+            ],
+        )
+
+
+def test_liquidation_missing_side_raises():
+    checker = AccountLiquidationChecker()
+    with pytest.raises(ValueError, match="side"):
+        checker.check_account_liquidation_risk(
+            2000.0,
+            [
+                {
+                    "symbol": "BTC-USDT",
+                    "size": 0.02,
+                    "entry_price": 50000.0,
+                    "contract_size": 1.0,
+                }
+            ],
+            [
+                {
+                    "symbol": "BTC-USDT",
+                    "size": 0.02,
+                    "entry_price": 50000.0,
+                    "stop_loss": 49000.0,
+                    "contract_size": 1.0,
+                }
+            ],
+        )

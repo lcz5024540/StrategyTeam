@@ -68,6 +68,31 @@ def _marked_equity(broker: Any) -> float:
     return float(broker.get_account_equity())
 
 
+def require_signal_atr(metadata: dict[str, Any] | None) -> float:
+    if not metadata or "signal_atr" not in metadata or metadata["signal_atr"] is None:
+        raise ValueError(
+            "ENTRY_PENDING missing metadata['signal_atr']; "
+            "refusing to use the current (t+1) bar ATR"
+        )
+    atr = float(metadata["signal_atr"])
+    if atr == 0.0 or atr != atr:
+        raise ValueError(
+            f"ENTRY_PENDING signal_atr={metadata['signal_atr']!r} is not usable; "
+            "refusing to use the current (t+1) bar ATR"
+        )
+    return atr
+
+
+def require_position_id(metadata: dict[str, Any] | None, *, context: str) -> str:
+    position_id = (metadata or {}).get("position_id")
+    if not position_id:
+        raise ValueError(
+            f"{context} missing metadata['position_id']; "
+            "refusing to synthesize a position_id"
+        )
+    return str(position_id)
+
+
 def annualized_sharpe_from_equity(equity: Any, ppy: float) -> float:
     series = pd.Series(equity, dtype="float64")
     rets = series.pct_change().dropna()
@@ -644,8 +669,40 @@ class BacktestRunner:
                     decision_record["c01_value"] = c01_result.value
                     if c01_result.status == "PASS" and c01_result.value is not None:
                         side = "LONG" if c01_result.value > 0 else "SHORT"
-                        atr = bar[atr_col]
+                        if atr_col not in bar.index or pd.isna(bar[atr_col]):
+                            raise ValueError(
+                                f"signal bar missing {atr_col}; refusing to size/stop without ATR"
+                            )
+                        atr = float(bar[atr_col])
+                        if atr == 0.0:
+                            raise ValueError(
+                                f"signal bar {atr_col} is 0; refusing to size/stop with zero ATR"
+                            )
                         stop_loss = c02.calculate_stop_loss(bar["close"], atr, side)
+                        existing_for_sizer = []
+                        for existing in broker.get_positions():
+                            sm_pos = state_machines[existing["symbol"]].get_position(
+                                existing["symbol"]
+                            )
+                            if sm_pos is None or sm_pos.stop_loss is None:
+                                raise ValueError(
+                                    f"existing position {existing.get('symbol')} missing "
+                                    "stop_loss; refusing to treat risk as 0"
+                                )
+                            entry = float(existing["entry_price"])
+                            size = float(existing["size"])
+                            contract_size = float(
+                                specs[existing["symbol"]]["contract_size"]
+                            )
+                            notional = coin_notional(
+                                entry, size, contract_size, existing["symbol"]
+                            )
+                            item = dict(existing)
+                            item["stop_loss"] = float(sm_pos.stop_loss)
+                            item["risk_amount"] = (
+                                abs(entry - float(sm_pos.stop_loss)) / entry * notional
+                            )
+                            existing_for_sizer.append(item)
                         pos_size = sizer.calculate_position(
                             symbol=symbol,
                             side=side,
@@ -654,7 +711,7 @@ class BacktestRunner:
                             account_equity=broker.get_account_equity(),
                             contract_size=float(spec["contract_size"]),
                             min_order_size=int(spec["min_order_size"]),
-                            existing_positions=broker.get_positions(),
+                            existing_positions=existing_for_sizer,
                         )
                         if pos_size.skip_reason:
                             decision_record["action"] = "SKIP"
@@ -731,7 +788,13 @@ class BacktestRunner:
 
                 elif current_state == StrategyState.ENTRY_PENDING:
                     current_position = sm.get_position(symbol)
-                    position_id = (current_position.metadata or {}).get("position_id")
+                    if current_position is None:
+                        raise ValueError(
+                            f"ENTRY_PENDING for {symbol} has no position; refusing to continue"
+                        )
+                    position_id = require_position_id(
+                        current_position.metadata, context="ENTRY_PENDING"
+                    )
                     entry_fills = [
                         fill
                         for fill in broker.fills
@@ -745,14 +808,16 @@ class BacktestRunner:
                         all_decisions.append(decision_record)
                         continue
                     actual_price = float(entry_fills[-1].price)
-                    signal_atr = float((current_position.metadata or {}).get("signal_atr") or bar[atr_col])
+                    signal_atr = require_signal_atr(current_position.metadata)
                     fill_stop = c02.calculate_stop_loss(
                         actual_price, signal_atr, current_position.side
                     )
                     sm.confirm_entry(symbol, actual_entry_price=actual_price)
                     current_position = sm.get_position(symbol)
                     current_position.stop_loss = fill_stop
-                    position_id = current_position.metadata.get("position_id")
+                    position_id = require_position_id(
+                        current_position.metadata, context="CONFIRM_ENTRY"
+                    )
                     c02.initialize_position_stop(position_id, fill_stop)
                     ctx.current_position = {
                         "entry_price": actual_price,
@@ -786,9 +851,8 @@ class BacktestRunner:
 
                 elif current_state == StrategyState.OPEN:
                     if current_position:
-                        position_id = current_position.metadata.get(
-                            "position_id",
-                            f"{symbol}:{pd.Timestamp(current_position.entry_time).isoformat()}:{current_position.side}",
+                        position_id = require_position_id(
+                            current_position.metadata, context=f"OPEN {symbol}"
                         )
                         ctx.current_position = {
                             "entry_price": current_position.entry_price,
@@ -800,7 +864,12 @@ class BacktestRunner:
                         decision_record["c02_status"] = c02_result.status
                         decision_record["c02_value"] = c02_result.value
                         decision_record["position_id"] = position_id
-                        decision_record["stop_loss"] = c02._position_stops.get(position_id)
+                        if position_id not in c02._position_stops:
+                            raise ValueError(
+                                f"C02 has no stop for {position_id}; "
+                                "refusing to fall back to position.stop_loss"
+                            )
+                        decision_record["stop_loss"] = c02._position_stops[position_id]
                         if c02_result.status == "PASS":
                             sm.signal_exit(symbol, "stop_loss")
                             broker.submit_order(
@@ -811,9 +880,7 @@ class BacktestRunner:
                                     order_type="MARKET",
                                     reduce_only=True,
                                     is_stop=True,
-                                    stop_price=c02._position_stops.get(
-                                        position_id, current_position.stop_loss
-                                    ),
+                                    stop_price=c02._position_stops[position_id],
                                     stop_slippage=slippage_amount,
                                     client_order_id=position_id,
                                 )
@@ -824,9 +891,10 @@ class BacktestRunner:
                 elif current_state == StrategyState.EXIT_PENDING:
                     closed_pos = sm.confirm_exit(symbol, bar["close"], bar["bar_time"])
                     if closed_pos:
-                        position_id = closed_pos.metadata.get("position_id")
-                        if position_id:
-                            c02.reset_position_stop(position_id)
+                        position_id = require_position_id(
+                            closed_pos.metadata, context="CONFIRM_EXIT"
+                        )
+                        c02.reset_position_stop(position_id)
                         decision_record["action"] = "CONFIRM_EXIT"
                         decision_record["position_id"] = position_id
 

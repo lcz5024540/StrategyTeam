@@ -82,7 +82,11 @@ class C02ATRStop:
         if position_id not in self._position_stops:
             seeded = ctx.current_position.get("stop_loss")
             if seeded is None:
-                seeded = self.calculate_stop_loss(entry_price, row[atr_col], side)
+                raise ValueError(
+                    f"C02 stop for {position_id} is not initialized and "
+                    "current_position['stop_loss'] is missing; "
+                    "refusing to compute stop from the current bar ATR"
+                )
             self._position_stops[position_id] = float(seeded)
 
         current_stop = self._position_stops[position_id]

@@ -119,8 +119,10 @@ def test_train_val_no_approval_needed(tmp_path):
     mgr, _ledger, dataset_id = _mgr(tmp_path)
     train, frozen = mgr.load_dataset(dataset_id, split="train")
     val, _ = mgr.load_dataset(dataset_id, split="val")
-    assert len(next(iter(train.values()))) == frozen.train_end_idx
-    assert len(next(iter(val.values()))) == frozen.val_end_idx - frozen.train_end_idx
+    symbol = next(iter(train))
+    counts = frozen.segment_counts[symbol]
+    assert len(train[symbol]) == counts["train"]
+    assert len(val[symbol]) == counts["val"]
 
 
 def test_dataset_manager_returns_only_requested_split(tmp_path):
@@ -134,7 +136,6 @@ def test_dataset_manager_returns_only_requested_split(tmp_path):
         run_id="HOLD1",
         strategy_version="v0.1.0",
     )
-    n_test = frozen.total_bars // 2 - frozen.val_end_idx  # total_bars is 600 (2 symbols)
     btc = test["BTC-USDT"]
-    assert len(btc) == 300 - frozen.val_end_idx
+    assert len(btc) == frozen.segment_counts["BTC-USDT"]["test"]
     assert "ETH-USDT" not in test

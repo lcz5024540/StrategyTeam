@@ -100,9 +100,17 @@ class AccountLiquidationChecker:
         
         total_notional = 0.0
         for pos in all_positions:
-            contract_size = require_contract_size(pos.get("contract_size"), pos.get("symbol", ""))
+            symbol = pos.get("symbol")
+            if not symbol:
+                raise ValueError("liquidation check position missing symbol")
+            contract_size = require_contract_size(pos.get("contract_size"), symbol)
+            if pos.get("entry_price") is None or pos.get("size") is None:
+                raise ValueError(
+                    f"liquidation check position {symbol} missing entry_price or size; "
+                    "refusing to treat notional as 0"
+                )
             total_notional += abs(
-                coin_notional(pos.get("entry_price", 0), pos.get("size", 0), contract_size)
+                coin_notional(pos["entry_price"], pos["size"], contract_size)
             )
         
         if total_notional == 0:
@@ -113,14 +121,26 @@ class AccountLiquidationChecker:
         max_simultaneous_loss = 0.0
         
         for pos in strategy_positions:
+            symbol = pos.get("symbol")
             stop_loss = pos.get("stop_loss")
-            if not stop_loss:
-                continue
-            
-            entry_price = pos.get("entry_price", 0)
-            size = pos.get("size", 0)
-            side = pos.get("side", "LONG")
-            contract_size = require_contract_size(pos.get("contract_size"), pos.get("symbol", ""))
+            if stop_loss is None:
+                raise ValueError(
+                    f"strategy position {symbol} missing stop_loss; "
+                    "refusing to skip it in the liquidation check"
+                )
+            if pos.get("entry_price") is None or pos.get("size") is None:
+                raise ValueError(
+                    f"strategy position {symbol} missing entry_price or size; "
+                    "refusing to treat loss as 0"
+                )
+            side = pos.get("side")
+            if side not in {"LONG", "SHORT"}:
+                raise ValueError(
+                    f"strategy position {symbol} missing side; refusing to default LONG"
+                )
+            entry_price = pos["entry_price"]
+            size = pos["size"]
+            contract_size = require_contract_size(pos.get("contract_size"), symbol or "")
             price_move = (entry_price - stop_loss) if side == "LONG" else (stop_loss - entry_price)
             loss = max(0.0, coin_notional(price_move, size, contract_size))
             

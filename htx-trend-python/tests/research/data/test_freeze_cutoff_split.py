@@ -45,20 +45,21 @@ def _bars(start: str, n_bars: int, freq: str = "4h") -> pd.DataFrame:
     )
 
 
+V010_CUTOFF = "2026-10-12T00:00:00Z"
+
+
 def _freeze(
     tmp_path: Path,
     df: pd.DataFrame,
     *,
     timeframe: str = "4hour",
-    cutoff: str | None = None,
+    cutoff: str = V010_CUTOFF,
     test_start: str | None = None,
     validation_start: str | None = None,
     extra_metadata: dict | None = None,
 ) -> tuple[DatasetManager, object]:
     mgr = DatasetManager(tmp_path / "data" / "datasets")
-    kwargs: dict = {}
-    if cutoff is not None:
-        kwargs["data_cutoff_close_utc"] = cutoff
+    kwargs: dict = {"data_cutoff_close_utc": cutoff}
     if test_start is not None:
         kwargs["test_start_utc"] = test_start
     if validation_start is not None:
@@ -84,9 +85,32 @@ def _as_utc(value) -> pd.Timestamp:
     return ts.tz_convert("UTC")
 
 
-def test_default_cutoff_is_v010_2026_10_12_close():
-    cutoff = getattr(dataset_mod, "DEFAULT_DATA_CUTOFF_CLOSE_UTC", None)
-    assert cutoff == datetime(2026, 10, 12, 0, 0, tzinfo=timezone.utc)
+def test_library_freeze_requires_explicit_cutoff(tmp_path):
+    assert not hasattr(dataset_mod, "DEFAULT_DATA_CUTOFF_CLOSE_UTC")
+    mgr = DatasetManager(tmp_path / "data" / "datasets")
+    with pytest.raises(ValueError, match="data_cutoff_close_utc is required"):
+        mgr.freeze_dataset({"BTC-USDT": _bars("2026-09-21", 21 * 6)}, timeframe="4hour")
+
+
+def test_split_bounds_must_be_strictly_ordered_and_at_or_before_cutoff(tmp_path):
+    df = _bars("2026-09-21", 21 * 6)
+    mgr = DatasetManager(tmp_path / "data" / "datasets")
+    with pytest.raises(ValueError, match="validation_start < test_start <= cutoff"):
+        mgr.freeze_dataset(
+            {"BTC-USDT": df},
+            timeframe="4hour",
+            data_cutoff_close_utc=V010_CUTOFF,
+            validation_start_utc="2026-10-10T00:00:00Z",
+            test_start_utc="2026-10-01T00:00:00Z",
+        )
+    with pytest.raises(ValueError, match="validation_start < test_start <= cutoff"):
+        mgr.freeze_dataset(
+            {"BTC-USDT": df},
+            timeframe="4hour",
+            data_cutoff_close_utc="2026-10-01T00:00:00Z",
+            validation_start_utc="2026-09-25T00:00:00Z",
+            test_start_utc="2026-10-02T00:00:00Z",
+        )
 
 
 def test_freeze_writes_cutoff_and_utc_midnight_split_to_hashed_manifest(tmp_path):
@@ -116,6 +140,8 @@ def test_freeze_writes_cutoff_and_utc_midnight_split_to_hashed_manifest(tmp_path
     )
     assert batch.metadata["data_cutoff_close_utc"] == written["data_cutoff_close_utc"]
     assert batch.metadata["split"] == written["split"]
+    assert "train_end_idx" not in written
+    assert "val_end_idx" not in written
 
     _, other = _freeze(tmp_path / "other", df, cutoff="2026-10-01T00:00:00Z")
     assert other.manifest_hash != frozen.manifest_hash
@@ -130,7 +156,12 @@ def test_freeze_keeps_last_4h_open_2026_10_11_20z_and_drops_later(tmp_path):
     kept = _bars("2026-10-11 20:00", 1)
     dropped = _bars("2026-10-12 00:00", 1)
     df = pd.concat([kept, dropped], ignore_index=True)
-    mgr, frozen = _freeze(tmp_path, df)
+    mgr, frozen = _freeze(
+        tmp_path,
+        df,
+        validation_start="2026-10-11T00:00:00Z",
+        test_start="2026-10-12T00:00:00Z",
+    )
     loaded = pd.read_parquet(
         tmp_path / "data" / "datasets" / frozen.dataset_id / "BTC-USDT.parquet"
     )
@@ -147,7 +178,13 @@ def test_freeze_rejects_bars_whose_close_is_after_cutoff(tmp_path):
         ],
         ignore_index=True,
     )
-    _, frozen = _freeze(tmp_path, df, cutoff="2026-10-11T00:00:00Z")
+    _, frozen = _freeze(
+        tmp_path,
+        df,
+        cutoff="2026-10-11T00:00:00Z",
+        validation_start="2026-10-10T00:00:00Z",
+        test_start="2026-10-11T00:00:00Z",
+    )
     loaded = pd.read_parquet(
         tmp_path / "data" / "datasets" / frozen.dataset_id / "BTC-USDT.parquet"
     )
@@ -211,7 +248,13 @@ def test_load_rejects_post_cutoff_bars_even_if_parquet_grows(tmp_path):
         ledger=ledger,
         current_run_id="CUT1",
     )
-    frozen = mgr.freeze_dataset({"BTC-USDT": df}, timeframe="4hour")
+    frozen = mgr.freeze_dataset(
+        {"BTC-USDT": df},
+        timeframe="4hour",
+        data_cutoff_close_utc=V010_CUTOFF,
+        validation_start_utc="2026-10-11T00:00:00Z",
+        test_start_utc="2026-10-12T00:00:00Z",
+    )
     path = tmp_path / "data" / "datasets" / frozen.dataset_id / "BTC-USDT.parquet"
     extra = _bars("2026-10-12 00:00", 3)
     pd.concat([pd.read_parquet(path), extra], ignore_index=True).to_parquet(path, index=False)
@@ -309,7 +352,9 @@ def test_runner_reads_split_from_manifest_only(tmp_path):
     datasets = workspace / "data" / "datasets"
     mgr = DatasetManager(datasets)
     write_contract_specs(workspace)
-    frozen = mgr.freeze_dataset({"BTC-USDT": df}, timeframe="4hour")
+    frozen = mgr.freeze_dataset(
+        {"BTC-USDT": df}, timeframe="4hour", data_cutoff_close_utc=V010_CUTOFF
+    )
     write_batch_manifest(workspace, frozen.dataset_id)
     written = _written_manifest(workspace, frozen.dataset_id)
 
@@ -340,7 +385,9 @@ def test_test_set_lock_uses_manifest_test_hash(tmp_path):
         ledger=ledger,
         current_run_id="LOCK1",
     )
-    frozen = mgr.freeze_dataset({"BTC-USDT": df}, timeframe="4hour")
+    frozen = mgr.freeze_dataset(
+        {"BTC-USDT": df}, timeframe="4hour", data_cutoff_close_utc=V010_CUTOFF
+    )
     written = _written_manifest(tmp_path, frozen.dataset_id)
     assert written["test_hash"]
     from htx_trend.research.ledger import Approval, ApprovalDecision, ApprovalGate
@@ -374,6 +421,7 @@ def test_freeze_rejects_stitch_point_after_validation_start(tmp_path):
         mgr.freeze_dataset(
             {"BTC-USDT": df},
             timeframe="4hour",
+            data_cutoff_close_utc=V010_CUTOFF,
             extra_metadata={"stitch_points": {"BTC-USDT": "2026-10-05T00:00:00Z"}},
         )
 
@@ -385,6 +433,7 @@ def test_freeze_accepts_default_stitch_point_inside_train(tmp_path):
     frozen = mgr.freeze_dataset(
         {"BTC-USDT": df},
         timeframe="4hour",
+        data_cutoff_close_utc=V010_CUTOFF,
         extra_metadata={"stitch_points": {"BTC-USDT": "2020-11-01T00:00:00Z"}},
     )
     written = _written_manifest(tmp_path, frozen.dataset_id)
@@ -542,13 +591,29 @@ def test_segment_counts_and_hashes_per_symbol_by_timestamp(tmp_path):
     assert "ETH-USDT: train=72" in output
     assert "Test: 17832" not in output
     assert written["test_hash"]
-    idx_hash = DatasetManager(tmp_path / "data" / "datasets")._compute_split_hash(
-        {
-            "BTC-USDT": pd.read_parquet(dataset_dir / "BTC-USDT.parquet"),
-            "ETH-USDT": pd.read_parquet(dataset_dir / "ETH-USDT.parquet"),
-        },
-        ["BTC-USDT", "ETH-USDT"],
-        counts["BTC-USDT"]["train"] + counts["BTC-USDT"]["val"],
-        10 * 6,
-    )
+    assert "train_end_idx" not in written
+    assert "val_end_idx" not in written
+    btc = pd.read_parquet(dataset_dir / "BTC-USDT.parquet")
+    eth = pd.read_parquet(dataset_dir / "ETH-USDT.parquet")
+    start = counts["BTC-USDT"]["train"] + counts["BTC-USDT"]["val"]
+    end = len(eth)
+    assert len(eth.iloc[start:end]) > 0
+    hasher = __import__("hashlib").sha256()
+    for symbol, frame in (("BTC-USDT", btc), ("ETH-USDT", eth)):
+        sliced = frame.iloc[start:end]
+        hasher.update(symbol.encode())
+        hasher.update(sliced["bar_time"].astype(str).str.cat().encode())
+        hasher.update(sliced["close"].astype(str).str.cat().encode())
+    idx_hash = hasher.hexdigest()[:16]
     assert written["test_hash"] != idx_hash
+    written_split = written["split"]
+    recomputed = DatasetManager(tmp_path / "data" / "datasets")._compute_split_hash_by_time(
+        {"BTC-USDT": btc, "ETH-USDT": eth},
+        ["BTC-USDT", "ETH-USDT"],
+        "test",
+        pd.Timestamp(written_split["validation_start_utc"]).to_pydatetime(),
+        pd.Timestamp(written_split["test_start_utc"]).to_pydatetime(),
+        pd.Timestamp(written["data_cutoff_close_utc"]).to_pydatetime(),
+        "4hour",
+    )
+    assert written["test_hash"] == recomputed

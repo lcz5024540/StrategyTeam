@@ -55,8 +55,6 @@ def create_fixture_dataset(workspace: Path) -> str:
         "start_date": dates[0].isoformat(),
         "end_date": dates[-1].isoformat(),
         "total_bars": len(dates) * 2,
-        "train_end_idx": 180,
-        "val_end_idx": 240,
         "manifest_hash": "fixture_test",
         "created_at": "2024-01-01T00:00:00",
         **split_manifest_fields(dates, 180, 240),

@@ -112,8 +112,6 @@ def test_hash_change_detection_and_refusal(tmp_path):
         "start_date": dates.min().isoformat(),
         "end_date": dates.max().isoformat(),
         "total_bars": len(df_modified) * 2,
-        "train_end_idx": 180,
-        "val_end_idx": 240,
         "manifest_hash": f"modified_{df_hash_after[:16]}",
         "created_at": "2024-01-01T00:00:00",
     }
@@ -168,8 +166,6 @@ def test_no_lookahead_truncation_invariance(tmp_path):
             "start_date": dates[0].isoformat(),
             "end_date": dates[-1].isoformat(),
             "total_bars": len(dates),
-            "train_end_idx": min(180, truncate_at),
-            "val_end_idx": min(240, truncate_at),
             "manifest_hash": dataset_id,
             "created_at": "2024-01-01T00:00:00",
             **split_manifest_fields(

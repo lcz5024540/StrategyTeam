@@ -159,8 +159,8 @@ def test_freeze_1day_writes_daily_cut_and_resample_to_manifest(tmp_path):
             overlap_threshold=None,
             daily_cut="UTC16",
             cutoff="2026-10-12T00:00:00Z",
-            validation_start=None,
-            test_start=None,
+            validation_start="2024-01-01T00:00:00Z",
+            test_start="2024-01-02T00:00:00Z",
             split_from_manifest=None,
         )
     )

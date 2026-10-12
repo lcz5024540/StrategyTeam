@@ -175,10 +175,16 @@ def create_test_dataset(
         "start_date": used_dates[0].isoformat(),
         "end_date": used_dates[-1].isoformat(),
         "total_bars": n_bars * len(symbols),
-        "train_end_idx": train_end_idx,
-        "val_end_idx": val_end_idx,
         "manifest_hash": dataset_id,
         "created_at": "2024-01-01T00:00:00",
+        "segment_counts": {
+            symbol: {
+                "train": train_end_idx,
+                "val": val_end_idx - train_end_idx,
+                "test": n_bars - val_end_idx,
+            }
+            for symbol in symbols
+        },
         **split_manifest_fields(used_dates, train_end_idx, val_end_idx),
     }
     (dataset_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
