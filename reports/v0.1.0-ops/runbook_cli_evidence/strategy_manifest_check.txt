@@ -1,0 +1,6 @@
+cmd: /tmp/htx-rc13-clean/venv/bin/python -m htx_trend.research --workspace /tmp/htx-rc13-clean/state strategy-manifest --config /tmp/htx-rc13-clean/pkg/configs/runs/R0001.yaml --check
+cwd: /tmp/htx-rc13-clean
+returncode: 0
+--- stdout ---
+strategy_manifest.yaml is up to date: /tmp/htx-rc13-clean/pkg/strategy_manifest.yaml
+--- stderr ---

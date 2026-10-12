@@ -1,0 +1,8 @@
+# Kline-gap registry (data-layer draft).
+# Maintained by 行情分析bot, approved by product.
+# Official R0001: empty list. Any undeclared 4h hole fails the gate.
+# Live path: $STATE/ops/kline_gaps.yaml
+version: 1
+maintained_by: 行情分析bot
+approved_by: product
+gaps: []

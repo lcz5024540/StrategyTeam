@@ -1,0 +1,26 @@
+{
+  "BTC-USDT_4hour_htx.parquet": {
+    "sha256": "a61bb5874b7c8b81a137ccc44bef2d6575fe3ae1bc4a4739373c41d90b7ea7fe",
+    "rows": 3276,
+    "min_bar_time": "2020-11-01T00:00:00Z",
+    "max_bar_time": "2022-04-30T20:00:00Z"
+  },
+  "BTCUSDT_4h_binance.parquet": {
+    "sha256": "351014babbf9799a15c2b6cecf8c630ed8846f7c1ebe76e60c433aa194aa07f7",
+    "rows": 366,
+    "min_bar_time": "2020-09-01T00:00:00Z",
+    "max_bar_time": "2020-10-31T20:00:00Z"
+  },
+  "ETH-USDT_4hour_htx.parquet": {
+    "sha256": "a61bb5874b7c8b81a137ccc44bef2d6575fe3ae1bc4a4739373c41d90b7ea7fe",
+    "rows": 3276,
+    "min_bar_time": "2020-11-01T00:00:00Z",
+    "max_bar_time": "2022-04-30T20:00:00Z"
+  },
+  "ETHUSDT_4h_binance.parquet": {
+    "sha256": "351014babbf9799a15c2b6cecf8c630ed8846f7c1ebe76e60c433aa194aa07f7",
+    "rows": 366,
+    "min_bar_time": "2020-09-01T00:00:00Z",
+    "max_bar_time": "2020-10-31T20:00:00Z"
+  }
+}

@@ -1,0 +1,29 @@
+cmd: /tmp/htx-rc13-clean/venv/bin/python -m htx_trend.research --help
+cwd: /tmp/htx-rc13-clean
+returncode: 0
+--- stdout ---
+usage: __main__.py [-h] [--workspace WORKSPACE]
+                   {collect,freeze,run,strategy-manifest,health,status,approve,check-approval,export-trials,update-conclusion}
+                   ...
+
+HTX Trend Research System MVP-1
+
+positional arguments:
+  {collect,freeze,run,strategy-manifest,health,status,approve,check-approval,export-trials,update-conclusion}
+    collect             Collect market data
+    freeze              Freeze dataset
+    run                 Run backtest
+    strategy-manifest   Build or check strategy_manifest.yaml from code + run
+                        config
+    health              Check component health
+    status              Get system status
+    approve             Create approval record
+    check-approval      Check approval gate
+    export-trials       Export trial records for DSR/PBO
+    update-conclusion   Append conclusion and decision
+
+options:
+  -h, --help            show this help message and exit
+  --workspace WORKSPACE
+                        Workspace directory (default: current directory)
+--- stderr ---

@@ -1,0 +1,20 @@
+cmd: /tmp/htx-rc13-clean/venv/bin/python -m htx_trend.research --workspace /tmp/htx-rc13-clean/state freeze --contracts BTC-USDT,ETH-USDT --timeframe 4hour --train-ratio 0.6 --val-ratio 0.2 --backfill-binance --overlap-threshold 0.003 --cutoff 2022-05-01T00:00:00Z --validation-start 2021-01-01T00:00:00Z --test-start 2022-01-01T00:00:00Z --non-comparable-window 30 --stitch-config /tmp/htx-rc13-clean/pkg/data/quality/stitch_points.yaml --stitch-point BTC-USDT=2020-11-01T00:00:00Z --stitch-point ETH-USDT=2020-11-01T00:00:00Z --bad-ticks /tmp/htx-rc13-clean/pkg/data/quality/bad_ticks.yaml --funding-gaps /tmp/htx-rc13-clean/pkg/data/quality/funding_gaps.yaml
+cwd: /tmp/htx-rc13-clean
+returncode: 0
+--- stdout ---
+{"timestamp": "2026-10-12T05:58:47.053972+00:00", "level": "INFO", "component": "data", "event": "Data stitching complete", "run_id": null, "htx_bars": 3276, "binance_bars": 366, "binance_backfill_bars": 366, "overlap_bars": 0, "non_comparable_bars": 61, "total_bars": 3642, "stitch_point": "2020-11-01T00:00:00+00:00", "non_comparable_window_bars": 30, "manual_review_flags": 0, "row_count_accounting": {"in": 3642, "dropped": {"htx_before_stitch": 0, "binance_at_or_after_stitch": 0}, "out": 3642}}
+BTC-USDT: {'htx_bars': 3276, 'binance_bars': 366, 'binance_backfill_bars': 366, 'overlap_bars': 0, 'non_comparable_bars': 61, 'total_bars': 3642, 'stitch_point': '2020-11-01T00:00:00+00:00', 'non_comparable_window_bars': 30, 'overlap_audit': [], 'manual_review_flags': 0, 'overlap_deviation': {'count': 0, 'median': None, 'p95': None, 'max': None, 'bars_over_threshold': 0, 'threshold': 0.003}, 'row_count_accounting': {'in': 3642, 'dropped': {'htx_before_stitch': 0, 'binance_at_or_after_stitch': 0}, 'out': 3642}}
+{"timestamp": "2026-10-12T05:58:47.070826+00:00", "level": "INFO", "component": "data", "event": "Data stitching complete", "run_id": null, "htx_bars": 3276, "binance_bars": 366, "binance_backfill_bars": 366, "overlap_bars": 0, "non_comparable_bars": 61, "total_bars": 3642, "stitch_point": "2020-11-01T00:00:00+00:00", "non_comparable_window_bars": 30, "manual_review_flags": 0, "row_count_accounting": {"in": 3642, "dropped": {"htx_before_stitch": 0, "binance_at_or_after_stitch": 0}, "out": 3642}}
+ETH-USDT: {'htx_bars': 3276, 'binance_bars': 366, 'binance_backfill_bars': 366, 'overlap_bars': 0, 'non_comparable_bars': 61, 'total_bars': 3642, 'stitch_point': '2020-11-01T00:00:00+00:00', 'non_comparable_window_bars': 30, 'overlap_audit': [], 'manual_review_flags': 0, 'overlap_deviation': {'count': 0, 'median': None, 'p95': None, 'max': None, 'bars_over_threshold': 0, 'threshold': 0.003}, 'row_count_accounting': {'in': 3642, 'dropped': {'htx_before_stitch': 0, 'binance_at_or_after_stitch': 0}, 'out': 3642}}
+{"timestamp": "2026-10-12T05:58:47.168158+00:00", "level": "INFO", "component": "data", "event": "Dataset frozen: 4hour_78b20dc6cfda22dd", "run_id": null, "dataset_id": "4hour_78b20dc6cfda22dd", "symbols": ["BTC-USDT", "ETH-USDT"], "timeframe": "4hour", "total_bars": 7284, "train_bars": 1464, "val_bars": 4380, "test_bars": 1440}
+source_counts: {"BTC-USDT": {"htx_bars": 3276, "binance_bars": 366, "binance_backfill_bars": 366, "overlap_bars": 0, "non_comparable_bars": 61, "total_bars": 3642, "stitch_point": "2020-11-01T00:00:00+00:00"}, "ETH-USDT": {"htx_bars": 3276, "binance_bars": 366, "binance_backfill_bars": 366, "overlap_bars": 0, "non_comparable_bars": 61, "total_bars": 3642, "stitch_point": "2020-11-01T00:00:00+00:00"}}
+manifest_hash: sha256:7757cc052d28c311f2c1837aa2bf060e5350a91c2a9c69ede6fa6e5aee71d797
+Dataset frozen: 4hour_78b20dc6cfda22dd
+Total bars: 7284
+Segment counts:
+  BTC-USDT: train=732 val=2190 test=720
+  ETH-USDT: train=732 val=2190 test=720
+Cutoff: 2022-05-01T00:00:00Z
+validation_start_utc: 2021-01-01T00:00:00Z
+test_start_utc: 2022-01-01T00:00:00Z
+--- stderr ---

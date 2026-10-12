@@ -1,0 +1,67 @@
+{
+  "command": "python3 reports/v0.1.0-ops/generate_quality_flag_gate.py --tarball <rc.13.tar.gz> --work-dir <dir> --out-dir reports/v0.1.0-ops",
+  "package_sha256": "f0e7b49c646e03d3d5af4a61fbb566e3cb7c143dc9ae8a45282ef3c92d267f30",
+  "package_tar_sha256": "f0e7b49c646e03d3d5af4a61fbb566e3cb7c143dc9ae8a45282ef3c92d267f30",
+  "script_sha256": "6399bed3eaf50078374cff642d3ecbc85e6c83e935fedcdb0b54cd3c222248c8",
+  "dataset_id": "4hour_78b20dc6cfda22dd",
+  "good_returncode": 0,
+  "good_counts": {
+    "BTC-USDT": {
+      "incomplete": 0,
+      "non_comparable": 61,
+      "bad_tick": 6,
+      "external": 366
+    },
+    "ETH-USDT": {
+      "incomplete": 0,
+      "non_comparable": 61,
+      "bad_tick": 5,
+      "external": 366
+    }
+  },
+  "good_rows": {
+    "BTC-USDT": 3642,
+    "ETH-USDT": 3642
+  },
+  "object_dtype_counterexample": "skipped: parquet roundtrip canonicalizes Python object/bool to bool; string-typed flags is the dtype case",
+  "counterexamples": {
+    "count_61_to_58": {
+      "returncode": 1,
+      "evidence": "/workspace/reports/v0.1.0-ops/gate_test/broken_count_mismatch.json"
+    },
+    "same_count_swapped_bar": {
+      "returncode": 1,
+      "evidence": "/workspace/reports/v0.1.0-ops/gate_test/broken_swapped_bar.json"
+    },
+    "unclosed_last_bar": {
+      "returncode": 1,
+      "evidence": "/workspace/reports/v0.1.0-ops/gate_test/broken_unclosed_last_bar.json"
+    },
+    "string_typed_flags": {
+      "returncode": 1,
+      "evidence": "/workspace/reports/v0.1.0-ops/gate_test/broken_string_typed_flags.json"
+    },
+    "delete_whole_row": {
+      "returncode": 1,
+      "evidence": "/workspace/reports/v0.1.0-ops/gate_test/broken_deleted_rows.json"
+    },
+    "missing_raw": {
+      "returncode": 1,
+      "evidence": "/workspace/reports/v0.1.0-ops/gate_test/broken_missing_raw.json"
+    },
+    "duplicated_bar_frozen": {
+      "returncode": 1,
+      "evidence": "/workspace/reports/v0.1.0-ops/gate_test/broken_duplicated_bar.json"
+    },
+    "duplicated_bar_raw": {
+      "returncode": 1,
+      "evidence": "/workspace/reports/v0.1.0-ops/gate_test/broken_duplicated_raw_bar.json"
+    }
+  },
+  "runbook_cli_evidence": "/workspace/reports/v0.1.0-ops/runbook_cli_evidence",
+  "clean_env": {
+    "pkg": "/tmp/htx-rc13-clean/pkg",
+    "venv_python": "/tmp/htx-rc13-clean/venv/bin/python",
+    "state": "/tmp/htx-rc13-clean/state"
+  }
+}

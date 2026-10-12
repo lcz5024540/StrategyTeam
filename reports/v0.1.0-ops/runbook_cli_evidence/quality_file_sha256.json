@@ -1,0 +1,8 @@
+{
+  "bad_ticks.yaml": "09e1ed52105909f8c9810a94ecc0cfdfb667bc2f5072ca0419c108965a197a4b",
+  "expected_bad_ticks.yaml": "09e1ed52105909f8c9810a94ecc0cfdfb667bc2f5072ca0419c108965a197a4b",
+  "funding_gaps.yaml": "08b52442ca4a60cf2d95a9e047b8f602a3d753a73a2832c86b1f81276fdbd221",
+  "expected_funding_gaps.yaml": "08b52442ca4a60cf2d95a9e047b8f602a3d753a73a2832c86b1f81276fdbd221",
+  "kline_gaps.yaml": "d4fd7c6e49c9de733a361cac044110aa59909d3c6afafe4718649ab4b8f00161",
+  "ok": true
+}

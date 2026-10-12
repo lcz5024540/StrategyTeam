@@ -1,0 +1,23 @@
+{
+  "workspace_position": "BEFORE_subcommand",
+  "cwd": "/tmp/htx-rc13-clean",
+  "cwd_is_package": false,
+  "cutoff": "2022-05-01T00:00:00Z",
+  "validation_start": "2021-01-01T00:00:00Z",
+  "test_start": "2022-01-01T00:00:00Z",
+  "train_ratio": 0.6,
+  "val_ratio": 0.2,
+  "train_val_ratio_ignored_when_starts_present": 1,
+  "non_comparable_window": 30,
+  "contracts": "BTC-USDT,ETH-USDT",
+  "hard_coded_symbols": [
+    "BTC-USDT",
+    "ETH-USDT"
+  ],
+  "bad_ticks": "/tmp/htx-rc13-clean/pkg/data/quality/bad_ticks.yaml",
+  "bad_ticks_sha256": "09e1ed52105909f8c9810a94ecc0cfdfb667bc2f5072ca0419c108965a197a4b",
+  "funding_gaps": "/tmp/htx-rc13-clean/pkg/data/quality/funding_gaps.yaml",
+  "funding_gaps_sha256": "08b52442ca4a60cf2d95a9e047b8f602a3d753a73a2832c86b1f81276fdbd221",
+  "kline_gaps": "/workspace/reports/v0.1.0-ops/kline_gaps.yaml",
+  "kline_gaps_sha256": "d4fd7c6e49c9de733a361cac044110aa59909d3c6afafe4718649ab4b8f00161"
+}

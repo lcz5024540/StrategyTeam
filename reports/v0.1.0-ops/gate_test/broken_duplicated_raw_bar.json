@@ -1,0 +1,182 @@
+{
+  "ok": false,
+  "product_option": "A",
+  "checked_at_utc": "2026-10-12T05:58:56Z",
+  "script_path": "/workspace/reports/v0.1.0-ops/check_frozen_quality_flags.py",
+  "script_sha256": "6399bed3eaf50078374cff642d3ecbc85e6c83e935fedcdb0b54cd3c222248c8",
+  "package_tar": "/cursor/stores/bc-99f45f89-c134-50f9-a6c2-d301325dfd6e/artifacts/htx-trend-python-0.1.0-rc.13-0e54ec24.tar.gz",
+  "package_tar_sha256": "f0e7b49c646e03d3d5af4a61fbb566e3cb7c143dc9ae8a45282ef3c92d267f30",
+  "package_sha256_arg": "f0e7b49c646e03d3d5af4a61fbb566e3cb7c143dc9ae8a45282ef3c92d267f30",
+  "package_sha256_verified": true,
+  "hard_coded_symbols": [
+    "BTC-USDT",
+    "ETH-USDT"
+  ],
+  "contracts": [
+    "BTC-USDT",
+    "ETH-USDT"
+  ],
+  "manifest_symbols": [
+    "BTC-USDT",
+    "ETH-USDT"
+  ],
+  "dataset_dir": "/tmp/htx-rc13-clean/cases/case-4hour_78b20dc6cfda22dd-8/data/datasets/4hour_78b20dc6cfda22dd",
+  "raw_dir": "/tmp/htx-rc13-clean/cases/case-4hour_78b20dc6cfda22dd-8/data/raw",
+  "consumed_files": [
+    "/tmp/htx-rc13-clean/cases/case-4hour_78b20dc6cfda22dd-8/data/raw/BTC-USDT_4hour_htx.parquet",
+    "/tmp/htx-rc13-clean/cases/case-4hour_78b20dc6cfda22dd-8/data/raw/BTCUSDT_4h_binance.parquet",
+    "/tmp/htx-rc13-clean/cases/case-4hour_78b20dc6cfda22dd-8/data/raw/ETH-USDT_4hour_htx.parquet",
+    "/tmp/htx-rc13-clean/cases/case-4hour_78b20dc6cfda22dd-8/data/raw/ETHUSDT_4h_binance.parquet"
+  ],
+  "consumed_file_roles": {
+    "BTC-USDT": [
+      "htx_4hour=BTC-USDT_4hour_htx.parquet",
+      "binance_4h=BTCUSDT_4h_binance.parquet"
+    ],
+    "ETH-USDT": [
+      "htx_4hour=ETH-USDT_4hour_htx.parquet",
+      "binance_4h=ETHUSDT_4h_binance.parquet"
+    ]
+  },
+  "raw_inventory": [
+    {
+      "path": "/tmp/htx-rc13-clean/cases/case-4hour_78b20dc6cfda22dd-8/data/raw/BTC-USDT_4hour_htx.parquet",
+      "rows": 3277,
+      "sha256": "5bea1a93a6bb641a00591d67b3b2ac9a029df0a75d9ec494c26bcc4d071c4f9e",
+      "min_bar_time": "2020-11-01T00:00:00Z",
+      "max_bar_time": "2022-04-30T20:00:00Z",
+      "columns": [
+        "bar_time",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "amount",
+        "source",
+        "first_seen_at"
+      ],
+      "duplicate_bar_times": [
+        "2020-11-01T00:00:00Z"
+      ],
+      "has_source": true
+    },
+    {
+      "path": "/tmp/htx-rc13-clean/cases/case-4hour_78b20dc6cfda22dd-8/data/raw/BTCUSDT_4h_binance.parquet",
+      "rows": 366,
+      "sha256": "351014babbf9799a15c2b6cecf8c630ed8846f7c1ebe76e60c433aa194aa07f7",
+      "min_bar_time": "2020-09-01T00:00:00Z",
+      "max_bar_time": "2020-10-31T20:00:00Z",
+      "columns": [
+        "bar_time",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "amount",
+        "source",
+        "first_seen_at"
+      ],
+      "duplicate_bar_times": [],
+      "has_source": true
+    },
+    {
+      "path": "/tmp/htx-rc13-clean/cases/case-4hour_78b20dc6cfda22dd-8/data/raw/ETH-USDT_4hour_htx.parquet",
+      "rows": 3276,
+      "sha256": "a61bb5874b7c8b81a137ccc44bef2d6575fe3ae1bc4a4739373c41d90b7ea7fe",
+      "min_bar_time": "2020-11-01T00:00:00Z",
+      "max_bar_time": "2022-04-30T20:00:00Z",
+      "columns": [
+        "bar_time",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "amount",
+        "source",
+        "first_seen_at"
+      ],
+      "duplicate_bar_times": [],
+      "has_source": true
+    },
+    {
+      "path": "/tmp/htx-rc13-clean/cases/case-4hour_78b20dc6cfda22dd-8/data/raw/ETHUSDT_4h_binance.parquet",
+      "rows": 366,
+      "sha256": "351014babbf9799a15c2b6cecf8c630ed8846f7c1ebe76e60c433aa194aa07f7",
+      "min_bar_time": "2020-09-01T00:00:00Z",
+      "max_bar_time": "2020-10-31T20:00:00Z",
+      "columns": [
+        "bar_time",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "amount",
+        "source",
+        "first_seen_at"
+      ],
+      "duplicate_bar_times": [],
+      "has_source": true
+    }
+  ],
+  "raw_native_flags_required": false,
+  "bad_ticks_path": "/tmp/htx-rc13-clean/pkg/data/quality/bad_ticks.yaml",
+  "bad_ticks_sha256": "09e1ed52105909f8c9810a94ecc0cfdfb667bc2f5072ca0419c108965a197a4b",
+  "expected_bad_ticks_sha256": "09e1ed52105909f8c9810a94ecc0cfdfb667bc2f5072ca0419c108965a197a4b",
+  "parsed_bad_tick_rows": 11,
+  "confirmed_bad_tick_rows": 11,
+  "expected_bad_ticks": {
+    "BTC-USDT": 6,
+    "ETH-USDT": 5
+  },
+  "expected_rows": {
+    "BTC-USDT": 3642,
+    "ETH-USDT": 3642
+  },
+  "expected_external": {
+    "BTC-USDT": 366,
+    "ETH-USDT": 366
+  },
+  "expected_non_comparable": {
+    "BTC-USDT": 61,
+    "ETH-USDT": 61
+  },
+  "grid_start": {
+    "BTC-USDT": "2020-09-01T00:00:00Z",
+    "ETH-USDT": "2020-09-01T00:00:00Z"
+  },
+  "kline_gaps_path": "/workspace/reports/v0.1.0-ops/kline_gaps.yaml",
+  "kline_gaps_sha256": "d4fd7c6e49c9de733a361cac044110aa59909d3c6afafe4718649ab4b8f00161",
+  "kline_gaps": {},
+  "window_bars": 30,
+  "cutoff": "2022-05-01T00:00:00Z",
+  "timeframe": "4hour",
+  "stitch_points": {
+    "BTC-USDT": "2020-11-01T00:00:00Z",
+    "ETH-USDT": "2020-11-01T00:00:00Z"
+  },
+  "notes": [
+    "option A: collect raw without native flag columns is expected",
+    "hard-coded official symbols: BTC-USDT,ETH-USDT",
+    "missing YAML confirmed defaults to True (rc.13 load_bad_ticks)",
+    "object-dtype parquet counterexample is invalid (roundtrip -> bool); string-typed is the dtype case"
+  ],
+  "frozen": {
+    "BTC-USDT": {
+      "path": "/tmp/htx-rc13-clean/cases/case-4hour_78b20dc6cfda22dd-8/data/datasets/4hour_78b20dc6cfda22dd/BTC-USDT.parquet",
+      "ok": false,
+      "error": "skipped: raw/declaration prerequisite failed"
+    },
+    "ETH-USDT": {
+      "path": "/tmp/htx-rc13-clean/cases/case-4hour_78b20dc6cfda22dd-8/data/datasets/4hour_78b20dc6cfda22dd/ETH-USDT.parquet",
+      "ok": false,
+      "error": "skipped: raw/declaration prerequisite failed"
+    }
+  },
+  "errors": [
+    "raw BTC-USDT_4hour_htx.parquet: duplicate bar_time: ['2020-11-01T00:00:00Z']"
+  ]
+}

@@ -1,0 +1,15 @@
+cmd: /tmp/htx-rc13-clean/venv/bin/python -m htx_trend.research run --help
+cwd: /tmp/htx-rc13-clean
+returncode: 0
+--- stdout ---
+usage: __main__.py run [-h] [--funding-gaps FUNDING_GAPS] config
+
+positional arguments:
+  config                Path to run config YAML
+
+options:
+  -h, --help            show this help message and exit
+  --funding-gaps FUNDING_GAPS
+                        Funding-gap registry to hash and pass to
+                        attach_funding_as_of
+--- stderr ---

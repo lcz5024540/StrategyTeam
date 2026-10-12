@@ -1,0 +1,10 @@
+{
+  "cwd": "/workspace",
+  "state": "/tmp/htx-rc13-clean/state",
+  "state_exists": true,
+  "state_is_not_cwd": true,
+  "pkg": "/tmp/htx-rc13-clean/pkg",
+  "package_sha256": "f0e7b49c646e03d3d5af4a61fbb566e3cb7c143dc9ae8a45282ef3c92d267f30",
+  "package_tar_sha256": "f0e7b49c646e03d3d5af4a61fbb566e3cb7c143dc9ae8a45282ef3c92d267f30",
+  "script_sha256": "6399bed3eaf50078374cff642d3ecbc85e6c83e935fedcdb0b54cd3c222248c8"
+}

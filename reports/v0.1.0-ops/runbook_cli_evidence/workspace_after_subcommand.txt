@@ -1,0 +1,9 @@
+cmd: /tmp/htx-rc13-clean/venv/bin/python -m htx_trend.research freeze --workspace /tmp/htx-rc13-clean/state --contracts BTC-USDT,ETH-USDT --timeframe 4hour --train-ratio 0.6 --val-ratio 0.2 --backfill-binance --overlap-threshold 0.003 --cutoff 2022-05-01T00:00:00Z --validation-start 2021-01-01T00:00:00Z --test-start 2022-01-01T00:00:00Z --non-comparable-window 30 --stitch-config /tmp/htx-rc13-clean/pkg/data/quality/stitch_points.yaml --stitch-point BTC-USDT=2020-11-01T00:00:00Z --stitch-point ETH-USDT=2020-11-01T00:00:00Z --bad-ticks /tmp/htx-rc13-clean/pkg/data/quality/bad_ticks.yaml --funding-gaps /tmp/htx-rc13-clean/pkg/data/quality/funding_gaps.yaml
+cwd: /tmp/htx-rc13-clean
+returncode: 2
+--- stdout ---
+--- stderr ---
+usage: __main__.py [-h] [--workspace WORKSPACE]
+                   {collect,freeze,run,strategy-manifest,health,status,approve,check-approval,export-trials,update-conclusion}
+                   ...
+__main__.py: error: unrecognized arguments: --workspace /tmp/htx-rc13-clean/state
