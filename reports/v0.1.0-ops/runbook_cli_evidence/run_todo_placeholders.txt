@@ -1,0 +1,21 @@
+cmd: /tmp/htx-rc13-clean/venv/bin/python -m htx_trend.research --workspace /tmp/htx-rc13-clean/state run /tmp/htx-rc13-clean/pkg/configs/runs/R0001.yaml --funding-gaps /tmp/htx-rc13-clean/pkg/data/quality/funding_gaps.yaml
+cwd: /tmp/htx-rc13-clean
+returncode: 1
+--- stdout ---
+{"timestamp": "2026-10-12T05:58:49.951685+00:00", "level": "INFO", "component": "engine", "event": "Starting backtest run: R0001", "run_id": "R0001"}
+--- stderr ---
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/tmp/htx-rc13-clean/pkg/src/htx_trend/research/__main__.py", line 7, in <module>
+    main()
+  File "/tmp/htx-rc13-clean/pkg/src/htx_trend/research/cli.py", line 735, in main
+    cmd_run(args)
+  File "/tmp/htx-rc13-clean/pkg/src/htx_trend/research/cli.py", line 392, in cmd_run
+    results = runner.run()
+              ^^^^^^^^^^^^
+  File "/tmp/htx-rc13-clean/pkg/src/htx_trend/research/runner.py", line 202, in run
+    self._require_run_fields()
+  File "/tmp/htx-rc13-clean/pkg/src/htx_trend/research/runner.py", line 335, in _require_run_fields
+    raise ValueError(
+ValueError: dataset_id is a TODO placeholder; freeze the dataset first

@@ -1,0 +1,20 @@
+{
+  "preflight": {
+    "cwd": "/workspace",
+    "state": "/tmp/htx-rc13-clean/state",
+    "state_exists": true,
+    "state_is_not_cwd": true,
+    "pkg": "/tmp/htx-rc13-clean/pkg",
+    "package_sha256": "f0e7b49c646e03d3d5af4a61fbb566e3cb7c143dc9ae8a45282ef3c92d267f30",
+    "package_tar_sha256": "f0e7b49c646e03d3d5af4a61fbb566e3cb7c143dc9ae8a45282ef3c92d267f30",
+    "script_sha256": "6399bed3eaf50078374cff642d3ecbc85e6c83e935fedcdb0b54cd3c222248c8"
+  },
+  "wrong_workspace_order_rejected": true,
+  "strategy_manifest_check_returncode": 0,
+  "run_todo_returncode": 1,
+  "dataset_id": "4hour_78b20dc6cfda22dd",
+  "funding_gaps_hash": "sha256:08b52442ca4a60cf2d95a9e047b8f602a3d753a73a2832c86b1f81276fdbd221",
+  "bad_ticks_hash": "sha256:09e1ed52105909f8c9810a94ecc0cfdfb667bc2f5072ca0419c108965a197a4b",
+  "package_content_hash": "42fcfaa58461ad23e7beadb2aff16f2f9088e1ab0d5d3a059f30e017203c75c8",
+  "freeze_cwd": "/tmp/htx-rc13-clean"
+}

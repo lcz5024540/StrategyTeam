@@ -1,0 +1,54 @@
+cmd: /tmp/htx-rc13-clean/venv/bin/python -m htx_trend.research freeze --help
+cwd: /tmp/htx-rc13-clean
+returncode: 0
+--- stdout ---
+usage: __main__.py freeze [-h] --contracts CONTRACTS --timeframe {4hour,1day}
+                          [--train-ratio TRAIN_RATIO] [--val-ratio VAL_RATIO]
+                          [--cutoff CUTOFF]
+                          [--validation-start VALIDATION_START]
+                          [--test-start TEST_START]
+                          [--split-from-manifest SPLIT_FROM_MANIFEST]
+                          [--backfill-binance]
+                          [--overlap-threshold OVERLAP_THRESHOLD]
+                          [--daily-cut {UTC00,UTC16}]
+                          [--stitch-point STITCH_POINT]
+                          [--stitch-config STITCH_CONFIG]
+                          [--non-comparable-window NON_COMPARABLE_WINDOW]
+                          [--bad-ticks BAD_TICKS] --funding-gaps FUNDING_GAPS
+
+options:
+  -h, --help            show this help message and exit
+  --contracts CONTRACTS
+  --timeframe {4hour,1day}
+  --train-ratio TRAIN_RATIO
+  --val-ratio VAL_RATIO
+  --cutoff CUTOFF       Required unless --split-from-manifest is set. Include
+                        bars whose close is <= this UTC instant (v0.1.0:
+                        2026-10-12T00:00:00Z)
+  --validation-start VALIDATION_START
+                        UTC 00:00 validation start; must be passed together
+                        with --test-start
+  --test-start TEST_START
+                        UTC 00:00 test start; must be passed together with
+                        --validation-start
+  --split-from-manifest SPLIT_FROM_MANIFEST
+                        Copy validation_start_utc, test_start_utc, and
+                        data_cutoff_close_utc from a frozen 4h manifest.json
+  --backfill-binance
+  --overlap-threshold OVERLAP_THRESHOLD
+  --daily-cut {UTC00,UTC16}
+  --stitch-point STITCH_POINT
+                        Repeatable SYMBOL=ISO-UTC override. Bare timestamps
+                        are rejected.
+  --stitch-config STITCH_CONFIG
+                        YAML map of symbol -> stitch point
+  --non-comparable-window NON_COMPARABLE_WINDOW
+                        Bars each side of the stitch point marked
+                        non_comparable (default 30)
+  --bad-ticks BAD_TICKS
+                        Versioned bad_ticks.yaml (confirmed rows excluded from
+                        signals)
+  --funding-gaps FUNDING_GAPS
+                        Versioned funding_gaps.yaml actually hashed into the
+                        freeze
+--- stderr ---

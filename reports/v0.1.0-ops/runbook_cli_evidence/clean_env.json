@@ -1,0 +1,9 @@
+{
+  "tarball": "/cursor/stores/bc-99f45f89-c134-50f9-a6c2-d301325dfd6e/artifacts/htx-trend-python-0.1.0-rc.13-0e54ec24.tar.gz",
+  "package_sha256": "f0e7b49c646e03d3d5af4a61fbb566e3cb7c143dc9ae8a45282ef3c92d267f30",
+  "package_tar_sha256": "f0e7b49c646e03d3d5af4a61fbb566e3cb7c143dc9ae8a45282ef3c92d267f30",
+  "pkg": "/tmp/htx-rc13-clean/pkg",
+  "venv_python": "/tmp/htx-rc13-clean/venv/bin/python",
+  "script_sha256": "6399bed3eaf50078374cff642d3ecbc85e6c83e935fedcdb0b54cd3c222248c8",
+  "cwd": "/workspace"
+}

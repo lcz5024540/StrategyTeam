@@ -1,0 +1,11 @@
+{
+  "hard_coded_expected": [
+    "BTC-USDT",
+    "ETH-USDT"
+  ],
+  "present": [
+    "BTC-USDT",
+    "ETH-USDT"
+  ],
+  "missing": []
+}
