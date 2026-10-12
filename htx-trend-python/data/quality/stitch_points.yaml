@@ -1,4 +1,6 @@
 version: 1
-# HTX/Binance stitch: Binance-only before this instant, HTX from this instant on.
+# Explicit per-symbol stitch declaration. Missing symbols raise.
+# ISO timestamp = Binance before this instant, HTX from this instant on.
+# none = HTX-only, keep every bar, zero non_comparable.
 BTC-USDT: "2020-11-01T00:00:00Z"
 ETH-USDT: "2020-11-01T00:00:00Z"

@@ -47,6 +47,10 @@ def _bars(start: str, n_bars: int, freq: str = "4h") -> pd.DataFrame:
 
 
 V010_CUTOFF = "2026-10-12T00:00:00Z"
+HTX_NONE_META = {
+    "stitch_points": {"BTC-USDT": None},
+    "non_comparable_window_bars": 30,
+}
 
 
 def _freeze(
@@ -65,10 +69,18 @@ def _freeze(
         kwargs["test_start_utc"] = test_start
     if validation_start is not None:
         kwargs["validation_start_utc"] = validation_start
+    extra = {
+        "non_comparable_window_bars": 30,
+        "stitch_points": {"BTC-USDT": None},
+    }
+    if extra_metadata:
+        extra.update(extra_metadata)
+        extra.setdefault("non_comparable_window_bars", 30)
+        extra.setdefault("stitch_points", {"BTC-USDT": None})
     frozen = mgr.freeze_dataset(
         {"BTC-USDT": df},
         timeframe=timeframe,
-        extra_metadata=extra_metadata,
+        extra_metadata=extra,
         **kwargs,
     )
     return mgr, frozen
@@ -111,6 +123,7 @@ def test_split_bounds_must_be_strictly_ordered_and_at_or_before_cutoff(tmp_path)
             data_cutoff_close_utc=V010_CUTOFF,
             validation_start_utc="2026-10-10T00:00:00Z",
             test_start_utc="2026-10-01T00:00:00Z",
+            extra_metadata=HTX_NONE_META,
         )
     with pytest.raises(ValueError, match="validation_start < test_start <= cutoff"):
         mgr.freeze_dataset(
@@ -119,6 +132,7 @@ def test_split_bounds_must_be_strictly_ordered_and_at_or_before_cutoff(tmp_path)
             data_cutoff_close_utc="2026-10-01T00:00:00Z",
             validation_start_utc="2026-09-25T00:00:00Z",
             test_start_utc="2026-10-02T00:00:00Z",
+            extra_metadata=HTX_NONE_META,
         )
 
 
@@ -132,6 +146,7 @@ def test_split_bounds_must_fall_within_data_time_range(tmp_path):
             data_cutoff_close_utc=V010_CUTOFF,
             validation_start_utc="2020-01-01T00:00:00Z",
             test_start_utc="2020-06-01T00:00:00Z",
+            extra_metadata=HTX_NONE_META,
         )
     with pytest.raises(ValueError, match="data time range"):
         mgr.freeze_dataset(
@@ -140,6 +155,7 @@ def test_split_bounds_must_fall_within_data_time_range(tmp_path):
             data_cutoff_close_utc="2027-01-01T00:00:00Z",
             validation_start_utc="2026-09-25T00:00:00Z",
             test_start_utc="2026-12-01T00:00:00Z",
+            extra_metadata=HTX_NONE_META,
         )
 
 
@@ -205,6 +221,7 @@ def test_freeze_raises_if_flag_derivation_leaves_na(tmp_path):
             {"BTC-USDT": df},
             timeframe="4hour",
             data_cutoff_close_utc=V010_CUTOFF,
+            extra_metadata=HTX_NONE_META,
         )
 
 
@@ -370,6 +387,7 @@ def test_load_rejects_post_cutoff_bars_even_if_parquet_grows(tmp_path):
         data_cutoff_close_utc=V010_CUTOFF,
         validation_start_utc="2026-10-11T00:00:00Z",
         test_start_utc="2026-10-12T00:00:00Z",
+        extra_metadata=HTX_NONE_META,
     )
     path = tmp_path / "data" / "datasets" / frozen.dataset_id / "BTC-USDT.parquet"
     extra = _bars("2026-10-12 00:00", 3)
@@ -469,7 +487,10 @@ def test_runner_reads_split_from_manifest_only(tmp_path):
     mgr = DatasetManager(datasets)
     write_contract_specs(workspace)
     frozen = mgr.freeze_dataset(
-        {"BTC-USDT": df}, timeframe="4hour", data_cutoff_close_utc=V010_CUTOFF
+        {"BTC-USDT": df},
+        timeframe="4hour",
+        data_cutoff_close_utc=V010_CUTOFF,
+        extra_metadata=HTX_NONE_META,
     )
     write_batch_manifest(workspace, frozen.dataset_id)
     written = _written_manifest(workspace, frozen.dataset_id)
@@ -502,7 +523,10 @@ def test_test_set_lock_uses_manifest_test_hash(tmp_path):
         current_run_id="LOCK1",
     )
     frozen = mgr.freeze_dataset(
-        {"BTC-USDT": df}, timeframe="4hour", data_cutoff_close_utc=V010_CUTOFF
+        {"BTC-USDT": df},
+        timeframe="4hour",
+        data_cutoff_close_utc=V010_CUTOFF,
+        extra_metadata=HTX_NONE_META,
     )
     written = _written_manifest(tmp_path, frozen.dataset_id)
     assert written["test_hash"]
@@ -538,7 +562,10 @@ def test_freeze_rejects_stitch_point_after_validation_start(tmp_path):
             {"BTC-USDT": df},
             timeframe="4hour",
             data_cutoff_close_utc=V010_CUTOFF,
-            extra_metadata={"stitch_points": {"BTC-USDT": "2026-10-05T00:00:00Z"}},
+            extra_metadata={
+                "stitch_points": {"BTC-USDT": "2026-10-05T00:00:00Z"},
+                "non_comparable_window_bars": 30,
+            },
         )
 
 
@@ -550,7 +577,10 @@ def test_freeze_accepts_default_stitch_point_inside_train(tmp_path):
         {"BTC-USDT": df},
         timeframe="4hour",
         data_cutoff_close_utc=V010_CUTOFF,
-        extra_metadata={"stitch_points": {"BTC-USDT": "2020-11-01T00:00:00Z"}},
+        extra_metadata={
+            "stitch_points": {"BTC-USDT": "2020-11-01T00:00:00Z"},
+            "non_comparable_window_bars": 30,
+        },
     )
     written = _written_manifest(tmp_path, frozen.dataset_id)
     assert _as_utc(written["split"]["validation_start_utc"]) > _ts("2020-11-01")
@@ -575,6 +605,9 @@ def test_cli_freeze_default_cutoff_and_optional_test_start(tmp_path):
 
 
 def _cli_ns(tmp_path, **extra):
+    stitch_yaml = tmp_path / "stitch_points.yaml"
+    if not stitch_yaml.exists():
+        stitch_yaml.write_text("version: 1\nBTC-USDT: none\nETH-USDT: none\n")
     payload = {
         "workspace": str(tmp_path),
         "contracts": "BTC-USDT",
@@ -585,7 +618,7 @@ def _cli_ns(tmp_path, **extra):
         "overlap_threshold": None,
         "daily_cut": None,
         "stitch_point": None,
-        "stitch_config": None,
+        "stitch_config": str(stitch_yaml),
         "non_comparable_window": 30,
         "bad_ticks": None,
         "cutoff": "2026-10-12T00:00:00Z",

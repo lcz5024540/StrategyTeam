@@ -21,7 +21,6 @@ from .data.collector import (
     summarize_funding_sources,
 )
 from .data.quality import (
-    DEFAULT_STITCH_POINT,
     KNOWN_CANDIDATES,
     STITCH_WINDOW_BARS,
     apply_bad_ticks,
@@ -170,7 +169,8 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     overlap_deviation: dict = {}
     source_counts: dict = {}
     overlap_audit: list[dict] = []
-    used_stitch_points: dict[str, str] = {}
+    used_stitch_points: dict[str, str | None] = {}
+    stitch_row_counts: dict[str, dict] = {}
 
     for contract in contracts:
         htx_file = raw_dir / f"{contract}_{timeframe}_htx.parquet"
@@ -181,6 +181,8 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         
         import pandas as pd
         htx_df = pd.read_parquet(htx_file)
+        point = stitch_point_for(contract, stitch_points, override=stitch_override)
+        used_stitch_points[contract] = None if point is None else point.isoformat()
         
         if timeframe == "1day":
             htx_4h_file = raw_dir / f"{contract}_4hour_htx.parquet"
@@ -194,10 +196,6 @@ def cmd_freeze(args: argparse.Namespace) -> None:
                 bn_4h_file = raw_dir / f"{binance_symbol}_4h_binance.parquet"
                 if bn_4h_file.exists():
                     binance_4h = pd.read_parquet(bn_4h_file)
-            point = None
-            if not binance_4h.empty:
-                point = stitch_point_for(contract, stitch_points, override=stitch_override)
-                used_stitch_points[contract] = point.isoformat()
             combined, stats = stitcher.stitch_daily_from_4h(
                 htx_4h,
                 binance_4h,
@@ -206,10 +204,13 @@ def cmd_freeze(args: argparse.Namespace) -> None:
                 stitch_point=point,
                 symbol=contract,
                 window_bars=window_bars,
+                stitch_points=stitch_points,
             )
             print(f"{contract} canonical 1d (daily_cut={args.daily_cut or 'UTC00'}): {stats}")
             overlap_deviation[contract] = {"1day": stats.get("overlap_deviation", {})}
             overlap_audit.extend(stats.get("overlap_audit") or [])
+            if stats.get("row_count_accounting"):
+                stitch_row_counts[contract] = stats["row_count_accounting"]
             source_counts[contract] = {
                 "htx_bars": stats.get("htx_bars", 0),
                 "binance_bars": stats.get("binance_bars", 0),
@@ -219,42 +220,45 @@ def cmd_freeze(args: argparse.Namespace) -> None:
                 "total_bars": stats.get("total_bars", 0),
                 "stitch_point": stats.get(
                     "stitch_point",
-                    point.isoformat() if point is not None else None,
+                    None if point is None else point.isoformat(),
                 ),
             }
             if combined.empty:
                 print(f"{contract}: no complete daily bars after resample, skipping")
                 continue
             data[contract] = apply_bad_ticks(combined, contract, ticks)
-        elif args.backfill_binance:
+        elif point is not None:
             binance_symbol = contract.replace("-", "")
             binance_file = raw_dir / f"{binance_symbol}_{timeframe.replace('hour', 'h')}_binance.parquet"
-            if binance_file.exists():
-                point = stitch_point_for(contract, stitch_points, override=stitch_override)
-                used_stitch_points[contract] = point.isoformat()
+            binance_df = pd.DataFrame()
+            if args.backfill_binance and binance_file.exists():
                 binance_df = pd.read_parquet(binance_file)
-                combined, stats = stitcher.stitch_klines(
-                    htx_df,
-                    binance_df,
-                    stitch_point=point,
-                    symbol=contract,
-                    window_bars=window_bars,
-                )
-                print(f"{contract}: {stats}")
-                overlap_deviation[contract] = {timeframe: stats.get("overlap_deviation", {})}
-                overlap_audit.extend(stats.get("overlap_audit") or [])
-                source_counts[contract] = {
-                    "htx_bars": stats.get("htx_bars", 0),
-                    "binance_bars": stats.get("binance_bars", 0),
-                    "binance_backfill_bars": stats.get("binance_backfill_bars", 0),
-                    "overlap_bars": stats.get("overlap_bars", 0),
-                    "non_comparable_bars": stats.get("non_comparable_bars", 0),
-                    "total_bars": stats.get("total_bars", 0),
-                    "stitch_point": stats.get("stitch_point", point.isoformat()),
-                }
-                data[contract] = apply_bad_ticks(combined, contract, ticks)
-            else:
-                data[contract] = apply_bad_ticks(htx_df, contract, ticks)
+            combined, stats = stitcher.stitch_klines(
+                htx_df,
+                binance_df,
+                stitch_point=point,
+                symbol=contract,
+                window_bars=window_bars,
+                stitch_points=stitch_points,
+            )
+            print(f"{contract}: {stats}")
+            overlap_deviation[contract] = {timeframe: stats.get("overlap_deviation", {})}
+            overlap_audit.extend(stats.get("overlap_audit") or [])
+            if stats.get("row_count_accounting"):
+                stitch_row_counts[contract] = stats["row_count_accounting"]
+            source_counts[contract] = {
+                "htx_bars": stats.get("htx_bars", 0),
+                "binance_bars": stats.get("binance_bars", 0),
+                "binance_backfill_bars": stats.get("binance_backfill_bars", 0),
+                "overlap_bars": stats.get("overlap_bars", 0),
+                "non_comparable_bars": stats.get("non_comparable_bars", 0),
+                "total_bars": stats.get("total_bars", 0),
+                "stitch_point": stats.get(
+                    "stitch_point",
+                    None if point is None else point.isoformat(),
+                ),
+            }
+            data[contract] = apply_bad_ticks(combined, contract, ticks)
         else:
             data[contract] = apply_bad_ticks(htx_df, contract, ticks)
     
@@ -268,8 +272,9 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         "stitch_points": used_stitch_points,
         "non_comparable_window_bars": window_bars,
         "bad_ticks_hash": ticks_digest,
-        "default_stitch_point": DEFAULT_STITCH_POINT.isoformat(),
     }
+    if stitch_row_counts:
+        extra_metadata["stitch_row_count_accounting"] = stitch_row_counts
     funding_sources = summarize_funding_sources(raw_dir, contracts)
     if funding_sources:
         extra_metadata["funding_sources"] = funding_sources
@@ -322,6 +327,7 @@ def cmd_freeze(args: argparse.Namespace) -> None:
             "bad_ticks_hash": ticks_digest,
             "overlap_audit": overlap_audit,
             "known_candidates": KNOWN_CANDIDATES,
+            "stitch_row_count_accounting": stitch_row_counts,
         },
     )
     from .data.manifest import DatasetManifest

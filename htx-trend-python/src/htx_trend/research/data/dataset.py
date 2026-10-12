@@ -23,8 +23,11 @@ from .quality import (
     BadTick,
     confirmed_bad_ticks,
     load_bad_ticks,
+    require_declared_stitch_points,
     require_quality_flag_column,
     require_quality_flag_columns,
+    require_row_count_accounting,
+    stitch_points_for_manifest,
 )
 from .stitcher import mark_stitch_day, mark_stitch_window
 
@@ -131,7 +134,9 @@ def _require_utc00_daily_cut(daily_cut: str | None) -> str:
 
 
 def _require_window_bars(window_bars: int | None) -> int:
-    value = STITCH_WINDOW_BARS if window_bars is None else int(window_bars)
+    if window_bars is None:
+        raise ValueError("non_comparable_window_bars is required")
+    value = int(window_bars)
     if value != STITCH_WINDOW_BARS:
         raise ValueError(
             f"non_comparable_window_bars must be {STITCH_WINDOW_BARS}, got {window_bars!r}"
@@ -155,6 +160,16 @@ def _non_comparable_4h(times: pd.Series, stitch_point: datetime | None, window_b
     result = pd.Series(False, index=times.index)
     if times.empty or stitch_point is None:
         return result
+    last = pd.Timestamp(times.max())
+    stitch = pd.Timestamp(stitch_point)
+    if stitch.tzinfo is None:
+        stitch = stitch.tz_localize("UTC")
+    else:
+        stitch = stitch.tz_convert("UTC")
+    if stitch > last:
+        raise ValueError(
+            f"stitch point {stitch.isoformat()} is after the last bar {last.isoformat()}"
+        )
     tmp = pd.DataFrame({"bar_time": times})
     tmp = mark_stitch_window(tmp, stitch_point, window_bars)
     return tmp["non_comparable"].astype(bool)
@@ -176,6 +191,16 @@ def _non_comparable_1d(
         result = result | (work["source"].astype("string") == "mixed")
     if stitch_point is None:
         return result.astype(bool)
+    last = pd.Timestamp(times.max()) if not times.empty else None
+    stitch = pd.Timestamp(stitch_point)
+    if stitch.tzinfo is None:
+        stitch = stitch.tz_localize("UTC")
+    else:
+        stitch = stitch.tz_convert("UTC")
+    if last is not None and stitch > last:
+        raise ValueError(
+            f"stitch point {stitch.isoformat()} is after the last bar {last.isoformat()}"
+        )
     tmp = pd.DataFrame({"bar_time": times, "non_comparable": result.to_numpy()})
     tmp = mark_stitch_day(tmp, stitch_point, "UTC00")
     result = tmp["non_comparable"].astype(bool)
@@ -326,6 +351,10 @@ def assert_stitch_in_train(
         return
     val = parse_utc_datetime(validation_start)
     for symbol, raw in stitch_points.items():
+        if raw is None:
+            continue
+        if isinstance(raw, str) and raw.strip().lower() in {"none", "null", "~"}:
+            continue
         stitch = parse_utc_datetime(raw)
         if stitch >= val:
             raise ValueError(
@@ -490,19 +519,30 @@ class DatasetManager:
         meta = extra_metadata or {}
         if timeframe in {"1day", "1d"}:
             _require_utc00_daily_cut(meta.get("daily_cut"))
-        _require_window_bars(
-            meta["non_comparable_window_bars"] if "non_comparable_window_bars" in meta else None
-        )
+        if "non_comparable_window_bars" not in meta:
+            raise ValueError("non_comparable_window_bars is required")
+        window_bars = _require_window_bars(meta["non_comparable_window_bars"])
+        declared = require_declared_stitch_points(meta.get("stitch_points"), data.keys())
         cutoff = parse_utc_datetime(data_cutoff_close_utc)
         filtered: dict[str, pd.DataFrame] = {}
+        accounting: dict[str, dict[str, Any]] = {}
         for symbol, df in data.items():
+            incoming = 0 if df is None else len(df)
             kept = filter_closed_by_cutoff(df, timeframe, cutoff)
+            out_n = 0 if kept is None or kept.empty else len(kept)
+            accounting[symbol] = require_row_count_accounting(
+                incoming,
+                {"closed_after_cutoff": incoming - out_n},
+                out_n,
+            )
             if kept is not None and not kept.empty:
                 filtered[symbol] = kept.reset_index(drop=True)
         if not filtered:
             raise ValueError("No bars remain at or before data_cutoff_close_utc")
         data = filtered
         symbols = sorted(data.keys())
+        declared = {symbol: declared[symbol] for symbol in symbols}
+        stitch_manifest = stitch_points_for_manifest(declared)
 
         all_dates = []
         total_bars = 0
@@ -547,11 +587,11 @@ class DatasetManager:
             "total_bars": total_bars,
             "data_cutoff_close_utc": cutoff_iso,
             "split": split_payload,
-            "non_comparable_window_bars": STITCH_WINDOW_BARS,
+            "non_comparable_window_bars": window_bars,
+            "stitch_points": stitch_manifest,
         }
         if extra_metadata:
             for key in (
-                "stitch_points",
                 "bad_ticks_hash",
                 "funding_sources",
                 "funding_files",
@@ -569,12 +609,9 @@ class DatasetManager:
         dataset_dir.mkdir(parents=True, exist_ok=True)
 
         ticks = list(bad_ticks) if bad_ticks is not None else load_bad_ticks()
-        stitch_points = meta.get("stitch_points") or {}
-        window_bars = STITCH_WINDOW_BARS
         for symbol, df in data.items():
             output_path = dataset_dir / f"{symbol}.parquet"
-            point = stitch_points.get(symbol)
-            stitch = parse_utc_datetime(point) if point else None
+            stitch = declared[symbol]
             frame = derive_quality_flags(
                 df,
                 symbol=symbol,
@@ -629,7 +666,7 @@ class DatasetManager:
             test_start_utc=test_start,
             test_hash=test_hash,
             segment_counts=segment_counts,
-            stitch_points=(extra_metadata or {}).get("stitch_points"),
+            stitch_points=stitch_manifest,
         )
 
         manifest_with_splits = manifest.copy()
@@ -645,6 +682,7 @@ class DatasetManager:
             "test_start_utc": split_payload["test_start_utc"],
             "split": split_payload,
             "segment_counts": segment_counts,
+            "row_count_accounting": accounting,
         })
 
         manifest_path = dataset_dir / "manifest.json"

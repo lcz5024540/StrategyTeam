@@ -12,14 +12,18 @@ from typing import Any, Iterable
 import pandas as pd
 import yaml
 
-DEFAULT_STITCH_POINT = datetime(2020, 11, 1, 0, 0, tzinfo=UTC)
-DEFAULT_STITCH_POINTS = {
-    "BTC-USDT": DEFAULT_STITCH_POINT,
-    "ETH-USDT": DEFAULT_STITCH_POINT,
-}
 STITCH_WINDOW_BARS = 30
 OVERLAP_AUDIT_THRESHOLD = 0.003
 MANUAL_REVIEW_THRESHOLD = 0.015
+REGISTERED_DROP_REASONS = frozenset(
+    {
+        "htx_before_stitch",
+        "binance_at_or_after_stitch",
+        "closed_after_cutoff",
+        "duplicate_boundary",
+    }
+)
+_STITCH_NONE_TOKENS = frozenset({"none", "null", "~"})
 
 QUALITY_FLAG_COLUMNS = ("incomplete", "non_comparable", "bad_tick", "external")
 BAD_TICK_KINDS = ("frozen", "spike")
@@ -131,38 +135,127 @@ def default_quality_dir() -> Path:
     return Path(__file__).resolve().parents[4] / "data" / "quality"
 
 
+def parse_stitch_declaration(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, float) and pd.isna(value):
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.lower() in _STITCH_NONE_TOKENS:
+            return None
+        return parse_utc(text)
+    if isinstance(value, datetime):
+        return parse_utc(value)
+    raise ValueError(f"invalid stitch declaration: {value!r}")
+
+
+def stitch_points_for_manifest(
+    points: dict[str, datetime | None],
+) -> dict[str, str | None]:
+    payload: dict[str, str | None] = {}
+    for symbol, value in points.items():
+        if value is None:
+            payload[symbol] = None
+        else:
+            stamp = parse_utc(value)
+            payload[symbol] = stamp.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return payload
+
+
 def load_stitch_points(
     path: Path | None = None,
     override: str | datetime | None = None,
-) -> dict[str, datetime]:
-    points = dict(DEFAULT_STITCH_POINTS)
+) -> dict[str, datetime | None]:
     candidate = path or default_quality_dir() / "stitch_points.yaml"
-    if candidate.exists():
-        payload = yaml.safe_load(candidate.read_text()) or {}
-        raw = payload.get("points") or payload
-        if isinstance(raw, dict):
-            for symbol, value in raw.items():
-                if symbol in {"version", "points"}:
-                    continue
-                points[str(symbol)] = parse_utc(value)
+    if not candidate.exists():
+        raise ValueError(f"stitch points file not found: {candidate}")
+    payload = yaml.safe_load(candidate.read_text()) or {}
+    raw = payload.get("points") or payload.get("stitch") or payload
+    if not isinstance(raw, dict):
+        raise ValueError(f"stitch points file {candidate} must be a mapping")
+    points: dict[str, datetime | None] = {}
+    for symbol, value in raw.items():
+        if symbol in {"version", "points", "stitch"}:
+            continue
+        points[str(symbol)] = parse_stitch_declaration(value)
     if override is not None:
-        stamp = parse_utc(override)
-        return {symbol: stamp for symbol in points} | {
-            "BTC-USDT": stamp,
-            "ETH-USDT": stamp,
-        }
+        stamp = parse_stitch_declaration(override)
+        return {symbol: stamp for symbol in points}
     return points
+
+
+def require_declared_stitch_points(
+    raw: dict | None,
+    symbols: Iterable[str],
+) -> dict[str, datetime | None]:
+    if raw is None or not isinstance(raw, dict):
+        raise ValueError(
+            "stitch_points declaration is required for every symbol "
+            "(use an ISO timestamp or none)"
+        )
+    missing = [symbol for symbol in symbols if symbol not in raw]
+    if missing:
+        raise ValueError(f"symbols missing from stitch declaration: {missing}")
+    return {
+        str(symbol): parse_stitch_declaration(raw[symbol]) for symbol in symbols
+    }
 
 
 def stitch_point_for(
     symbol: str,
-    points: dict[str, datetime] | None = None,
+    points: dict[str, datetime | None] | None = None,
     override: str | datetime | None = None,
-) -> datetime:
+) -> datetime | None:
     if override is not None:
-        return parse_utc(override)
-    table = points or load_stitch_points()
-    return table.get(symbol, DEFAULT_STITCH_POINT)
+        return parse_stitch_declaration(override)
+    table = load_stitch_points() if points is None else points
+    if symbol not in table:
+        raise ValueError(
+            f"{symbol} is not declared in stitch config; "
+            "HTX-only symbols must be declared none"
+        )
+    return parse_stitch_declaration(table[symbol])
+
+
+def require_source_column(df: pd.DataFrame, *, context: str) -> None:
+    if "source" not in df.columns:
+        raise ValueError(f"{context} missing required source column")
+    series = df["source"]
+    if series.isna().any():
+        raise ValueError(f"{context} source contains null values")
+
+
+def require_source_value(value: Any, *, context: str) -> str:
+    if value is None:
+        raise ValueError(f"{context} missing required source")
+    if isinstance(value, float) and pd.isna(value):
+        raise ValueError(f"{context} missing required source")
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "<na>"}:
+        raise ValueError(f"{context} missing required source")
+    return text
+
+
+def require_row_count_accounting(
+    in_count: int,
+    dropped: dict[str, int],
+    out_count: int,
+) -> dict[str, Any]:
+    unknown = set(dropped) - REGISTERED_DROP_REASONS
+    if unknown:
+        raise ValueError(f"unregistered drop reasons: {sorted(unknown)}")
+    dropped_total = sum(int(value) for value in dropped.values())
+    if int(in_count) - dropped_total != int(out_count):
+        raise ValueError(
+            f"row count mismatch: in={in_count} dropped={dropped} out={out_count}; "
+            "no registered reason accounts for the difference"
+        )
+    return {
+        "in": int(in_count),
+        "dropped": {key: int(value) for key, value in dropped.items()},
+        "out": int(out_count),
+    }
 
 
 def require_quality_flag_column(df: pd.DataFrame, name: str, *, symbol: str) -> None:

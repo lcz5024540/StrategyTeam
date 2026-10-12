@@ -5,6 +5,20 @@ All notable changes to the HTX Trend Research System will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-rc.11] - 2026-10-12
+
+### Changed
+- Deleted `DEFAULT_STITCH_POINT` / `DEFAULT_STITCH_POINTS`. Every freeze/stitch symbol must be declared in stitch config (`ISO timestamp` or `none`). A missing symbol raises. `none` keeps every HTX bar and marks zero `non_comparable`.
+- Declared stitch points are written into the hashed frozen manifest. Row-count accounting (`in`, `dropped` by registered reason, `out`) is recorded on stitch stats and the written freeze manifest/audit. A count change without a registered reason raises.
+- `source` missing/NA raises at funding frame, funding stitch, funding timeline, stitcher sides, and runner load. No `or default_source` / `df.get("source", "htx")`.
+- Empty/missing funding raises unless `allow_missing_funding` is explicitly true (then flagged). Bars before the first settlement get `funding_rate=0` and `pre_first_funding=True`; any other funding NaN raises.
+- `window_bars` / `non_comparable_window_bars` must be passed explicitly; missing raises. A stitch point after the last bar raises `ValueError` instead of marking a trailing window.
+- Runner no longer copies `incomplete` onto `non_comparable`. Flags stay independent; signal skip is `incomplete or non_comparable or bad_tick` at decision time only.
+- Non-SMOKE runs from a package verify every `PACKAGE_MANIFEST` SHA256 on disk (mismatch/missing lists the files and refuses). A git checkout without `PACKAGE_MANIFEST` requires a clean `git status --porcelain`. Packaged runs prefer `_build_info` over `git rev-parse`.
+
+### Testing
+- Counterexamples from the rc.10 review script: HTX-only 400→400 with declared `none`; undeclared SOL raises; stitch-after-end raises; source/funding/window/runner-flag/package-integrity cases.
+
 ## [0.1.0-rc.10] - 2026-10-12
 
 ### Changed

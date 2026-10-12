@@ -12,6 +12,7 @@ import pandas as pd
 from ..adapters.binance import BinanceVisionClient
 from ..adapters.htx.market_data import HtxMarketDataClient, Kline
 from ..ops.logging import LogComponent, log_event
+from .quality import require_source_column, require_source_value
 
 BINANCE_VISION_START = datetime(2020, 1, 1, tzinfo=UTC)
 MAX_KLINE_PAGES = 100
@@ -184,6 +185,7 @@ class DataCollector:
         client: HtxMarketDataClient | None = None,
         binance_client: BinanceVisionClient | None = None,
         stitch_point: datetime | None = None,
+        allow_missing_funding: bool = False,
     ) -> pd.DataFrame:
         log_event(
             LogComponent.DATA,
@@ -204,7 +206,7 @@ class DataCollector:
             if owned:
                 market.close()
 
-        htx_df = _funding_frame(rates, contract_code, default_source="htx")
+        htx_df = _funding_frame(rates, contract_code)
         if stitch_point is not None:
             owned_bn = binance_client is None
             vision = binance_client or BinanceVisionClient()
@@ -218,9 +220,7 @@ class DataCollector:
             finally:
                 if owned_bn:
                     vision.close()
-            bn_df = _funding_frame(
-                bn_rates, contract_code, default_source="binance_external"
-            )
+            bn_df = _funding_frame(bn_rates, contract_code)
             df = stitch_funding_history(htx_df, bn_df, stitch_point)
             htx_after = 0 if df.empty else int((df["source"] == "htx").sum())
             if htx_after == 0:
@@ -232,7 +232,12 @@ class DataCollector:
             df = htx_df
 
         if df.empty:
-            return df
+            if allow_missing_funding:
+                return df
+            raise ValueError(
+                f"funding history is empty for {contract_code}; "
+                "collect funding or set allow_missing_funding=true"
+            )
 
         output_path = self.raw_data_dir / f"{contract_code}_funding.parquet"
         df.to_parquet(output_path, index=False)
@@ -292,7 +297,6 @@ class DataCollector:
 def _funding_frame(
     rates,
     contract_code: str,
-    default_source: str,
 ) -> pd.DataFrame:
     if not rates:
         return pd.DataFrame(
@@ -305,7 +309,10 @@ def _funding_frame(
                 "funding_time": row.funding_time,
                 "funding_rate": row.funding_rate,
                 "realized_rate": getattr(row, "realized_rate", None),
-                "source": getattr(row, "source", None) or default_source,
+                "source": require_source_value(
+                    getattr(row, "source", None),
+                    context=f"{contract_code} funding",
+                ),
             }
             for row in rates
         ]
@@ -327,14 +334,12 @@ def stitch_funding_history(
     if binance is not None and not binance.empty:
         bn = binance.copy()
         bn["funding_time"] = pd.to_datetime(bn["funding_time"], utc=True)
-        if "source" not in bn.columns:
-            bn["source"] = "binance_external"
+        require_source_column(bn, context="Binance funding stitch")
         frames.append(bn[bn["funding_time"] < stitch])
     if htx is not None and not htx.empty:
         hx = htx.copy()
         hx["funding_time"] = pd.to_datetime(hx["funding_time"], utc=True)
-        if "source" not in hx.columns:
-            hx["source"] = "htx"
+        require_source_column(hx, context="HTX funding stitch")
         frames.append(hx[hx["funding_time"] >= stitch])
     if not frames:
         return pd.DataFrame(
@@ -356,8 +361,7 @@ def funding_source_timeline(raw_dir, contracts: list[str]) -> dict:
         if fund.empty:
             continue
         frame = fund.copy()
-        if "source" not in frame.columns:
-            frame["source"] = "htx"
+        require_source_column(frame, context=f"{contract} funding timeline")
         frame["funding_time"] = pd.to_datetime(frame["funding_time"], utc=True)
         by_source: dict[str, dict[str, Any]] = {}
         for source, group in frame.groupby(frame["source"].astype(str)):
@@ -380,10 +384,8 @@ def summarize_funding_sources(raw_dir, contracts: list[str]) -> dict:
         fund = pd.read_parquet(path)
         if fund.empty:
             continue
-        if "source" in fund.columns:
-            counts = {str(key): int(value) for key, value in fund["source"].value_counts().items()}
-        else:
-            counts = {"htx": int(len(fund))}
+        require_source_column(fund, context=f"{contract} funding sources")
+        counts = {str(key): int(value) for key, value in fund["source"].value_counts().items()}
         payload[contract] = counts
     return payload
 

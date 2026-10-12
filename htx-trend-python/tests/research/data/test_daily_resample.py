@@ -141,6 +141,8 @@ def test_freeze_1day_writes_daily_cut_and_resample_to_manifest(tmp_path):
         [pd.Timestamp("2024-01-02 00:00", tz="UTC")],
         "htx",
     )
+    stitch_yaml = tmp_path / "stitch_points.yaml"
+    stitch_yaml.write_text("version: 1\nBTC-USDT: none\n")
     cmd_freeze(
         Namespace(
             workspace=str(tmp_path),
@@ -155,6 +157,10 @@ def test_freeze_1day_writes_daily_cut_and_resample_to_manifest(tmp_path):
             validation_start="2024-01-03T00:00:00Z",
             test_start="2024-01-04T00:00:00Z",
             split_from_manifest=None,
+            stitch_point=None,
+            stitch_config=str(stitch_yaml),
+            non_comparable_window=30,
+            bad_ticks=None,
         )
     )
     manifests = list((tmp_path / "data" / "datasets" / "manifests").glob("*.json"))
@@ -186,6 +192,8 @@ def test_freeze_1day_excludes_incomplete_and_does_not_cross_source_resample(tmp_
         [pd.Timestamp("2024-01-01 16:00", tz="UTC")],
         "htx",
     )
+    stitch_yaml = tmp_path / "stitch_points.yaml"
+    stitch_yaml.write_text("version: 1\nBTC-USDT: 2024-01-02T12:00:00Z\n")
     cmd_freeze(
         Namespace(
             workspace=str(tmp_path),
@@ -200,6 +208,10 @@ def test_freeze_1day_excludes_incomplete_and_does_not_cross_source_resample(tmp_
             validation_start=None,
             test_start=None,
             split_from_manifest=None,
+            stitch_point=None,
+            stitch_config=str(stitch_yaml),
+            non_comparable_window=30,
+            bad_ticks=None,
         )
     )
     datasets_root = tmp_path / "data" / "datasets"

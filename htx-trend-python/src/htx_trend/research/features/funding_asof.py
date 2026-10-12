@@ -13,10 +13,13 @@ def attach_funding_as_of(
     bars: pd.DataFrame,
     funding: pd.DataFrame,
     interval: str,
+    *,
+    allow_missing_funding: bool = False,
 ) -> pd.DataFrame:
     """Attach the latest funding_rate with funding_time <= bar close.
 
     Future settlements after the bar close are never used.
+    Bars before the first settlement get funding_rate=0 and pre_first_funding=True.
     """
     if bars is None or bars.empty:
         return bars.copy() if bars is not None else pd.DataFrame()
@@ -27,12 +30,21 @@ def attach_funding_as_of(
     out["_bar_close"] = out["bar_time"] + pd.Timedelta(seconds=interval_seconds)
 
     if funding is None or funding.empty:
-        out["funding_rate"] = pd.NA
+        if not allow_missing_funding:
+            raise ValueError(
+                "funding history is empty; collect funding or set "
+                "allow_missing_funding=true"
+            )
+        out["funding_rate"] = 0.0
+        out["pre_first_funding"] = True
+        out["funding_missing"] = True
         return out.drop(columns=["_bar_close"])
 
     fund = funding.copy()
     time_col = "funding_time" if "funding_time" in fund.columns else "bar_time"
     fund[time_col] = pd.to_datetime(fund[time_col], utc=True)
+    if fund["funding_rate"].isna().any():
+        raise ValueError("funding history contains NaN funding_rate")
     fund = fund.sort_values(time_col)
     out = out.sort_values("_bar_close")
 
@@ -50,7 +62,14 @@ def attach_funding_as_of(
         future = merged["_funding_time"] > merged["_bar_close"]
         if future.any():
             raise AssertionError("Funding as-of leaked a settlement after bar close")
+        merged["pre_first_funding"] = merged["_funding_time"].isna()
         merged = merged.drop(columns=["_funding_time"])
+    else:
+        merged["pre_first_funding"] = merged["funding_rate"].isna()
+    merged.loc[merged["pre_first_funding"] == True, "funding_rate"] = 0.0
+    if merged["funding_rate"].isna().any():
+        raise ValueError("funding_rate contains NaN after as-of attach")
+    merged["funding_missing"] = False
     return merged.drop(columns=["_bar_close"]).reset_index(drop=True)
 
 

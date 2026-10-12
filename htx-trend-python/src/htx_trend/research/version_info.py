@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from dataclasses import dataclass
@@ -101,9 +102,13 @@ def get_git_info() -> tuple[str, str, bool]:
         return "unknown", "unknown", False
 
 
+def package_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
 def load_package_manifest(root: Path | None = None) -> dict:
     """Read PACKAGE_MANIFEST written by scripts/package.py (per-file + content hash)."""
-    base = root or Path(__file__).resolve().parents[3]
+    base = root or package_root()
     path = base / "PACKAGE_MANIFEST"
     if not path.is_file():
         return {}
@@ -111,10 +116,87 @@ def load_package_manifest(root: Path | None = None) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _expected_sha(value: object) -> str:
+    if isinstance(value, dict):
+        text = str(value.get("sha256") or "")
+    else:
+        text = str(value or "")
+    return text.removeprefix("sha256:")
+
+
+def verify_package_files(root: Path | None = None, manifest: dict | None = None) -> None:
+    base = root or package_root()
+    payload = manifest if manifest is not None else load_package_manifest(base)
+    files = payload.get("files") if isinstance(payload, dict) else None
+    if not files:
+        raise ValueError("PACKAGE_MANIFEST is present but lists no files")
+    mismatches: list[str] = []
+    for rel, expected in files.items():
+        path = base / str(rel)
+        if not path.is_file():
+            mismatches.append(f"{rel}: missing")
+            continue
+        actual = _file_sha256(path)
+        want = _expected_sha(expected)
+        if actual != want:
+            mismatches.append(f"{rel}: sha256 mismatch")
+    if mismatches:
+        raise ValueError(
+            "PACKAGE_MANIFEST verification failed:\n" + "\n".join(mismatches)
+        )
+
+
+def _git_porcelain(root: Path) -> str:
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=root,
+    )
+    return status.stdout
+
+
+def require_clean_git_tree(root: Path | None = None) -> None:
+    base = root or package_root()
+    porcelain = _git_porcelain(base)
+    if porcelain.strip():
+        raise ValueError(
+            "dirty working tree; refuse non-SMOKE run from a git checkout. "
+            "Commit or restore local changes.\n" + porcelain
+        )
+
+
+def require_runtime_integrity(*, is_smoke: bool, root: Path | None = None) -> None:
+    if is_smoke:
+        return
+    base = root or package_root()
+    if (base / "PACKAGE_MANIFEST").is_file():
+        verify_package_files(base)
+        return
+    require_clean_git_tree(base)
+
+
 def get_version_info() -> VersionInfo:
-    """获取完整版本信息。无 .git 时回落到打包写入的 _build_info。"""
-    commit, branch, dirty = get_git_info()
+    """获取完整版本信息。打包部署优先 _build_info，避免 git rev-parse。"""
     build = _load_build_info()
+    packaged = load_package_manifest()
+    if packaged and build.get("commit"):
+        return VersionInfo(
+            version=build.get("version") or __version__,
+            commit=build["commit"],
+            branch=build.get("branch") or "unknown",
+            dirty=bool(build.get("dirty", False)),
+        )
+    commit, branch, dirty = get_git_info()
     version = __version__
     if commit == "unknown" and build.get("commit"):
         commit = build["commit"]
@@ -122,7 +204,7 @@ def get_version_info() -> VersionInfo:
         dirty = bool(build.get("dirty", False))
         if build.get("version"):
             version = build["version"]
-    
+
     return VersionInfo(
         version=version,
         commit=commit,

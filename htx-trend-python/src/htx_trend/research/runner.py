@@ -22,6 +22,7 @@ from .data.dataset import require_timeframe
 from .data.quality import (
     normalize_bad_tick_kind,
     require_quality_flag_columns,
+    require_source_column,
     stop_on_bar_for_kind,
 )
 from .engine.backtest import CostScenario, SimBroker
@@ -39,7 +40,11 @@ from .risk import AccountLiquidationChecker, LiquidationChecker, PositionSizer
 from .risk.position_sizing import SKIP_MIN_CONTRACT_EXCEEDS_RISK_BUDGET
 from .strategy import Position, StateMachine, StrategyState
 from .strategy_manifest import build_strategy_manifest, require_c02_enabled
-from .version_info import get_version_info, load_package_manifest
+from .version_info import (
+    get_version_info,
+    load_package_manifest,
+    require_runtime_integrity,
+)
 
 IMPLEMENTED_CONDITIONS = frozenset({"C01", "C02"})
 SMOKE_ID_RE = re.compile(r"^SMOKE-\d{8}-\d{2}$")
@@ -175,6 +180,7 @@ class BacktestRunner:
         self._family_id = family_id
         self._changed_key = None
         self._require_run_fields()
+        require_runtime_integrity(is_smoke=self._is_smoke)
 
         if not self._is_smoke:
             self.ledger.start_trial(
@@ -455,12 +461,12 @@ class BacktestRunner:
         for symbol, df in data.items():
             df = df.copy()
             require_quality_flag_columns(df, symbol=symbol)
+            require_source_column(df, context=f"{symbol} runner dataset")
             total_bars = len(df)
             non_comparable_count = df["non_comparable"].sum()
             bad_tick_count = df["bad_tick"].sum()
             external_count = df["external"].sum()
-            df.loc[df["incomplete"] == True, "non_comparable"] = True
-            df["_original_source"] = df.get("source", "htx")
+            df["_original_source"] = df["source"]
             funding_path = verified_funding.get(symbol)
             if funding_path is not None:
                 interval = require_timeframe(
@@ -469,7 +475,12 @@ class BacktestRunner:
                 )
                 funding_df = pd.read_parquet(funding_path)
                 self._funding_by_symbol[symbol] = funding_df
-                df = attach_funding_as_of(df, funding_df, interval)
+                df = attach_funding_as_of(
+                    df,
+                    funding_df,
+                    interval,
+                    allow_missing_funding=allow_missing_funding,
+                )
             elif allow_missing_funding:
                 self._funding_missing.append(symbol)
             else:

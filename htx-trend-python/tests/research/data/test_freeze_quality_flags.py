@@ -59,13 +59,21 @@ def _written_manifest(tmp_path: Path, dataset_id: str) -> dict:
 
 def _freeze_4h(tmp_path: Path, data: dict[str, pd.DataFrame], extra=None, **kwargs):
     mgr = DatasetManager(tmp_path / "data" / "datasets")
+    meta = {
+        "non_comparable_window_bars": 30,
+        "stitch_points": {symbol: None for symbol in data},
+    }
+    if extra:
+        meta.update(extra)
+        if "stitch_points" not in extra:
+            meta["stitch_points"] = {symbol: None for symbol in data}
     frozen = mgr.freeze_dataset(
         data,
         timeframe="4hour",
         data_cutoff_close_utc=kwargs.get("cutoff", CUTOFF_2020),
         validation_start_utc=kwargs.get("validation_start", VAL_2020),
         test_start_utc=kwargs.get("test_start", TEST_2020),
-        extra_metadata=extra,
+        extra_metadata=meta,
         bad_ticks=kwargs.get("bad_ticks"),
     )
     return mgr, frozen
@@ -118,6 +126,7 @@ def test_freeze_manifest_records_non_comparable_window_bars_in_hash(tmp_path):
         "data_cutoff_close_utc": written["data_cutoff_close_utc"],
         "split": written["split"],
         "non_comparable_window_bars": 30,
+        "stitch_points": written["stitch_points"],
     }
     digest = hashlib.sha256(json.dumps(hashed, sort_keys=True).encode()).hexdigest()[:16]
     assert frozen.manifest_hash == digest
@@ -154,13 +163,19 @@ def test_upstream_flag_mismatch_raises(tmp_path):
             data_cutoff_close_utc=CUTOFF_2020,
             validation_start_utc=VAL_2020,
             test_start_utc=TEST_2020,
-            extra_metadata={"stitch_points": {"BTC-USDT": STITCH_ISO}},
+            extra_metadata={
+            "stitch_points": {"BTC-USDT": STITCH_ISO},
+            "non_comparable_window_bars": 30,
+        },
         )
 
 
 def test_re_freeze_keeps_flag_columns_and_segment_hashes(tmp_path):
     df = _bars("2020-09-01", 110 * 6, stitch=STITCH)
-    extra = {"stitch_points": {"BTC-USDT": STITCH_ISO}}
+    extra = {
+        "stitch_points": {"BTC-USDT": STITCH_ISO},
+        "non_comparable_window_bars": 30,
+    }
     mgr, frozen = _freeze_4h(tmp_path, {"BTC-USDT": df}, extra=extra)
     path = tmp_path / "data" / "datasets" / frozen.dataset_id / "BTC-USDT.parquet"
     first = pd.read_parquet(path)
@@ -213,6 +228,7 @@ def test_daily_stitch_day_is_non_comparable_with_utc00(tmp_path):
         extra_metadata={
             "stitch_points": {"BTC-USDT": STITCH_ISO},
             "daily_cut": "UTC00",
+            "non_comparable_window_bars": 30,
         },
         bad_ticks=[],
     )
@@ -250,7 +266,11 @@ def test_daily_mixed_source_is_non_comparable(tmp_path):
         data_cutoff_close_utc="2024-01-10T00:00:00Z",
         validation_start_utc="2024-01-02T00:00:00Z",
         test_start_utc="2024-01-03T00:00:00Z",
-        extra_metadata={"daily_cut": "UTC00"},
+        extra_metadata={
+            "daily_cut": "UTC00",
+            "non_comparable_window_bars": 30,
+            "stitch_points": {"BTC-USDT": None},
+        },
         bad_ticks=[],
     )
     loaded = pd.read_parquet(
@@ -284,7 +304,11 @@ def test_freeze_1day_raises_on_utc16_daily_cut(tmp_path):
             data_cutoff_close_utc="2024-01-10T00:00:00Z",
             validation_start_utc="2024-01-02T00:00:00Z",
             test_start_utc="2024-01-03T00:00:00Z",
-            extra_metadata={"daily_cut": "UTC16"},
+            extra_metadata={
+                "daily_cut": "UTC16",
+                "non_comparable_window_bars": 30,
+                "stitch_points": {"BTC-USDT": None},
+            },
             bad_ticks=[],
         )
 
@@ -331,7 +355,7 @@ def test_stitched_fixture_bad_tick_count_is_11(tmp_path):
     assert len(ticks) == 11
 
 
-def test_stitch_funding_history_does_not_fillna_source():
+def test_stitch_funding_history_raises_on_null_source():
     stitch = datetime(2020, 11, 1, tzinfo=UTC)
     bn = pd.DataFrame(
         {
@@ -351,5 +375,5 @@ def test_stitch_funding_history_does_not_fillna_source():
             "source": [pd.NA],
         }
     )
-    out = stitch_funding_history(htx, bn, stitch)
-    assert out["source"].isna().all()
+    with pytest.raises(ValueError, match="source"):
+        stitch_funding_history(htx, bn, stitch)

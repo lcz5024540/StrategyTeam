@@ -14,7 +14,6 @@ import pytest
 from htx_trend.research.cli import cmd_freeze
 from htx_trend.research.data.manifest import DatasetManifest
 from htx_trend.research.data.quality import (
-    DEFAULT_STITCH_POINT,
     apply_bad_ticks,
     bad_ticks_hash,
     load_bad_ticks,
@@ -42,14 +41,10 @@ def _klines(times, close, source):
 
 
 def _around_stitch(stitch=None, before=40, after=40, freq="4h"):
-    stitch = pd.Timestamp(stitch or DEFAULT_STITCH_POINT)
+    stitch = pd.Timestamp(stitch or datetime(2020, 11, 1, 0, 0, tzinfo=UTC))
     left = pd.date_range(end=stitch - pd.Timedelta(freq), periods=before, freq=freq, tz="UTC")
     right = pd.date_range(start=stitch, periods=after, freq=freq, tz="UTC")
     return left.union(right)
-
-
-def test_default_stitch_point_is_2020_11_01_utc():
-    assert DEFAULT_STITCH_POINT == datetime(2020, 11, 1, 0, 0, tzinfo=UTC)
 
 
 def test_binance_before_stitch_htx_after_configurable_point():
@@ -57,8 +52,8 @@ def test_binance_before_stitch_htx_after_configurable_point():
     times = _around_stitch(stitch, before=8, after=8)
     htx = _klines(times, 100.0, "htx")
     bn = _klines(times, 100.0, "binance")
-    combined, stats = DataStitcher(0.003).stitch_klines(
-        htx, bn, stitch_point=stitch, symbol="BTC-USDT"
+    combined, stats = DataStitcher(0.003, window_bars=30).stitch_klines(
+        htx, bn, stitch_point=stitch, symbol="BTC-USDT", window_bars=30
     )
     assert stats["stitch_point"].startswith("2020-11-01T00:00:00")
     before = combined[combined["bar_time"] < pd.Timestamp(stitch)]
@@ -69,8 +64,11 @@ def test_binance_before_stitch_htx_after_configurable_point():
     assert int(after["is_backfill"].sum()) == 0
 
     later = datetime(2020, 12, 1, tzinfo=UTC)
-    moved, moved_stats = DataStitcher(0.003).stitch_klines(
-        htx, bn, stitch_point=later, symbol="BTC-USDT"
+    later_times = _around_stitch(later, before=8, after=8)
+    later_htx = _klines(later_times, 100.0, "htx")
+    later_bn = _klines(later_times, 100.0, "binance")
+    moved, moved_stats = DataStitcher(0.003, window_bars=30).stitch_klines(
+        later_htx, later_bn, stitch_point=later, symbol="BTC-USDT", window_bars=30
     )
     assert moved_stats["stitch_point"].startswith("2020-12-01T00:00:00")
     assert (moved[moved["bar_time"] < pd.Timestamp(later)]["source"] == "binance").all()
@@ -82,7 +80,7 @@ def test_non_comparable_only_30_bars_each_side_of_stitch():
     times = _around_stitch(stitch, before=40, after=40)
     htx = _klines(times, 100.0, "htx")
     bn = _klines(times, 100.0, "binance")
-    combined, stats = DataStitcher(0.003).stitch_klines(
+    combined, stats = DataStitcher(0.003, window_bars=30).stitch_klines(
         htx, bn, stitch_point=stitch, symbol="ETH-USDT", window_bars=30
     )
     assert stats["non_comparable_window_bars"] == 30
@@ -107,7 +105,7 @@ def test_overlap_deviation_goes_to_audit_not_non_comparable():
     bn_close[review_idx] = 102.0  # 2.0% > 1.5%
     htx = _klines(times, htx_close, "htx")
     bn = _klines(times, bn_close, "binance")
-    combined, stats = DataStitcher(0.003, manual_review_threshold=0.015).stitch_klines(
+    combined, stats = DataStitcher(0.003, window_bars=30, manual_review_threshold=0.015).stitch_klines(
         htx, bn, stitch_point=stitch, symbol="BTC-USDT", window_bars=30
     )
     audit = {row["timestamp"]: row for row in stats["overlap_audit"]}
@@ -132,7 +130,7 @@ def test_daily_bar_containing_stitch_is_non_comparable():
     stitcher = DataStitcher(0.003, window_bars=30)
     utc00, _ = stitcher.stitch_daily_from_4h(
         htx, bn, daily_cut="UTC00", now=datetime(2020, 11, 20, tzinfo=UTC),
-        stitch_point=stitch, symbol="BTC-USDT",
+        stitch_point=stitch, symbol="BTC-USDT", window_bars=30,
     )
     cut00 = daily_open_for(stitch, "UTC00")
     row00 = utc00[utc00["bar_time"] == pd.Timestamp(cut00)]
@@ -141,7 +139,7 @@ def test_daily_bar_containing_stitch_is_non_comparable():
     with pytest.raises(ValueError, match="UTC 00:00"):
         stitcher.stitch_daily_from_4h(
             htx, bn, daily_cut="UTC16", now=datetime(2020, 11, 20, tzinfo=UTC),
-            stitch_point=stitch, symbol="BTC-USDT",
+            stitch_point=stitch, symbol="BTC-USDT", window_bars=30,
         )
 
 

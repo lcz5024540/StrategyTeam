@@ -49,7 +49,8 @@ def test_funding_after_bar_close_is_not_used():
         }
     )
     out = attach_funding_as_of(bars, funding, "4hour")
-    assert pd.isna(out.loc[0, "funding_rate"])
+    assert float(out.loc[0, "funding_rate"]) == 0.0
+    assert bool(out.loc[0, "pre_first_funding"]) is True
 
 
 def test_runner_attaches_funding_as_of_bar_close(tmp_path, monkeypatch):
@@ -58,8 +59,8 @@ def test_runner_attaches_funding_as_of_bar_close(tmp_path, monkeypatch):
 
     seen = {}
 
-    def _wrap(bars, funding, interval):
-        out = real_attach(bars, funding, interval)
+    def _wrap(bars, funding, interval, **kwargs):
+        out = real_attach(bars, funding, interval, **kwargs)
         seen["interval"] = interval
         seen["rates"] = list(out["funding_rate"])
         return out

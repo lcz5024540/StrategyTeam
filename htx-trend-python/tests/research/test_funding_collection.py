@@ -9,11 +9,8 @@ import pandas as pd
 
 from htx_trend.research.adapters.htx.market_data import FundingRate, HtxMarketDataClient
 from htx_trend.research.data.collector import DataCollector
-from htx_trend.research.data.quality import DEFAULT_STITCH_POINT
-
-
 END_TS = 1_704_067_200  # 2024-01-01 UTC
-STITCH = DEFAULT_STITCH_POINT
+STITCH = datetime(2020, 11, 1, 0, 0, tzinfo=UTC)
 
 
 def _htx_pages(page_count: int, per_page: int = 2):
