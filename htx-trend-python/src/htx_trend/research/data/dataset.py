@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Iterable, Literal
 
 import pandas as pd
 
@@ -15,6 +15,16 @@ from ..ledger.ledger import ApprovalDecision, ApprovalGate
 from ..ops.logging import LogComponent, log_event
 from .immutable_storage import ImmutableKlineStorage
 from .manifest import DatasetManifest, VerificationResult
+from .quality import (
+    DEFAULT_STITCH_POINT,
+    EXTERNAL_SOURCES,
+    QUALITY_FLAG_COLUMNS,
+    STITCH_WINDOW_BARS,
+    BadTick,
+    confirmed_bad_ticks,
+    load_bad_ticks,
+    require_quality_flag_columns,
+)
 
 BAR_DURATION = {
     "4hour": timedelta(hours=4),
@@ -106,6 +116,90 @@ def compute_split_boundaries(
         validation_start = parse_utc_datetime(days[val_idx])
         test_start = parse_utc_datetime(days[test_idx])
     return validation_start, test_start
+
+
+def _non_comparable_from_stitch(
+    times: pd.Series, stitch_point: datetime, window_bars: int, timeframe: str
+) -> pd.Series:
+    result = pd.Series(False, index=times.index)
+    if times.empty:
+        return result
+    stitch = pd.Timestamp(stitch_point)
+    if stitch.tzinfo is None:
+        stitch = stitch.tz_localize("UTC")
+    else:
+        stitch = stitch.tz_convert("UTC")
+    values = pd.to_datetime(times, utc=True)
+    if timeframe in {"1day", "1d"}:
+        return values == stitch
+    delta = bar_duration(timeframe) * int(window_bars)
+    return (values - stitch).abs() <= delta
+
+
+def _external_from_source(source: pd.Series, is_backfill: pd.Series | None) -> pd.Series:
+    text = source.astype("string")
+    matched = text.isin(list(EXTERNAL_SOURCES)) | text.str.startswith("binance")
+    if is_backfill is not None:
+        matched = matched | (is_backfill == True)
+    return matched.mask(text.isna(), pd.NA)
+
+
+def _bad_tick_from_yaml(
+    times: pd.Series, symbol: str, ticks: Iterable[BadTick]
+) -> pd.Series:
+    result = pd.Series(False, index=times.index)
+    values = pd.to_datetime(times, utc=True)
+    for tick in confirmed_bad_ticks(ticks):
+        if tick.symbol != symbol:
+            continue
+        if tick.end_time is not None:
+            mask = (values >= pd.Timestamp(tick.bar_time)) & (
+                values <= pd.Timestamp(tick.end_time)
+            )
+        else:
+            mask = values == pd.Timestamp(tick.bar_time)
+        result = result | mask
+    return result
+
+
+def derive_quality_flags(
+    df: pd.DataFrame,
+    *,
+    symbol: str,
+    timeframe: str,
+    cutoff: datetime,
+    stitch_point: datetime,
+    window_bars: int,
+    ticks: Iterable[BadTick],
+) -> pd.DataFrame:
+    work = df.copy()
+    drop = [name for name in QUALITY_FLAG_COLUMNS if name in work.columns]
+    if drop:
+        work = work.drop(columns=drop)
+    times = pd.to_datetime(work["bar_time"], utc=True)
+    work["incomplete"] = (
+        (times + bar_duration(timeframe)) > pd.Timestamp(cutoff)
+    ).astype(bool)
+    if "source" not in work.columns:
+        raise ValueError(
+            f"{symbol} dataset missing required quality flag columns: ['external']. "
+            "Cannot derive external without a source column."
+        )
+    external = _external_from_source(
+        work["source"],
+        work["is_backfill"] if "is_backfill" in work.columns else None,
+    )
+    if pd.isna(external).any():
+        raise ValueError(
+            f"{symbol} dataset quality flag column 'external' contains null "
+            "values (NaN/None); refusing to coerce with bool()."
+        )
+    work["external"] = external.astype(bool)
+    work["non_comparable"] = _non_comparable_from_stitch(
+        times, stitch_point, window_bars, timeframe
+    ).astype(bool)
+    work["bad_tick"] = _bad_tick_from_yaml(times, symbol, ticks).astype(bool)
+    return work
 
 
 def require_timeframe(*values: object) -> str:
@@ -323,6 +417,7 @@ class DatasetManager:
         data_cutoff_close_utc: datetime | str | None = None,
         test_start_utc: datetime | str | None = None,
         validation_start_utc: datetime | str | None = None,
+        bad_ticks: Iterable[BadTick] | None = None,
     ) -> FrozenDataset:
         if data_cutoff_close_utc is None:
             raise ValueError("data_cutoff_close_utc is required")
@@ -400,13 +495,24 @@ class DatasetManager:
         dataset_dir = self.datasets_dir / dataset_id
         dataset_dir.mkdir(parents=True, exist_ok=True)
 
+        ticks = list(bad_ticks) if bad_ticks is not None else load_bad_ticks()
+        meta = extra_metadata or {}
+        stitch_points = meta.get("stitch_points") or {}
+        window_bars = int(meta.get("non_comparable_window_bars") or STITCH_WINDOW_BARS)
         for symbol, df in data.items():
             output_path = dataset_dir / f"{symbol}.parquet"
-            frame = df.copy()
-            for flag in ("incomplete", "non_comparable", "bad_tick", "external"):
-                if flag not in frame.columns:
-                    frame[flag] = False
-                frame[flag] = frame[flag].fillna(False).astype(bool)
+            point = stitch_points.get(symbol)
+            stitch = parse_utc_datetime(point) if point else DEFAULT_STITCH_POINT
+            frame = derive_quality_flags(
+                df,
+                symbol=symbol,
+                timeframe=timeframe,
+                cutoff=cutoff,
+                stitch_point=stitch,
+                window_bars=window_bars,
+                ticks=ticks,
+            )
+            require_quality_flag_columns(frame, symbol=symbol)
             frame.to_parquet(output_path, index=False)
             data[symbol] = frame
 

@@ -21,7 +21,9 @@ STITCH_WINDOW_BARS = 30
 OVERLAP_AUDIT_THRESHOLD = 0.003
 MANUAL_REVIEW_THRESHOLD = 0.015
 
+QUALITY_FLAG_COLUMNS = ("incomplete", "non_comparable", "bad_tick", "external")
 BAD_TICK_KINDS = ("frozen", "spike")
+EXTERNAL_SOURCES = frozenset({"binance", "binance_external", "backfill"})
 DEFAULT_KIND_STOP_ON_BAR = {
     "frozen": False,
     "spike": True,
@@ -161,6 +163,33 @@ def stitch_point_for(
         return parse_utc(override)
     table = points or load_stitch_points()
     return table.get(symbol, DEFAULT_STITCH_POINT)
+
+
+def require_quality_flag_columns(df: pd.DataFrame, *, symbol: str) -> None:
+    missing = [name for name in QUALITY_FLAG_COLUMNS if name not in df.columns]
+    if missing:
+        raise ValueError(
+            f"{symbol} dataset missing required quality flag columns: {missing}. "
+            "Only an existing column with value False means a normal bar."
+        )
+    for name in QUALITY_FLAG_COLUMNS:
+        series = df[name]
+        if series.isna().any():
+            raise ValueError(
+                f"{symbol} dataset quality flag column {name!r} contains null "
+                "values (NaN/None); refusing to coerce with bool()."
+            )
+        if series.dtype != bool:
+            raise ValueError(
+                f"{symbol} dataset quality flag column {name!r} must be strictly "
+                f"boolean (numpy.bool_/bool), got dtype={series.dtype}."
+            )
+        for value in series.tolist():
+            if value is not True and value is not False and type(value).__name__ != "bool_":
+                raise ValueError(
+                    f"{symbol} dataset quality flag column {name!r} must be strictly "
+                    f"boolean (numpy.bool_/bool), got {value!r}."
+                )
 
 
 def load_bad_ticks(path: Path | None = None) -> list[BadTick]:

@@ -20,7 +20,11 @@ from .adapters.htx.fees import create_fee_provider
 from .conditions import C01DonchianEnsemble, C02ATRStop, DecisionContext
 from .data import DatasetManager
 from .data.dataset import require_timeframe
-from .data.quality import normalize_bad_tick_kind, stop_on_bar_for_kind
+from .data.quality import (
+    normalize_bad_tick_kind,
+    require_quality_flag_columns,
+    stop_on_bar_for_kind,
+)
 from .engine.backtest import CostScenario, SimBroker
 from .engine.contract_value import coin_notional, periods_per_year, require_contract_size
 from .engine.interfaces import Order
@@ -69,30 +73,6 @@ def _is_unfrozen_placeholder(value: Any) -> bool:
 
 def _marked_equity(broker: Any) -> float:
     return float(broker.get_account_equity())
-
-
-QUALITY_FLAG_COLUMNS = ("incomplete", "non_comparable", "bad_tick", "external")
-
-
-def require_quality_flag_columns(df: pd.DataFrame, *, symbol: str) -> None:
-    missing = [name for name in QUALITY_FLAG_COLUMNS if name not in df.columns]
-    if missing:
-        raise ValueError(
-            f"{symbol} dataset missing required quality flag columns: {missing}. "
-            "Only an existing column with value False means a normal bar."
-        )
-    for name in QUALITY_FLAG_COLUMNS:
-        series = df[name]
-        if series.isna().any():
-            raise ValueError(
-                f"{symbol} dataset quality flag column {name!r} contains null "
-                "values (NaN/None); refusing to coerce with bool()."
-            )
-        if series.dtype != bool:
-            raise ValueError(
-                f"{symbol} dataset quality flag column {name!r} must be bool dtype, "
-                f"got {series.dtype}."
-            )
 
 
 def require_signal_atr(metadata: dict[str, Any] | None) -> float:

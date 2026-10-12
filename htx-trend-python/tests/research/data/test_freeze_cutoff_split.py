@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from argparse import Namespace
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -12,6 +12,7 @@ import pytest
 
 from htx_trend.research.data import dataset as dataset_mod
 from htx_trend.research.data.dataset import DatasetManager
+from htx_trend.research.data.quality import BadTick
 from htx_trend.research.data.manifest import DatasetManifest
 from htx_trend.research.features.daily_resample import resample_4h_to_daily
 from htx_trend.research.ledger import LedgerManager
@@ -193,6 +194,79 @@ def test_freeze_writes_quality_flag_columns_as_bool_dtype(tmp_path):
         assert loaded[name].dtype == bool
         assert not loaded[name].isna().any()
         assert (loaded[name] == False).all()
+
+
+def test_freeze_raises_if_flag_derivation_leaves_na(tmp_path):
+    df = _bars("2026-09-21", 21 * 6)
+    df.loc[df.index[0], "source"] = pd.NA
+    mgr = DatasetManager(tmp_path / "data" / "datasets")
+    with pytest.raises(ValueError, match="external"):
+        mgr.freeze_dataset(
+            {"BTC-USDT": df},
+            timeframe="4hour",
+            data_cutoff_close_utc=V010_CUTOFF,
+        )
+
+
+def test_freeze_output_flags_match_stitch_bad_tick_and_binance_source(tmp_path):
+    stitch = pd.Timestamp("2020-11-01T00:00:00Z")
+    times = pd.date_range("2020-10-20", periods=21 * 6, freq="4h", tz="UTC")
+    close = 100 + pd.Series(range(len(times)), dtype=float)
+    tick_time = pd.Timestamp("2020-11-05T00:00:00Z")
+    df = pd.DataFrame(
+        {
+            "bar_time": times,
+            "open": close,
+            "high": close + 1,
+            "low": close - 1,
+            "close": close,
+            "volume": 10.0,
+            "amount": 100.0,
+            "source": ["binance" if ts < stitch else "htx" for ts in times],
+        }
+    )
+    ticks = [
+        BadTick(
+            symbol="BTC-USDT",
+            bar_time=tick_time.to_pydatetime().replace(tzinfo=UTC),
+            reason="fixture spike",
+            confirmed=True,
+            kind="spike",
+        )
+    ]
+    mgr = DatasetManager(tmp_path / "data" / "datasets")
+    frozen = mgr.freeze_dataset(
+        {"BTC-USDT": df},
+        timeframe="4hour",
+        data_cutoff_close_utc="2020-11-10T00:00:00Z",
+        validation_start_utc="2020-11-06T00:00:00Z",
+        test_start_utc="2020-11-08T00:00:00Z",
+        extra_metadata={
+            "stitch_points": {"BTC-USDT": "2020-11-01T00:00:00Z"},
+            "non_comparable_window_bars": 2,
+        },
+        bad_ticks=ticks,
+    )
+    loaded = pd.read_parquet(
+        tmp_path / "data" / "datasets" / frozen.dataset_id / "BTC-USDT.parquet"
+    )
+    times_out = pd.to_datetime(loaded["bar_time"], utc=True)
+    for name in ("incomplete", "non_comparable", "bad_tick", "external"):
+        assert loaded[name].dtype == bool
+        assert not loaded[name].isna().any()
+    assert not loaded["incomplete"].any()
+    assert (loaded.loc[times_out < stitch, "external"] == True).all()
+    assert (loaded.loc[times_out >= stitch, "external"] == False).all()
+    assert bool(loaded.loc[times_out == tick_time, "bad_tick"].iloc[0]) is True
+    assert int(loaded["bad_tick"].sum()) == 1
+    window = loaded[loaded["non_comparable"]]
+    assert 1 <= len(window) <= 5
+    assert (times_out[loaded["non_comparable"]] >= stitch - pd.Timedelta(hours=8)).all()
+    assert (times_out[loaded["non_comparable"]] <= stitch + pd.Timedelta(hours=8)).all()
+    far = loaded.loc[times_out == times[0]].iloc[0]
+    assert bool(far["non_comparable"]) is False
+    assert bool(far["external"]) is True
+    assert bool(far["bad_tick"]) is False
 
 
 def test_freeze_keeps_last_4h_open_2026_10_11_20z_and_drops_later(tmp_path):

@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from htx_trend.research.runner import require_quality_flag_columns
 from htx_trend.research.risk.liquidation_check import AccountLiquidationChecker
 from htx_trend.research.risk.position_sizing import (
     SKIP_MAX_POSITIONS,
@@ -91,56 +92,81 @@ def _with_all_quality_flags(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _mutate_quality_flag(df: pd.DataFrame, column: str, kind: str) -> pd.DataFrame:
+    out = df.copy()
+    if kind == "missing":
+        return out.drop(columns=[column])
+    if kind == "none":
+        out[column] = out[column].astype(object)
+        out.loc[out.index[0], column] = None
+        return out
+    if kind == "nan":
+        out[column] = out[column].astype(object)
+        out.loc[out.index[0], column] = np.nan
+        return out
+    if kind == "str_False":
+        out[column] = out[column].map(lambda _: "False")
+        return out
+    if kind == "str_false":
+        out[column] = out[column].map(lambda _: "false")
+        return out
+    if kind == "int0":
+        out[column] = 0
+        return out
+    if kind == "int1":
+        out[column] = 1
+        return out
+    if kind == "object_mixed_bool_int":
+        mixed = [False if i % 2 == 0 else 0 for i in range(len(out))]
+        mixed[0] = 0
+        mixed[1] = False
+        out[column] = pd.Series(mixed, index=out.index, dtype=object)
+        return out
+    raise AssertionError(kind)
+
+
 @pytest.mark.parametrize("column", QUALITY_FLAG_COLUMNS)
-def test_missing_quality_flag_column_raises(tmp_path, column):
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "missing",
+        "none",
+        "nan",
+        "str_False",
+        "str_false",
+        "int0",
+        "int1",
+        "object_mixed_bool_int",
+    ],
+)
+def test_non_strict_bool_quality_flag_raises(tmp_path, column, kind):
     workspace = _breakout_workspace(tmp_path)
     parquet = _breakout_parquet(workspace)
-    df = _with_all_quality_flags(pd.read_parquet(parquet)).drop(columns=[column])
+    df = _mutate_quality_flag(_with_all_quality_flags(pd.read_parquet(parquet)), column, kind)
+    if kind == "object_mixed_bool_int":
+        with pytest.raises(ValueError, match=rf"{column}|bool"):
+            require_quality_flag_columns(df, symbol="BTC-USDT")
+        return
     df.to_parquet(parquet, index=False)
     write_batch_manifest(workspace, "breakout")
-    runner = write_runner(workspace, _breakout_config(workspace, "NOFLAGS"))
-    with pytest.raises(ValueError, match=column):
+    runner = write_runner(workspace, _breakout_config(workspace, f"FLAG-{kind}"))
+    with pytest.raises(ValueError, match=rf"{column}|bool|null|NaN|None"):
         runner.run()
 
 
 @pytest.mark.parametrize("column", QUALITY_FLAG_COLUMNS)
-def test_nan_quality_flag_value_raises(tmp_path, column):
+def test_parquet_nan_quality_flag_roundtrip_raises(tmp_path, column):
     workspace = _breakout_workspace(tmp_path)
     parquet = _breakout_parquet(workspace)
     df = _with_all_quality_flags(pd.read_parquet(parquet))
     df[column] = df[column].astype(object)
     df.loc[df.index[0], column] = np.nan
     df.to_parquet(parquet, index=False)
+    loaded = pd.read_parquet(parquet)
+    assert pd.isna(loaded.loc[loaded.index[0], column])
     write_batch_manifest(workspace, "breakout")
-    runner = write_runner(workspace, _breakout_config(workspace, "NANFLAG"))
-    with pytest.raises(ValueError, match=rf"{column}|null|NaN"):
-        runner.run()
-
-
-@pytest.mark.parametrize("column", QUALITY_FLAG_COLUMNS)
-def test_none_quality_flag_value_raises(tmp_path, column):
-    workspace = _breakout_workspace(tmp_path)
-    parquet = _breakout_parquet(workspace)
-    df = _with_all_quality_flags(pd.read_parquet(parquet))
-    df[column] = df[column].astype(object)
-    df.loc[df.index[0], column] = None
-    df.to_parquet(parquet, index=False)
-    write_batch_manifest(workspace, "breakout")
-    runner = write_runner(workspace, _breakout_config(workspace, "NONEFLAG"))
-    with pytest.raises(ValueError, match=rf"{column}|null|None"):
-        runner.run()
-
-
-@pytest.mark.parametrize("column", QUALITY_FLAG_COLUMNS)
-def test_non_bool_quality_flag_dtype_raises(tmp_path, column):
-    workspace = _breakout_workspace(tmp_path)
-    parquet = _breakout_parquet(workspace)
-    df = _with_all_quality_flags(pd.read_parquet(parquet))
-    df[column] = df[column].astype("int64")
-    df.to_parquet(parquet, index=False)
-    write_batch_manifest(workspace, "breakout")
-    runner = write_runner(workspace, _breakout_config(workspace, "INTFLAG"))
-    with pytest.raises(ValueError, match=rf"{column}|bool"):
+    runner = write_runner(workspace, _breakout_config(workspace, "NANRT"))
+    with pytest.raises(ValueError, match=rf"{column}|null|NaN|None|bool"):
         runner.run()
 
 

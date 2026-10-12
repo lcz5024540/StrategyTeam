@@ -281,6 +281,7 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         data_cutoff_close_utc=cutoff,
         validation_start_utc=validation_start,
         test_start_utc=test_start,
+        bad_ticks=ticks,
     )
     dataset_dir = workspace / "data" / "datasets" / frozen.dataset_id
     if source_counts:
