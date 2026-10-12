@@ -744,6 +744,7 @@ class BacktestRunner:
                         continue
                     ctx.current_position = None
                     forced_side: str | None = None
+                    forced_entry_due = False
                     if forced_queues is not None:
                         queue = forced_queues.get(symbol)
                         bar_ts = pd.Timestamp(bar["bar_time"])
@@ -751,11 +752,9 @@ class BacktestRunner:
                             bar_ts = bar_ts.tz_localize("UTC")
                         else:
                             bar_ts = bar_ts.tz_convert("UTC")
-                        if queue:
-                            while queue and queue[0][0] < bar_ts:
-                                queue.popleft()
-                            if queue and queue[0][0] == bar_ts:
-                                _, forced_side = queue.popleft()
+                        if queue and queue[0][0] <= bar_ts:
+                            _, forced_side = queue[0]
+                            forced_entry_due = True
                     if forced_queues is not None:
                         decision_record["strategy_entry_disabled"] = True
                         if forced_side:
@@ -911,6 +910,10 @@ class BacktestRunner:
                                 decision_record["size"] = pos_size.size
                                 decision_record["stop_loss"] = stop_loss
                                 decision_record["position_id"] = position_id
+                                if forced_queues is not None and forced_entry_due:
+                                    due_queue = forced_queues.get(symbol)
+                                    if due_queue:
+                                        due_queue.popleft()
                             else:
                                 decision_record["action"] = "SKIP"
                                 decision_record["skip_reason"] = msg
