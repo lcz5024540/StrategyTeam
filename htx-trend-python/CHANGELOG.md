@@ -5,6 +5,15 @@ All notable changes to the HTX Trend Research System will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-rc.9] - 2026-10-12
+
+### Added
+- `strategy_manifest.yaml`: C01–C09 catalog with implemented/enabled/params/code_sha256, risk params, and `manifest_sha256`
+- CLI `strategy-manifest --config ... [--write] [--check]`; committed-file drift test
+- Ledger columns `strategy_manifest_sha256` / `strategy_manifest` (run fails if the manifest cannot be built)
+- `scripts/tag_message.py` prints a v0.1.0 tag-message summary (does not create tags)
+- Package notes and `_build_info.STRATEGY_MANIFEST_SHA256`
+
 ## [0.1.0-rc.8] - 2026-10-12
 
 ### Changed

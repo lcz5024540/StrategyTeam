@@ -39,6 +39,7 @@ from .reports import ReportGenerator
 from .risk import AccountLiquidationChecker, LiquidationChecker, PositionSizer
 from .risk.position_sizing import SKIP_MIN_CONTRACT_EXCEEDS_RISK_BUDGET
 from .strategy import Position, StateMachine, StrategyState
+from .strategy_manifest import build_strategy_manifest
 from .version_info import get_version_info
 
 IMPLEMENTED_CONDITIONS = frozenset({"C01", "C02"})
@@ -196,9 +197,12 @@ class BacktestRunner:
             self._validate_conditions()
             self._validate_registration()
 
-            data, frozen = self._load_dataset()
-
             git_commit = self._get_git_commit()
+            strategy_manifest = build_strategy_manifest(
+                self.config, git_commit=git_commit
+            )
+
+            data, frozen = self._load_dataset()
             environment = "SMOKE" if self._is_smoke else "BACKTEST"
 
             run_record = RunRecord(
@@ -211,6 +215,8 @@ class BacktestRunner:
                 cost_scenario=self.config["cost_scenario"],
                 created_at=datetime.now(timezone.utc),
                 manifest_hash=self.config["manifest_hash"],
+                strategy_manifest_sha256=strategy_manifest["manifest_sha256"],
+                strategy_manifest=strategy_manifest,
             )
             self.ledger.register_run(run_record)
 

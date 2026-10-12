@@ -29,7 +29,12 @@ class VersionInfo:
         return f"{self.version} ({self.branch}@{self.commit[:8]}{suffix})"
 
 
-def write_build_info(path: Path, version: str, git_info: dict) -> None:
+def write_build_info(
+    path: Path,
+    version: str,
+    git_info: dict,
+    strategy_manifest_sha256: str = "",
+) -> None:
     """Write a generated _build_info.py for git-archive / packaged deploys."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -38,6 +43,7 @@ def write_build_info(path: Path, version: str, git_info: dict) -> None:
         f"BRANCH = {git_info['branch']!r}\n"
         f"VERSION = {version!r}\n"
         f"DIRTY = {bool(git_info.get('dirty'))}\n"
+        f"STRATEGY_MANIFEST_SHA256 = {strategy_manifest_sha256!r}\n"
     )
 
 

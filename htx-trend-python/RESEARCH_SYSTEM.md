@@ -39,6 +39,7 @@ htx_trend/research/
 - **C01 Donchian Ensemble**：多周期突破信号集成，阈值0.25
 - **C02 ATR Stop**：ATR14 × 2.0 初始止损
 - **插件接口**：统一的 `evaluate(DecisionContext, params) → ConditionResult`
+- **策略清单**：见下方「策略条件清单 (strategy_manifest.yaml)」
 
 ### 4. 风险管理
 - **仓位计算**：单笔风险 2%（300U 账户最大亏损 6U），总风险 ≤10%，最多 5 仓（品种仍仅 BTC/ETH 4h）
@@ -227,6 +228,28 @@ fees:
   use_authenticated: false  # 需要 API key
   # maker_rate: 0.0002  # 可选，覆盖默认值
   # taker_rate: 0.0006
+```
+
+## 策略条件清单 (strategy_manifest.yaml)
+
+机器可读的 C01–C09 目录，由 **代码 + 运行配置** 生成，提交在包根目录 `strategy_manifest.yaml`。
+
+每条条件包含：`id`、`name`、`implemented`、`enabled`（来自 run config）、`params`（解析后的值，含已声明字段）、`code_path`、`code_sha256`（条件模块文件字节的 SHA256）。清单级字段：`package_version`、`git_commit`、`timeframe`、`symbols`、风险参数（`initial_equity` / `risk_per_trade` / `max_total_risk` / `max_positions`）、`manifest_sha256`（对去掉 hash 字段后的 canonical JSON，`sort_keys=True`）。
+
+```bash
+python -m htx_trend.research strategy-manifest \
+  --config configs/runs/R0001.yaml \
+  --write strategy_manifest.yaml
+
+python -m htx_trend.research strategy-manifest \
+  --config configs/runs/R0001.yaml \
+  --check
+```
+
+`--check` 在 committed 文件相对代码/配置过期时以非零退出。CI / `scripts/package.py` 解包测试会跑 `test_committed_manifest_matches_code_and_r0001`。每次回测把完整 JSON 和 `strategy_manifest_sha256` 写入 ledger；清单构建失败则 run 失败。打 tag 前可打印摘要（**不创建 tag**）：
+
+```bash
+python scripts/tag_message.py
 ```
 
 ## 测试

@@ -43,6 +43,13 @@ from .ops.runtime_paths import (
 )
 from .ops.status import StatusInterface, set_status_file_path
 from .runner import BacktestRunner
+from .strategy_manifest import (
+    PACKAGE_ROOT as RESEARCH_PACKAGE_ROOT,
+    build_strategy_manifest,
+    check_committed_manifest,
+    load_run_config,
+    write_strategy_manifest,
+)
 from .version_info import get_version_info
 
 
@@ -480,6 +487,26 @@ def cmd_approve(args: argparse.Namespace) -> None:
     print(f"  Approver: {args.approver}")
 
 
+def cmd_strategy_manifest(args: argparse.Namespace) -> None:
+    config_path = Path(args.config)
+    config = load_run_config(config_path)
+    check_target = getattr(args, "check", None)
+    write_target = getattr(args, "write", None)
+    if check_target:
+        check_committed_manifest(check_target, config_path)
+        print(f"strategy_manifest.yaml is up to date: {check_target}")
+        return
+    payload = build_strategy_manifest(config)
+    if write_target:
+        write_strategy_manifest(write_target, payload)
+        print(f"wrote {write_target}")
+        print(f"manifest_sha256: {payload['manifest_sha256']}")
+        return
+    import yaml
+
+    print(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True))
+
+
 def cmd_update_conclusion(args: argparse.Namespace) -> None:
     workspace = Path(args.workspace)
     ledger = LedgerManager(workspace / "ledger.db")
@@ -602,6 +629,26 @@ def main() -> None:
     
     run_parser = subparsers.add_parser("run", help="Run backtest")
     run_parser.add_argument("config", help="Path to run config YAML")
+
+    manifest_parser = subparsers.add_parser(
+        "strategy-manifest",
+        help="Build or check strategy_manifest.yaml from code + run config",
+    )
+    manifest_parser.add_argument("--config", required=True, help="Path to run config YAML")
+    manifest_parser.add_argument(
+        "--write",
+        nargs="?",
+        const=str(RESEARCH_PACKAGE_ROOT / "strategy_manifest.yaml"),
+        default=None,
+        help="Write YAML (default: package-root strategy_manifest.yaml)",
+    )
+    manifest_parser.add_argument(
+        "--check",
+        nargs="?",
+        const=str(RESEARCH_PACKAGE_ROOT / "strategy_manifest.yaml"),
+        default=None,
+        help="Fail if the committed file is stale vs code/config",
+    )
     
     health_parser = subparsers.add_parser("health", help="Check component health")
     health_parser.add_argument("--max-age", type=int, default=300)
@@ -645,6 +692,8 @@ def main() -> None:
         cmd_freeze(args)
     elif args.command == "run":
         cmd_run(args)
+    elif args.command == "strategy-manifest":
+        cmd_strategy_manifest(args)
     elif args.command == "health":
         cmd_health(args)
     elif args.command == "status":

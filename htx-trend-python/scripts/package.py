@@ -28,6 +28,8 @@ PACKAGE_GLOBS = (
     "scripts/check_lock_hygiene.py",
     "scripts/smoke_e2e.sh",
     "scripts/package.py",
+    "scripts/tag_message.py",
+    "strategy_manifest.yaml",
 )
 SKIP_DIR_NAMES = {"__pycache__", ".pytest_cache", ".venv"}
 SKIP_SUFFIXES = {".pyc", ".pyo"}
@@ -226,8 +228,30 @@ def verify_extracted_package(tar_path: Path) -> None:
         print("Extracted-package pytest passed.")
 
 
+def _strategy_manifest_notes(payload: dict | None) -> str:
+    if not payload:
+        return ""
+    enabled = []
+    for row in payload.get("conditions") or []:
+        if not row.get("enabled"):
+            continue
+        params = row.get("params") or {}
+        encoded = ", ".join(f"{key}={value!r}" for key, value in params.items())
+        enabled.append(f"- {row.get('id')} {row.get('name')}: {encoded}")
+    body = "\n".join(enabled) if enabled else "- (none enabled)"
+    sha = payload.get("manifest_sha256") or ""
+    return (
+        f"**Strategy manifest sha256**: `{sha}`\n\n"
+        f"**Enabled conditions**:\n{body}\n"
+    )
+
+
 def generate_delivery_template(
-    version: str, git_info: dict, sha256: str, tar_path: Path
+    version: str,
+    git_info: dict,
+    sha256: str,
+    tar_path: Path,
+    strategy_manifest: dict | None = None,
 ) -> Path:
     """生成 DELIVERY.md 模板"""
     dist_dir = tar_path.parent
@@ -269,6 +293,7 @@ def generate_delivery_template(
 **Breaking Changes**:
 - N/A (initial release)
 
+{_strategy_manifest_notes(strategy_manifest)}
 **Notes**:
 - rc.6: R0001 risk params changed to 300U / 2% / 10% / 5 positions per user decision; replaces rc.5's 1%/2%/2
 
@@ -552,8 +577,24 @@ def main(argv: list[str] | None = None) -> int:
     build_info_path = (
         Path(__file__).parent.parent / "src" / "htx_trend" / "research" / "_build_info.py"
     )
-    write_build_info(build_info_path, version, git_info)
+    import yaml
+
+    strategy_manifest_path = Path(__file__).parent.parent / "strategy_manifest.yaml"
+    if not strategy_manifest_path.is_file():
+        raise SystemExit(
+            "strategy_manifest.yaml is missing; "
+            "python -m htx_trend.research strategy-manifest --config configs/runs/R0001.yaml --write"
+        )
+    strategy_manifest = yaml.safe_load(strategy_manifest_path.read_text()) or {}
+    strategy_sha = str(strategy_manifest.get("manifest_sha256") or "")
+    write_build_info(
+        build_info_path,
+        version,
+        git_info,
+        strategy_manifest_sha256=strategy_sha,
+    )
     print(f"Wrote build info: {build_info_path}")
+    print(f"STRATEGY_MANIFEST_SHA256: {strategy_sha}")
     
     tar_path, sha256 = create_package(version, git_info)
     print()
@@ -562,7 +603,13 @@ def main(argv: list[str] | None = None) -> int:
         verify_extracted_package(tar_path)
         print()
     
-    delivery_path = generate_delivery_template(version, git_info, sha256, tar_path)
+    delivery_path = generate_delivery_template(
+        version,
+        git_info,
+        sha256,
+        tar_path,
+        strategy_manifest=strategy_manifest,
+    )
     print()
     
     print("=" * 60)

@@ -68,6 +68,8 @@ class RunRecord:
     total_trades: int = 0
     metrics: dict[str, Any] | None = None
     manifest_hash: str | None = None
+    strategy_manifest_sha256: str | None = None
+    strategy_manifest: dict[str, Any] | None = None
 
 
 @dataclass
@@ -166,6 +168,10 @@ class LedgerManager:
         run_cols = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
         if "manifest_hash" not in run_cols:
             conn.execute("ALTER TABLE runs ADD COLUMN manifest_hash TEXT")
+        if "strategy_manifest_sha256" not in run_cols:
+            conn.execute("ALTER TABLE runs ADD COLUMN strategy_manifest_sha256 TEXT")
+        if "strategy_manifest" not in run_cols:
+            conn.execute("ALTER TABLE runs ADD COLUMN strategy_manifest TEXT")
 
         trial_cols = {row[1] for row in conn.execute("PRAGMA table_info(trials)")}
         if "event_id" not in trial_cols:
@@ -334,8 +340,9 @@ class LedgerManager:
                 INSERT INTO runs (
                     run_id, parent_run_id, git_commit, dataset_hash,
                     environment, config_snapshot, cost_scenario,
-                    created_at, total_trades, metrics, manifest_hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_at, total_trades, metrics, manifest_hash,
+                    strategy_manifest_sha256, strategy_manifest
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run.run_id,
@@ -349,6 +356,8 @@ class LedgerManager:
                     run.total_trades,
                     json.dumps(run.metrics) if run.metrics else None,
                     run.manifest_hash,
+                    run.strategy_manifest_sha256,
+                    json.dumps(run.strategy_manifest) if run.strategy_manifest else None,
                 ),
             )
     
@@ -366,7 +375,8 @@ class LedgerManager:
                 """
                 SELECT run_id, parent_run_id, git_commit, dataset_hash,
                        environment, config_snapshot, cost_scenario, created_at,
-                       total_trades, metrics, manifest_hash
+                       total_trades, metrics, manifest_hash,
+                       strategy_manifest_sha256, strategy_manifest
                 FROM runs
                 WHERE run_id = ?
                 """,
@@ -392,6 +402,7 @@ class LedgerManager:
                 metrics = json.loads(metrics_row[0])
             elif row[9]:
                 metrics = json.loads(row[9])
+            manifest_json = row[12] if len(row) > 12 else None
             return RunRecord(
                 run_id=row[0],
                 parent_run_id=row[1],
@@ -404,6 +415,8 @@ class LedgerManager:
                 total_trades=row[8],
                 metrics=metrics,
                 manifest_hash=row[10] if len(row) > 10 else None,
+                strategy_manifest_sha256=row[11] if len(row) > 11 else None,
+                strategy_manifest=json.loads(manifest_json) if manifest_json else None,
             )
     
     def register_experiment(self, exp: ExperimentRegistration) -> None:
