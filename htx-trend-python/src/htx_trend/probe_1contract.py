@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import sys
+import uuid
 from decimal import Decimal, InvalidOperation
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,6 +29,7 @@ DEFAULT_SYMBOL = "BTC-USDT"
 PROBE_MAX_QTY = 1
 PROBE_ENV_NAME = "LIVE_1CONTRACT_PROBE"
 PROBE_ENV_OK = frozenset({"1", "true"})
+_CLIENT_ORDER_ID_MAX = (1 << 63) - 1
 
 
 class ProbeAborted(SystemExit):
@@ -146,8 +148,14 @@ def _write_evidence(path: Path | None, payload: dict[str, Any]) -> None:
 
 
 def _client_order_id(action: str) -> str:
-    stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
-    return f"probe-{action}-{stamp}"
+    """HTX v5 requires numeric client_order_id in [1, 2^63-1] (int64 string)."""
+    micro = int(datetime.now(UTC).timestamp() * 1_000_000)
+    salt = uuid.uuid4().int % 1_000_000
+    action_salt = {"open": 1, "close": 2}.get(action, 3)
+    value = (micro * 16 + action_salt * 4 + salt) % _CLIENT_ORDER_ID_MAX
+    if value < 1:
+        value = 1
+    return str(value)
 
 
 def main(

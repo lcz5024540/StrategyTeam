@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - HTX `_signed` payload now joins METHOD/host/path/query with real `0x0a` newlines (Java `HtxSignUtils`). The previous f-string used a two-character backslash-n sequence and caused 校验失败 on `GET /v5/trade/position/opens`.
 - `LIVE_1CONTRACT_PROBE` is required at the start of `main` for status/open/close, before any HTTP.
+- Probe `client_order_id` is a numeric int64 string in `[1, 2^63-1]` (HTX v5 rejects `probe-open-*` prefixes).
 
 ## [0.1.0-rc.13] - 2026-10-12
 

@@ -14,9 +14,12 @@ from htx_trend.probe_1contract import (
     DEFAULT_SYMBOL,
     PROBE_MAX_QTY,
     ProbeAborted,
+    _client_order_id,
     main,
     place_probe_order,
 )
+
+_INT64_MAX = (1 << 63) - 1
 
 
 def _client(handler, *, live: bool = True) -> HtxV5Client:
@@ -113,6 +116,56 @@ def test_probe_open_places_one_buy(monkeypatch):
             "self_match_prevent": "cancel_both",
         }
     ]
+
+
+def test_client_order_id_is_numeric_int64_and_unique():
+    seen = set()
+    for action in ("open", "close", "open"):
+        cid = _client_order_id(action)
+        assert cid.isdigit()
+        value = int(cid)
+        assert 1 <= value <= _INT64_MAX
+        seen.add(cid)
+    assert len(seen) == 3
+
+
+def test_cli_open_uses_numeric_client_order_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVE_1CONTRACT_PROBE", "1")
+    evidence = tmp_path / "probe.json"
+    captured = []
+
+    class FakeClient:
+        def positions(self, contract_code):
+            return []
+
+        def balance(self):
+            return {}
+
+        def place_order(self, request):
+            captured.append(request.client_order_id)
+            return {"order_id": "1"}
+
+        def order(self, *a, **k):
+            return {}
+
+    main(
+        ["open", "--evidence", str(evidence)],
+        client_factory=lambda *a, **k: FakeClient(),
+        credentials_loader=lambda: type(
+            "C",
+            (),
+            {
+                "account_id": 1,
+                "account_label": "primary",
+                "access_key": "ak",
+                "secret_key": "sk",
+                "base_url": "https://example.test",
+            },
+        )(),
+    )
+    assert len(captured) == 1
+    assert captured[0].isdigit()
+    assert 1 <= int(captured[0]) <= _INT64_MAX
 
 
 def test_defaults_are_btc_buy_open_sell_close_qty_one():
