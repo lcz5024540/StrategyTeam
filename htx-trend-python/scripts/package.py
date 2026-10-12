@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -153,6 +154,37 @@ def generate_requirements_lock() -> Path:
     return lock_file
 
 
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def build_package_manifest(repo_root: Path) -> dict:
+    files = {}
+    for path, rel in sorted(iter_package_files(repo_root), key=lambda item: str(item[1])):
+        files[str(rel).replace("\\", "/")] = file_sha256(path)
+    blob = json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
+    return {
+        "files": files,
+        "content_hash": hashlib.sha256(blob).hexdigest(),
+    }
+
+
+def require_fresh_strategy_manifest(repo_root: Path) -> dict:
+    src = repo_root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from htx_trend.research.strategy_manifest import check_committed_manifest
+
+    return check_committed_manifest(
+        repo_root / "strategy_manifest.yaml",
+        repo_root / "configs" / "runs" / "R0001.yaml",
+    )
+
+
 def create_package(
     version: str, git_info: dict, output_dir: Path | None = None
 ) -> tuple[Path, str]:
@@ -165,11 +197,18 @@ def create_package(
     tar_path = dist_dir / f"{package_name}.tar.gz"
     
     print(f"Creating package: {tar_path}")
+    package_manifest = build_package_manifest(repo_root)
+    manifest_bytes = json.dumps(package_manifest, indent=2, sort_keys=True).encode()
     
     with tarfile.open(tar_path, "w:gz") as tar:
         for file_path, arcname in iter_package_files(repo_root):
-            tar.add(file_path, arcname=arcname)
+            tar.add(file_path, arcname=str(arcname).replace("\\", "/"))
             print(f"  Added: {arcname}")
+        info = tarfile.TarInfo("PACKAGE_MANIFEST")
+        info.size = len(manifest_bytes)
+        info.mtime = int(datetime.now(UTC).timestamp())
+        tar.addfile(info, io.BytesIO(manifest_bytes))
+        print("  Added: PACKAGE_MANIFEST")
     
     sha256_hash = hashlib.sha256()
     with open(tar_path, "rb") as f:
@@ -571,15 +610,17 @@ def main(argv: list[str] | None = None) -> int:
     lock_file = generate_requirements_lock()
     print()
 
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+    repo_root = Path(__file__).parent.parent
+    sys.path.insert(0, str(repo_root / "src"))
     from htx_trend.research.version_info import write_build_info
 
-    build_info_path = (
-        Path(__file__).parent.parent / "src" / "htx_trend" / "research" / "_build_info.py"
-    )
+    strategy_manifest = require_fresh_strategy_manifest(repo_root)
+    print("strategy-manifest --check passed")
+
+    build_info_path = repo_root / "src" / "htx_trend" / "research" / "_build_info.py"
     import yaml
 
-    strategy_manifest_path = Path(__file__).parent.parent / "strategy_manifest.yaml"
+    strategy_manifest_path = repo_root / "strategy_manifest.yaml"
     if not strategy_manifest_path.is_file():
         raise SystemExit(
             "strategy_manifest.yaml is missing; "
@@ -597,6 +638,21 @@ def main(argv: list[str] | None = None) -> int:
     print(f"STRATEGY_MANIFEST_SHA256: {strategy_sha}")
     
     tar_path, sha256 = create_package(version, git_info)
+    write_build_info(
+        build_info_path,
+        "",
+        {"commit": "", "branch": "", "dirty": False},
+        strategy_manifest_sha256="",
+    )
+    build_info_path.write_text(
+        "# Overwritten by scripts/package.py when building a release tarball.\n"
+        "\n"
+        'COMMIT = ""\n'
+        'BRANCH = ""\n'
+        'VERSION = ""\n'
+        "DIRTY = False\n"
+        'STRATEGY_MANIFEST_SHA256 = ""\n'
+    )
     print()
 
     if os.environ.get("SKIP_PACKAGE_VERIFY") != "1":

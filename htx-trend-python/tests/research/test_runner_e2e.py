@@ -65,6 +65,7 @@ def _breakout_config(workspace, run_id="E2E1", **overrides):
         conditions={
             "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
             "C02": {
+                "enabled": True,
                 "atr_period": 14,
                 "atr_multiplier": 2.0,
                 "tick_size": 0.1,
@@ -395,6 +396,7 @@ def _entry_workspace(tmp_path, run_id, mutate):
             conditions={
                 "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
                 "C02": {
+                    "enabled": True,
                     "atr_period": 14,
                     "atr_multiplier": 2.0,
                     "tick_size": 0.1,
@@ -496,6 +498,7 @@ def _confirm_entry(workspace, run_id, next_close):
             conditions={
                 "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
                 "C02": {
+                    "enabled": True,
                     "atr_period": 14,
                     "atr_multiplier": 2.0,
                     "tick_size": 0.1,

@@ -126,26 +126,23 @@ def test_overlap_deviation_goes_to_audit_not_non_comparable():
 
 def test_daily_bar_containing_stitch_is_non_comparable():
     stitch = datetime(2020, 11, 1, tzinfo=UTC)
-    times = pd.date_range("2020-10-30 00:00", periods=18, freq="4h", tz="UTC")
+    times = pd.date_range("2020-10-20 00:00", periods=40 * 6, freq="4h", tz="UTC")
     htx = _klines(times, 100.0, "htx")
     bn = _klines(times, 100.0, "binance")
     stitcher = DataStitcher(0.003, window_bars=30)
     utc00, _ = stitcher.stitch_daily_from_4h(
-        htx, bn, daily_cut="UTC00", now=datetime(2020, 11, 10, tzinfo=UTC),
-        stitch_point=stitch, symbol="BTC-USDT",
-    )
-    utc16, _ = stitcher.stitch_daily_from_4h(
-        htx, bn, daily_cut="UTC16", now=datetime(2020, 11, 10, tzinfo=UTC),
+        htx, bn, daily_cut="UTC00", now=datetime(2020, 11, 20, tzinfo=UTC),
         stitch_point=stitch, symbol="BTC-USDT",
     )
     cut00 = daily_open_for(stitch, "UTC00")
-    cut16 = daily_open_for(stitch, "UTC16")
     row00 = utc00[utc00["bar_time"] == pd.Timestamp(cut00)]
-    row16 = utc16[utc16["bar_time"] == pd.Timestamp(cut16)]
     assert not row00.empty
-    assert not row16.empty
     assert bool(row00.iloc[0]["non_comparable"]) is True
-    assert bool(row16.iloc[0]["non_comparable"]) is True
+    with pytest.raises(ValueError, match="UTC 00:00"):
+        stitcher.stitch_daily_from_4h(
+            htx, bn, daily_cut="UTC16", now=datetime(2020, 11, 20, tzinfo=UTC),
+            stitch_point=stitch, symbol="BTC-USDT",
+        )
 
 
 def _freeze_args(workspace: Path, **extra):

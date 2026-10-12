@@ -1,5 +1,5 @@
 package_version: 0.1.0
-git_commit: 2ecf4a3ae54a74f047465a68f45130bd28caa6a8
+git_commit: f365076558500f84dc6cf76cd1107d4322812ff4
 timeframe: 4hour
 symbols:
 - BTC-USDT
@@ -8,6 +8,10 @@ initial_equity: 300
 risk_per_trade: 0.02
 max_total_risk: 0.1
 max_positions: 5
+leverage_target: 5.0
+cost_scenario: base
+dataset_id: TODO_FREEZE_DATASET_ID
+manifest_hash: TODO_FREEZE_MANIFEST_HASH
 conditions:
 - id: C01
   name: Donchian Ensemble
@@ -82,4 +86,5 @@ conditions:
   params: {}
   code_path: null
   code_sha256: null
-manifest_sha256: 8a7db36ce517ca09cac5a44f8288d509cd3eb1dfd0923ff04b88e200b92e92e1
+split: train
+manifest_sha256: 306a17eb4e2b4e86d9be2a2380f3f11a7840c9fd4ad681c0e68384496815c45c

@@ -67,6 +67,7 @@ def _sync_config(workspace, run_id: str) -> dict:
         conditions={
             "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
             "C02": {
+                "enabled": True,
                 "atr_period": 14,
                 "atr_multiplier": 2.0,
                 "tick_size": 0.1,

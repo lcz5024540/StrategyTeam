@@ -84,12 +84,19 @@ def test_manifest_level_fields_come_from_config_and_package():
     assert built["risk_per_trade"] == 0.02
     assert built["max_total_risk"] == 0.10
     assert built["max_positions"] == 5
+    assert built["leverage_target"] == 5.0
+    assert built["cost_scenario"] == "base"
+    assert built["dataset_id"] == "TODO_FREEZE_DATASET_ID"
+    assert built["manifest_hash"] == "TODO_FREEZE_MANIFEST_HASH"
+    assert built["split"] == "train"
 
 
 def test_manifest_sha256_is_canonical_json_excluding_hash_field():
     built = build_strategy_manifest(_r0001(), git_commit="deadbeef")
     payload = canonical_manifest_payload(built)
     assert "manifest_sha256" not in payload
+    assert "git_commit" not in payload
+    assert "package_version" not in payload
     expected = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -102,9 +109,11 @@ def test_manifest_sha256_is_canonical_json_excluding_hash_field():
     }
     other = build_strategy_manifest(mutated, git_commit="deadbeef")
     assert other["manifest_sha256"] != built["manifest_sha256"]
+    other_commit = build_strategy_manifest(_r0001(), git_commit="ffff")
+    assert other_commit["manifest_sha256"] == built["manifest_sha256"]
 
 
-def test_enabled_false_when_config_omits_enabled_key():
+def test_c02_omitted_or_disabled_raises():
     cfg = dict(_r0001())
     cfg["conditions"] = {
         "C01": {"enabled": True, "periods": [42], "threshold": 0.25},
@@ -115,15 +124,28 @@ def test_enabled_false_when_config_omits_enabled_key():
             "stop_slippage_ticks": 1,
         },
     }
-    built = build_strategy_manifest(cfg, git_commit="x")
-    by_id = {row["id"]: row for row in built["conditions"]}
-    assert by_id["C02"]["enabled"] is False
-    assert by_id["C02"]["params"]["atr_period"] == 14
+    with pytest.raises(ValueError, match="C02 must be declared with enabled: true"):
+        build_strategy_manifest(cfg, git_commit="x")
+    cfg["conditions"]["C02"]["enabled"] = False
+    with pytest.raises(ValueError, match="C02 must be declared with enabled: true"):
+        build_strategy_manifest(cfg, git_commit="x")
+    cfg["conditions"].pop("C02")
+    with pytest.raises(ValueError, match="C02 must be declared with enabled: true"):
+        build_strategy_manifest(cfg, git_commit="x")
 
 
 def test_build_raises_when_enabled_implemented_condition_missing_params():
     cfg = dict(_r0001())
-    cfg["conditions"] = {"C01": {"enabled": True, "threshold": 0.25}}
+    cfg["conditions"] = {
+        "C01": {"enabled": True, "threshold": 0.25},
+        "C02": {
+            "enabled": True,
+            "atr_period": 14,
+            "atr_multiplier": 2.0,
+            "tick_size": 0.1,
+            "stop_slippage_ticks": 1,
+        },
+    }
     with pytest.raises(ValueError, match="C01"):
         build_strategy_manifest(cfg, git_commit="x")
 
@@ -237,11 +259,19 @@ def test_runner_fails_if_manifest_cannot_be_built(tmp_path):
         "breakout",
         symbols=["BTC-USDT"],
         allow_missing_funding=True,
-        conditions={"C01": {"enabled": True}},
+        conditions={
+            "C01": {"enabled": True},
+            "C02": {
+                "enabled": True,
+                "atr_period": 14,
+                "atr_multiplier": 2.0,
+                "tick_size": 0.1,
+                "stop_slippage_ticks": 1,
+            },
+        },
     )
-    runner = write_runner(workspace, cfg)
-    with pytest.raises(ValueError, match="C01|manifest"):
-        runner.run()
+    with pytest.raises(ValueError, match="C01"):
+        write_runner(workspace, cfg)
 
 
 def test_package_includes_strategy_manifest_and_tag_script(tmp_path):
@@ -274,6 +304,188 @@ def test_write_build_info_includes_strategy_manifest_sha256(tmp_path):
     )
     text = path.read_text()
     assert "STRATEGY_MANIFEST_SHA256 = '" + "ff" * 32 + "'" in text
+
+
+def test_sql_migration_documents_build_info_columns():
+    path = PACKAGE_ROOT / "sql" / "2026-10-12__runs_build_info.sql"
+    text = path.read_text()
+    assert "build_info_commit" in text
+    assert "build_info_version" in text
+    assert "build_info_branch" in text
+    assert "package_content_hash" in text
+
+
+def test_ledger_stores_build_info_and_package_content_hash(tmp_path):
+    built = build_strategy_manifest(_r0001(), git_commit="cafebabe")
+    ledger = LedgerManager(tmp_path / "ledger.db")
+    cols = {
+        row[1]
+        for row in sqlite3.connect(tmp_path / "ledger.db").execute(
+            "PRAGMA table_info(runs)"
+        )
+    }
+    assert "build_info_commit" in cols
+    assert "package_content_hash" in cols
+    ledger.register_run(
+        RunRecord(
+            run_id="M2",
+            parent_run_id=None,
+            git_commit="cafebabe",
+            dataset_hash="d",
+            environment="BACKTEST",
+            config_snapshot={"run_id": "M2"},
+            cost_scenario="base",
+            created_at=datetime.now(timezone.utc),
+            strategy_manifest_sha256=built["manifest_sha256"],
+            strategy_manifest=built,
+            build_info_commit="cafebabe",
+            build_info_version="0.1.0-rc.10",
+            build_info_branch="release",
+            package_content_hash="ab" * 32,
+        )
+    )
+    loaded = ledger.get_run("M2")
+    assert loaded is not None
+    assert loaded.build_info_commit == "cafebabe"
+    assert loaded.build_info_version == "0.1.0-rc.10"
+    assert loaded.build_info_branch == "release"
+    assert loaded.package_content_hash == "ab" * 32
+
+
+def test_runner_refuses_non_smoke_manifest_hash_mismatch(tmp_path):
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    create_test_dataset(workspace, "breakout", n_bars=260, train_end_idx=260, val_end_idx=260)
+    cfg = runner_config(
+        workspace,
+        "MANMIS",
+        "breakout",
+        symbols=["BTC-USDT"],
+        allow_missing_funding=True,
+        strategy_manifest_sha256="0" * 64,
+        conditions={
+            "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
+            "C02": {
+                "enabled": True,
+                "atr_period": 14,
+                "atr_multiplier": 2.0,
+                "tick_size": 0.1,
+                "stop_slippage_ticks": 1,
+            },
+        },
+    )
+    runner = write_runner(workspace, cfg)
+    with pytest.raises(ValueError, match="strategy_manifest_sha256"):
+        runner.run()
+
+
+def test_runner_refuses_non_smoke_when_manifest_hash_missing(tmp_path):
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    create_test_dataset(workspace, "breakout", n_bars=260, train_end_idx=260, val_end_idx=260)
+    cfg = runner_config(
+        workspace,
+        "MANMISS",
+        "breakout",
+        symbols=["BTC-USDT"],
+        allow_missing_funding=True,
+        conditions={
+            "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
+            "C02": {
+                "enabled": True,
+                "atr_period": 14,
+                "atr_multiplier": 2.0,
+                "tick_size": 0.1,
+                "stop_slippage_ticks": 1,
+            },
+        },
+    )
+    cfg.pop("strategy_manifest_sha256", None)
+    path = workspace / "MANMISS.yaml"
+    path.write_text(yaml.dump(cfg))
+    from htx_trend.research.runner import BacktestRunner
+
+    runner = BacktestRunner(path, workspace)
+    with pytest.raises(ValueError, match="strategy_manifest_sha256"):
+        runner.run()
+
+
+def test_smoke_run_records_manifest_without_preregistered_hash(tmp_path):
+    from datetime import date
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    create_test_dataset(workspace, "breakout", n_bars=260, train_end_idx=260, val_end_idx=260)
+    today = date.today().strftime("%Y%m%d")
+    run_id = f"SMOKE-{today}-01"
+    cfg = runner_config(
+        workspace,
+        run_id,
+        "breakout",
+        symbols=["BTC-USDT"],
+        allow_missing_funding=True,
+        run_type="SMOKE",
+        smoke_bar_window=50,
+        conditions={
+            "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
+            "C02": {
+                "enabled": True,
+                "atr_period": 14,
+                "atr_multiplier": 2.0,
+                "tick_size": 0.1,
+                "stop_slippage_ticks": 1,
+            },
+        },
+    )
+    cfg.pop("strategy_manifest_sha256", None)
+    path = workspace / f"{run_id}.yaml"
+    path.write_text(yaml.dump(cfg))
+    from htx_trend.research.runner import BacktestRunner
+
+    runner = BacktestRunner(path, workspace)
+    runner.run()
+    recorded = runner.ledger.get_run(run_id)
+    assert recorded is not None
+    assert recorded.strategy_manifest_sha256
+    assert recorded.git_commit
+    assert recorded.git_commit != "unknown"
+
+
+def test_package_create_writes_package_manifest(tmp_path):
+    import sys
+    import tarfile
+
+    sys.path.insert(0, str(PACKAGE_ROOT / "scripts"))
+    import package as package_mod
+
+    tar_path, _ = package_mod.create_package(
+        "0.1.0-rc.10",
+        {"short_sha": "deadbeef", "commit": "deadbeef", "branch": "release", "dirty": False},
+        output_dir=tmp_path,
+    )
+    with tarfile.open(tar_path) as tar:
+        names = {name.replace("\\", "/") for name in tar.getnames()}
+        payload = json.loads(tar.extractfile("PACKAGE_MANIFEST").read())
+    assert "PACKAGE_MANIFEST" in names
+    assert payload["files"]
+    assert payload["content_hash"]
+    assert "strategy_manifest.yaml" in payload["files"]
+
+
+def test_package_require_fresh_strategy_manifest():
+    import sys
+
+    sys.path.insert(0, str(PACKAGE_ROOT / "scripts"))
+    import package as package_mod
+
+    payload = package_mod.require_fresh_strategy_manifest(PACKAGE_ROOT)
+    assert payload["manifest_sha256"]
+
+
+def test_r0001_pins_strategy_manifest_sha256():
+    cfg = _r0001()
+    built = build_strategy_manifest(cfg)
+    assert cfg.get("strategy_manifest_sha256") == built["manifest_sha256"]
 
 
 def test_tag_message_prints_v0_1_0_summary_without_creating_a_tag(capsys):

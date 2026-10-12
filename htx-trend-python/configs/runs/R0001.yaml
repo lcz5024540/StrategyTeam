@@ -22,6 +22,7 @@ registration:
 # 数据集：冻结前占位，registration gate / runner 会拒绝 TODO/PLACEHOLDER
 dataset_id: "TODO_FREEZE_DATASET_ID"
 manifest_hash: "TODO_FREEZE_MANIFEST_HASH"
+strategy_manifest_sha256: "306a17eb4e2b4e86d9be2a2380f3f11a7840c9fd4ad681c0e68384496815c45c"
 symbols:
   - BTC-USDT
   - ETH-USDT

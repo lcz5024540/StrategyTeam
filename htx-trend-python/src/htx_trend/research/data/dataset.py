@@ -15,16 +15,18 @@ from ..ledger.ledger import ApprovalDecision, ApprovalGate
 from ..ops.logging import LogComponent, log_event
 from .immutable_storage import ImmutableKlineStorage
 from .manifest import DatasetManifest, VerificationResult
+from ..features.daily_resample import daily_open_for
 from .quality import (
-    DEFAULT_STITCH_POINT,
     EXTERNAL_SOURCES,
     QUALITY_FLAG_COLUMNS,
     STITCH_WINDOW_BARS,
     BadTick,
     confirmed_bad_ticks,
     load_bad_ticks,
+    require_quality_flag_column,
     require_quality_flag_columns,
 )
+from .stitcher import mark_stitch_day, mark_stitch_window
 
 BAR_DURATION = {
     "4hour": timedelta(hours=4),
@@ -118,22 +120,68 @@ def compute_split_boundaries(
     return validation_start, test_start
 
 
-def _non_comparable_from_stitch(
-    times: pd.Series, stitch_point: datetime, window_bars: int, timeframe: str
-) -> pd.Series:
-    result = pd.Series(False, index=times.index)
-    if times.empty:
-        return result
+def _require_utc00_daily_cut(daily_cut: str | None) -> str:
+    cut = "UTC00" if daily_cut is None else str(daily_cut)
+    if cut != "UTC00":
+        raise ValueError(
+            "1d non_comparable uses a fixed UTC 00:00 daily cut; "
+            f"got {daily_cut!r}"
+        )
+    return cut
+
+
+def _require_window_bars(window_bars: int | None) -> int:
+    value = STITCH_WINDOW_BARS if window_bars is None else int(window_bars)
+    if value != STITCH_WINDOW_BARS:
+        raise ValueError(
+            f"non_comparable_window_bars must be {STITCH_WINDOW_BARS}, got {window_bars!r}"
+        )
+    return value
+
+
+def _utc00_days_covering_4h_window(stitch_point: datetime, window_bars: int) -> set[pd.Timestamp]:
     stitch = pd.Timestamp(stitch_point)
     if stitch.tzinfo is None:
         stitch = stitch.tz_localize("UTC")
     else:
         stitch = stitch.tz_convert("UTC")
-    values = pd.to_datetime(times, utc=True)
-    if timeframe in {"1day", "1d"}:
-        return values == stitch
-    delta = bar_duration(timeframe) * int(window_bars)
-    return (values - stitch).abs() <= delta
+    floored = stitch.floor("4h")
+    pos = floored if stitch == floored else stitch.ceil("4h")
+    times = [pos + pd.Timedelta(hours=4 * offset) for offset in range(-int(window_bars), int(window_bars) + 1)]
+    return {pd.Timestamp(daily_open_for(ts, "UTC00")) for ts in times}
+
+
+def _non_comparable_4h(times: pd.Series, stitch_point: datetime | None, window_bars: int) -> pd.Series:
+    result = pd.Series(False, index=times.index)
+    if times.empty or stitch_point is None:
+        return result
+    tmp = pd.DataFrame({"bar_time": times})
+    tmp = mark_stitch_window(tmp, stitch_point, window_bars)
+    return tmp["non_comparable"].astype(bool)
+
+
+def _non_comparable_1d(
+    work: pd.DataFrame,
+    times: pd.Series,
+    stitch_point: datetime | None,
+    window_bars: int,
+) -> pd.Series:
+    result = pd.Series(False, index=work.index)
+    if "mixed_source" in work.columns:
+        mixed = work["mixed_source"]
+        if mixed.isna().any():
+            raise ValueError("mixed_source contains null values")
+        result = result | mixed.astype(bool)
+    if "source" in work.columns:
+        result = result | (work["source"].astype("string") == "mixed")
+    if stitch_point is None:
+        return result.astype(bool)
+    tmp = pd.DataFrame({"bar_time": times, "non_comparable": result.to_numpy()})
+    tmp = mark_stitch_day(tmp, stitch_point, "UTC00")
+    result = tmp["non_comparable"].astype(bool)
+    window_days = _utc00_days_covering_4h_window(stitch_point, window_bars)
+    result = result | pd.to_datetime(times, utc=True).isin(list(window_days))
+    return result.astype(bool)
 
 
 def _external_from_source(source: pd.Series, is_backfill: pd.Series | None) -> pd.Series:
@@ -168,16 +216,18 @@ def derive_quality_flags(
     symbol: str,
     timeframe: str,
     cutoff: datetime,
-    stitch_point: datetime,
+    stitch_point: datetime | None,
     window_bars: int,
     ticks: Iterable[BadTick],
+    daily_cut: str | None = None,
 ) -> pd.DataFrame:
     work = df.copy()
-    drop = [name for name in QUALITY_FLAG_COLUMNS if name in work.columns]
-    if drop:
-        work = work.drop(columns=drop)
+    window_bars = _require_window_bars(window_bars)
+    if timeframe in {"1day", "1d"}:
+        _require_utc00_daily_cut(daily_cut)
     times = pd.to_datetime(work["bar_time"], utc=True)
-    work["incomplete"] = (
+    derived: dict[str, pd.Series] = {}
+    derived["incomplete"] = (
         (times + bar_duration(timeframe)) > pd.Timestamp(cutoff)
     ).astype(bool)
     if "source" not in work.columns:
@@ -194,11 +244,27 @@ def derive_quality_flags(
             f"{symbol} dataset quality flag column 'external' contains null "
             "values (NaN/None); refusing to coerce with bool()."
         )
-    work["external"] = external.astype(bool)
-    work["non_comparable"] = _non_comparable_from_stitch(
-        times, stitch_point, window_bars, timeframe
-    ).astype(bool)
-    work["bad_tick"] = _bad_tick_from_yaml(times, symbol, ticks).astype(bool)
+    derived["external"] = external.astype(bool)
+    if timeframe in {"1day", "1d"}:
+        derived["non_comparable"] = _non_comparable_1d(
+            work, times, stitch_point, window_bars
+        )
+    else:
+        derived["non_comparable"] = _non_comparable_4h(times, stitch_point, window_bars)
+    derived["bad_tick"] = _bad_tick_from_yaml(times, symbol, ticks).astype(bool)
+
+    for name in QUALITY_FLAG_COLUMNS:
+        recomputed = derived[name].astype(bool)
+        if name in work.columns:
+            require_quality_flag_column(work, name, symbol=symbol)
+            if not (work[name].to_numpy() == recomputed.to_numpy()).all():
+                raise ValueError(
+                    f"{symbol} quality flag {name!r} does not match recomputation "
+                    f"(upstream={int(work[name].sum())} recomputed={int(recomputed.sum())})"
+                )
+        else:
+            work[name] = recomputed
+    require_quality_flag_columns(work, symbol=symbol)
     return work
 
 
@@ -421,6 +487,12 @@ class DatasetManager:
     ) -> FrozenDataset:
         if data_cutoff_close_utc is None:
             raise ValueError("data_cutoff_close_utc is required")
+        meta = extra_metadata or {}
+        if timeframe in {"1day", "1d"}:
+            _require_utc00_daily_cut(meta.get("daily_cut"))
+        _require_window_bars(
+            meta["non_comparable_window_bars"] if "non_comparable_window_bars" in meta else None
+        )
         cutoff = parse_utc_datetime(data_cutoff_close_utc)
         filtered: dict[str, pd.DataFrame] = {}
         for symbol, df in data.items():
@@ -475,6 +547,7 @@ class DatasetManager:
             "total_bars": total_bars,
             "data_cutoff_close_utc": cutoff_iso,
             "split": split_payload,
+            "non_comparable_window_bars": STITCH_WINDOW_BARS,
         }
         if extra_metadata:
             for key in (
@@ -496,13 +569,12 @@ class DatasetManager:
         dataset_dir.mkdir(parents=True, exist_ok=True)
 
         ticks = list(bad_ticks) if bad_ticks is not None else load_bad_ticks()
-        meta = extra_metadata or {}
         stitch_points = meta.get("stitch_points") or {}
-        window_bars = int(meta.get("non_comparable_window_bars") or STITCH_WINDOW_BARS)
+        window_bars = STITCH_WINDOW_BARS
         for symbol, df in data.items():
             output_path = dataset_dir / f"{symbol}.parquet"
             point = stitch_points.get(symbol)
-            stitch = parse_utc_datetime(point) if point else DEFAULT_STITCH_POINT
+            stitch = parse_utc_datetime(point) if point else None
             frame = derive_quality_flags(
                 df,
                 symbol=symbol,
@@ -511,6 +583,7 @@ class DatasetManager:
                 stitch_point=stitch,
                 window_bars=window_bars,
                 ticks=ticks,
+                daily_cut=meta.get("daily_cut"),
             )
             require_quality_flag_columns(frame, symbol=symbol)
             frame.to_parquet(output_path, index=False)

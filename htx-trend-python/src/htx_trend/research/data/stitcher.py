@@ -95,9 +95,15 @@ def mark_stitch_day(
     work = daily.copy()
     if work.empty:
         return work
+    cut = DEFAULT_DAILY_CUT if daily_cut is None else str(daily_cut)
+    if cut != "UTC00":
+        raise ValueError(
+            "1d non_comparable uses a fixed UTC 00:00 daily cut; "
+            f"got {daily_cut!r}"
+        )
     if "non_comparable" not in work.columns:
         work["non_comparable"] = False
-    stitch_open = daily_open_for(stitch_point, daily_cut)
+    stitch_open = daily_open_for(stitch_point, "UTC00")
     times = pd.to_datetime(work["bar_time"], utc=True)
     work.loc[times == pd.Timestamp(stitch_open), "non_comparable"] = True
     return work
@@ -215,8 +221,10 @@ class DataStitcher:
         combined["non_comparable"] = False
         if "bad_tick" not in combined.columns:
             combined["bad_tick"] = False
-        combined = mark_stitch_window(combined, stitch, window)
-        if mark_daily_stitch_day:
+        did_stitch = not bn.empty
+        if did_stitch:
+            combined = mark_stitch_window(combined, stitch, window)
+        if mark_daily_stitch_day and did_stitch:
             combined = mark_stitch_day(combined, stitch, daily_cut)
         combined = combined.sort_values("bar_time").reset_index(drop=True)
 
@@ -252,6 +260,12 @@ class DataStitcher:
         window_bars: int | None = None,
     ) -> tuple[pd.DataFrame, dict]:
         """Canonical 1d from 4h. Raw HTX 1d is stored but not used for signals."""
+        cut = DEFAULT_DAILY_CUT if daily_cut is None else str(daily_cut)
+        if cut != "UTC00":
+            raise ValueError(
+                "1d non_comparable uses a fixed UTC 00:00 daily cut; "
+                f"got {daily_cut!r}"
+            )
         detected_hour = None
         if htx_1d is not None and not htx_1d.empty:
             detected_hour = detect_daily_open_hour(htx_1d["bar_time"])
@@ -259,27 +273,48 @@ class DataStitcher:
         tagged_htx = htx_4h.copy()
         if not tagged_htx.empty and "source" not in tagged_htx.columns:
             tagged_htx["source"] = "htx"
-        tagged_bn = binance_4h.copy()
+        tagged_bn = binance_4h.copy() if binance_4h is not None else pd.DataFrame()
         if not tagged_bn.empty and "source" not in tagged_bn.columns:
             tagged_bn["source"] = "binance"
 
-        htx_daily = resample_4h_to_daily(tagged_htx, daily_cut=daily_cut, now=now)
-        bn_daily = resample_4h_to_daily(tagged_bn, daily_cut=daily_cut, now=now)
-        combined, stats = self.stitch_klines(
-            htx_daily.signal_bars,
-            bn_daily.signal_bars,
-            stitch_point=stitch_point,
-            symbol=symbol,
-            window_bars=window_bars,
-            mark_daily_stitch_day=True,
-            daily_cut=daily_cut,
-        )
+        did_stitch = not tagged_bn.empty
+        if did_stitch:
+            combined_4h, stats = self.stitch_klines(
+                tagged_htx,
+                tagged_bn,
+                stitch_point=stitch_point,
+                symbol=symbol,
+                window_bars=window_bars,
+                mark_daily_stitch_day=False,
+                daily_cut="UTC00",
+            )
+        else:
+            combined_4h = tagged_htx
+            if not combined_4h.empty and "non_comparable" not in combined_4h.columns:
+                combined_4h = combined_4h.copy()
+                combined_4h["non_comparable"] = False
+            stats = {
+                "htx_bars": len(tagged_htx),
+                "binance_bars": 0,
+                "binance_backfill_bars": 0,
+                "overlap_bars": 0,
+                "non_comparable_bars": 0,
+                "total_bars": len(tagged_htx),
+            }
+
+        resampled = resample_4h_to_daily(combined_4h, daily_cut="UTC00", now=now)
+        combined = resampled.signal_bars
+        if did_stitch and stitch_point is not None and not combined.empty:
+            combined = mark_stitch_day(combined, stitch_point, "UTC00")
+        if not combined.empty:
+            stats["non_comparable_bars"] = int(combined["non_comparable"].sum())
+            stats["total_bars"] = len(combined)
         stats.update(daily_resample_manifest_fields(
-            daily_cut=daily_cut,
+            daily_cut="UTC00",
             htx_detected_daily_open_hour=detected_hour,
             extra={
-                "htx_resample": htx_daily.stats,
-                "binance_resample": bn_daily.stats,
+                "htx_resample": resampled.stats,
+                "binance_resample": {},
             },
         ))
         return combined, stats

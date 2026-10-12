@@ -5,6 +5,28 @@ All notable changes to the HTX Trend Research System will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-rc.10] - 2026-10-12
+
+### Changed
+- Freeze quality flags: if an upstream flag column exists, it is strictly validated (bool dtype, no NA) and kept as-is; the same column is also recomputed; mismatch raises `ValueError` (no overwrite, no OR-merge). Only absent columns are derived.
+- 4h `non_comparable` uses the index window of 30 bars before and after an **actual** stitch point (61 bars). HTX-only symbols with no stitch point have 0 `non_comparable` bars. No default stitch point.
+- 1d `non_comparable` uses a fixed UTC 00:00 daily cut (UTC16 raises). A daily bar is `non_comparable` if it contains the stitch point, mixes sources, or is synthesized from any `non_comparable` 4h bar.
+- `external` is derived from `source`; missing/NA `source` raises. `stitch_funding_history` no longer fillna's `source`.
+- Frozen dataset hashed manifest always records `non_comparable_window_bars: 30`.
+- Strategy manifest hash excludes `git_commit` and `package_version` (code_sha256 + params + risk/dataset identity bind the run). C02 requires explicit `enabled: true`. Non-SMOKE `run` refuses unless `config.strategy_manifest_sha256` matches. `package.py` runs `--check` and writes `PACKAGE_MANIFEST` (per-file sha256 + content hash). Ledger stores `_build_info` commit/version/branch and `package_content_hash`.
+
+### Testing
+- Fixture freeze (stitched BTC/ETH 4h covering `bad_ticks.yaml`): 61 `non_comparable` per symbol; 11 `bad_tick` rows total. HTX-only 4h: 0 `non_comparable`. Official 10:00 trial freeze lives on the server; ops verifies real data.
+
+| symbol | timeframe | column | rc.9 (re-derive + default stitch / drop upstream) | rc.10 |
+| --- | --- | --- | --- | --- |
+| BTC-USDT stitched | 4hour | non_comparable | ~61 (time window) or dropped stitch-window | 61 |
+| ETH-USDT stitched | 4hour | non_comparable | ~61 | 61 |
+| BTC-USDT HTX-only | 4hour | non_comparable | 61 around default 2020-11-01 if that data is present | 0 |
+| BTC-USDT + ETH-USDT | 4hour | bad_tick | 11 yaml matches | 11 |
+| 1d mixed-source day | 1day | non_comparable | lost if freeze dropped upstream flags | True |
+| 1d stitch day UTC00 | 1day | non_comparable | True only if `bar_time == stitch` | True (UTC00 day + 4h window days) |
+
 ## [0.1.0-rc.9] - 2026-10-12
 
 ### Added

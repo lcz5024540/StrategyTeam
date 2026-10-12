@@ -229,6 +229,7 @@ def runner_config(workspace: Path, run_id: str, dataset_id: str, **overrides) ->
         "conditions": {
             "C01": {"enabled": True, "periods": [42, 84, 126, 168], "threshold": 0.25},
             "C02": {
+                "enabled": True,
                 "atr_period": 14,
                 "atr_multiplier": 2.0,
                 "tick_size": 0.1,
@@ -243,6 +244,12 @@ def runner_config(workspace: Path, run_id: str, dataset_id: str, **overrides) ->
 
 
 def write_runner(workspace: Path, config: dict) -> BacktestRunner:
+    if "strategy_manifest_sha256" not in config:
+        from htx_trend.research.strategy_manifest import build_strategy_manifest
+
+        config["strategy_manifest_sha256"] = build_strategy_manifest(config)[
+            "manifest_sha256"
+        ]
     path = workspace / f"{config['run_id']}.yaml"
     path.write_text(yaml.dump(config))
     return BacktestRunner(path, workspace)

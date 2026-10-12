@@ -329,16 +329,12 @@ def stitch_funding_history(
         bn["funding_time"] = pd.to_datetime(bn["funding_time"], utc=True)
         if "source" not in bn.columns:
             bn["source"] = "binance_external"
-        else:
-            bn["source"] = bn["source"].fillna("binance_external")
         frames.append(bn[bn["funding_time"] < stitch])
     if htx is not None and not htx.empty:
         hx = htx.copy()
         hx["funding_time"] = pd.to_datetime(hx["funding_time"], utc=True)
         if "source" not in hx.columns:
             hx["source"] = "htx"
-        else:
-            hx["source"] = hx["source"].fillna("htx")
         frames.append(hx[hx["funding_time"] >= stitch])
     if not frames:
         return pd.DataFrame(

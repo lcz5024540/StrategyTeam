@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -98,6 +99,16 @@ def get_git_info() -> tuple[str, str, bool]:
     
     except Exception:
         return "unknown", "unknown", False
+
+
+def load_package_manifest(root: Path | None = None) -> dict:
+    """Read PACKAGE_MANIFEST written by scripts/package.py (per-file + content hash)."""
+    base = root or Path(__file__).resolve().parents[3]
+    path = base / "PACKAGE_MANIFEST"
+    if not path.is_file():
+        return {}
+    payload = json.loads(path.read_text())
+    return payload if isinstance(payload, dict) else {}
 
 
 def get_version_info() -> VersionInfo:

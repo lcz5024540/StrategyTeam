@@ -139,6 +139,7 @@ def test_runner_binds_manifest(tmp_path):
         "conditions": {
             "C01": {"enabled": True, "periods": [42, 84, 126, 168], "threshold": 0.25},
             "C02": {
+                "enabled": True,
                 "atr_period": 14,
                 "atr_multiplier": 2.0,
                 "tick_size": 0.1,
@@ -146,10 +147,9 @@ def test_runner_binds_manifest(tmp_path):
             },
         },
     }
-    config_path = workspace / "config.yaml"
-    config_path.write_text(yaml.dump(config))
+    from tests.research.helpers import write_runner
 
-    runner = BacktestRunner(config_path, workspace)
+    runner = write_runner(workspace, config)
     runner.run()
 
     ledger = LedgerManager(workspace / "ledger.db")

@@ -201,11 +201,7 @@ def test_no_lookahead_truncation_invariance(tmp_path):
             },
         )
         
-        config_path = workspace / f"config_{truncate_at}.yaml"
-        with open(config_path, "w") as f:
-            yaml.dump(config, f)
-        
-        runner = BacktestRunner(config_path, workspace)
+        runner = write_runner(workspace, config)
         result = runner.run()
         results[truncate_at] = result
     

@@ -146,11 +146,17 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     if args.backfill_binance and args.overlap_threshold is None:
         raise SystemExit("--overlap-threshold is required with --backfill-binance")
     if args.timeframe == "1day" and not args.daily_cut:
-        raise SystemExit("--daily-cut is required when freezing 1day (UTC00 or UTC16)")
+        raise SystemExit("--daily-cut is required when freezing 1day (UTC00)")
+    if args.timeframe == "1day" and args.daily_cut != "UTC00":
+        raise SystemExit("1d non_comparable uses a fixed UTC 00:00 daily cut")
 
     stitch_override = getattr(args, "stitch_point", None)
     stitch_config = getattr(args, "stitch_config", None)
     window_bars = int(getattr(args, "non_comparable_window", None) or STITCH_WINDOW_BARS)
+    if window_bars != STITCH_WINDOW_BARS:
+        raise SystemExit(
+            f"--non-comparable-window must be {STITCH_WINDOW_BARS}, got {window_bars}"
+        )
     ticks_file = resolve_bad_ticks_file(workspace, getattr(args, "bad_ticks", None))
     stitch_file = Path(stitch_config) if stitch_config else None
     stitch_points = load_stitch_points(stitch_file, override=stitch_override)
@@ -188,8 +194,10 @@ def cmd_freeze(args: argparse.Namespace) -> None:
                 bn_4h_file = raw_dir / f"{binance_symbol}_4h_binance.parquet"
                 if bn_4h_file.exists():
                     binance_4h = pd.read_parquet(bn_4h_file)
-            point = stitch_point_for(contract, stitch_points, override=stitch_override)
-            used_stitch_points[contract] = point.isoformat()
+            point = None
+            if not binance_4h.empty:
+                point = stitch_point_for(contract, stitch_points, override=stitch_override)
+                used_stitch_points[contract] = point.isoformat()
             combined, stats = stitcher.stitch_daily_from_4h(
                 htx_4h,
                 binance_4h,
@@ -209,7 +217,10 @@ def cmd_freeze(args: argparse.Namespace) -> None:
                 "overlap_bars": stats.get("overlap_bars", 0),
                 "non_comparable_bars": stats.get("non_comparable_bars", 0),
                 "total_bars": stats.get("total_bars", 0),
-                "stitch_point": stats.get("stitch_point", point.isoformat()),
+                "stitch_point": stats.get(
+                    "stitch_point",
+                    point.isoformat() if point is not None else None,
+                ),
             }
             if combined.empty:
                 print(f"{contract}: no complete daily bars after resample, skipping")
@@ -218,9 +229,9 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         elif args.backfill_binance:
             binance_symbol = contract.replace("-", "")
             binance_file = raw_dir / f"{binance_symbol}_{timeframe.replace('hour', 'h')}_binance.parquet"
-            point = stitch_point_for(contract, stitch_points, override=stitch_override)
-            used_stitch_points[contract] = point.isoformat()
             if binance_file.exists():
+                point = stitch_point_for(contract, stitch_points, override=stitch_override)
+                used_stitch_points[contract] = point.isoformat()
                 binance_df = pd.read_parquet(binance_file)
                 combined, stats = stitcher.stitch_klines(
                     htx_df,
@@ -254,10 +265,7 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     dataset_mgr = DatasetManager(workspace / "data" / "datasets")
     
     extra_metadata = {
-        "stitch_points": used_stitch_points or {
-            contract: stitch_point_for(contract, stitch_points, override=stitch_override).isoformat()
-            for contract in data
-        },
+        "stitch_points": used_stitch_points,
         "non_comparable_window_bars": window_bars,
         "bad_ticks_hash": ticks_digest,
         "default_stitch_point": DEFAULT_STITCH_POINT.isoformat(),

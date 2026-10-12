@@ -101,6 +101,12 @@ def _condition_params(spec: dict[str, Any], raw: dict[str, Any], *, enabled: boo
     }
 
 
+def require_c02_enabled(config: dict[str, Any]) -> None:
+    raw = (config.get("conditions") or {}).get("C02") or {}
+    if not isinstance(raw, dict) or raw.get("enabled") is not True:
+        raise ValueError("C02 must be declared with enabled: true")
+
+
 def _condition_row(cond_id: str, config: dict[str, Any]) -> dict[str, Any]:
     spec = dict(CONDITION_SPECS[cond_id])
     spec["id"] = cond_id
@@ -108,6 +114,8 @@ def _condition_row(cond_id: str, config: dict[str, Any]) -> dict[str, Any]:
     raw = conditions.get(cond_id) or {}
     if not isinstance(raw, dict):
         raise ValueError(f"{cond_id} config must be a mapping")
+    if cond_id == "C02" and raw.get("enabled") is not True:
+        raise ValueError("C02 must be declared with enabled: true")
     enabled = bool(raw.get("enabled", False))
     code_path = spec["code_path"]
     code_sha256 = None
@@ -129,8 +137,11 @@ def _condition_row(cond_id: str, config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+HASH_EXCLUDE = frozenset({"manifest_sha256", "git_commit", "package_version"})
+
+
 def canonical_manifest_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in payload.items() if key != "manifest_sha256"}
+    return {key: value for key, value in payload.items() if key not in HASH_EXCLUDE}
 
 
 def manifest_sha256(payload: dict[str, Any]) -> str:
@@ -145,12 +156,14 @@ def build_strategy_manifest(
     git_commit: str | None = None,
     package_version: str | None = None,
 ) -> dict[str, Any]:
-    if git_commit is None:
-        from .version_info import get_version_info
+    from .version_info import get_version_info
 
-        git_commit = get_version_info().commit
+    info = get_version_info()
+    if git_commit is None:
+        git_commit = info.commit
+    require_c02_enabled(config)
     payload: dict[str, Any] = {
-        "package_version": package_version or __version__,
+        "package_version": package_version or info.version,
         "git_commit": git_commit,
         "timeframe": config.get("timeframe"),
         "symbols": list(config.get("symbols") or []),
@@ -158,8 +171,17 @@ def build_strategy_manifest(
         "risk_per_trade": config.get("risk_per_trade"),
         "max_total_risk": config.get("max_total_risk"),
         "max_positions": config.get("max_positions"),
+        "leverage_target": config.get("leverage_target"),
+        "cost_scenario": config.get("cost_scenario"),
+        "dataset_id": config.get("dataset_id"),
+        "manifest_hash": config.get("manifest_hash"),
         "conditions": [_condition_row(cond_id, config) for cond_id in CONDITION_IDS],
     }
+    if config.get("split") is not None:
+        payload["split"] = config.get("split")
+    for key in ("validation_start_utc", "test_start_utc"):
+        if config.get(key) is not None:
+            payload[key] = config.get(key)
     payload["manifest_sha256"] = manifest_sha256(payload)
     return payload
 
@@ -183,12 +205,11 @@ def check_committed_manifest(path: Path | str, config_path: Path | str) -> dict[
     committed = yaml.safe_load(committed_path.read_text())
     if not isinstance(committed, dict):
         raise SystemExit("strategy_manifest.yaml is stale vs code/config: not a mapping")
-    rebuilt = build_strategy_manifest(
-        load_run_config(config_path),
-        git_commit=committed.get("git_commit"),
-        package_version=None,
-    )
-    if rebuilt != committed:
+    rebuilt = build_strategy_manifest(load_run_config(config_path))
+    stored = committed.get("manifest_sha256")
+    if manifest_sha256(committed) != stored:
+        raise SystemExit("strategy_manifest.yaml is stale vs code/config")
+    if rebuilt["manifest_sha256"] != stored:
         raise SystemExit("strategy_manifest.yaml is stale vs code/config")
     return rebuilt
 

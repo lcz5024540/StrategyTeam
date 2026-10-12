@@ -234,7 +234,7 @@ fees:
 
 机器可读的 C01–C09 目录，由 **代码 + 运行配置** 生成，提交在包根目录 `strategy_manifest.yaml`。
 
-每条条件包含：`id`、`name`、`implemented`、`enabled`（来自 run config）、`params`（解析后的值，含已声明字段）、`code_path`、`code_sha256`（条件模块文件字节的 SHA256）。清单级字段：`package_version`、`git_commit`、`timeframe`、`symbols`、风险参数（`initial_equity` / `risk_per_trade` / `max_total_risk` / `max_positions`）、`manifest_sha256`（对去掉 hash 字段后的 canonical JSON，`sort_keys=True`）。
+每条条件包含：`id`、`name`、`implemented`、`enabled`（来自 run config）、`params`（解析后的值，含已声明字段）、`code_path`、`code_sha256`（条件模块文件字节的 SHA256）。清单级字段：`package_version`、`git_commit`（仅记录，**不进入 hash**）、`timeframe`、`symbols`、风险参数（`initial_equity` / `risk_per_trade` / `max_total_risk` / `max_positions` / `leverage_target`）、`cost_scenario`、`dataset_id`、冻结数据集 `manifest_hash`、`split`（及配置里的 split 时间戳）、`manifest_sha256`。Hash 对去掉 `manifest_sha256` / `git_commit` / `package_version` 后的 canonical JSON（`sort_keys=True`）；绑定靠 `code_sha256` 与参数。C02 必须 `enabled: true`。非 SMOKE 的 `run` 要求 `R0001.yaml`（或该次配置）里的 `strategy_manifest_sha256` 与当前清单一致。`scripts/package.py` 打包前跑 `--check`，并写入 `PACKAGE_MANIFEST`（每个打包文件的 sha256 + content hash）。Ledger `runs` 记录 `_build_info` 的 commit/version/branch 与 `package_content_hash`。
 
 ```bash
 python -m htx_trend.research strategy-manifest \

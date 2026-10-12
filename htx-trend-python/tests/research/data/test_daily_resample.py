@@ -132,20 +132,13 @@ def test_freeze_1day_writes_daily_cut_and_resample_to_manifest(tmp_path):
     from htx_trend.research.cli import cmd_freeze
     from htx_trend.research.data.manifest import DatasetManifest
 
-    times = [
-        pd.Timestamp("2024-01-01 16:00", tz="UTC"),
-        pd.Timestamp("2024-01-01 20:00", tz="UTC"),
-        pd.Timestamp("2024-01-02 00:00", tz="UTC"),
-        pd.Timestamp("2024-01-02 04:00", tz="UTC"),
-        pd.Timestamp("2024-01-02 08:00", tz="UTC"),
-        pd.Timestamp("2024-01-02 12:00", tz="UTC"),
-    ]
+    times = list(pd.date_range("2024-01-02", periods=18, freq="4h", tz="UTC"))
     _write_raw_klines(tmp_path, "BTC-USDT", "4hour", times, "htx")
     _write_raw_klines(
         tmp_path,
         "BTC-USDT",
         "1day",
-        [pd.Timestamp("2024-01-01 16:00", tz="UTC")],
+        [pd.Timestamp("2024-01-02 00:00", tz="UTC")],
         "htx",
     )
     cmd_freeze(
@@ -157,20 +150,20 @@ def test_freeze_1day_writes_daily_cut_and_resample_to_manifest(tmp_path):
             val_ratio=0.2,
             backfill_binance=False,
             overlap_threshold=None,
-            daily_cut="UTC16",
+            daily_cut="UTC00",
             cutoff="2026-10-12T00:00:00Z",
-            validation_start="2024-01-01T00:00:00Z",
-            test_start="2024-01-02T00:00:00Z",
+            validation_start="2024-01-03T00:00:00Z",
+            test_start="2024-01-04T00:00:00Z",
             split_from_manifest=None,
         )
     )
     manifests = list((tmp_path / "data" / "datasets" / "manifests").glob("*.json"))
     assert len(manifests) == 1
     batch = DatasetManifest.load(manifests[0])
-    assert batch.metadata["daily_cut"] == "UTC16"
+    assert batch.metadata["daily_cut"] == "UTC00"
     assert batch.metadata["daily_resample"]["name"] == "daily_resample"
     assert batch.metadata["daily_resample"]["version"] == DAILY_RESAMPLE_FEATURE["version"]
-    assert batch.metadata["daily_resample"]["daily_cut"] == "UTC16"
+    assert batch.metadata["daily_resample"]["daily_cut"] == "UTC00"
     assert batch.metadata["htx_native_1d_used_for_signals"] is False
 
 

@@ -6,7 +6,6 @@ import hashlib
 import json
 import math
 import re
-import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,8 +38,8 @@ from .reports import ReportGenerator
 from .risk import AccountLiquidationChecker, LiquidationChecker, PositionSizer
 from .risk.position_sizing import SKIP_MIN_CONTRACT_EXCEEDS_RISK_BUDGET
 from .strategy import Position, StateMachine, StrategyState
-from .strategy_manifest import build_strategy_manifest
-from .version_info import get_version_info
+from .strategy_manifest import build_strategy_manifest, require_c02_enabled
+from .version_info import get_version_info, load_package_manifest
 
 IMPLEMENTED_CONDITIONS = frozenset({"C01", "C02"})
 SMOKE_ID_RE = re.compile(r"^SMOKE-\d{8}-\d{2}$")
@@ -49,6 +48,7 @@ CANONICAL_DIFF_EXCLUDE = frozenset({
     "parent_run_id",
     "registration",
     "stage_acceptance_approval_id",
+    "strategy_manifest_sha256",
 })
 REQUIRED_RUN_FIELDS = (
     "dataset_id",
@@ -201,9 +201,22 @@ class BacktestRunner:
             strategy_manifest = build_strategy_manifest(
                 self.config, git_commit=git_commit
             )
+            if not self._is_smoke:
+                expected = self.config.get("strategy_manifest_sha256")
+                if not expected:
+                    raise ValueError(
+                        "strategy_manifest_sha256 is required for non-SMOKE runs"
+                    )
+                if expected != strategy_manifest["manifest_sha256"]:
+                    raise ValueError(
+                        "strategy_manifest_sha256 does not match the current "
+                        "config+code manifest"
+                    )
 
             data, frozen = self._load_dataset()
             environment = "SMOKE" if self._is_smoke else "BACKTEST"
+            version = get_version_info()
+            package_manifest = load_package_manifest()
 
             run_record = RunRecord(
                 run_id=self.run_id,
@@ -217,6 +230,10 @@ class BacktestRunner:
                 manifest_hash=self.config["manifest_hash"],
                 strategy_manifest_sha256=strategy_manifest["manifest_sha256"],
                 strategy_manifest=strategy_manifest,
+                build_info_commit=version.commit,
+                build_info_version=version.version,
+                build_info_branch=version.branch,
+                package_content_hash=package_manifest.get("content_hash"),
             )
             self.ledger.register_run(run_record)
 
@@ -310,6 +327,7 @@ class BacktestRunner:
                 f"Unknown/unimplemented condition ids: {sorted(unknown)}. "
                 f"Implemented: {sorted(IMPLEMENTED_CONDITIONS)}"
             )
+        require_c02_enabled(self.config)
 
     def _determine_family_id(self) -> str:
         parent_id = self.config.get("parent_run_id")
@@ -498,17 +516,15 @@ class BacktestRunner:
         return processed_data, frozen
 
     def _get_git_commit(self) -> str:
-        try:
-            result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=self.workspace_dir.parent,
+        info = get_version_info()
+        commit = (info.commit or "").strip()
+        if not commit or commit == "unknown":
+            if self._is_smoke:
+                return "unknown"
+            raise ValueError(
+                "git_commit is unknown; refusing to run without git or _build_info"
             )
-            return result.stdout.strip()
-        except Exception:
-            return "unknown"
+        return commit
 
     def _load_contract_spec(self, symbol: str, frozen: Any = None) -> dict[str, Any]:
         verified = getattr(frozen, "verified_spec_paths", None) or {}
@@ -575,6 +591,8 @@ class BacktestRunner:
         )
 
         c02_config = (self.config.get("conditions") or {}).get("C02") or {}
+        if c02_config.get("enabled") is not True:
+            raise ValueError("C02 must be declared with enabled: true")
         for field in ("atr_period", "atr_multiplier", "tick_size", "stop_slippage_ticks"):
             if field not in c02_config or c02_config[field] is None:
                 raise ValueError(f"C02 config missing required field '{field}'")

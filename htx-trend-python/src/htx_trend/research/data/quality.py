@@ -165,6 +165,31 @@ def stitch_point_for(
     return table.get(symbol, DEFAULT_STITCH_POINT)
 
 
+def require_quality_flag_column(df: pd.DataFrame, name: str, *, symbol: str) -> None:
+    if name not in df.columns:
+        raise ValueError(
+            f"{symbol} dataset missing required quality flag columns: ['{name}']. "
+            "Only an existing column with value False means a normal bar."
+        )
+    series = df[name]
+    if series.isna().any():
+        raise ValueError(
+            f"{symbol} dataset quality flag column {name!r} contains null "
+            "values (NaN/None); refusing to coerce with bool()."
+        )
+    if series.dtype != bool:
+        raise ValueError(
+            f"{symbol} dataset quality flag column {name!r} must be strictly "
+            f"boolean (numpy.bool_/bool), got dtype={series.dtype}."
+        )
+    for value in series.tolist():
+        if value is not True and value is not False and type(value).__name__ != "bool_":
+            raise ValueError(
+                f"{symbol} dataset quality flag column {name!r} must be strictly "
+                f"boolean (numpy.bool_/bool), got {value!r}."
+            )
+
+
 def require_quality_flag_columns(df: pd.DataFrame, *, symbol: str) -> None:
     missing = [name for name in QUALITY_FLAG_COLUMNS if name not in df.columns]
     if missing:
@@ -173,23 +198,7 @@ def require_quality_flag_columns(df: pd.DataFrame, *, symbol: str) -> None:
             "Only an existing column with value False means a normal bar."
         )
     for name in QUALITY_FLAG_COLUMNS:
-        series = df[name]
-        if series.isna().any():
-            raise ValueError(
-                f"{symbol} dataset quality flag column {name!r} contains null "
-                "values (NaN/None); refusing to coerce with bool()."
-            )
-        if series.dtype != bool:
-            raise ValueError(
-                f"{symbol} dataset quality flag column {name!r} must be strictly "
-                f"boolean (numpy.bool_/bool), got dtype={series.dtype}."
-            )
-        for value in series.tolist():
-            if value is not True and value is not False and type(value).__name__ != "bool_":
-                raise ValueError(
-                    f"{symbol} dataset quality flag column {name!r} must be strictly "
-                    f"boolean (numpy.bool_/bool), got {value!r}."
-                )
+        require_quality_flag_column(df, name, symbol=symbol)
 
 
 def load_bad_ticks(path: Path | None = None) -> list[BadTick]:

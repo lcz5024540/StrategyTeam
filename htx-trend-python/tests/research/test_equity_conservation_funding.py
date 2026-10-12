@@ -94,6 +94,7 @@ def test_equity_conservation_with_known_funding_and_open_position(tmp_path):
         conditions={
             "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
             "C02": {
+                "enabled": True,
                 "atr_period": 14,
                 "atr_multiplier": 2.0,
                 "tick_size": 0.1,

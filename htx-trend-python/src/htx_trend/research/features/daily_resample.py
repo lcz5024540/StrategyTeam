@@ -139,6 +139,9 @@ def resample_4h_to_daily(
         sources = {str(item) for item in group["source"].tolist()}
         is_mixed = len(sources) > 1
         is_incomplete = n_bars != COMPLETE_BARS_PER_DAY
+        from_nc_4h = False
+        if "non_comparable" in group.columns:
+            from_nc_4h = bool(group["non_comparable"].any())
 
         base = {
             "bar_time": pd.Timestamp(daily_open),
@@ -151,7 +154,7 @@ def resample_4h_to_daily(
             "daily_resample_version": DAILY_RESAMPLE_FEATURE["version"],
             "incomplete": is_incomplete,
             "mixed_source": is_mixed,
-            "non_comparable": is_mixed,
+            "non_comparable": bool(is_mixed or from_nc_4h),
             "unfinished": is_unfinished,
         }
         if "amount" in group.columns and not is_mixed:

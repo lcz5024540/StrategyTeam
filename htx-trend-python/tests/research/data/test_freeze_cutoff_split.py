@@ -243,7 +243,7 @@ def test_freeze_output_flags_match_stitch_bad_tick_and_binance_source(tmp_path):
         test_start_utc="2020-11-08T00:00:00Z",
         extra_metadata={
             "stitch_points": {"BTC-USDT": "2020-11-01T00:00:00Z"},
-            "non_comparable_window_bars": 2,
+            "non_comparable_window_bars": 30,
         },
         bad_ticks=ticks,
     )
@@ -260,9 +260,8 @@ def test_freeze_output_flags_match_stitch_bad_tick_and_binance_source(tmp_path):
     assert bool(loaded.loc[times_out == tick_time, "bad_tick"].iloc[0]) is True
     assert int(loaded["bad_tick"].sum()) == 1
     window = loaded[loaded["non_comparable"]]
-    assert 1 <= len(window) <= 5
-    assert (times_out[loaded["non_comparable"]] >= stitch - pd.Timedelta(hours=8)).all()
-    assert (times_out[loaded["non_comparable"]] <= stitch + pd.Timedelta(hours=8)).all()
+    assert int(loaded["non_comparable"].sum()) == 61
+    assert len(window) == 61
     far = loaded.loc[times_out == times[0]].iloc[0]
     assert bool(far["non_comparable"]) is False
     assert bool(far["external"]) is True

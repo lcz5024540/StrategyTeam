@@ -46,6 +46,9 @@ def test_todo_placeholders_are_rejected_until_data_frozen(tmp_path):
     cfg = runner_config(workspace, "R0001", "ds")
     cfg["dataset_id"] = "TODO_FREEZE_DATASET_ID"
     cfg["manifest_hash"] = "TODO_FREEZE_MANIFEST_HASH"
+    from htx_trend.research.strategy_manifest import build_strategy_manifest
+
+    cfg["strategy_manifest_sha256"] = build_strategy_manifest(cfg)["manifest_sha256"]
     path = workspace / "R0001.yaml"
     path.write_text(yaml.dump(cfg))
     runner = BacktestRunner(path, workspace)
