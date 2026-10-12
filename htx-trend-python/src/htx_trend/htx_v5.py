@@ -78,9 +78,9 @@ class HtxV5Client:
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             raise ValueError("base_url must be an absolute HTTP(S) URL")
         self._base_url = base_url.rstrip("/")
-        self._host = parsed.hostname
-        self._access_key = access_key
-        self._secret_key = secret_key
+        self._host = parsed.hostname.lower()
+        self._access_key = access_key.strip() if access_key else access_key
+        self._secret_key = secret_key.strip() if secret_key else secret_key
         self._live_trading_enabled = live_trading_enabled
         self._client = client or httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0))
         self._owns_client = client is None
@@ -232,11 +232,24 @@ class HtxV5Client:
             "Timestamp": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S"),
             **(query or {}),
         }
-        canonical = self.canonical_query(signed_query)
-        payload = f"{method.upper()}\\n{self._host}\\n{path}\\n{canonical}"
-        signature = base64.b64encode(hmac.new(self._secret_key.encode(), payload.encode(), hashlib.sha256).digest()).decode()
-        signed_query["Signature"] = signature
+        signed_query["Signature"] = self.sign_query(
+            method, self._host, path, self._secret_key, signed_query
+        )
         return self._request(method, path, query=signed_query, body=body)
+
+    @staticmethod
+    def signature_payload(method: str, host: str, path: str, query: Mapping[str, str]) -> str:
+        """HTX canonical string: METHOD, host, path, query joined by real 0x0a newlines."""
+        canonical = HtxV5Client.canonical_query(query)
+        return f"{method.upper()}\n{host.lower()}\n{path}\n{canonical}"
+
+    @staticmethod
+    def sign_query(
+        method: str, host: str, path: str, secret: str, query: Mapping[str, str]
+    ) -> str:
+        payload = HtxV5Client.signature_payload(method, host, path, query)
+        digest = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).digest()
+        return base64.b64encode(digest).decode()
 
     @staticmethod
     def canonical_query(query: Mapping[str, str]) -> str:

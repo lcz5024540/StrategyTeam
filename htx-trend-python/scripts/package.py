@@ -31,6 +31,8 @@ PACKAGE_GLOBS = (
     "scripts/package.py",
     "scripts/tag_message.py",
     "strategy_manifest.yaml",
+    "PROBE_ACCEPTANCE.md",
+    "docs/primary-apikey-read-method.md",
 )
 SKIP_DIR_NAMES = {"__pycache__", ".pytest_cache", ".venv"}
 SKIP_SUFFIXES = {".pyc", ".pyo"}
