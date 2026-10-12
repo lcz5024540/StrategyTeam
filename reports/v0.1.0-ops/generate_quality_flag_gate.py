@@ -124,7 +124,7 @@ def make_venv(root: Path) -> Path:
     if not py.is_file():
         venv.EnvBuilder(with_pip=True, clear=True).create(root)
     probe = subprocess.run(
-        [str(py), "-I", "-c", "import pandas, numpy, pyarrow, yaml"],
+        [str(py), "-I", "-c", "import pandas, numpy, pyarrow, yaml, httpx"],
         capture_output=True,
         text=True,
         check=False,
@@ -143,11 +143,12 @@ def make_venv(root: Path) -> Path:
                 "numpy>=1.24,<2",
                 "pyarrow>=14.0,<18",
                 "pyyaml>=6.0,<7",
+                "httpx>=0.27,<1",
             ],
             check=True,
         )
         subprocess.run(
-            [str(py), "-I", "-c", "import pandas, numpy, pyarrow, yaml"],
+            [str(py), "-I", "-c", "import pandas, numpy, pyarrow, yaml, httpx"],
             check=True,
         )
     return py
