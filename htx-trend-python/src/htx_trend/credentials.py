@@ -64,6 +64,22 @@ def materialize(record: AccountCredentialRecord, *, private_key_path: str | None
                           record.base_url)
 
 
+def materialize_live_primary(
+    record: AccountCredentialRecord,
+    *,
+    private_key_path: str | None = None,
+) -> HtxCredentials:
+    """Formal LIVE worker: ENC-only RSA-OAEP via APP_RSA_PRIVATE_KEY_PATH; no env API keys."""
+    forbid_exchange_plaintext_env()
+    return HtxCredentials(
+        record.account_id,
+        record.account_label,
+        decrypt_probe_secret(record.api_key_cipher, private_key_path=private_key_path),
+        decrypt_probe_secret(record.secret_key_cipher, private_key_path=private_key_path),
+        record.base_url,
+    )
+
+
 def forbid_exchange_plaintext_env(environ: Mapping[str, str] | None = None) -> None:
     env = os_environ if environ is None else environ
     hits = [name for name in FORBIDDEN_ENV_EXACT if env.get(name)]

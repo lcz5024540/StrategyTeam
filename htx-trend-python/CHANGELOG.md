@@ -5,6 +5,19 @@ All notable changes to the HTX Trend Research System will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-live] - 2026-10-12
+
+**Candidate formal automatic LIVE package — does not enable trading by install alone.**
+
+### Added
+- `formal_live.validate_formal_live_deployment()` — R0001 first-cut caps (5 pos, 2%/10% on 300U, same-dir ≤3, BTC+ETH, 4h).
+- `credentials.materialize_live_primary()` — ENC-only RSA decrypt; forbids env API keys (same as probe).
+- `FORMAL_LIVE_ACCEPTANCE.md`, `deployment/systemd/htx-trend-worker@.service`, formal LIVE env template lines.
+
+### Notes
+- Entry path already uses `_numeric_client_order_id()` (from `2db66ae0` lineage).
+- Probe (`LIVE_1CONTRACT_PROBE`) remains separate; not started by worker package.
+
 ## [0.1.1-probe] - 2026-10-12
 
 ### Added
