@@ -43,6 +43,7 @@ def create_fixture_dataset(workspace: Path) -> str:
             "incomplete": False,
             "non_comparable": False,
             "bad_tick": False,
+            "external": False,
         })
         
         dataset_id = "4hour_fixture_test"

@@ -71,7 +71,7 @@ def _marked_equity(broker: Any) -> float:
     return float(broker.get_account_equity())
 
 
-QUALITY_FLAG_COLUMNS = ("incomplete", "non_comparable", "bad_tick")
+QUALITY_FLAG_COLUMNS = ("incomplete", "non_comparable", "bad_tick", "external")
 
 
 def require_quality_flag_columns(df: pd.DataFrame, *, symbol: str) -> None:
@@ -81,6 +81,18 @@ def require_quality_flag_columns(df: pd.DataFrame, *, symbol: str) -> None:
             f"{symbol} dataset missing required quality flag columns: {missing}. "
             "Only an existing column with value False means a normal bar."
         )
+    for name in QUALITY_FLAG_COLUMNS:
+        series = df[name]
+        if series.isna().any():
+            raise ValueError(
+                f"{symbol} dataset quality flag column {name!r} contains null "
+                "values (NaN/None); refusing to coerce with bool()."
+            )
+        if series.dtype != bool:
+            raise ValueError(
+                f"{symbol} dataset quality flag column {name!r} must be bool dtype, "
+                f"got {series.dtype}."
+            )
 
 
 def require_signal_atr(metadata: dict[str, Any] | None) -> float:
@@ -442,9 +454,7 @@ class BacktestRunner:
             total_bars = len(df)
             non_comparable_count = df["non_comparable"].sum()
             bad_tick_count = df["bad_tick"].sum()
-            external_count = df.get("external", pd.Series([False] * len(df))).sum()
-            if "external" not in df.columns:
-                df["external"] = False
+            external_count = df["external"].sum()
             df.loc[df["incomplete"] == True, "non_comparable"] = True
             df["_original_source"] = df.get("source", "htx")
             funding_path = verified_funding.get(symbol)
@@ -617,9 +627,9 @@ class BacktestRunner:
                 df = data[symbol]
                 spec = specs[symbol]
                 bar = df.iloc[idx]
-                incomplete = bool(bar["incomplete"])
-                non_comparable = bool(bar["non_comparable"])
-                is_bad_tick = bool(bar["bad_tick"])
+                incomplete = bar["incomplete"]
+                non_comparable = bar["non_comparable"]
+                is_bad_tick = bar["bad_tick"]
                 kind = bar.get("bad_tick_kind")
                 if is_bad_tick:
                     kind = normalize_bad_tick_kind(kind)

@@ -403,9 +403,10 @@ class DatasetManager:
         for symbol, df in data.items():
             output_path = dataset_dir / f"{symbol}.parquet"
             frame = df.copy()
-            for flag in ("incomplete", "non_comparable", "bad_tick"):
+            for flag in ("incomplete", "non_comparable", "bad_tick", "external"):
                 if flag not in frame.columns:
                     frame[flag] = False
+                frame[flag] = frame[flag].fillna(False).astype(bool)
             frame.to_parquet(output_path, index=False)
             data[symbol] = frame
 

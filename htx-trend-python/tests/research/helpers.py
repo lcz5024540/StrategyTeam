@@ -167,6 +167,7 @@ def create_test_dataset(
             "incomplete": False,
             "non_comparable": False,
             "bad_tick": False,
+            "external": False,
         })
         df.to_parquet(dataset_dir / f"{symbol}.parquet", index=False)
 

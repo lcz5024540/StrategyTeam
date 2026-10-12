@@ -75,21 +75,72 @@ def _breakout_config(workspace, run_id="E2E1", **overrides):
     return cfg
 
 
-@pytest.mark.parametrize("column", ["incomplete", "non_comparable", "bad_tick"])
+QUALITY_FLAG_COLUMNS = ("incomplete", "non_comparable", "bad_tick", "external")
+
+
+def _breakout_parquet(workspace):
+    return workspace / "data" / "datasets" / "breakout" / "BTC-USDT.parquet"
+
+
+def _with_all_quality_flags(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    for flag in QUALITY_FLAG_COLUMNS:
+        if flag not in out.columns:
+            out[flag] = False
+        out[flag] = out[flag].fillna(False).astype(bool)
+    return out
+
+
+@pytest.mark.parametrize("column", QUALITY_FLAG_COLUMNS)
 def test_missing_quality_flag_column_raises(tmp_path, column):
     workspace = _breakout_workspace(tmp_path)
-    parquet = workspace / "data" / "datasets" / "breakout" / "BTC-USDT.parquet"
-    df = pd.read_parquet(parquet)
-    for flag in ("incomplete", "non_comparable", "bad_tick"):
-        if flag == column:
-            if flag in df.columns:
-                df = df.drop(columns=[flag])
-        elif flag not in df.columns:
-            df[flag] = False
+    parquet = _breakout_parquet(workspace)
+    df = _with_all_quality_flags(pd.read_parquet(parquet)).drop(columns=[column])
     df.to_parquet(parquet, index=False)
     write_batch_manifest(workspace, "breakout")
     runner = write_runner(workspace, _breakout_config(workspace, "NOFLAGS"))
     with pytest.raises(ValueError, match=column):
+        runner.run()
+
+
+@pytest.mark.parametrize("column", QUALITY_FLAG_COLUMNS)
+def test_nan_quality_flag_value_raises(tmp_path, column):
+    workspace = _breakout_workspace(tmp_path)
+    parquet = _breakout_parquet(workspace)
+    df = _with_all_quality_flags(pd.read_parquet(parquet))
+    df[column] = df[column].astype(object)
+    df.loc[df.index[0], column] = np.nan
+    df.to_parquet(parquet, index=False)
+    write_batch_manifest(workspace, "breakout")
+    runner = write_runner(workspace, _breakout_config(workspace, "NANFLAG"))
+    with pytest.raises(ValueError, match=rf"{column}|null|NaN"):
+        runner.run()
+
+
+@pytest.mark.parametrize("column", QUALITY_FLAG_COLUMNS)
+def test_none_quality_flag_value_raises(tmp_path, column):
+    workspace = _breakout_workspace(tmp_path)
+    parquet = _breakout_parquet(workspace)
+    df = _with_all_quality_flags(pd.read_parquet(parquet))
+    df[column] = df[column].astype(object)
+    df.loc[df.index[0], column] = None
+    df.to_parquet(parquet, index=False)
+    write_batch_manifest(workspace, "breakout")
+    runner = write_runner(workspace, _breakout_config(workspace, "NONEFLAG"))
+    with pytest.raises(ValueError, match=rf"{column}|null|None"):
+        runner.run()
+
+
+@pytest.mark.parametrize("column", QUALITY_FLAG_COLUMNS)
+def test_non_bool_quality_flag_dtype_raises(tmp_path, column):
+    workspace = _breakout_workspace(tmp_path)
+    parquet = _breakout_parquet(workspace)
+    df = _with_all_quality_flags(pd.read_parquet(parquet))
+    df[column] = df[column].astype("int64")
+    df.to_parquet(parquet, index=False)
+    write_batch_manifest(workspace, "breakout")
+    runner = write_runner(workspace, _breakout_config(workspace, "INTFLAG"))
+    with pytest.raises(ValueError, match=rf"{column}|bool"):
         runner.run()
 
 

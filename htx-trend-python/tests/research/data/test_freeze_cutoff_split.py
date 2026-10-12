@@ -181,6 +181,20 @@ def test_freeze_writes_cutoff_and_utc_midnight_split_to_hashed_manifest(tmp_path
     assert other_batch.sha256() != batch.sha256()
 
 
+def test_freeze_writes_quality_flag_columns_as_bool_dtype(tmp_path):
+    df = _bars("2026-09-21", 21 * 6)
+    assert "external" not in df.columns
+    _, frozen = _freeze(tmp_path, df)
+    loaded = pd.read_parquet(
+        tmp_path / "data" / "datasets" / frozen.dataset_id / "BTC-USDT.parquet"
+    )
+    for name in ("incomplete", "non_comparable", "bad_tick", "external"):
+        assert name in loaded.columns
+        assert loaded[name].dtype == bool
+        assert not loaded[name].isna().any()
+        assert (loaded[name] == False).all()
+
+
 def test_freeze_keeps_last_4h_open_2026_10_11_20z_and_drops_later(tmp_path):
     kept = _bars("2026-10-11 20:00", 1)
     dropped = _bars("2026-10-12 00:00", 1)
