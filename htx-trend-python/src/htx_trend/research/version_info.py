@@ -229,7 +229,7 @@ def load_build_info_from_root(root: Path) -> dict:
     for path in candidates:
         if path.is_file():
             return _parse_build_info_file(path)
-    return _load_build_info()
+    return {}
 
 
 def is_packaged_build_info(info: dict) -> bool:
