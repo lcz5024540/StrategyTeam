@@ -162,6 +162,10 @@ def _freeze_args(workspace: Path, **extra):
         "stitch_config": None,
         "non_comparable_window": 30,
         "bad_ticks": None,
+        "cutoff": "2026-10-12T00:00:00Z",
+        "validation_start": None,
+        "test_start": None,
+        "split_from_manifest": None,
     }
     payload.update(extra)
     return Namespace(**payload)

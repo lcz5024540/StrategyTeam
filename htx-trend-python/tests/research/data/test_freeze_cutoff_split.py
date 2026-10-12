@@ -52,6 +52,7 @@ def _freeze(
     timeframe: str = "4hour",
     cutoff: str | None = None,
     test_start: str | None = None,
+    validation_start: str | None = None,
     extra_metadata: dict | None = None,
 ) -> tuple[DatasetManager, object]:
     mgr = DatasetManager(tmp_path / "data" / "datasets")
@@ -60,6 +61,8 @@ def _freeze(
         kwargs["data_cutoff_close_utc"] = cutoff
     if test_start is not None:
         kwargs["test_start_utc"] = test_start
+    if validation_start is not None:
+        kwargs["validation_start_utc"] = validation_start
     frozen = mgr.freeze_dataset(
         {"BTC-USDT": df},
         timeframe=timeframe,
@@ -291,11 +294,12 @@ def test_1d_resample_uses_same_utc_midnight_boundaries(tmp_path):
         daily,
         timeframe="1day",
         cutoff=written["data_cutoff_close_utc"],
+        validation_start=written["split"]["validation_start_utc"],
         test_start=written["split"]["test_start_utc"],
     )
     daily_manifest = _written_manifest(tmp_path / "daily", frozen_1d.dataset_id)
-    assert _as_utc(daily_manifest["split"]["test_start_utc"]) == test_start
-    assert _as_utc(daily_manifest["split"]["validation_start_utc"]).hour == 0
+    assert daily_manifest["split"] == written["split"]
+    assert daily_manifest["data_cutoff_close_utc"] == written["data_cutoff_close_utc"]
 
 
 def test_runner_reads_split_from_manifest_only(tmp_path):
@@ -394,22 +398,7 @@ def test_cli_freeze_default_cutoff_and_optional_test_start(tmp_path):
     raw.mkdir(parents=True)
     df = _bars("2026-09-21", 21 * 6)
     df.to_parquet(raw / "BTC-USDT_4hour_htx.parquet", index=False)
-    cmd_freeze(
-        Namespace(
-            workspace=str(tmp_path),
-            contracts="BTC-USDT",
-            timeframe="4hour",
-            train_ratio=0.6,
-            val_ratio=0.2,
-            backfill_binance=False,
-            overlap_threshold=None,
-            daily_cut=None,
-            stitch_point=None,
-            stitch_config=None,
-            non_comparable_window=30,
-            bad_ticks=None,
-        )
-    )
+    cmd_freeze(_cli_ns(tmp_path))
     dataset_dir = next(
         path
         for path in (tmp_path / "data" / "datasets").iterdir()
@@ -418,3 +407,148 @@ def test_cli_freeze_default_cutoff_and_optional_test_start(tmp_path):
     written = json.loads((dataset_dir / "manifest.json").read_text())
     assert written["data_cutoff_close_utc"].startswith("2026-10-12T00:00:00")
     assert _as_utc(written["split"]["test_start_utc"]).hour == 0
+
+
+def _cli_ns(tmp_path, **extra):
+    payload = {
+        "workspace": str(tmp_path),
+        "contracts": "BTC-USDT",
+        "timeframe": "4hour",
+        "train_ratio": 0.6,
+        "val_ratio": 0.2,
+        "backfill_binance": False,
+        "overlap_threshold": None,
+        "daily_cut": None,
+        "stitch_point": None,
+        "stitch_config": None,
+        "non_comparable_window": 30,
+        "bad_ticks": None,
+        "cutoff": "2026-10-12T00:00:00Z",
+        "test_start": None,
+        "validation_start": None,
+        "split_from_manifest": None,
+    }
+    payload.update(extra)
+    return Namespace(**payload)
+
+
+def test_1d_boundaries_equal_4h_boundaries_via_split_from_manifest(tmp_path):
+    from htx_trend.research.cli import cmd_freeze
+
+    df_4h = _bars("2026-09-21", 7 * 6)
+    raw = tmp_path / "4h" / "data" / "raw"
+    raw.mkdir(parents=True)
+    df_4h.to_parquet(raw / "BTC-USDT_4hour_htx.parquet", index=False)
+    cmd_freeze(_cli_ns(tmp_path / "4h"))
+    four_h_dir = next(
+        path
+        for path in (tmp_path / "4h" / "data" / "datasets").iterdir()
+        if path.is_dir() and path.name != "manifests"
+    )
+    four_h = json.loads((four_h_dir / "manifest.json").read_text())
+    daily = resample_4h_to_daily(
+        df_4h, daily_cut="UTC00", now=datetime(2026, 10, 12, tzinfo=timezone.utc)
+    ).signal_bars
+    assert len(daily) == 7
+    daily_ws = tmp_path / "1d"
+    raw_1d = daily_ws / "data" / "raw"
+    raw_1d.mkdir(parents=True)
+    df_4h.to_parquet(raw_1d / "BTC-USDT_4hour_htx.parquet", index=False)
+    daily.to_parquet(raw_1d / "BTC-USDT_1day_htx.parquet", index=False)
+    cmd_freeze(
+        _cli_ns(
+            daily_ws,
+            timeframe="1day",
+            daily_cut="UTC00",
+            cutoff=None,
+            split_from_manifest=str(four_h_dir / "manifest.json"),
+        )
+    )
+    one_d_dir = next(
+        path
+        for path in (daily_ws / "data" / "datasets").iterdir()
+        if path.is_dir() and path.name != "manifests"
+    )
+    one_d = json.loads((one_d_dir / "manifest.json").read_text())
+    assert one_d["split"] == four_h["split"]
+    assert one_d["data_cutoff_close_utc"] == four_h["data_cutoff_close_utc"]
+
+
+def test_cli_test_start_without_validation_start_errors(tmp_path):
+    from htx_trend.research.cli import cmd_freeze
+
+    raw = tmp_path / "data" / "raw"
+    raw.mkdir(parents=True)
+    _bars("2026-09-21", 7 * 6).to_parquet(raw / "BTC-USDT_4hour_htx.parquet", index=False)
+    with pytest.raises(SystemExit, match="validation-start"):
+        cmd_freeze(_cli_ns(tmp_path, test_start="2026-09-26T00:00:00Z", validation_start=None))
+
+
+def test_cli_validation_start_without_test_start_errors(tmp_path):
+    from htx_trend.research.cli import cmd_freeze
+
+    raw = tmp_path / "data" / "raw"
+    raw.mkdir(parents=True)
+    _bars("2026-09-21", 7 * 6).to_parquet(raw / "BTC-USDT_4hour_htx.parquet", index=False)
+    with pytest.raises(SystemExit, match="test-start"):
+        cmd_freeze(_cli_ns(tmp_path, validation_start="2026-09-25T00:00:00Z", test_start=None))
+
+
+def test_cli_cutoff_is_required(tmp_path):
+    from htx_trend.research.cli import cmd_freeze
+
+    raw = tmp_path / "data" / "raw"
+    raw.mkdir(parents=True)
+    _bars("2026-09-21", 21 * 6).to_parquet(raw / "BTC-USDT_4hour_htx.parquet", index=False)
+    with pytest.raises(SystemExit, match="cutoff"):
+        cmd_freeze(_cli_ns(tmp_path, cutoff=None))
+
+
+def test_get_split_raises_index_based_api_removed(tmp_path):
+    df = _bars("2026-09-21", 21 * 6)
+    _, frozen = _freeze(tmp_path, df)
+    with pytest.raises(ValueError, match="index|timestamp|manifest"):
+        frozen.get_split("train")
+
+
+def test_segment_counts_and_hashes_per_symbol_by_timestamp(tmp_path):
+    from io import StringIO
+    from unittest.mock import patch
+
+    from htx_trend.research.cli import cmd_freeze
+
+    raw = tmp_path / "data" / "raw"
+    raw.mkdir(parents=True)
+    _bars("2026-09-21", 10 * 6).to_parquet(raw / "BTC-USDT_4hour_htx.parquet", index=False)
+    _bars("2026-09-21", 21 * 6).to_parquet(raw / "ETH-USDT_4hour_htx.parquet", index=False)
+    buf = StringIO()
+    with patch("sys.stdout", buf):
+        cmd_freeze(_cli_ns(tmp_path, contracts="BTC-USDT,ETH-USDT"))
+    output = buf.getvalue()
+    dataset_dir = next(
+        path
+        for path in (tmp_path / "data" / "datasets").iterdir()
+        if path.is_dir() and path.name != "manifests"
+    )
+    written = json.loads((dataset_dir / "manifest.json").read_text())
+    counts = written["segment_counts"]
+    assert counts["BTC-USDT"]["train"] == 10 * 6
+    assert counts["BTC-USDT"]["val"] == 0
+    assert counts["BTC-USDT"]["test"] == 0
+    assert counts["ETH-USDT"]["train"] == 12 * 6
+    assert counts["ETH-USDT"]["val"] == 4 * 6
+    assert counts["ETH-USDT"]["test"] == 5 * 6
+    assert "BTC-USDT: train=60" in output
+    assert "ETH-USDT: train=72" in output
+    assert "Test: 17832" not in output
+    assert written["test_hash"]
+    idx_hash = DatasetManager(tmp_path / "data" / "datasets")._compute_split_hash(
+        {
+            "BTC-USDT": pd.read_parquet(dataset_dir / "BTC-USDT.parquet"),
+            "ETH-USDT": pd.read_parquet(dataset_dir / "ETH-USDT.parquet"),
+        },
+        ["BTC-USDT", "ETH-USDT"],
+        counts["BTC-USDT"]["train"] + counts["BTC-USDT"]["val"],
+        10 * 6,
+    )
+    assert written["test_hash"] != idx_hash

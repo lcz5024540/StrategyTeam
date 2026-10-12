@@ -112,20 +112,23 @@ python -m htx_trend.research.cli --workspace "$WS" freeze \
   --contracts BTC-USDT,ETH-USDT \
   --timeframe 4hour \
   --backfill-binance \
-  --overlap-threshold "$OVERLAP_THRESHOLD"
-
-python -m htx_trend.research.cli --workspace "$WS" freeze \
-  --contracts BTC-USDT,ETH-USDT \
-  --timeframe 1day \
-  --backfill-binance \
   --overlap-threshold "$OVERLAP_THRESHOLD" \
-  --daily-cut "$DAILY_CUT"
+  --cutoff 2026-10-12T00:00:00Z
 
 DATASET_DIR="$(find "$WS/data/datasets" -maxdepth 1 -type d -name '4hour_*' | head -n 1)"
 if [[ -z "$DATASET_DIR" ]]; then
   echo "ERROR: frozen 4hour dataset not found" >&2
   exit 1
 fi
+
+python -m htx_trend.research.cli --workspace "$WS" freeze \
+  --contracts BTC-USDT,ETH-USDT \
+  --timeframe 1day \
+  --backfill-binance \
+  --overlap-threshold "$OVERLAP_THRESHOLD" \
+  --daily-cut "$DAILY_CUT" \
+  --split-from-manifest "$DATASET_DIR/manifest.json"
+
 DATASET_ID="$(basename "$DATASET_DIR")"
 MANIFEST_PATH="$WS/data/datasets/manifests/${DATASET_ID}.json"
 MANIFEST_HASH="$(python - <<PY

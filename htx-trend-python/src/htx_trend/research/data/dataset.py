@@ -87,23 +87,29 @@ def compute_split_boundaries(
     train_ratio: float = 0.6,
     val_ratio: float = 0.2,
     test_start_utc: datetime | str | None = None,
+    validation_start_utc: datetime | str | None = None,
 ) -> tuple[datetime, datetime]:
     if not days:
         raise ValueError("No UTC days remain at or before data_cutoff_close_utc")
+    if (test_start_utc is None) ^ (validation_start_utc is None):
+        raise ValueError(
+            "validation_start_utc and test_start_utc must be passed together"
+        )
+    if validation_start_utc is not None:
+        return (
+            require_utc_midnight(validation_start_utc, field_name="validation_start_utc"),
+            require_utc_midnight(test_start_utc, field_name="test_start_utc"),
+        )
     n_days = len(days)
-    if test_start_utc is not None:
-        test_start = require_utc_midnight(test_start_utc, field_name="test_start_utc")
-        pre = [day for day in days if parse_utc_datetime(day) < test_start]
-        if not pre:
-            validation_start = test_start
-        else:
-            ratio = train_ratio / (train_ratio + val_ratio) if (train_ratio + val_ratio) else 0.75
-            val_idx = min(int(len(pre) * ratio), len(pre) - 1)
-            validation_start = parse_utc_datetime(pre[val_idx])
-        return validation_start, test_start
     val_idx = min(int(n_days * train_ratio), n_days - 1)
     test_idx = min(int(n_days * (train_ratio + val_ratio)), n_days - 1)
     return parse_utc_datetime(days[val_idx]), parse_utc_datetime(days[test_idx])
+
+
+def load_split_from_manifest(path: Path | str) -> tuple[str, str, str]:
+    payload = json.loads(Path(path).read_text())
+    val_start, test_start, cutoff = _require_manifest_split(payload)
+    return utc_iso(val_start), utc_iso(test_start), utc_iso(cutoff)
 
 
 def assert_stitch_in_train(
@@ -176,6 +182,7 @@ class FrozenDataset:
     validation_start_utc: datetime | None = None
     test_start_utc: datetime | None = None
     test_hash: str | None = None
+    segment_counts: dict = field(default_factory=dict)
     stitch_points: dict | None = None
     verified_funding_paths: dict = field(default_factory=dict)
     verified_spec_paths: dict = field(default_factory=dict)
@@ -195,15 +202,10 @@ class FrozenDataset:
     )
 
     def get_split(self, split: str) -> tuple[int, int]:
-        if split not in self.VALID_SPLITS:
-            raise ValueError(
-                f"Invalid split name: {split}. Must be one of: train, val, test"
-            )
-        if split == "train":
-            return 0, self.train_end_idx
-        if split in ("val", "validation"):
-            return self.train_end_idx, self.val_end_idx
-        return self.val_end_idx, self.total_bars
+        raise ValueError(
+            "index-based get_split is removed; slice by manifest timestamps "
+            "(validation_start_utc / test_start_utc / data_cutoff_close_utc)"
+        )
     
     def to_dict(self) -> dict:
         return {
@@ -225,6 +227,7 @@ class FrozenDataset:
             ),
             "test_start_utc": utc_iso(self.test_start_utc) if self.test_start_utc else None,
             "test_hash": self.test_hash,
+            "segment_counts": self.segment_counts,
             "split": {
                 "validation_start_utc": (
                     utc_iso(self.validation_start_utc) if self.validation_start_utc else None
@@ -277,6 +280,7 @@ class DatasetManager:
         extra_metadata: dict | None = None,
         data_cutoff_close_utc: datetime | str | None = None,
         test_start_utc: datetime | str | None = None,
+        validation_start_utc: datetime | str | None = None,
     ) -> FrozenDataset:
         cutoff = parse_utc_datetime(
             data_cutoff_close_utc or DEFAULT_DATA_CUTOFF_CLOSE_UTC
@@ -304,6 +308,7 @@ class DatasetManager:
             train_ratio=train_ratio,
             val_ratio=val_ratio,
             test_start_utc=test_start_utc,
+            validation_start_utc=validation_start_utc,
         )
         assert_stitch_in_train((extra_metadata or {}).get("stitch_points"), validation_start)
 
@@ -348,17 +353,36 @@ class DatasetManager:
             output_path = dataset_dir / f"{symbol}.parquet"
             df.to_parquet(output_path, index=False)
 
-        sample_df = data[symbols[0]].sort_values("bar_time")
-        times = pd.to_datetime(sample_df["bar_time"], utc=True)
-        train_end_idx = int((times < pd.Timestamp(validation_start)).sum())
-        val_end_idx = int((times < pd.Timestamp(test_start)).sum())
-        n_bars = len(sample_df)
+        segment_counts: dict[str, dict[str, int]] = {}
+        for symbol in symbols:
+            frame = data[symbol]
+            segment_counts[symbol] = {
+                name: int(
+                    _mask_split(
+                        frame["bar_time"],
+                        name,
+                        validation_start,
+                        test_start,
+                        cutoff,
+                        timeframe,
+                    ).sum()
+                )
+                for name in ("train", "val", "test")
+            }
+        first = segment_counts[symbols[0]]
+        train_end_idx = first["train"]
+        val_end_idx = first["train"] + first["val"]
+        n_bars = first["train"] + first["val"] + first["test"]
 
-        train_hash = self._compute_split_hash(data, symbols, 0, train_end_idx)
-        val_hash = self._compute_split_hash(
-            data, symbols, train_end_idx, val_end_idx
+        train_hash = self._compute_split_hash_by_time(
+            data, symbols, "train", validation_start, test_start, cutoff, timeframe
         )
-        test_hash = self._compute_split_hash(data, symbols, val_end_idx, n_bars)
+        val_hash = self._compute_split_hash_by_time(
+            data, symbols, "val", validation_start, test_start, cutoff, timeframe
+        )
+        test_hash = self._compute_split_hash_by_time(
+            data, symbols, "test", validation_start, test_start, cutoff, timeframe
+        )
 
         frozen = FrozenDataset(
             dataset_id=dataset_id,
@@ -375,6 +399,7 @@ class DatasetManager:
             validation_start_utc=validation_start,
             test_start_utc=test_start,
             test_hash=test_hash,
+            segment_counts=segment_counts,
             stitch_points=(extra_metadata or {}).get("stitch_points"),
         )
 
@@ -392,6 +417,7 @@ class DatasetManager:
             "validation_start_utc": split_payload["validation_start_utc"],
             "test_start_utc": split_payload["test_start_utc"],
             "split": split_payload,
+            "segment_counts": segment_counts,
         })
 
         manifest_path = dataset_dir / "manifest.json"
@@ -574,6 +600,33 @@ class DatasetManager:
             hasher.update(df["bar_time"].astype(str).str.cat().encode())
             hasher.update(df["close"].astype(str).str.cat().encode())
         
+        return hasher.hexdigest()[:16]
+
+    def _compute_split_hash_by_time(
+        self,
+        data: dict[str, pd.DataFrame],
+        symbols: list[str],
+        split: str,
+        validation_start: datetime,
+        test_start: datetime,
+        cutoff: datetime,
+        timeframe: str,
+    ) -> str:
+        hasher = hashlib.sha256()
+        for symbol in sorted(symbols):
+            frame = data[symbol]
+            mask = _mask_split(
+                frame["bar_time"],
+                split,
+                validation_start,
+                test_start,
+                cutoff,
+                timeframe,
+            )
+            sliced = frame.loc[mask]
+            hasher.update(symbol.encode())
+            hasher.update(sliced["bar_time"].astype(str).str.cat().encode())
+            hasher.update(sliced["close"].astype(str).str.cat().encode())
         return hasher.hexdigest()[:16]
 
     def freeze_storage_dataset(self, dataset_id: str) -> DatasetManifest:

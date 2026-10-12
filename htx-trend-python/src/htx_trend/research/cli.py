@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ..arrow_runtime import configure_arrow
 from .data import DataCollector, DatasetManager, DataStitcher
+from .data.dataset import load_split_from_manifest
 from .data.collector import (
     BINANCE_VISION_START,
     hash_funding_files,
@@ -43,6 +44,29 @@ from .ops.runtime_paths import (
 from .ops.status import StatusInterface, set_status_file_path
 from .runner import BacktestRunner
 from .version_info import get_version_info
+
+
+def resolve_freeze_split_args(args: argparse.Namespace) -> tuple[str, str | None, str | None]:
+    """Return (cutoff, validation_start, test_start)."""
+    split_from = getattr(args, "split_from_manifest", None)
+    cutoff = getattr(args, "cutoff", None)
+    validation_start = getattr(args, "validation_start", None)
+    test_start = getattr(args, "test_start", None)
+    if split_from:
+        if cutoff or validation_start or test_start:
+            raise SystemExit(
+                "--split-from-manifest cannot be combined with "
+                "--cutoff/--validation-start/--test-start"
+            )
+        val_iso, test_iso, cutoff_iso = load_split_from_manifest(split_from)
+        return cutoff_iso, val_iso, test_iso
+    if (validation_start is None) ^ (test_start is None):
+        raise SystemExit(
+            "--validation-start and --test-start must be passed together"
+        )
+    if not cutoff:
+        raise SystemExit("--cutoff is required (or use --split-from-manifest)")
+    return cutoff, validation_start, test_start
 
 
 def cmd_collect(args: argparse.Namespace) -> None:
@@ -230,14 +254,16 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     else:
         extra_metadata["daily_cut"] = args.daily_cut
 
+    cutoff, validation_start, test_start = resolve_freeze_split_args(args)
     frozen = dataset_mgr.freeze_dataset(
         data,
         timeframe=timeframe,
         train_ratio=args.train_ratio,
         val_ratio=args.val_ratio,
         extra_metadata=extra_metadata,
-        data_cutoff_close_utc=getattr(args, "cutoff", None),
-        test_start_utc=getattr(args, "test_start", None),
+        data_cutoff_close_utc=cutoff,
+        validation_start_utc=validation_start,
+        test_start_utc=test_start,
     )
     dataset_dir = workspace / "data" / "datasets" / frozen.dataset_id
     if source_counts:
@@ -289,9 +315,11 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     
     print(f"Dataset frozen: {frozen.dataset_id}")
     print(f"Total bars: {frozen.total_bars}")
-    print(f"Train: {frozen.train_end_idx}")
-    print(f"Val: {frozen.val_end_idx - frozen.train_end_idx}")
-    print(f"Test: {frozen.total_bars - frozen.val_end_idx}")
+    print("Segment counts:")
+    for symbol, counts in (frozen.segment_counts or {}).items():
+        print(
+            f"  {symbol}: train={counts['train']} val={counts['val']} test={counts['test']}"
+        )
     if frozen.data_cutoff_close_utc is not None:
         print(f"Cutoff: {frozen.data_cutoff_close_utc.strftime('%Y-%m-%dT%H:%M:%SZ')}")
     if frozen.validation_start_utc is not None:
@@ -510,14 +538,28 @@ def main() -> None:
     freeze_parser.add_argument("--val-ratio", type=float, default=0.2)
     freeze_parser.add_argument(
         "--cutoff",
-        default="2026-10-12T00:00:00Z",
-        help="Include bars whose close is <= this UTC instant "
-        "(v0.1.0 default 2026-10-12T00:00:00Z)",
+        default=None,
+        help="Required unless --split-from-manifest is set. Include bars whose close "
+        "is <= this UTC instant (v0.1.0: 2026-10-12T00:00:00Z)",
+    )
+    freeze_parser.add_argument(
+        "--validation-start",
+        default=None,
+        dest="validation_start",
+        help="UTC 00:00 validation start; must be passed together with --test-start",
     )
     freeze_parser.add_argument(
         "--test-start",
         default=None,
-        help="Optional UTC 00:00 test split start; default is computed 60/20/20 and stored",
+        dest="test_start",
+        help="UTC 00:00 test start; must be passed together with --validation-start",
+    )
+    freeze_parser.add_argument(
+        "--split-from-manifest",
+        default=None,
+        dest="split_from_manifest",
+        help="Copy validation_start_utc, test_start_utc, and data_cutoff_close_utc "
+        "from a frozen 4h manifest.json",
     )
     freeze_parser.add_argument("--backfill-binance", action="store_true")
     freeze_parser.add_argument("--overlap-threshold", type=float)

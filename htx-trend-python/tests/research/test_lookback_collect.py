@@ -165,6 +165,10 @@ def test_freeze_writes_source_counts(tmp_path):
             "stitch_config": None,
             "non_comparable_window": 30,
             "bad_ticks": None,
+            "cutoff": "2026-10-12T00:00:00Z",
+            "validation_start": None,
+            "test_start": None,
+            "split_from_manifest": None,
         },
     )()
     cmd_freeze(args)

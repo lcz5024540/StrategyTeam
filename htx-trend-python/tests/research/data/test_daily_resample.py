@@ -158,6 +158,10 @@ def test_freeze_1day_writes_daily_cut_and_resample_to_manifest(tmp_path):
             backfill_binance=False,
             overlap_threshold=None,
             daily_cut="UTC16",
+            cutoff="2026-10-12T00:00:00Z",
+            validation_start=None,
+            test_start=None,
+            split_from_manifest=None,
         )
     )
     manifests = list((tmp_path / "data" / "datasets" / "manifests").glob("*.json"))
@@ -199,6 +203,10 @@ def test_freeze_1day_excludes_incomplete_and_does_not_cross_source_resample(tmp_
             backfill_binance=True,
             overlap_threshold=0.003,
             daily_cut="UTC00",
+            cutoff="2026-10-12T00:00:00Z",
+            validation_start=None,
+            test_start=None,
+            split_from_manifest=None,
         )
     )
     datasets_root = tmp_path / "data" / "datasets"

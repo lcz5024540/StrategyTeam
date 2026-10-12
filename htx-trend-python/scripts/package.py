@@ -113,10 +113,12 @@ def generate_requirements_lock() -> Path:
     return lock_file
 
 
-def create_package(version: str, git_info: dict) -> tuple[Path, str]:
+def create_package(
+    version: str, git_info: dict, output_dir: Path | None = None
+) -> tuple[Path, str]:
     """创建打包文件"""
     repo_root = Path(__file__).parent.parent
-    dist_dir = repo_root / "dist"
+    dist_dir = Path(output_dir) if output_dir is not None else repo_root / "dist"
     dist_dir.mkdir(exist_ok=True)
     
     package_name = f"htx-trend-python-{version}-{git_info['short_sha']}"
@@ -137,7 +139,6 @@ def create_package(version: str, git_info: dict) -> tuple[Path, str]:
             "scripts/check_lock_hygiene.py",
             "scripts/smoke_e2e.sh",
             "scripts/package.py",
-            "scripts/deploy_sync.sh",
         ]:
             for file_path in repo_root.glob(pattern):
                 if "__pycache__" in str(file_path):
@@ -268,21 +269,20 @@ python scripts/package.py --branch <release-branch>
 
 Detached HEAD must pass `--branch`; the script refuses to write `branch='HEAD'`.
 
-### Sync excludes
-
-When rsyncing onto the server, **anchor** runtime excludes so they only
-match the deploy root. Unanchored `data` also skips
-`src/htx_trend/research/data/`.
+The script writes a tarball and a sibling SHA256 file. Copy those two
+files onto the ops host, verify the digest, then extract. Keep
+`src/htx_trend/research/data` from the tarball (it is source, not runtime
+`/data`).
 
 ```bash
-scripts/deploy_sync.sh ./ ubuntu@host:/opt/coinstrategy/htx-trend-py
-# equivalent:
-# rsync -a --delete --exclude '/data' --exclude '/logs' --exclude '/run' --exclude '/.venv' ./ dest/
+sha256sum -c {tar_path.name}.sha256
+tar -xzf {tar_path.name}
 ```
 
 ### Steps
 ```bash
-# Extract package
+# Verify and extract package
+sha256sum -c {tar_path.name}.sha256
 tar -xzf {tar_path.name}
 cd htx-trend-python-{version}-{git_info['short_sha']}
 
@@ -299,17 +299,15 @@ python -m htx_trend.research --help
 
 ### Freeze dataset (v0.1.0)
 
-Split is 60/20/20 by unique UTC days. Boundaries (`validation_start_utc`,
-`test_start_utc`) are computed once at freeze and snapped to UTC 00:00 so
-synthesized daily bars are never split. Default cutoff close is
-`2026-10-12T00:00:00Z` (last included 4h bar opens `2026-10-11T20:00:00Z`).
-The stitch point (`2020-11-01T00:00:00Z` by default) must fall inside the
-train segment (before `validation_start_utc`). Later extensions only append
-after test; do not recompute the split.
+Collect full history (`--lookback-days max`) into one workspace, then freeze
+in a **separate** workspace. `--cutoff` is required. Split is 60/20/20 by
+unique UTC days (`validation_start_utc` / `test_start_utc`); 1d must reuse
+the 4h boundaries via `--split-from-manifest` (or both `--validation-start`
+and `--test-start`). Stitch must fall in train.
 
 ```bash
 python -m htx_trend.research freeze \
-  --workspace . \
+  --workspace /data/htx-freeze \
   --contracts BTC-USDT,ETH-USDT \
   --timeframe 4hour \
   --backfill-binance \

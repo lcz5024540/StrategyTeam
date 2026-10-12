@@ -91,33 +91,41 @@ pip install -e '.[dev]'
 ```
 
 ### 2. 采集数据
+
+freeze 之前必须拉**全历史**（`--lookback-days max`）。不要用 `--lookback-days 1095` 当正式冻结窗口。采集和冻结用**不同 workspace**，避免和运行时目录混在一起。
+
 ```bash
 python -m htx_trend.research collect \
-  --workspace . \
+  --workspace /data/htx-collect \
   --contracts BTC-USDT,ETH-USDT \
-  --lookback-days 1095 \
+  --lookback-days max \
   --backfill-binance
 ```
 
 ### 3. 冻结数据集
+
+在单独的 freeze workspace 里做。`--cutoff` 必填。1d 必须复用 4h 的精确边界（`--split-from-manifest` 或同时传 `--validation-start` 与 `--test-start`）。
+
 ```bash
 python -m htx_trend.research freeze \
-  --workspace . \
+  --workspace /data/htx-freeze \
   --contracts BTC-USDT,ETH-USDT \
   --timeframe 4hour \
   --backfill-binance \
   --overlap-threshold 0.003 \
   --cutoff 2026-10-12T00:00:00Z
+
+python -m htx_trend.research freeze \
+  --workspace /data/htx-freeze \
+  --contracts BTC-USDT,ETH-USDT \
+  --timeframe 1day \
+  --daily-cut UTC00 \
+  --backfill-binance \
+  --overlap-threshold 0.003 \
+  --split-from-manifest /data/htx-freeze/data/datasets/<4hour_id>/manifest.json
 ```
 
-输出示例：
-```
-Dataset frozen: 4hour_a1b2c3d4
-Total bars: 6570
-Train: 3942
-Val: 1314
-Test: 1314
-```
+输出按品种打印 train/val/test 根数，不再用单一 idx 混算。
 
 ### 4. 编辑运行配置
 `configs/runs/R0001.yaml` 的 `dataset_id` / `manifest_hash` 默认是 `TODO_FREEZE_*` 占位，runner 会拒绝。更新为上一步冻结输出的 id 与 `manifest_hash`。

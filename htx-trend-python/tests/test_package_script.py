@@ -51,16 +51,29 @@ def test_delivery_template_documents_packaging_env_and_anchored_exclude(tmp_path
     assert "Python 3.12" in text
     assert "requirements.lock" in text
     assert "deploy" in text.lower()
-    assert "--exclude '/data'" in text or "--exclude /data" in text
     assert "src/htx_trend/research/data" in text
     assert "--cutoff 2026-10-12T00:00:00Z" in text
     assert "validation_start_utc" in text
     assert "test_start_utc" in text
+    assert "sha256sum -c" in text
+    assert "rsync" not in text.lower()
 
 
-def test_deploy_sync_uses_anchored_data_exclude():
-    text = (ROOT / "scripts" / "deploy_sync.sh").read_text(encoding="utf-8")
-    assert "--exclude '/data" in text or "--exclude /data" in text
-    assert "--exclude 'data'" not in text
-    assert "--exclude data" not in text
-    assert "research/data" in text
+def test_package_script_has_no_rsync_dependency():
+    text = (ROOT / "scripts" / "package.py").read_text(encoding="utf-8")
+    assert "rsync" not in text.lower()
+
+
+def test_create_package_writes_tarball_and_sha256(tmp_path):
+    tar_path, sha256 = package_mod.create_package(
+        "0.2.0",
+        {"short_sha": "deadbeef", "commit": "deadbeef", "branch": "release", "dirty": False},
+        output_dir=tmp_path,
+    )
+    assert tar_path.is_file()
+    assert tar_path.name.endswith(".tar.gz")
+    digest_file = tmp_path / f"{tar_path.name}.sha256"
+    assert digest_file.is_file()
+    recorded = digest_file.read_text().split()[0]
+    assert recorded == sha256
+    assert len(sha256) == 64
