@@ -105,7 +105,9 @@ python -m htx_trend.research freeze \
   --workspace . \
   --contracts BTC-USDT,ETH-USDT \
   --timeframe 4hour \
-  --backfill-binance
+  --backfill-binance \
+  --overlap-threshold 0.003 \
+  --cutoff 2026-10-12T00:00:00Z
 ```
 
 输出示例：

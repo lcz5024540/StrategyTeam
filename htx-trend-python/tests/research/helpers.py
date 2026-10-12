@@ -11,6 +11,7 @@ import pandas as pd
 import yaml
 
 from htx_trend.research.data.collector import hash_funding_files, hash_spec_files
+from htx_trend.research.data.dataset import utc_iso
 from htx_trend.research.data.manifest import DatasetManifest
 from htx_trend.research.runner import BacktestRunner
 
@@ -60,6 +61,31 @@ def record_funding_files(workspace: Path, dataset_id: str, symbols: list[str]) -
     batch.metadata["funding_files"] = files
     batch.save(path)
     return batch.sha256()
+
+
+def split_manifest_fields(
+    dates,
+    train_end_idx: int,
+    val_end_idx: int,
+    interval: str = "4h",
+) -> dict:
+    """Write frozen split timestamps for fixture manifests (idx-compatible)."""
+    index = pd.to_datetime(dates, utc=True)
+    delta = pd.Timedelta(interval)
+
+    def _bound(idx: int):
+        if idx < len(index):
+            return index[idx]
+        return index[-1] + delta
+
+    return {
+        "data_cutoff_close_utc": utc_iso(index[-1] + delta),
+        "split": {
+            "validation_start_utc": utc_iso(_bound(train_end_idx)),
+            "test_start_utc": utc_iso(_bound(val_end_idx)),
+        },
+        "test_hash": "fixture-test-hash",
+    }
 
 
 def write_batch_manifest(workspace: Path, dataset_id: str) -> str:
@@ -141,17 +167,19 @@ def create_test_dataset(
         })
         df.to_parquet(dataset_dir / f"{symbol}.parquet", index=False)
 
+    used_dates = dates[: len(close)]
     manifest = {
         "dataset_id": dataset_id,
         "symbols": symbols,
         "timeframe": "4hour",
-        "start_date": dates[0].isoformat(),
-        "end_date": dates[len(close) - 1].isoformat() if close_series else dates[-1].isoformat(),
+        "start_date": used_dates[0].isoformat(),
+        "end_date": used_dates[-1].isoformat(),
         "total_bars": n_bars * len(symbols),
         "train_end_idx": train_end_idx,
         "val_end_idx": val_end_idx,
         "manifest_hash": dataset_id,
         "created_at": "2024-01-01T00:00:00",
+        **split_manifest_fields(used_dates, train_end_idx, val_end_idx),
     }
     (dataset_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
     write_contract_specs(workspace, specs)

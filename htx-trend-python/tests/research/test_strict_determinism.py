@@ -10,7 +10,12 @@ import pytest
 import yaml
 
 from htx_trend.research.runner import BacktestRunner
-from tests.research.helpers import create_test_dataset, runner_config, write_runner
+from tests.research.helpers import (
+    create_test_dataset,
+    runner_config,
+    split_manifest_fields,
+    write_runner,
+)
 
 
 def compute_parquet_hash(file_path: Path) -> str:
@@ -167,6 +172,9 @@ def test_no_lookahead_truncation_invariance(tmp_path):
             "val_end_idx": min(240, truncate_at),
             "manifest_hash": dataset_id,
             "created_at": "2024-01-01T00:00:00",
+            **split_manifest_fields(
+                dates, min(180, truncate_at), min(240, truncate_at)
+            ),
         }
         
         manifest_path = dataset_dir / "manifest.json"

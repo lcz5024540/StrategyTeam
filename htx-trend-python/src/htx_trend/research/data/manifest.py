@@ -53,6 +53,8 @@ class DatasetManifest:
             "funding_files": self.metadata.get("funding_files"),
             "spec_files": self.metadata.get("spec_files"),
             "aux_files": self.metadata.get("aux_files"),
+            "data_cutoff_close_utc": self.metadata.get("data_cutoff_close_utc"),
+            "split": self.metadata.get("split"),
         }
         digest = hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -159,6 +161,8 @@ class DatasetManifest:
             "funding_files": self.metadata.get("funding_files"),
             "spec_files": self.metadata.get("spec_files"),
             "aux_files": self.metadata.get("aux_files"),
+            "data_cutoff_close_utc": self.metadata.get("data_cutoff_close_utc"),
+            "split": self.metadata.get("split"),
             "manifest_hash": self.sha256(),
         }
         path.write_text(json.dumps(payload, indent=2))

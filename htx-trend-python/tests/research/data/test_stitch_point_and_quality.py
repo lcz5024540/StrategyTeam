@@ -175,7 +175,7 @@ def _write_raw(workspace: Path, times, htx_close=100.0, bn_close=100.0):
 
 
 def test_written_dataset_manifest_json_contains_stitch_points_and_bad_ticks_hash(tmp_path):
-    times = _around_stitch(before=8, after=8)
+    times = _around_stitch(before=80, after=200)
     _write_raw(tmp_path, times)
     yaml_path = tmp_path / "bad_ticks.yaml"
     yaml_path.write_text(
@@ -217,7 +217,7 @@ def test_written_dataset_manifest_json_contains_stitch_points_and_bad_ticks_hash
 
 
 def test_freeze_records_funding_file_hashes_and_load_rejects_mismatch(tmp_path):
-    times = _around_stitch(before=8, after=8)
+    times = _around_stitch(before=80, after=200)
     _write_raw(tmp_path, times)
     raw = tmp_path / "data" / "raw"
     funding = pd.DataFrame(
@@ -264,7 +264,7 @@ def test_freeze_records_funding_file_hashes_and_load_rejects_mismatch(tmp_path):
 
 
 def test_freeze_records_funding_sources_in_manifest_and_hash(tmp_path):
-    times = _around_stitch(before=8, after=8)
+    times = _around_stitch(before=80, after=200)
     _write_raw(tmp_path, times)
     raw = tmp_path / "data" / "raw"
     funding = pd.DataFrame(
@@ -306,7 +306,7 @@ def test_freeze_records_funding_sources_in_manifest_and_hash(tmp_path):
 
 
 def test_freeze_records_stitch_point_and_bad_ticks_in_manifest_hash(tmp_path):
-    times = _around_stitch(before=8, after=8)
+    times = pd.date_range("2020-09-01", periods=200 * 6, freq="4h", tz="UTC")
     _write_raw(tmp_path, times)
     cmd_freeze(_freeze_args(tmp_path, stitch_point="2020-11-01T00:00:00Z"))
     manifests = list((tmp_path / "data" / "datasets" / "manifests").glob("*.json"))

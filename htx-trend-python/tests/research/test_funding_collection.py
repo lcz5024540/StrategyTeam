@@ -209,7 +209,7 @@ def test_collect_freeze_131_htx_pages_and_binance_sources(tmp_path):
     assert counts["binance_external"] == 2
     assert "htx" in counts and "binance_external" in counts
 
-    times = _around_stitch(before=8, after=8)
+    times = _around_stitch(before=80, after=200)
     _write_raw(tmp_path, times)
     cmd_freeze(_freeze_args(tmp_path, stitch_point="2020-11-01T00:00:00Z"))
     dataset_dir = next(

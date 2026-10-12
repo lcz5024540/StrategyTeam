@@ -53,6 +53,9 @@ def test_delivery_template_documents_packaging_env_and_anchored_exclude(tmp_path
     assert "deploy" in text.lower()
     assert "--exclude '/data'" in text or "--exclude /data" in text
     assert "src/htx_trend/research/data" in text
+    assert "--cutoff 2026-10-12T00:00:00Z" in text
+    assert "validation_start_utc" in text
+    assert "test_start_utc" in text
 
 
 def test_deploy_sync_uses_anchored_data_exclude():

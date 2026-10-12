@@ -236,6 +236,8 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         train_ratio=args.train_ratio,
         val_ratio=args.val_ratio,
         extra_metadata=extra_metadata,
+        data_cutoff_close_utc=getattr(args, "cutoff", None),
+        test_start_utc=getattr(args, "test_start", None),
     )
     dataset_dir = workspace / "data" / "datasets" / frozen.dataset_id
     if source_counts:
@@ -290,6 +292,12 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     print(f"Train: {frozen.train_end_idx}")
     print(f"Val: {frozen.val_end_idx - frozen.train_end_idx}")
     print(f"Test: {frozen.total_bars - frozen.val_end_idx}")
+    if frozen.data_cutoff_close_utc is not None:
+        print(f"Cutoff: {frozen.data_cutoff_close_utc.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+    if frozen.validation_start_utc is not None:
+        print(f"validation_start_utc: {frozen.validation_start_utc.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+    if frozen.test_start_utc is not None:
+        print(f"test_start_utc: {frozen.test_start_utc.strftime('%Y-%m-%dT%H:%M:%SZ')}")
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -500,6 +508,17 @@ def main() -> None:
     freeze_parser.add_argument("--timeframe", required=True, choices=["4hour", "1day"])
     freeze_parser.add_argument("--train-ratio", type=float, default=0.6)
     freeze_parser.add_argument("--val-ratio", type=float, default=0.2)
+    freeze_parser.add_argument(
+        "--cutoff",
+        default="2026-10-12T00:00:00Z",
+        help="Include bars whose close is <= this UTC instant "
+        "(v0.1.0 default 2026-10-12T00:00:00Z)",
+    )
+    freeze_parser.add_argument(
+        "--test-start",
+        default=None,
+        help="Optional UTC 00:00 test split start; default is computed 60/20/20 and stored",
+    )
     freeze_parser.add_argument("--backfill-binance", action="store_true")
     freeze_parser.add_argument("--overlap-threshold", type=float)
     freeze_parser.add_argument("--daily-cut", choices=["UTC00", "UTC16"])

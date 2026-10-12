@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field, fields
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -15,6 +15,149 @@ from ..ledger.ledger import ApprovalDecision, ApprovalGate
 from ..ops.logging import LogComponent, log_event
 from .immutable_storage import ImmutableKlineStorage
 from .manifest import DatasetManifest, VerificationResult
+
+DEFAULT_DATA_CUTOFF_CLOSE_UTC = datetime(2026, 10, 12, 0, 0, tzinfo=timezone.utc)
+BAR_DURATION = {
+    "4hour": timedelta(hours=4),
+    "4h": timedelta(hours=4),
+    "1day": timedelta(days=1),
+    "1d": timedelta(days=1),
+}
+
+
+def parse_utc_datetime(value: datetime | pd.Timestamp | str) -> datetime:
+    if isinstance(value, pd.Timestamp):
+        value = value.to_pydatetime()
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def utc_iso(value: datetime | pd.Timestamp | str) -> str:
+    return parse_utc_datetime(value).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def require_utc_midnight(value: datetime, *, field_name: str) -> datetime:
+    instant = parse_utc_datetime(value)
+    if instant.hour or instant.minute or instant.second or instant.microsecond:
+        raise ValueError(f"{field_name} must be aligned to UTC 00:00, got {utc_iso(instant)}")
+    return instant
+
+
+def bar_duration(timeframe: str) -> timedelta:
+    try:
+        return BAR_DURATION[timeframe]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported timeframe for cutoff/split: {timeframe}") from exc
+
+
+def filter_closed_by_cutoff(
+    df: pd.DataFrame,
+    timeframe: str,
+    cutoff: datetime,
+) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    work = df.copy()
+    times = pd.to_datetime(work["bar_time"], utc=True)
+    closes = times + bar_duration(timeframe)
+    return work.loc[closes <= pd.Timestamp(cutoff)].copy()
+
+
+def unique_utc_days(bar_times: Any) -> list[datetime]:
+    days = (
+        pd.to_datetime(pd.Series(list(bar_times)), utc=True)
+        .dt.normalize()
+        .drop_duplicates()
+        .sort_values()
+    )
+    return [ts.to_pydatetime() for ts in days]
+
+
+def compute_split_boundaries(
+    days: list[datetime],
+    train_ratio: float = 0.6,
+    val_ratio: float = 0.2,
+    test_start_utc: datetime | str | None = None,
+) -> tuple[datetime, datetime]:
+    if not days:
+        raise ValueError("No UTC days remain at or before data_cutoff_close_utc")
+    n_days = len(days)
+    if test_start_utc is not None:
+        test_start = require_utc_midnight(test_start_utc, field_name="test_start_utc")
+        pre = [day for day in days if parse_utc_datetime(day) < test_start]
+        if not pre:
+            validation_start = test_start
+        else:
+            ratio = train_ratio / (train_ratio + val_ratio) if (train_ratio + val_ratio) else 0.75
+            val_idx = min(int(len(pre) * ratio), len(pre) - 1)
+            validation_start = parse_utc_datetime(pre[val_idx])
+        return validation_start, test_start
+    val_idx = min(int(n_days * train_ratio), n_days - 1)
+    test_idx = min(int(n_days * (train_ratio + val_ratio)), n_days - 1)
+    return parse_utc_datetime(days[val_idx]), parse_utc_datetime(days[test_idx])
+
+
+def assert_stitch_in_train(
+    stitch_points: dict | None,
+    validation_start: datetime,
+) -> None:
+    if not stitch_points:
+        return
+    val = parse_utc_datetime(validation_start)
+    for symbol, raw in stitch_points.items():
+        stitch = parse_utc_datetime(raw)
+        if stitch >= val:
+            raise ValueError(
+                f"stitch point for {symbol} ({utc_iso(stitch)}) must fall inside "
+                f"the train segment (before validation_start_utc {utc_iso(val)})"
+            )
+
+
+def _require_manifest_split(manifest: dict) -> tuple[datetime, datetime, datetime]:
+    split_info = manifest.get("split") or {}
+    val_raw = split_info.get("validation_start_utc") or manifest.get("validation_start_utc")
+    test_raw = split_info.get("test_start_utc") or manifest.get("test_start_utc")
+    cutoff_raw = manifest.get("data_cutoff_close_utc")
+    if not val_raw or not test_raw or not cutoff_raw:
+        raise ValueError(
+            "manifest split missing validation_start_utc/test_start_utc "
+            "or data_cutoff_close_utc; freeze the dataset again"
+        )
+    return (
+        parse_utc_datetime(val_raw),
+        parse_utc_datetime(test_raw),
+        parse_utc_datetime(cutoff_raw),
+    )
+
+
+def _mask_split(
+    bar_times: pd.Series,
+    split: str,
+    validation_start: datetime,
+    test_start: datetime,
+    cutoff: datetime,
+    timeframe: str,
+) -> pd.Series:
+    times = pd.to_datetime(bar_times, utc=True)
+    closes = times + bar_duration(timeframe)
+    val_ts = pd.Timestamp(validation_start)
+    test_ts = pd.Timestamp(test_start)
+    cutoff_ts = pd.Timestamp(cutoff)
+    in_cutoff = closes <= cutoff_ts
+    if split == "train":
+        return (times < val_ts) & in_cutoff
+    if split in ("val", "validation"):
+        return (times >= val_ts) & (times < test_ts) & in_cutoff
+    return (times >= test_ts) & in_cutoff
 
 
 @dataclass
@@ -29,6 +172,10 @@ class FrozenDataset:
     val_end_idx: int
     manifest_hash: str
     created_at: datetime
+    data_cutoff_close_utc: datetime | None = None
+    validation_start_utc: datetime | None = None
+    test_start_utc: datetime | None = None
+    test_hash: str | None = None
     stitch_points: dict | None = None
     verified_funding_paths: dict = field(default_factory=dict)
     verified_spec_paths: dict = field(default_factory=dict)
@@ -70,15 +217,38 @@ class FrozenDataset:
             "val_end_idx": self.val_end_idx,
             "manifest_hash": self.manifest_hash,
             "created_at": self.created_at.isoformat(),
+            "data_cutoff_close_utc": (
+                utc_iso(self.data_cutoff_close_utc) if self.data_cutoff_close_utc else None
+            ),
+            "validation_start_utc": (
+                utc_iso(self.validation_start_utc) if self.validation_start_utc else None
+            ),
+            "test_start_utc": utc_iso(self.test_start_utc) if self.test_start_utc else None,
+            "test_hash": self.test_hash,
+            "split": {
+                "validation_start_utc": (
+                    utc_iso(self.validation_start_utc) if self.validation_start_utc else None
+                ),
+                "test_start_utc": utc_iso(self.test_start_utc) if self.test_start_utc else None,
+            },
         }
     
     @classmethod
     def from_dict(cls, data: dict) -> FrozenDataset:
         allowed = {item.name for item in fields(cls)} - cls._RUNTIME_PATH_FIELDS
         filtered = {key: value for key, value in data.items() if key in allowed}
+        split = data.get("split") or {}
+        if filtered.get("validation_start_utc") is None:
+            filtered["validation_start_utc"] = split.get("validation_start_utc")
+        if filtered.get("test_start_utc") is None:
+            filtered["test_start_utc"] = split.get("test_start_utc")
         filtered["start_date"] = datetime.fromisoformat(filtered["start_date"])
         filtered["end_date"] = datetime.fromisoformat(filtered["end_date"])
         filtered["created_at"] = datetime.fromisoformat(filtered["created_at"])
+        for key in ("data_cutoff_close_utc", "validation_start_utc", "test_start_utc"):
+            value = filtered.get(key)
+            if isinstance(value, str):
+                filtered[key] = parse_utc_datetime(value)
         return cls(**filtered)
 
 
@@ -105,26 +275,55 @@ class DatasetManager:
         train_ratio: float = 0.6,
         val_ratio: float = 0.2,
         extra_metadata: dict | None = None,
+        data_cutoff_close_utc: datetime | str | None = None,
+        test_start_utc: datetime | str | None = None,
     ) -> FrozenDataset:
+        cutoff = parse_utc_datetime(
+            data_cutoff_close_utc or DEFAULT_DATA_CUTOFF_CLOSE_UTC
+        )
+        filtered: dict[str, pd.DataFrame] = {}
+        for symbol, df in data.items():
+            kept = filter_closed_by_cutoff(df, timeframe, cutoff)
+            if kept is not None and not kept.empty:
+                filtered[symbol] = kept.reset_index(drop=True)
+        if not filtered:
+            raise ValueError("No bars remain at or before data_cutoff_close_utc")
+        data = filtered
         symbols = sorted(data.keys())
-        
+
         all_dates = []
         total_bars = 0
         for symbol in symbols:
             df = data[symbol]
             all_dates.extend(df["bar_time"].tolist())
             total_bars += len(df)
-        
+
+        days = unique_utc_days(all_dates)
+        validation_start, test_start = compute_split_boundaries(
+            days,
+            train_ratio=train_ratio,
+            val_ratio=val_ratio,
+            test_start_utc=test_start_utc,
+        )
+        assert_stitch_in_train((extra_metadata or {}).get("stitch_points"), validation_start)
+
         all_dates = sorted(set(all_dates))
         start_date = min(all_dates)
         end_date = max(all_dates)
-        
+        cutoff_iso = utc_iso(cutoff)
+        split_payload = {
+            "validation_start_utc": utc_iso(validation_start),
+            "test_start_utc": utc_iso(test_start),
+        }
+
         manifest = {
             "symbols": symbols,
             "timeframe": timeframe,
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
+            "start_date": start_date.isoformat() if hasattr(start_date, "isoformat") else str(start_date),
+            "end_date": end_date.isoformat() if hasattr(end_date, "isoformat") else str(end_date),
             "total_bars": total_bars,
+            "data_cutoff_close_utc": cutoff_iso,
+            "split": split_payload,
         }
         if extra_metadata:
             for key in (
@@ -137,29 +336,30 @@ class DatasetManager:
             ):
                 if key in extra_metadata:
                     manifest[key] = extra_metadata[key]
-        
+
         manifest_str = json.dumps(manifest, sort_keys=True)
         manifest_hash = hashlib.sha256(manifest_str.encode()).hexdigest()[:16]
-        
+
         dataset_id = f"{timeframe}_{manifest_hash}"
         dataset_dir = self.datasets_dir / dataset_id
         dataset_dir.mkdir(parents=True, exist_ok=True)
-        
+
         for symbol, df in data.items():
             output_path = dataset_dir / f"{symbol}.parquet"
             df.to_parquet(output_path, index=False)
-        
-        sample_df = data[symbols[0]]
+
+        sample_df = data[symbols[0]].sort_values("bar_time")
+        times = pd.to_datetime(sample_df["bar_time"], utc=True)
+        train_end_idx = int((times < pd.Timestamp(validation_start)).sum())
+        val_end_idx = int((times < pd.Timestamp(test_start)).sum())
         n_bars = len(sample_df)
-        train_end_idx = int(n_bars * train_ratio)
-        val_end_idx = int(n_bars * (train_ratio + val_ratio))
-        
+
         train_hash = self._compute_split_hash(data, symbols, 0, train_end_idx)
         val_hash = self._compute_split_hash(
             data, symbols, train_end_idx, val_end_idx
         )
         test_hash = self._compute_split_hash(data, symbols, val_end_idx, n_bars)
-        
+
         frozen = FrozenDataset(
             dataset_id=dataset_id,
             symbols=symbols,
@@ -171,8 +371,13 @@ class DatasetManager:
             val_end_idx=val_end_idx,
             manifest_hash=manifest_hash,
             created_at=datetime.now(),
+            data_cutoff_close_utc=cutoff,
+            validation_start_utc=validation_start,
+            test_start_utc=test_start,
+            test_hash=test_hash,
+            stitch_points=(extra_metadata or {}).get("stitch_points"),
         )
-        
+
         manifest_with_splits = manifest.copy()
         manifest_with_splits.update({
             "dataset_id": dataset_id,
@@ -183,18 +388,25 @@ class DatasetManager:
             "val_hash": val_hash,
             "test_hash": test_hash,
             "created_at": frozen.created_at.isoformat(),
+            "data_cutoff_close_utc": cutoff_iso,
+            "validation_start_utc": split_payload["validation_start_utc"],
+            "test_start_utc": split_payload["test_start_utc"],
+            "split": split_payload,
         })
-        
+
         manifest_path = dataset_dir / "manifest.json"
         manifest_path.write_text(json.dumps(manifest_with_splits, indent=2))
 
         batch_manifest = DatasetManifest.generate_from_dataset_dir(dataset_dir, dataset_id)
-        batch_manifest.metadata.update({
+        batch_meta = {
             "timeframe": timeframe,
             "frozen_manifest_hash": manifest_hash,
-        })
+            "data_cutoff_close_utc": cutoff_iso,
+            "split": split_payload,
+        }
         if extra_metadata:
-            batch_manifest.metadata.update(extra_metadata)
+            batch_meta.update(extra_metadata)
+        batch_manifest.metadata.update(batch_meta)
         aux = dict(batch_manifest.metadata.get("aux_files") or {})
         aux["dataset_manifest"] = {
             "path": "manifest.json",
@@ -202,7 +414,7 @@ class DatasetManager:
         }
         batch_manifest.metadata["aux_files"] = aux
         batch_manifest.save(self.manifests_dir / f"{dataset_id}.json")
-        
+
         log_event(
             LogComponent.DATA,
             f"Dataset frozen: {dataset_id}",
@@ -214,7 +426,7 @@ class DatasetManager:
             val_bars=val_end_idx - train_end_idx,
             test_bars=n_bars - val_end_idx,
         )
-        
+
         return frozen
     
     def load_dataset(
@@ -240,8 +452,13 @@ class DatasetManager:
         
         manifest_path = verified_manifest_path or (dataset_dir / "manifest.json")
         manifest = json.loads(manifest_path.read_text())
-        
+        val_start, test_start, cutoff = _require_manifest_split(manifest)
+
         frozen = FrozenDataset.from_dict(manifest)
+        frozen.validation_start_utc = val_start
+        frozen.test_start_utc = test_start
+        frozen.data_cutoff_close_utc = cutoff
+        frozen.test_hash = manifest.get("test_hash") or frozen.test_hash
 
         if split == "test":
             self._enforce_holdout_gate(
@@ -251,17 +468,35 @@ class DatasetManager:
                 run_id=run_id or self.current_run_id,
                 strategy_version=strategy_version,
             )
-        
+            test_hash = frozen.test_hash
+            if not test_hash:
+                raise ValueError("manifest missing test_hash; freeze the dataset first")
+            if self.ledger is not None:
+                self.ledger.lock_test_set(
+                    frozen.manifest_hash,
+                    test_hash,
+                    run_id or self.current_run_id or "unknown",
+                )
+
         symbols_to_load = symbols or frozen.symbols
-        start_idx, end_idx = frozen.get_split(split)
         data = {}
-        
+        timeframe = frozen.timeframe or manifest.get("timeframe") or "4hour"
+
         for symbol in symbols_to_load:
             parquet_path = (verified_kline_paths or {}).get(symbol)
             if parquet_path is None:
                 parquet_path = dataset_dir / f"{symbol}.parquet"
             if Path(parquet_path).exists():
-                data[symbol] = pd.read_parquet(parquet_path).iloc[start_idx:end_idx].copy()
+                frame = pd.read_parquet(parquet_path)
+                mask = _mask_split(
+                    frame["bar_time"],
+                    split,
+                    val_start,
+                    test_start,
+                    cutoff,
+                    timeframe,
+                )
+                data[symbol] = frame.loc[mask].copy()
         
         log_event(
             LogComponent.DATA,

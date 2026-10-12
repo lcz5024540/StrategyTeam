@@ -10,7 +10,12 @@ import pytest
 import yaml
 
 from htx_trend.research.runner import BacktestRunner
-from tests.research.helpers import create_test_dataset, runner_config, write_runner
+from tests.research.helpers import (
+    create_test_dataset,
+    runner_config,
+    split_manifest_fields,
+    write_runner,
+)
 
 
 def create_fixture_dataset(workspace: Path) -> str:
@@ -54,6 +59,7 @@ def create_fixture_dataset(workspace: Path) -> str:
         "val_end_idx": 240,
         "manifest_hash": "fixture_test",
         "created_at": "2024-01-01T00:00:00",
+        **split_manifest_fields(dates, 180, 240),
     }
     
     manifest_path = dataset_dir / "manifest.json"

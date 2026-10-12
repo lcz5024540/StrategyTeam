@@ -297,6 +297,26 @@ python -m pip install --no-deps -e .
 python -m htx_trend.research --help
 ```
 
+### Freeze dataset (v0.1.0)
+
+Split is 60/20/20 by unique UTC days. Boundaries (`validation_start_utc`,
+`test_start_utc`) are computed once at freeze and snapped to UTC 00:00 so
+synthesized daily bars are never split. Default cutoff close is
+`2026-10-12T00:00:00Z` (last included 4h bar opens `2026-10-11T20:00:00Z`).
+The stitch point (`2020-11-01T00:00:00Z` by default) must fall inside the
+train segment (before `validation_start_utc`). Later extensions only append
+after test; do not recompute the split.
+
+```bash
+python -m htx_trend.research freeze \
+  --workspace . \
+  --contracts BTC-USDT,ETH-USDT \
+  --timeframe 4hour \
+  --backfill-binance \
+  --overlap-threshold 0.003 \
+  --cutoff 2026-10-12T00:00:00Z
+```
+
 ---
 
 ## Rollback Steps

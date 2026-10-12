@@ -120,7 +120,7 @@ def test_freeze_writes_source_counts(tmp_path):
     workspace = tmp_path / "ws"
     raw = workspace / "data" / "raw"
     raw.mkdir(parents=True)
-    times_htx = pd.date_range("2024-06-01", periods=6, freq="4h", tz="UTC")
+    times_htx = pd.date_range("2024-06-01", periods=60, freq="4h", tz="UTC")
     times_bn = pd.date_range("2024-01-01", periods=6, freq="4h", tz="UTC")
     htx = pd.DataFrame(
         {
@@ -174,4 +174,4 @@ def test_freeze_writes_source_counts(tmp_path):
     assert counts_path.exists()
     counts = json.loads(counts_path.read_text())
     assert counts["BTC-USDT"]["binance_backfill_bars"] > 0
-    assert counts["BTC-USDT"]["htx_bars"] == 6
+    assert counts["BTC-USDT"]["htx_bars"] == 60
