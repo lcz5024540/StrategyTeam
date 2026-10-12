@@ -221,3 +221,23 @@ def test_bar_staleness_per_timeframe(tmp_path):
     assert by_tf["4hour"]["is_stale"]
     assert not by_tf["1day"]["is_stale"]
     assert not ok
+
+
+@pytest.mark.parametrize("interval", [None, "", "  "])
+def test_health_check_missing_interval_is_hard_error(tmp_path, interval):
+    state = tmp_path / "state.json"
+    payload = {
+        "BTC-USDT": {
+            "symbol": "BTC-USDT",
+            "last_bar_time": "2026-01-02T00:00:00+00:00",
+        }
+    }
+    if interval is not None:
+        payload["BTC-USDT"]["interval"] = interval
+    state.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="4hour"):
+        check_health(
+            collector_state_path=state,
+            bar_staleness_threshold_minutes=10,
+            now=datetime(2026, 1, 2, 4, 5, tzinfo=timezone.utc),
+        )

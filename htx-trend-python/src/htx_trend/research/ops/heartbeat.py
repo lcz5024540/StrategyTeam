@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
+from ..data.dataset import require_timeframe
 from ..data.immutable_storage import _parse_interval_seconds
 
 
@@ -185,10 +186,10 @@ def check_health(
             if not isinstance(info, dict):
                 continue
             symbol = info.get("symbol") or str(key)
-            interval = info.get("interval") or "4hour"
             last_raw = info.get("last_bar_time")
             if not last_raw:
                 continue
+            interval = require_timeframe(info.get("interval"))
             last_bar_time = _as_utc(last_raw)
             interval_seconds = _parse_interval_seconds(interval)
             expected_next_close = last_bar_time + timedelta(seconds=2 * interval_seconds)

@@ -96,7 +96,7 @@
 
 **状态**: ✅ PASS
 
-**要求**: 单笔风险 1%，总风险 ≤2%，最大 2 仓位
+**要求**: 单笔风险 2%，总风险 ≤10%，最大 5 仓位
 
 **证据**:
 - **代码**: `src/htx_trend/research/risk/position_sizing.py:20-101`
@@ -104,9 +104,9 @@
   class PositionSizer:
       def __init__(
           self,
-          risk_per_trade_pct: float = 0.01,  # 1%
-          max_total_risk_pct: float = 0.02,  # 2%
-          max_positions: int = 2,
+          risk_per_trade_pct: float = 0.02,  # 2%
+          max_total_risk_pct: float = 0.10,  # 10%
+          max_positions: int = 5,
       ):
       
       def calculate_position(...):
@@ -116,7 +116,8 @@
           num_contracts = notional_value / (entry_price * contract_size)
   ```
 
-- **测试**: `tests/research/test_position_sizing_400usdt.py`
+- **测试**: `tests/research/test_position_sizing_r0001.py`、`tests/research/test_position_sizing_400usdt.py`
+  - ✅ R0001：300U / 2% / 10% / 5 仓；总风险帽与 max_positions 使用不同 skip_reason
   - ✅ 400 USDT 资金下的仓位计算
   - ✅ 风险预算检查
   - ✅ 总风险限制验证
@@ -205,8 +206,8 @@
 | **回看期集成** | [42, 84, 126, 168] 根（4h × [1w, 2w, 3w, 4w]） | 1d 取 [7, 14, 21, 28]；4h 取 [42, 84, 126, 168]（同一天数换算） | §2 表格，行 2 |
 | **集成阈值** | threshold=0.25 | 集成值取平均，多回看期等权 | §2 表格，行 3 |
 | **ATR 止损** | ATR(14)×2 | ATR 周期 14 或 20；初始止损 2×ATR | §2 表格，行 4 |
-| **单笔风险** | 1%（300U 最大亏损 3U） | 海龟 1%；产品决策 R0001 | §2 表格，行 5 |
-| **总风险限制** | max 2%，max 2 仓位 | 产品决策：BTC/ETH 各一仓 | 风控边界 |
+| **单笔风险** | 2%（300U 最大亏损 6U） | 产品决策 R0001（rc.6） | §2 表格，行 5 |
+| **总风险限制** | max 10%，max 5 仓位 | 产品决策 R0001（rc.6）；品种仍仅 BTC/ETH 4h | 风控边界 |
 | **初始资金** | 300 USDT | 真实账户起始资金 | §4 保本算术 |
 | **手续费** | Maker 0.02%, Taker 0.06% | HTX Prime 0 官方费率 | §4 HTX 费率 |
 | **成交假设** | t 收盘信号 → t+1 成交 | 四种成本场景（BASE/ZERO/OPTIMISTIC/CONSERVATIVE） | §2 表格，行 12 |
@@ -772,10 +773,10 @@
 **证据**:
 - **配置**: `configs/runs/R0001.yaml`
   ```yaml
-  initial_equity: 300  # 初始资金 300 USDT；单笔 1% 最大亏损 3U
-  risk_per_trade: 0.01
-  max_total_risk: 0.02
-  max_positions: 2
+  initial_equity: 300  # 初始资金 300 USDT；单笔 2% 最大亏损 6U
+  risk_per_trade: 0.02
+  max_total_risk: 0.10
+  max_positions: 5
   ```
 
 - **测试**: `tests/research/test_r0001_prereg.py`、`tests/research/test_position_sizing_r0001.py`

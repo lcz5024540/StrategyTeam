@@ -29,9 +29,9 @@ def test_r0001_registration_matches_prereg_batch1():
     assert cfg["timeframe"] == "4hour"
     assert cfg["symbols"] == ["BTC-USDT", "ETH-USDT"]
     assert cfg["initial_equity"] == 300
-    assert cfg["risk_per_trade"] == 0.01
-    assert cfg["max_total_risk"] == 0.02
-    assert cfg["max_positions"] == 2
+    assert cfg["risk_per_trade"] == 0.02
+    assert cfg["max_total_risk"] == 0.10
+    assert cfg["max_positions"] == 5
     assert "force_one_contract" not in cfg
     assert "force_min_contract" not in cfg
     assert "stage_acceptance" not in cfg

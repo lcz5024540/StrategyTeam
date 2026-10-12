@@ -5,6 +5,13 @@ All notable changes to the HTX Trend Research System will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-rc.6] - 2026-10-12
+
+### Changed
+- rc.6: R0001 risk params changed to 300U / 2% / 10% / 5 positions per user decision; replaces rc.5's 1%/2%/2
+- Heartbeat bar-staleness refuses a missing/blank interval instead of defaulting to `4hour`
+- Total-risk skip reason is `total_risk_cap_exceeded` (distinct from `max_positions_reached` and `min_contract_exceeds_risk_budget`)
+
 ## [0.1.0] - 2026-10-11
 
 ### Added

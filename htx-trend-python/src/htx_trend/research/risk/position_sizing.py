@@ -7,7 +7,7 @@ from typing import Literal
 
 SKIP_MIN_CONTRACT_EXCEEDS_RISK_BUDGET = "min_contract_exceeds_risk_budget"
 SKIP_MAX_POSITIONS = "max_positions_reached"
-SKIP_TOTAL_RISK_CAP = "total_risk_cap_reached"
+SKIP_TOTAL_RISK_CAP = "total_risk_cap_exceeded"
 
 
 def one_contract_risk_usdt(
@@ -35,9 +35,9 @@ class PositionSize:
 class PositionSizer:
     def __init__(
         self,
-        risk_per_trade_pct: float = 0.01,
-        max_total_risk_pct: float = 0.02,
-        max_positions: int = 2,
+        risk_per_trade_pct: float = 0.02,
+        max_total_risk_pct: float = 0.10,
+        max_positions: int = 5,
         target_leverage: float = 5.0,
     ):
         self.risk_per_trade_pct = risk_per_trade_pct
@@ -118,7 +118,19 @@ class PositionSizer:
         
         actual_notional = num_contracts * entry_price * contract_size
         actual_risk_pct = actual_notional * stop_distance_pct / account_equity
-        
+        if existing_risk + actual_risk_pct > self.max_total_risk_pct:
+            return PositionSize(
+                symbol=symbol,
+                side=side,
+                size=0,
+                leverage=self.target_leverage,
+                stop_loss=stop_loss,
+                risk_pct=0,
+                skip_reason=SKIP_TOTAL_RISK_CAP,
+                one_contract_risk_usdt=one_risk,
+                risk_budget_usdt=budget,
+            )
+
         return PositionSize(
             symbol=symbol,
             side=side,

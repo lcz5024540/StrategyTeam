@@ -151,7 +151,7 @@ def test_position_sizing_respects_max_total_risk_with_400_usdt():
     
     # 总风险已达 1.5%，应拒绝新仓位
     assert pos.size == 0
-    assert pos.skip_reason == "total_risk_cap_reached"
+    assert pos.skip_reason == "total_risk_cap_exceeded"
 
 
 def test_position_sizing_eth_with_400_usdt():

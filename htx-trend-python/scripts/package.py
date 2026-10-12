@@ -268,6 +268,9 @@ def generate_delivery_template(
 **Breaking Changes**:
 - N/A (initial release)
 
+**Notes**:
+- rc.6: R0001 risk params changed to 300U / 2% / 10% / 5 positions per user decision; replaces rc.5's 1%/2%/2
+
 ---
 
 ## Database Migrations

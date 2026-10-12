@@ -83,6 +83,18 @@ def test_delivery_template_documents_packaging_env_and_anchored_exclude(tmp_path
     assert "pip install --require-hashes" in text
     assert "cp -a" in text
     assert "data/quality" in text
+    assert (
+        "rc.6: R0001 risk params changed to 300U / 2% / 10% / 5 positions "
+        "per user decision; replaces rc.5's 1%/2%/2"
+    ) in text
+
+
+def test_changelog_records_rc6_r0001_risk_params():
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert (
+        "rc.6: R0001 risk params changed to 300U / 2% / 10% / 5 positions "
+        "per user decision; replaces rc.5's 1%/2%/2"
+    ) in text
 
 
 def test_package_script_has_no_rsync_dependency():
