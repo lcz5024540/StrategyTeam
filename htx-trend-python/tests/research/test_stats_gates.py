@@ -13,7 +13,11 @@ from htx_trend.research.stats.bootstrap import run_pf_bootstrap
 from htx_trend.research.stats.metrics import profit_factor, summarize_pf_bootstrap
 from collections import deque
 
-from htx_trend.research.stats.permutation import build_forced_entry_queues, run_permutation_test
+from htx_trend.research.stats.permutation import (
+    _stratified_sample_indices,
+    build_forced_entry_queues,
+    run_permutation_test,
+)
 from htx_trend.research.stats.trades import (
     TREND_STATE_SLICE_RANGE,
     TREND_STATE_SLICE_TREND,
@@ -175,6 +179,17 @@ def test_forced_queues_disable_c01_entries(tmp_path: Path) -> None:
     assert forced_entries == 1
 
 
+def test_stratified_sample_spreads_indices() -> None:
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    indices = _stratified_sample_indices(1000, 10, rng)
+    assert len(indices) == 10
+    assert len(set(indices)) >= 8
+    assert min(indices) < 100
+    assert max(indices) > 900
+
+
 def test_build_forced_queues_preserves_sides() -> None:
     import numpy as np
 
@@ -195,6 +210,70 @@ def test_build_forced_queues_preserves_sides() -> None:
     queues = build_forced_entry_queues(templates, eligible, rng)
     sides = [side for _t, side in queues["BTC-USDT"]]
     assert sides == ["LONG", "SHORT"]
+
+
+@pytest.mark.require_runtime_integrity
+def test_permutation_resample_matches_trade_counts(tmp_path: Path) -> None:
+    """Regression: null draws must reach per-symbol trade counts (rc.2 joint-test blocker)."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    create_test_dataset(
+        workspace,
+        "permreg",
+        n_bars=260,
+        train_end_idx=260,
+        val_end_idx=260,
+        symbols=["BTC-USDT", "ETH-USDT"],
+        specs={
+            "BTC-USDT": DEFAULT_SPECS["BTC-USDT"],
+            "ETH-USDT": DEFAULT_SPECS["ETH-USDT"],
+        },
+        close_series={
+            "BTC-USDT": _breakout_close(),
+            "ETH-USDT": _breakout_close(),
+        },
+    )
+    run_id = "PERM-RESAMPLE-01"
+    cfg = runner_config(
+        workspace,
+        run_id,
+        "permreg",
+        symbols=["BTC-USDT", "ETH-USDT"],
+        initial_equity=10_000.0,
+        conditions={
+            "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
+            "C02": {
+                "enabled": True,
+                "atr_period": 14,
+                "atr_multiplier": 2.0,
+                "tick_size": 0.1,
+                "stop_slippage_ticks": 1,
+            },
+        },
+    )
+    config_path = workspace / f"{run_id}.yaml"
+
+    with patch("htx_trend.research.runner.require_runtime_integrity", return_value="test"):
+        runner = write_runner(workspace, cfg)
+        runner.run()
+        runner.close()
+
+    trades_path = workspace / "runs" / run_id / "return_series.parquet"
+    trades = pd.read_parquet(trades_path)
+    if trades.empty or len(trades) < 2:
+        pytest.skip("fixture produced too few trades for resample stress")
+
+    with patch("htx_trend.research.runner.require_runtime_integrity", return_value="test"):
+        payload = run_permutation_test(
+            workspace,
+            source_run_id=run_id,
+            config_path=config_path,
+            n_permutations=12,
+            seed=99,
+            output=workspace / "perm_resample.json",
+            write_ledger=False,
+        )
+    assert payload["null_distribution"]["n_samples"] == 12
 
 
 @pytest.mark.require_runtime_integrity

@@ -54,6 +54,28 @@ def _eligible_entry_bars(df: pd.DataFrame, start_idx: int) -> list[pd.Timestamp]
     return eligible
 
 
+def _stratified_sample_indices(
+    pool_size: int, n: int, rng: np.random.Generator
+) -> list[int]:
+    """Spread picks across the eligible timeline to reduce entry overlap."""
+    if n == 0:
+        return []
+    if pool_size < n:
+        raise ValueError(f"pool_size {pool_size} < sample count {n}")
+    edges = np.linspace(0, pool_size, num=n + 1, dtype=int)
+    indices: list[int] = []
+    for i in range(n):
+        lo, hi = int(edges[i]), int(edges[i + 1])
+        if lo >= hi:
+            hi = min(lo + 1, pool_size)
+        if lo >= pool_size:
+            lo = pool_size - 1
+        if hi <= lo:
+            hi = lo + 1
+        indices.append(int(rng.integers(lo, min(hi, pool_size))))
+    return indices
+
+
 def build_forced_entry_queues(
     templates: dict[str, list[tuple[pd.Timestamp, str]]],
     eligible: dict[str, list[pd.Timestamp]],
@@ -70,7 +92,7 @@ def build_forced_entry_queues(
             raise ValueError(
                 f"not enough eligible bars for {symbol}: need {n}, have {len(pool)}"
             )
-        indices = rng.choice(len(pool), size=n, replace=False)
+        indices = _stratified_sample_indices(len(pool), n, rng)
         chosen_times = sorted(pool[i] for i in indices)
         queues[symbol] = deque(
             (bar_time, side) for bar_time, side in zip(chosen_times, sides, strict=True)
@@ -209,6 +231,8 @@ def run_permutation_test(
             "max_attempts_per_draw": max_resample_attempts_per_draw,
             "invalidated_resample_attempts": invalidated_resample_attempts,
             "match_rule": "per_symbol_and_total_completed_round_trips",
+            "entry_time_sampler": "stratified_uniform_over_eligible_bars",
+            "forced_entry_execution": "defer_until_flat_on_or_after_scheduled_bar",
         },
         "primary_metric": "mean_net_pnl_per_trade_after_costs",
         "observed": {

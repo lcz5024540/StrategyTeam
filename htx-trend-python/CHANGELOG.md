@@ -5,6 +5,15 @@ All notable changes to the HTX Trend Research System will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-rc.3] - 2026-10-12
+
+**Candidate only** (rc.2 joint-test permutation blocker).
+
+### Fixed
+- Permutation null resample: forced entries **defer** until flat on/after the scheduled bar (no longer dropped while a trade is open).
+- Stratified uniform sampling of eligible entry bars reduces overlap-driven count mismatch.
+- Document null resample policy fields in `permutation.json`.
+
 ## [0.1.1-rc.2] - 2026-10-12
 
 **Candidate only** (addresses 行研bot PR #18 conditional review).
