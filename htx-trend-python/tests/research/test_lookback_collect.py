@@ -169,6 +169,9 @@ def test_freeze_writes_source_counts(tmp_path):
             "validation_start": None,
             "test_start": None,
             "split_from_manifest": None,
+            "funding_gaps": str(
+                Path(__file__).resolve().parents[2] / "data" / "quality" / "funding_gaps.yaml"
+            ),
         },
     )()
     cmd_freeze(args)

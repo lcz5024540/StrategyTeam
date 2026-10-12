@@ -77,11 +77,13 @@ def test_delivery_template_documents_packaging_env_and_anchored_exclude(tmp_path
     assert "sha256sum -c" in text
     assert "rsync" not in text.lower()
     assert "/opt/coinstrategy/htx-trend-py" in text
-    assert ".venv" in text
+    assert "/opt/coinstrategy/htx-trend-py-venv" in text
+    assert "/opt/coinstrategy/htx-trend-py-state" in text
+    assert "releases/" in text
     assert "run/" in text
     assert "logs/" in text
     assert "pip install --require-hashes" in text
-    assert "cp -a" in text
+    assert "Do not" in text and "pip install -e" in text
     assert "data/quality" in text
     assert (
         "rc.6: R0001 risk params changed to 300U / 2% / 10% / 5 positions "

@@ -6,25 +6,29 @@
 
 ## 标准部署路径
 
-- **部署目录**: `/opt/coinstrategy/htx-trend-py`
+- **代码**: `/opt/coinstrategy/htx-trend-py/releases/<version>/`，符号链接 `/opt/coinstrategy/htx-trend-py/current`
 - **用户**: `ubuntu`（可配置，见下方「自定义用户」）
-- **数据目录**: `/opt/coinstrategy/htx-trend-py/data`
-- **日志目录**: `/opt/coinstrategy/htx-trend-py/logs`
-- **运行目录**: `/opt/coinstrategy/htx-trend-py/run`（status / heartbeat / collector_state）
-- **状态文件**: `/opt/coinstrategy/htx-trend-py/run/status.json`
-- **Heartbeat**: `/opt/coinstrategy/htx-trend-py/run/heartbeat.txt`
-- **采集状态**: `/opt/coinstrategy/htx-trend-py/run/collector_state.json`
+- **venv（包外）**: `/opt/coinstrategy/htx-trend-py-venv`
+- **状态根**: `/opt/coinstrategy/htx-trend-py-state/{data,logs,run,evidence,backups}`
+- **数据目录**: `/opt/coinstrategy/htx-trend-py-state/data`
+- **日志目录**: `/opt/coinstrategy/htx-trend-py-state/logs`
+- **运行目录**: `/opt/coinstrategy/htx-trend-py-state/run`（status / heartbeat / collector_state）
+- **状态文件**: `/opt/coinstrategy/htx-trend-py-state/run/status.json`
+- **Heartbeat**: `/opt/coinstrategy/htx-trend-py-state/run/heartbeat.txt`
+- **采集状态**: `/opt/coinstrategy/htx-trend-py-state/run/collector_state.json`
 
 统一 systemd unit 只有一套，位于仓库 `deployment/systemd/`：
 
 - `htx-trend-collector.service`
 - `htx-trend-heartbeat.service`
 
-`WorkingDirectory=/opt/coinstrategy/htx-trend-py`，`User=ubuntu`，`ExecStart` 使用 `/opt/coinstrategy/htx-trend-py/.venv/bin/python`。采集器走配置 `/opt/coinstrategy/htx-trend-py/configs/collector.yaml`。`ReadWritePaths` 只挂目录（`data/`、`logs/`、`run/`）并加 `-` 前缀；不要把尚未创建的文件列进去。`python -m htx_trend health|status` 默认读 `run/` 下与采集器/心跳写入相同的文件。
+`WorkingDirectory=/opt/coinstrategy/htx-trend-py/current`，`User=ubuntu`，`ExecStart` 使用 `/opt/coinstrategy/htx-trend-py-venv/bin/python`，`PYTHONPATH=/opt/coinstrategy/htx-trend-py/current/src`。采集器走配置 `/opt/coinstrategy/htx-trend-py/current/configs/collector.yaml`。`ReadWritePaths` / `ExecStartPre` 只创建并挂状态目录，不写 `releases/`。`python -m htx_trend health|status` 用 `--workspace` 指向状态根。
 
 ```bash
-sudo mkdir -p /opt/coinstrategy/htx-trend-py/{data,logs,run}
-sudo chown -R ubuntu:ubuntu /opt/coinstrategy/htx-trend-py
+sudo mkdir -p /opt/coinstrategy/htx-trend-py/releases \
+  /opt/coinstrategy/htx-trend-py-venv \
+  /opt/coinstrategy/htx-trend-py-state/{data,logs,run,evidence,backups}
+sudo chown -R ubuntu:ubuntu /opt/coinstrategy/htx-trend-py /opt/coinstrategy/htx-trend-py-venv /opt/coinstrategy/htx-trend-py-state
 sudo cp deployment/systemd/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now htx-trend-collector htx-trend-heartbeat
@@ -126,7 +130,7 @@ Build the tarball in a **Python 3.12** venv that already has
 `requirements.lock` installed (the deploy venv is the usual choice):
 
 ```bash
-source /opt/coinstrategy/htx-trend-py/.venv/bin/activate
+source /opt/coinstrategy/htx-trend-py-venv/bin/activate
 python scripts/package.py --branch <release-branch>
 ```
 
@@ -146,12 +150,10 @@ cd htx-trend-python-0.1.0-<sha>
 # Verify integrity
 sha256sum -c htx-trend-python-0.1.0-<sha>.tar.gz.sha256
 
-# Install pinned deps, then the package without resolving again
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.lock
-python -m pip install --no-deps -e .
+# Install pinned deps into the external venv (no pip install -e)
+python3.12 -m venv /opt/coinstrategy/htx-trend-py-venv
+/opt/coinstrategy/htx-trend-py-venv/bin/python -m pip install --upgrade pip
+/opt/coinstrategy/htx-trend-py-venv/bin/python -m pip install --require-hashes -r requirements.lock
 ```
 
 ### Configuration

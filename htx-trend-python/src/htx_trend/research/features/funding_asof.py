@@ -9,7 +9,6 @@ from typing import Any, Iterable
 from ..data.immutable_storage import _parse_interval_seconds
 from ..data.quality import (
     FundingGap,
-    load_funding_gaps,
     require_funding_settlement_gaps,
 )
 
@@ -55,7 +54,9 @@ def attach_funding_as_of(
         raise ValueError("funding history contains NaN funding_rate")
     fund = fund.sort_values(time_col)
     out = out.sort_values("_bar_close")
-    registry = list(gaps) if gaps is not None else load_funding_gaps()
+    if gaps is None:
+        raise ValueError("funding gaps registry is required")
+    registry = list(gaps)
     require_funding_settlement_gaps(
         symbol,
         fund[time_col],

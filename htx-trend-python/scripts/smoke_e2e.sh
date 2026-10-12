@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 WS="${SMOKE_WORKSPACE:-$ROOT/smoke_workspace}"
-VENV="${SMOKE_VENV:-$ROOT/.venv-smoke}"
+VENV="${SMOKE_VENV:-${TMPDIR:-/tmp}/htx-trend-py-venv-smoke}"
 SUMMARY="${SMOKE_SUMMARY:-$WS/smoke_summary.txt}"
 LOG="$WS/smoke.log"
 LOOKBACK="${LOOKBACK_DAYS:-max}"
@@ -100,20 +100,21 @@ python3.12 -m venv "$VENV"
 source "$VENV/bin/activate"
 python -m pip install --upgrade pip
 python "$ROOT/scripts/check_lock_hygiene.py" "$ROOT/requirements.lock"
-python -m pip install -r "$ROOT/requirements.lock"
-python -m pip install --no-deps -e "$ROOT"
+python -m pip install --require-hashes -r "$ROOT/requirements.lock"
+export PYTHONPATH="$ROOT/src"
 
-python -m htx_trend.research.cli --workspace "$WS" collect \
+python -m htx_trend.research --workspace "$WS" collect \
   --contracts BTC-USDT,ETH-USDT \
   --lookback-days "$LOOKBACK" \
   --backfill-binance
 
-python -m htx_trend.research.cli --workspace "$WS" freeze \
+python -m htx_trend.research --workspace "$WS" freeze \
   --contracts BTC-USDT,ETH-USDT \
   --timeframe 4hour \
   --backfill-binance \
   --overlap-threshold "$OVERLAP_THRESHOLD" \
-  --cutoff 2026-10-12T00:00:00Z
+  --cutoff 2026-10-12T00:00:00Z \
+  --funding-gaps "$ROOT/data/quality/funding_gaps.yaml"
 
 DATASET_DIR="$(find "$WS/data/datasets" -maxdepth 1 -type d -name '4hour_*' | head -n 1)"
 if [[ -z "$DATASET_DIR" ]]; then
@@ -121,13 +122,14 @@ if [[ -z "$DATASET_DIR" ]]; then
   exit 1
 fi
 
-python -m htx_trend.research.cli --workspace "$WS" freeze \
+python -m htx_trend.research --workspace "$WS" freeze \
   --contracts BTC-USDT,ETH-USDT \
   --timeframe 1day \
   --backfill-binance \
   --overlap-threshold "$OVERLAP_THRESHOLD" \
   --daily-cut "$DAILY_CUT" \
-  --split-from-manifest "$DATASET_DIR/manifest.json"
+  --split-from-manifest "$DATASET_DIR/manifest.json" \
+  --funding-gaps "$ROOT/data/quality/funding_gaps.yaml"
 
 DATASET_ID="$(basename "$DATASET_DIR")"
 MANIFEST_PATH="$WS/data/datasets/manifests/${DATASET_ID}.json"
@@ -165,8 +167,10 @@ for run_id in ["SMOKE-${DATE_UTC}-01", "SMOKE-${DATE_UTC}-02"]:
 print("wrote smoke configs")
 PY
 
-python -m htx_trend.research.cli --workspace "$WS" run "$WS/SMOKE-${DATE_UTC}-01.yaml"
-python -m htx_trend.research.cli --workspace "$WS" run "$WS/SMOKE-${DATE_UTC}-02.yaml"
+python -m htx_trend.research --workspace "$WS" run "$WS/SMOKE-${DATE_UTC}-01.yaml" \
+  --funding-gaps "$ROOT/data/quality/funding_gaps.yaml"
+python -m htx_trend.research --workspace "$WS" run "$WS/SMOKE-${DATE_UTC}-02.yaml" \
+  --funding-gaps "$ROOT/data/quality/funding_gaps.yaml"
 
 python - <<PY
 from pathlib import Path

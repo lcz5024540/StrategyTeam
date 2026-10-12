@@ -31,7 +31,7 @@ from ..data.immutable_storage import (
     _parse_interval_seconds,
 )
 from ..ops import log_event, LogComponent, LogLevel
-from ..ops.runtime_paths import STATUS_FILENAME, collector_state_file
+from ..ops.runtime_paths import STATUS_FILENAME
 from ..ops.status import HealthStatus, StatusInterface, update_status
 
 
@@ -123,9 +123,15 @@ class ContinuousCollector:
             )
         storage_cfg = cfg.get("storage") or {}
         state_cfg = cfg.get("state") or {}
+        base_path = storage_cfg.get("base_path")
+        file_path = state_cfg.get("file_path")
+        if not base_path:
+            raise ValueError("Config missing 'collector.storage.base_path'")
+        if not file_path:
+            raise ValueError("Config missing 'collector.state.file_path'")
         return cls(
-            storage_dir=Path(storage_cfg.get("base_path", "./data/klines")),
-            state_file=Path(state_cfg.get("file_path", str(collector_state_file(".")))),
+            storage_dir=Path(base_path),
+            state_file=Path(file_path),
             symbols=list(symbols),
             interval=str(intervals[0]),
             intervals=[str(item) for item in intervals],

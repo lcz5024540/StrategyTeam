@@ -7,6 +7,6 @@ collector:
     - 1day
   poll_interval_seconds: 300
   storage:
-    base_path: /opt/coinstrategy/htx-trend-py/data/klines
+    base_path: /opt/coinstrategy/htx-trend-py-state/data/klines
   state:
-    file_path: /opt/coinstrategy/htx-trend-py/run/collector_state.json
+    file_path: /opt/coinstrategy/htx-trend-py-state/run/collector_state.json

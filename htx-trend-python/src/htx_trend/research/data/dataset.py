@@ -22,6 +22,7 @@ from .quality import (
     STITCH_WINDOW_BARS,
     BadTick,
     confirmed_bad_ticks,
+    default_funding_gaps_path,
     funding_gaps_hash,
     load_bad_ticks,
     require_declared_stitch_points,
@@ -418,6 +419,7 @@ class FrozenDataset:
     test_hash: str | None = None
     segment_counts: dict = field(default_factory=dict)
     stitch_points: dict | None = None
+    funding_gaps_hash: str | None = None
     verified_funding_paths: dict = field(default_factory=dict)
     verified_spec_paths: dict = field(default_factory=dict)
     verified_kline_paths: dict = field(default_factory=dict)
@@ -514,9 +516,18 @@ class DatasetManager:
         test_start_utc: datetime | str | None = None,
         validation_start_utc: datetime | str | None = None,
         bad_ticks: Iterable[BadTick] | None = None,
+        funding_gaps_path: Path | str | None = None,
     ) -> FrozenDataset:
         if data_cutoff_close_utc is None:
             raise ValueError("data_cutoff_close_utc is required")
+        gaps_path = Path(funding_gaps_path) if funding_gaps_path is not None else default_funding_gaps_path()
+        actual_gaps_hash = funding_gaps_hash(gaps_path)
+        claimed_gaps_hash = (extra_metadata or {}).get("funding_gaps_hash")
+        if claimed_gaps_hash is not None and claimed_gaps_hash != actual_gaps_hash:
+            raise ValueError(
+                "funding_gaps_hash does not match the file that was read: "
+                f"claimed={claimed_gaps_hash} file={actual_gaps_hash} path={gaps_path}"
+            )
         meta = extra_metadata or {}
         if timeframe in {"1day", "1d"}:
             _require_utc00_daily_cut(meta.get("daily_cut"))
@@ -591,9 +602,7 @@ class DatasetManager:
             "non_comparable_window_bars": window_bars,
             "stitch_points": stitch_manifest,
         }
-        manifest["funding_gaps_hash"] = (
-            (extra_metadata or {}).get("funding_gaps_hash") or funding_gaps_hash()
-        )
+        manifest["funding_gaps_hash"] = actual_gaps_hash
         if extra_metadata:
             for key in (
                 "bad_ticks_hash",
@@ -671,6 +680,7 @@ class DatasetManager:
             test_hash=test_hash,
             segment_counts=segment_counts,
             stitch_points=stitch_manifest,
+            funding_gaps_hash=actual_gaps_hash,
         )
 
         manifest_with_splits = manifest.copy()

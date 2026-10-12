@@ -20,6 +20,9 @@ from .conditions import C01DonchianEnsemble, C02ATRStop, DecisionContext
 from .data import DatasetManager
 from .data.dataset import require_timeframe
 from .data.quality import (
+    default_funding_gaps_path,
+    funding_gaps_hash,
+    load_funding_gaps,
     normalize_bad_tick_kind,
     require_quality_flag_columns,
     require_source_column,
@@ -166,6 +169,22 @@ class BacktestRunner:
         if int(window) <= 0:
             raise ValueError("smoke_bar_window must be > 0")
         return True
+
+    def _load_and_verify_funding_gaps(self, frozen) -> list:
+        expected = getattr(frozen, "funding_gaps_hash", None)
+        if not expected:
+            raise ValueError("frozen manifest missing funding_gaps_hash")
+        configured = self.config.get("funding_gaps")
+        path = Path(configured) if configured else default_funding_gaps_path()
+        if not path.is_file():
+            raise ValueError(f"funding gaps file not found: {path}")
+        digest = funding_gaps_hash(path)
+        if digest != expected:
+            raise ValueError(
+                "funding_gaps_hash mismatch: "
+                f"file={digest} manifest={expected} path={path}"
+            )
+        return load_funding_gaps(path)
 
     def run(self) -> dict[str, Any]:
         self._package_content_hash = require_runtime_integrity(is_smoke=self._is_smoke)
@@ -455,6 +474,7 @@ class BacktestRunner:
             require_specs=True,
         )
         self._frozen = frozen
+        funding_gaps = self._load_and_verify_funding_gaps(frozen)
 
         processed_data = {}
         self._funding_missing = []
@@ -484,6 +504,7 @@ class BacktestRunner:
                     symbol=symbol,
                     allow_missing_funding=allow_missing_funding,
                     cutoff=getattr(frozen, "data_cutoff_close_utc", None),
+                    gaps=funding_gaps,
                 )
             elif allow_missing_funding:
                 self._funding_missing.append(symbol)

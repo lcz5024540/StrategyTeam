@@ -23,11 +23,12 @@ def test_package_script_does_not_pip_freeze_the_host():
     assert "--no-deps" in text
 
 
-def test_smoke_script_uses_lock_then_no_deps_editable():
+def test_smoke_script_uses_hashed_lock_and_external_venv():
     text = (ROOT / "scripts" / "smoke_e2e.sh").read_text()
-    assert 'pip install -r "$ROOT/requirements.lock"' in text
-    assert 'pip install --no-deps -e "$ROOT"' in text
+    assert 'pip install --require-hashes -r "$ROOT/requirements.lock"' in text
+    assert "pip install --no-deps -e" not in text
     assert "python3.12 -m venv" in text
+    assert "PYTHONPATH" in text
 
 
 def test_requirements_lock_exists():

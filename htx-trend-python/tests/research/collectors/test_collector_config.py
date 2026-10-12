@@ -97,6 +97,20 @@ def test_collector_uses_configured_paths(tmp_path):
     assert collector.state_file == state
 
 
+def test_collector_missing_storage_paths_raises(tmp_path):
+    cfg = _write_config(
+        tmp_path / "collector.yaml",
+        {
+            "collector": {
+                "symbols": ["BTC-USDT"],
+                "intervals": ["4hour", "1day"],
+            }
+        },
+    )
+    with pytest.raises(ValueError, match="base_path"):
+        ContinuousCollector.from_config(cfg)
+
+
 def test_collector_yaml_does_not_use_spot_huobi_pro():
     root = Path(__file__).resolve().parents[3]
     text = (root / "configs" / "collector.yaml").read_text()
@@ -114,12 +128,12 @@ def test_systemd_units_use_unified_paths():
     for text in (collector, heartbeat):
         assert "User=ubuntu" in text
         assert "Group=ubuntu" in text
-        assert "WorkingDirectory=/opt/coinstrategy/htx-trend-py" in text
-        assert "ReadWritePaths=-/opt/coinstrategy/htx-trend-py/data" in text
-        assert "ReadWritePaths=-/opt/coinstrategy/htx-trend-py/logs" in text
-        assert "ReadWritePaths=-/opt/coinstrategy/htx-trend-py/run" in text
-        assert "status.json" not in text or "ReadWritePaths=" + "/opt/coinstrategy/htx-trend-py/status.json" not in text
-        assert "ReadWritePaths=/opt/coinstrategy/htx-trend-py/status.json" not in text
-        assert "ReadWritePaths=/opt/coinstrategy/htx-trend-py/heartbeat.txt" not in text
-        assert "ReadWritePaths=/opt/coinstrategy/htx-trend-py/collector_state.json" not in text
-    assert "--config /opt/coinstrategy/htx-trend-py/configs/collector.yaml" in collector
+        assert "WorkingDirectory=/opt/coinstrategy/htx-trend-py/current" in text
+        assert "ReadWritePaths=-/opt/coinstrategy/htx-trend-py-state/data" in text
+        assert "ReadWritePaths=-/opt/coinstrategy/htx-trend-py-state/logs" in text
+        assert "ReadWritePaths=-/opt/coinstrategy/htx-trend-py-state/run" in text
+        assert "/opt/coinstrategy/htx-trend-py/.venv" not in text
+        assert "ReadWritePaths=/opt/coinstrategy/htx-trend-py-state/status.json" not in text
+        assert "ReadWritePaths=/opt/coinstrategy/htx-trend-py-state/heartbeat.txt" not in text
+        assert "ReadWritePaths=/opt/coinstrategy/htx-trend-py-state/collector_state.json" not in text
+    assert "--config /opt/coinstrategy/htx-trend-py/current/configs/collector.yaml" in collector

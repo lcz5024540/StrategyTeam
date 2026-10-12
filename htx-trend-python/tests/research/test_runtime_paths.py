@@ -26,13 +26,15 @@ from htx_trend.research.ops.status import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-OPT = Path("/opt/coinstrategy/htx-trend-py")
-RUN = OPT / "run"
+STATE = Path("/opt/coinstrategy/htx-trend-py-state")
+RUN = STATE / "run"
 ALLOWED_RW = frozenset(
     {
-        f"-{OPT / 'data'}",
-        f"-{OPT / 'logs'}",
-        f"-{OPT / 'run'}",
+        f"-{STATE / 'data'}",
+        f"-{STATE / 'logs'}",
+        f"-{STATE / 'run'}",
+        f"-{STATE / 'evidence'}",
+        f"-{STATE / 'backups'}",
     }
 )
 

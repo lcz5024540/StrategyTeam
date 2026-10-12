@@ -236,16 +236,22 @@ def create_package(
     return tar_path, sha256
 
 
-def verify_extracted_package(tar_path: Path) -> None:
-    """Extract the tarball into an empty temp dir and run the full pytest suite."""
-    print("Verifying extracted package with a clean venv + pytest...")
+def verify_extracted_package(tar_path: Path, version: str) -> None:
+    """Extract into the production-like layout and run pytest + integrity gates."""
+    print("Verifying extracted package with an external 3.12 venv + layout...")
     with tempfile.TemporaryDirectory(prefix="htx-pkg-verify-") as tmp:
         tmp_path = Path(tmp)
-        extract_dir = tmp_path / "extract"
-        extract_dir.mkdir()
+        root = tmp_path / "opt" / "coinstrategy"
+        release_dir = root / "htx-trend-py" / "releases" / version
+        current = root / "htx-trend-py" / "current"
+        venv_dir = root / "htx-trend-py-venv"
+        state_dir = root / "htx-trend-py-state"
+        release_dir.mkdir(parents=True)
+        for name in ("data", "logs", "run", "evidence", "backups"):
+            (state_dir / name).mkdir(parents=True)
         with tarfile.open(tar_path) as tar:
-            tar.extractall(extract_dir)
-        venv_dir = tmp_path / "venv"
+            tar.extractall(release_dir)
+        current.symlink_to(release_dir)
         subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
         pip = venv_dir / "bin" / "pip"
         python = venv_dir / "bin" / "python"
@@ -256,23 +262,82 @@ def verify_extracted_package(tar_path: Path) -> None:
                 "install",
                 "--require-hashes",
                 "-r",
-                str(extract_dir / "requirements.lock"),
+                str(current / "requirements.lock"),
             ],
             check=True,
-            cwd=extract_dir,
+            cwd=current,
         )
-        subprocess.run(
-            [str(pip), "install", "--no-deps", "-e", "."],
-            check=True,
-            cwd=extract_dir,
-        )
+        env = {**os.environ, "PYTHONPATH": str(current / "src")}
         result = subprocess.run(
             [str(python), "-m", "pytest", "tests", "-q"],
-            cwd=extract_dir,
+            cwd=current,
+            env=env,
         )
         if result.returncode != 0:
             raise SystemExit("extracted-package pytest failed")
-        print("Extracted-package pytest passed.")
+        integrity = subprocess.run(
+            [
+                str(python),
+                "-c",
+                "from htx_trend.research.version_info import require_runtime_integrity;"
+                "print(require_runtime_integrity(is_smoke=False))",
+            ],
+            cwd=current,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        if integrity.returncode != 0:
+            raise SystemExit(
+                "layout non-SMOKE integrity failed:\n"
+                + integrity.stdout
+                + integrity.stderr
+            )
+        print("Layout non-SMOKE integrity passed:", integrity.stdout.strip())
+        subprocess.run(
+            [str(pip), "install", "--no-deps", "-e", str(current)],
+            check=True,
+        )
+        editable = subprocess.run(
+            [
+                str(python),
+                "-c",
+                "from htx_trend.research.version_info import require_runtime_integrity;"
+                "print(require_runtime_integrity(is_smoke=False))",
+            ],
+            cwd=current,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        if editable.returncode != 0:
+            raise SystemExit(
+                "editable-install integrity failed:\n"
+                + editable.stdout
+                + editable.stderr
+            )
+        print("Editable-install integrity passed:", editable.stdout.strip())
+        cli_py = current / "src" / "htx_trend" / "research" / "cli.py"
+        cli_py.unlink()
+        missing = subprocess.run(
+            [str(python), "-m", "htx_trend.research", "--help"],
+            cwd=current,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        combined = missing.stdout + missing.stderr
+        if missing.returncode == 0 or "missing" not in combined.lower():
+            raise SystemExit(
+                "deleting cli.py must fail integrity with 'missing':\n" + combined
+            )
+        if "ModuleNotFoundError" in combined:
+            raise SystemExit(
+                "deleting cli.py reported ModuleNotFoundError instead of missing:\n"
+                + combined
+            )
+        print("Deleted cli.py reported integrity missing.")
+        print("Extracted-package pytest + layout integrity passed.")
 
 
 def _strategy_manifest_notes(payload: dict | None) -> str:
@@ -343,7 +408,9 @@ def generate_delivery_template(
 {_strategy_manifest_notes(strategy_manifest)}
 **Notes**:
 - rc.6: R0001 risk params changed to 300U / 2% / 10% / 5 positions per user decision; replaces rc.5's 1%/2%/2
-- venv `site-packages` `*.pth` files are **outside** the package tree. The integrity scan does not cover them. Create the venv fresh from `requirements.lock` (`pip install --require-hashes -r requirements.lock`) and do not add extra `.pth` files.
+- Deploy venv is **outside** the package: `/opt/coinstrategy/htx-trend-py-venv`. Never create `.venv` inside `releases/` or `current`.
+- Install deps with `pip install --require-hashes -r requirements.lock` into that venv. **Do not** `pip install -e`.
+- venv `site-packages` `*.pth` files are outside the package tree. The integrity scan does not cover them. Do not add extra `.pth` files.
 
 ---
 
@@ -380,17 +447,23 @@ fees:
 ```
 
 ### Environment Variables:
-- `HTX_API_KEY`: HTX API key (for authenticated fee provider)
-- `HTX_SECRET_KEY`: HTX secret key (for authenticated fee provider)
+- `HTX_API_KEY`: name of the local server variable that holds the HTX API key (read on the server only; never write the value into the package, logs, or reports)
+- `HTX_SECRET_KEY`: name of the local server variable that holds the HTX secret (same rule)
 
 ---
 
 ## Installation
 
+### Layout
+- Code: `/opt/coinstrategy/htx-trend-py/releases/<version>/` (package contents only)
+- Symlink: `/opt/coinstrategy/htx-trend-py/current` → that release
+- Venv: `/opt/coinstrategy/htx-trend-py-venv` (outside the package)
+- State: `/opt/coinstrategy/htx-trend-py-state/` with `data/`, `logs/`, `run/`, `evidence/`, `backups/`
+
 ### Prerequisites
 - Python 3.12
 - pip
-- The deploy venv at `/opt/coinstrategy/htx-trend-py/.venv` (reuse it; do not `pip freeze` the host)
+- External venv at `/opt/coinstrategy/htx-trend-py-venv` (do not `pip freeze` the host)
 
 ### Packaging environment
 
@@ -398,7 +471,7 @@ Build the tarball inside a **Python 3.12** virtualenv that has
 `requirements.lock` installed:
 
 ```bash
-source /opt/coinstrategy/htx-trend-py/.venv/bin/activate
+source /opt/coinstrategy/htx-trend-py-venv/bin/activate
 python scripts/package.py --branch <release-branch>
 # optional: --version 0.2.0
 ```
@@ -407,113 +480,84 @@ Detached HEAD must pass `--branch`; the script refuses to write `branch='HEAD'`.
 
 The tarball members are **repo-relative** (`src/`, `tests/`, `data/quality/`, …),
 not a versioned wrapper directory. Keep `src/htx_trend/research/data` from the
-tarball (it is source, not runtime `/data`).
+tarball (it is source, not runtime state).
 
-### Deploy by extract-and-copy
+### First-time migration (from in-tree venv/state)
 
-Extract into a temp directory, then copy package files over
-`/opt/coinstrategy/htx-trend-py` **without** replacing runtime directories.
+1. Full backup of the current `/opt/coinstrategy/htx-trend-py` tree.
+2. Stop collector/heartbeat units **between two 4h closes**.
+3. Move `data/` kline batches plus heartbeat/state files into
+   `/opt/coinstrategy/htx-trend-py-state/`.
+4. Do **not** copy legacy files (`test_mvp1.py`, `MERGE_AND_PACKAGE_REPORT.md`,
+   `DEPLOYED_COMMIT`) into `releases/`.
+5. Create `/opt/coinstrategy/htx-trend-py-venv` if missing.
 
-Preserve on the host:
-- `data/` (raw/datasets — except refresh `data/quality/` from the package)
-- `.venv/`
-- `run/`
-- `logs/`
+### Deploy = extract to a new release, verify, switch symlink, restart
 
 ```bash
 set -euo pipefail
 tarball={tar_path.name}
-dest=/opt/coinstrategy/htx-trend-py
-extract=$(mktemp -d)
-trap 'rm -rf "$extract"' EXIT
+version={version}
+code=/opt/coinstrategy/htx-trend-py
+venv=/opt/coinstrategy/htx-trend-py-venv
+state=/opt/coinstrategy/htx-trend-py-state
+release="$code/releases/$version"
 sha256sum -c "${{tarball}}.sha256"
-tar -xzf "$tarball" -C "$extract"
-src="$extract"
-mkdir -p "$dest"
-for item in src tests configs sql deployment scripts pyproject.toml \\
-            requirements.lock README.md RESEARCH_SYSTEM.md; do
-  rm -rf "$dest/$item"
-  cp -a "$src/$item" "$dest/$item"
-done
-mkdir -p "$dest/data/quality"
-cp -a "$src/data/quality/." "$dest/data/quality/"
-# Do not copy or delete: $dest/data/raw $dest/data/datasets
-# $dest/.venv $dest/run $dest/logs
-
-cd "$dest"
-source .venv/bin/activate
-python -m pip install --require-hashes -r requirements.lock
-python -m pip install --no-deps -e .
-python -m htx_trend.research --help
+mkdir -p "$release" "$state"/{{data,logs,run,evidence,backups}}
+tar -xzf "$tarball" -C "$release"
+"$venv/bin/python" -m pip install --require-hashes -r "$release/requirements.lock"
+# NO pip install -e
+ln -sfn "$release" "$code/current"
+sudo systemctl restart htx-trend-collector htx-trend-heartbeat
 ```
 
-`pip install --require-hashes -r requirements.lock` and
-`python -m pip install --no-deps -e .` **must run after every update** so the
-venv matches the new lock and the editable install sees the new `src/`.
+systemd: `WorkingDirectory=$code/current`, `ExecStart=$venv/bin/python -m htx_trend ...`,
+`Environment=PYTHONPATH=$code/current/src`, `ReadWritePaths` only under `$state`.
 
 ### Freeze dataset (v0.1.0)
 
-Collect full history (`--lookback-days max`) into one workspace, then freeze
-in a **separate** workspace. `--cutoff` is required. Split is 60/20/20 by
-unique UTC days (`validation_start_utc` / `test_start_utc`); 1d must reuse
-the 4h boundaries via `--split-from-manifest` (or both `--validation-start`
-and `--test-start`). Stitch must fall in train.
+Collect full history (`--lookback-days max`) into the **state** workspace, then freeze
+there. `--cutoff`, `--validation-start` (`validation_start_utc`), `--test-start`
+(`test_start_utc`), `--funding-gaps`, and stitch flags must be explicit. 1d must reuse
+the 4h boundaries via `--split-from-manifest`.
 
 ```bash
-python -m htx_trend.research freeze \
-  --workspace /data/htx-freeze \
-  --contracts BTC-USDT,ETH-USDT \
-  --timeframe 4hour \
-  --backfill-binance \
-  --overlap-threshold 0.003 \
-  --cutoff 2026-10-12T00:00:00Z
+sudo -u ubuntu env PYTHONPATH=/opt/coinstrategy/htx-trend-py/current/src \\
+  /opt/coinstrategy/htx-trend-py-venv/bin/python -m htx_trend.research freeze \\
+  --workspace /opt/coinstrategy/htx-trend-py-state \\
+  --contracts BTC-USDT,ETH-USDT \\
+  --timeframe 4hour \\
+  --backfill-binance \\
+  --overlap-threshold 0.003 \\
+  --cutoff 2026-10-12T00:00:00Z \\
+  --validation-start 2024-01-25T00:00:00Z \\
+  --test-start TODO_TEST_START \\
+  --funding-gaps /opt/coinstrategy/htx-trend-py/current/data/quality/funding_gaps.yaml
 ```
 
 ---
 
 ## Rollback Steps
 
-### If Rollback Required
+Rollback = switch the `current` symlink back to the previous release and restart.
+Ops must rehearse this once before the first production cutover.
 
-1. **Stop all running processes**:
-   ```bash
-   # Check health
-   python -m htx_trend.research health
-   
-   # Note any running components
-   ```
+```bash
+ln -sfn /opt/coinstrategy/htx-trend-py/releases/<previous-version> \\
+  /opt/coinstrategy/htx-trend-py/current
+sudo systemctl restart htx-trend-collector htx-trend-heartbeat
+```
 
-2. **Backup current database**:
-   ```bash
-   cp ledger.db ledger.db.backup.$(date +%Y%m%d-%H%M%S)
-   ```
-
-3. **Restore previous version**:
-   ```bash
-   # Extract previous package
-   tar -xzf htx-trend-python-<previous-version>-<sha>.tar.gz
-   cd htx-trend-python-<previous-version>-<sha>
-   
-   python -m pip install -r requirements.lock
-   python -m pip install --no-deps -e .
-   ```
-
-4. **Verify rollback**:
-   ```bash
-   python -m htx_trend.research health
-   python -c "from htx_trend.research import __version__; print(__version__)"
-   ```
-
-5. **Database rollback** (if schema changed):
-   ```bash
-   # Restore backup
-   cp ledger.db.backup.<timestamp> ledger.db
-   ```
+### Post-migration evidence check
+- Next bar lands; heartbeat OK
+- Kline batch counts and hashes identical pre/post
+- Any collection gap is recorded as a gap, never silently backfilled
 
 ### Rollback Notes
 - The `approvals` table is new in v0.1.0
 - If rolling back from v0.1.0, existing approvals will be ignored by older versions
 - No data loss, but approval checks will not function
+- Do not write into `releases/` during rollback
 
 ---
 
@@ -676,7 +720,7 @@ def main(argv: list[str] | None = None) -> int:
     print()
 
     if os.environ.get("SKIP_PACKAGE_VERIFY") != "1":
-        verify_extracted_package(tar_path)
+        verify_extracted_package(tar_path, version)
         print()
     
     delivery_path = generate_delivery_template(

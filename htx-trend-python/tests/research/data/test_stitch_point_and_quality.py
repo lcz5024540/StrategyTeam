@@ -161,6 +161,10 @@ def _freeze_args(workspace: Path, **extra):
         "validation_start": None,
         "test_start": None,
         "split_from_manifest": None,
+        "funding_gaps": extra.pop(
+            "funding_gaps",
+            str(Path(__file__).resolve().parents[3] / "data" / "quality" / "funding_gaps.yaml"),
+        ),
     }
     payload.update(extra)
     return Namespace(**payload)
@@ -388,7 +392,11 @@ def test_confirmed_bad_tick_excludes_from_signals_and_hashes(tmp_path):
     assert bad_ticks_hash(other, ticks) != digest
 
     times = _around_stitch(before=40, after=40)
-    df = apply_bad_ticks(_klines(times, 100.0, "htx"), "BTC-USDT", ticks)
+    frame = _klines(times, 100.0, "htx")
+    frame["incomplete"] = False
+    frame["non_comparable"] = False
+    frame["bad_tick"] = False
+    df = apply_bad_ticks(frame, "BTC-USDT", ticks)
     marked = df[df["bar_time"] == pd.Timestamp("2020-11-06T00:00:00Z")]
     candidate = df[df["bar_time"] == pd.Timestamp("2021-02-19T12:00:00Z")]
     assert not marked.empty

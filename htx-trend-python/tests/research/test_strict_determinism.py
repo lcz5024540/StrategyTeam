@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from htx_trend.research.runner import BacktestRunner
+from htx_trend.research.data.quality import funding_gaps_hash
 from tests.research.helpers import (
     create_test_dataset,
     runner_config,
@@ -173,6 +174,7 @@ def test_no_lookahead_truncation_invariance(tmp_path):
             "manifest_hash": dataset_id,
             "created_at": "2024-01-01T00:00:00",
             "stitch_points": {"BTC-USDT": None},
+            "funding_gaps_hash": funding_gaps_hash(),
             **split_manifest_fields(
                 dates, min(180, truncate_at), min(240, truncate_at)
             ),

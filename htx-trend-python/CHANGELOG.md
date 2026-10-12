@@ -5,6 +5,18 @@ All notable changes to the HTX Trend Research System will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-rc.13] - 2026-10-12
+
+### Changed
+- Reverse-check allows only `src/coinstrategy_htx_trend.egg-info/` with the pip 3.12 editable file set (`PKG-INFO`, `SOURCES.txt`, `top_level.txt`, `dependency_links.txt`, `requires.txt`, `entry_points.txt`, optional `not_zip_safe`). Other egg-info dirs, extra `.py`/`.pth`, or subdirs fail. `.venv` is not excluded. Package-root `.pytest_cache/` is excluded.
+- CLI entry (`python -m htx_trend.research`) verifies package integrity before importing `cli`. Deleting `cli.py` reports `missing`.
+- `apply_bad_ticks` raises if `incomplete`/`non_comparable`/`bad_tick` are absent (reachable official freeze P1).
+- Freeze `--funding-gaps` is required and is the file hashed into the manifest. A claimed hash that differs from that file raises. Runner loads the registry explicitly, recomputes sha256, and refuses a mismatch or a missing manifest hash (including SMOKE).
+- Deploy layout: `releases/<version>` + `current` symlink, venv `/opt/coinstrategy/htx-trend-py-venv`, state `/opt/coinstrategy/htx-trend-py-state`. Install is `pip install --require-hashes -r requirements.lock` with no `pip install -e`.
+
+### Testing
+- Counterexamples for evil egg-info, extra `.py` in egg-info, in-package `.venv`, deleted `cli.py` → missing, apply_bad_ticks missing columns, claimed/tampered funding-gaps hash, layout verify gate.
+
 ## [0.1.0-rc.12] - 2026-10-12
 
 ### Changed

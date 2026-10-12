@@ -11,6 +11,8 @@ from pathlib import Path
 from ._version import __version__
 
 # Runtime dirs/files the services actually write. Not configurable.
+# .pytest_cache is the package-root cache only (exact path), not nested copies.
+# .venv is NOT excluded: an in-package venv fails reverse-check.
 PACKAGE_INTEGRITY_RUNTIME_EXCLUSIONS = frozenset(
     {
         "runs",
@@ -20,6 +22,19 @@ PACKAGE_INTEGRITY_RUNTIME_EXCLUSIONS = frozenset(
         "data/datasets",
         "data/klines",
         "ledger.db",
+        ".pytest_cache",
+    }
+)
+ALLOWED_EGG_INFO_DIR = "src/coinstrategy_htx_trend.egg-info"
+ALLOWED_EGG_INFO_FILES = frozenset(
+    {
+        "PKG-INFO",
+        "SOURCES.txt",
+        "top_level.txt",
+        "dependency_links.txt",
+        "requires.txt",
+        "entry_points.txt",
+        "not_zip_safe",
     }
 )
 PACKAGE_MANIFEST_NAME = "PACKAGE_MANIFEST"
@@ -182,6 +197,18 @@ def _expected_sha(value: object) -> str:
     return text.removeprefix("sha256:")
 
 
+def _is_allowed_egg_info_file(rel: str) -> bool:
+    prefix = ALLOWED_EGG_INFO_DIR + "/"
+    if not rel.startswith(prefix):
+        return False
+    rest = rel[len(prefix) :]
+    if "/" in rest:
+        return False
+    if rest.endswith(".py") or rest.endswith(".pth"):
+        return False
+    return rest in ALLOWED_EGG_INFO_FILES
+
+
 def _is_integrity_excluded(rel: str) -> bool:
     parts = Path(rel).parts
     if "__pycache__" in parts:
@@ -189,6 +216,8 @@ def _is_integrity_excluded(rel: str) -> bool:
     if rel.endswith(".pyc") or rel.endswith(".pyo"):
         return True
     if rel == PACKAGE_MANIFEST_NAME:
+        return True
+    if _is_allowed_egg_info_file(rel):
         return True
     for excluded in PACKAGE_INTEGRITY_RUNTIME_EXCLUSIONS:
         if rel == excluded or rel.startswith(f"{excluded}/"):
@@ -311,6 +340,18 @@ def require_clean_git_tree(root: Path | None = None) -> None:
             "dirty working tree; refuse non-SMOKE run from a git checkout. "
             "Commit or restore local changes.\n" + porcelain
         )
+
+
+def require_cli_entry_integrity(root: Path | None = None) -> str | None:
+    """Verify listed package files before importing the rest of the CLI.
+
+    Always runs when PACKAGE_MANIFEST is present so a deleted cli.py is
+    reported as ``missing`` instead of ModuleNotFoundError.
+    """
+    base = (root or package_root()).resolve()
+    if (base / PACKAGE_MANIFEST_NAME).is_file():
+        return verify_package_files(base)
+    return require_runtime_integrity(is_smoke=False, root=base)
 
 
 def require_runtime_integrity(*, is_smoke: bool, root: Path | None = None) -> str | None:

@@ -10,6 +10,8 @@ import pytest
 
 from htx_trend.research.runner import BacktestRunner
 from htx_trend.research.version_info import (
+    ALLOWED_EGG_INFO_DIR,
+    ALLOWED_EGG_INFO_FILES,
     BUILD_INFO_REL,
     PACKAGE_INTEGRITY_RUNTIME_EXCLUSIONS,
     file_sha256_for_manifest,
@@ -219,6 +221,7 @@ def test_added_file_anywhere_except_runtime_dirs_fails(tmp_path, rel):
         "data/datasets/manifests/x.json",
         "data/klines/batch.bin",
         "ledger.db",
+        ".pytest_cache/v/cache/nodeids",
         "__pycache__/evil.cpython-312.pyc",
         "src/htx_trend/research/__pycache__/evil.cpython-312.pyc",
         "src/htx_trend/research/engine/backtest/sim_broker.pyc",
@@ -247,8 +250,12 @@ def test_runtime_exclusions_are_hardcoded_constant():
             "data/datasets",
             "data/klines",
             "ledger.db",
+            ".pytest_cache",
         }
     )
+    assert ".venv" not in PACKAGE_INTEGRITY_RUNTIME_EXCLUSIONS
+    assert ALLOWED_EGG_INFO_DIR == "src/coinstrategy_htx_trend.egg-info"
+    assert "PKG-INFO" in ALLOWED_EGG_INFO_FILES
 
 
 @pytest.mark.require_runtime_integrity
@@ -434,3 +441,150 @@ def test_smoke_records_null_hash_and_integrity_not_verified(tmp_path, monkeypatc
     assert stored is not None
     assert stored.package_content_hash is None
     assert stored.integrity_verified is False
+
+
+@pytest.mark.require_runtime_integrity
+def test_standard_egg_info_files_are_allowed(tmp_path):
+    _write_package(
+        tmp_path,
+        {"src/htx_trend/research/engine/backtest/sim_broker.py": "print('ok')\n"},
+    )
+    egg = tmp_path / ALLOWED_EGG_INFO_DIR
+    egg.mkdir(parents=True)
+    for name in (
+        "PKG-INFO",
+        "SOURCES.txt",
+        "top_level.txt",
+        "dependency_links.txt",
+        "requires.txt",
+        "entry_points.txt",
+        "not_zip_safe",
+    ):
+        (egg / name).write_text("ok\n")
+    verify_package_files(tmp_path)
+    require_runtime_integrity(is_smoke=False, root=tmp_path)
+
+
+@pytest.mark.require_runtime_integrity
+def test_evil_egg_info_dir_is_rejected(tmp_path):
+    _write_package(
+        tmp_path,
+        {"src/htx_trend/research/engine/backtest/sim_broker.py": "print('ok')\n"},
+    )
+    evil = tmp_path / "src/evil.egg-info"
+    evil.mkdir(parents=True)
+    (evil / "PKG-INFO").write_text("injected\n")
+    with pytest.raises(ValueError, match="evil.egg-info") as exc:
+        verify_package_files(tmp_path)
+    assert "unexpected file" in str(exc.value).lower()
+
+
+@pytest.mark.require_runtime_integrity
+def test_extra_py_in_allowed_egg_info_is_rejected(tmp_path):
+    _write_package(
+        tmp_path,
+        {"src/htx_trend/research/engine/backtest/sim_broker.py": "print('ok')\n"},
+    )
+    egg = tmp_path / ALLOWED_EGG_INFO_DIR
+    egg.mkdir(parents=True)
+    (egg / "PKG-INFO").write_text("ok\n")
+    (egg / "evil.py").write_text("print('no')\n")
+    with pytest.raises(ValueError, match="evil.py") as exc:
+        verify_package_files(tmp_path)
+    assert "unexpected file" in str(exc.value).lower()
+
+
+@pytest.mark.require_runtime_integrity
+def test_egg_info_subdir_is_rejected(tmp_path):
+    _write_package(
+        tmp_path,
+        {"src/htx_trend/research/engine/backtest/sim_broker.py": "print('ok')\n"},
+    )
+    nested = tmp_path / ALLOWED_EGG_INFO_DIR / "nested"
+    nested.mkdir(parents=True)
+    (nested / "PKG-INFO").write_text("ok\n")
+    with pytest.raises(ValueError, match="nested") as exc:
+        verify_package_files(tmp_path)
+    assert "unexpected file" in str(exc.value).lower()
+
+
+@pytest.mark.require_runtime_integrity
+def test_package_root_pytest_cache_is_ignored_nested_is_not(tmp_path):
+    _write_package(
+        tmp_path,
+        {"src/htx_trend/research/engine/backtest/sim_broker.py": "print('ok')\n"},
+    )
+    cache = tmp_path / ".pytest_cache"
+    cache.mkdir()
+    (cache / "v" / "cache" / "nodeids").parent.mkdir(parents=True)
+    (cache / "v" / "cache" / "nodeids").write_text("x\n")
+    verify_package_files(tmp_path)
+    nested = tmp_path / "src" / ".pytest_cache" / "evil"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("no\n")
+    with pytest.raises(ValueError, match=r"src/\.pytest_cache") as exc:
+        verify_package_files(tmp_path)
+    assert "unexpected file" in str(exc.value).lower()
+
+
+@pytest.mark.require_runtime_integrity
+def test_in_package_venv_is_not_excluded(tmp_path):
+    _write_package(
+        tmp_path,
+        {"src/htx_trend/research/engine/backtest/sim_broker.py": "print('ok')\n"},
+    )
+    injected = tmp_path / ".venv" / "lib" / "sitecustomize.py"
+    injected.parent.mkdir(parents=True)
+    injected.write_text("print('venv')\n")
+    with pytest.raises(ValueError, match=r"\.venv/") as exc:
+        verify_package_files(tmp_path)
+    assert "unexpected file" in str(exc.value).lower()
+
+
+@pytest.mark.require_runtime_integrity
+def test_deleted_cli_py_reports_missing_not_import_error(tmp_path):
+    import subprocess
+    import sys
+
+    pkg = tmp_path / "pkg"
+    src = pkg / "src" / "htx_trend" / "research"
+    src.mkdir(parents=True)
+    (pkg / "src" / "htx_trend" / "__init__.py").write_text("")
+    (src / "__init__.py").write_text("")
+    (src / "_version.py").write_text('__version__ = "0.1.0-rc.13"\n')
+    version_info = Path(__file__).resolve().parents[2] / "src/htx_trend/research/version_info.py"
+    (src / "version_info.py").write_text(version_info.read_text())
+    (src / "__main__.py").write_text(
+        "from .version_info import require_cli_entry_integrity\n"
+        "require_cli_entry_integrity()\n"
+        "from .cli import main\n"
+        "main()\n"
+    )
+    (src / "cli.py").write_text("def main():\n    print('cli-ok')\n")
+    payload = _write_package(
+        pkg,
+        {
+            "src/htx_trend/__init__.py": "",
+            "src/htx_trend/research/__init__.py": "",
+            "src/htx_trend/research/_version.py": (src / "_version.py").read_text(),
+            "src/htx_trend/research/version_info.py": (src / "version_info.py").read_text(),
+            "src/htx_trend/research/__main__.py": (src / "__main__.py").read_text(),
+            "src/htx_trend/research/cli.py": (src / "cli.py").read_text(),
+        },
+    )
+    assert payload["files"]["src/htx_trend/research/cli.py"]
+    (src / "cli.py").unlink()
+    env = {**dict(**__import__("os").environ), "PYTHONPATH": str(pkg / "src")}
+    result = subprocess.run(
+        [sys.executable, "-m", "htx_trend.research", "--help"],
+        cwd=pkg,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=15,
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "missing" in combined.lower()
+    assert "cli.py" in combined
+    assert "ModuleNotFoundError" not in combined

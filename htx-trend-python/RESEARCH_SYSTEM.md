@@ -87,8 +87,9 @@ htx_trend/research/
 
 ### 1. 安装
 ```bash
-cd htx-trend-python
-pip install -e '.[dev]'
+python3.12 -m venv /opt/coinstrategy/htx-trend-py-venv
+/opt/coinstrategy/htx-trend-py-venv/bin/pip install --require-hashes -r requirements.lock
+export PYTHONPATH=src
 ```
 
 ### 2. 采集数据
@@ -109,21 +110,23 @@ python -m htx_trend.research collect \
 
 ```bash
 python -m htx_trend.research freeze \
-  --workspace /data/htx-freeze \
+  --workspace /opt/coinstrategy/htx-trend-py-state \
   --contracts BTC-USDT,ETH-USDT \
   --timeframe 4hour \
   --backfill-binance \
   --overlap-threshold 0.003 \
-  --cutoff 2026-10-12T00:00:00Z
+  --cutoff 2026-10-12T00:00:00Z \
+  --funding-gaps /opt/coinstrategy/htx-trend-py/current/data/quality/funding_gaps.yaml
 
 python -m htx_trend.research freeze \
-  --workspace /data/htx-freeze \
+  --workspace /opt/coinstrategy/htx-trend-py-state \
   --contracts BTC-USDT,ETH-USDT \
   --timeframe 1day \
   --daily-cut UTC00 \
   --backfill-binance \
   --overlap-threshold 0.003 \
-  --split-from-manifest /data/htx-freeze/data/datasets/<4hour_id>/manifest.json
+  --split-from-manifest /opt/coinstrategy/htx-trend-py-state/data/datasets/<4hour_id>/manifest.json \
+  --funding-gaps /opt/coinstrategy/htx-trend-py/current/data/quality/funding_gaps.yaml
 ```
 
 输出按品种打印 train/val/test 根数，不再用单一 idx 混算。

@@ -625,6 +625,10 @@ def _cli_ns(tmp_path, **extra):
         "test_start": None,
         "validation_start": None,
         "split_from_manifest": None,
+        "funding_gaps": extra.pop(
+            "funding_gaps",
+            str(Path(__file__).resolve().parents[3] / "data" / "quality" / "funding_gaps.yaml"),
+        ),
     }
     payload.update(extra)
     return Namespace(**payload)

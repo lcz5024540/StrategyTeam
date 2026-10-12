@@ -170,6 +170,8 @@ class DataStitcher:
                 )
             combined = htx.copy() if not htx.empty else pd.DataFrame()
             if not combined.empty:
+                if "incomplete" not in combined.columns:
+                    combined["incomplete"] = False
                 combined["non_comparable"] = False
                 if "bad_tick" not in combined.columns:
                     combined["bad_tick"] = False
@@ -284,6 +286,8 @@ class DataStitcher:
             }
             return combined, stats
 
+        if "incomplete" not in combined.columns:
+            combined["incomplete"] = False
         combined["non_comparable"] = False
         if "bad_tick" not in combined.columns:
             combined["bad_tick"] = False
@@ -362,6 +366,12 @@ class DataStitcher:
         if did_stitch and stitch_point is not None and not combined.empty:
             combined = mark_stitch_day(combined, stitch_point, "UTC00")
         if not combined.empty:
+            if "incomplete" not in combined.columns:
+                combined["incomplete"] = False
+            if "non_comparable" not in combined.columns:
+                combined["non_comparable"] = False
+            if "bad_tick" not in combined.columns:
+                combined["bad_tick"] = False
             stats["non_comparable_bars"] = int(combined["non_comparable"].sum())
             stats["total_bars"] = len(combined)
         stats.update(daily_resample_manifest_fields(

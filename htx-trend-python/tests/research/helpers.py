@@ -13,6 +13,7 @@ import yaml
 from htx_trend.research.data.collector import hash_funding_files, hash_spec_files
 from htx_trend.research.data.dataset import utc_iso
 from htx_trend.research.data.manifest import DatasetManifest
+from htx_trend.research.data.quality import funding_gaps_hash
 from htx_trend.research.runner import BacktestRunner
 
 
@@ -141,6 +142,8 @@ def write_batch_manifest(workspace: Path, dataset_id: str) -> str:
         written = json.loads(simple.read_text())
         if "stitch_points" in written:
             manifest.metadata["stitch_points"] = written["stitch_points"]
+        if "funding_gaps_hash" in written:
+            manifest.metadata["funding_gaps_hash"] = written["funding_gaps_hash"]
         aux["dataset_manifest"] = {
             "path": "manifest.json",
             "sha256": f"sha256:{hashlib.sha256(simple.read_bytes()).hexdigest()}",
@@ -230,6 +233,7 @@ def create_test_dataset(
         },
         **split_manifest_fields(used_dates, train_end_idx, val_end_idx),
         "stitch_points": {symbol: None for symbol in symbols},
+        "funding_gaps_hash": funding_gaps_hash(),
     }
     (dataset_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
     write_contract_specs(workspace, specs)

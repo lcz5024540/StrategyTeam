@@ -162,9 +162,12 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     stitch_points = load_stitch_points(stitch_file, override=stitch_override)
     ticks = load_bad_ticks(ticks_file)
     ticks_digest = bad_ticks_hash(ticks_file, ticks)
-    gaps_file = workspace / "data" / "quality" / "funding_gaps.yaml"
-    if not gaps_file.exists():
-        gaps_file = None
+    gaps_arg = getattr(args, "funding_gaps", None)
+    if not gaps_arg:
+        raise SystemExit("--funding-gaps is required")
+    gaps_file = Path(gaps_arg)
+    if not gaps_file.is_file():
+        raise SystemExit(f"funding_gaps file not found: {gaps_file}")
     gaps_digest = funding_gaps_hash(gaps_file)
 
     stitcher = DataStitcher(
@@ -265,7 +268,11 @@ def cmd_freeze(args: argparse.Namespace) -> None:
             }
             data[contract] = apply_bad_ticks(combined, contract, ticks)
         else:
-            data[contract] = apply_bad_ticks(htx_df, contract, ticks)
+            frame = htx_df.copy()
+            for name in ("incomplete", "non_comparable", "bad_tick"):
+                if name not in frame.columns:
+                    frame[name] = False
+            data[contract] = apply_bad_ticks(frame, contract, ticks)
     
     if not data:
         print("No data to freeze")
@@ -308,6 +315,7 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         validation_start_utc=validation_start,
         test_start_utc=test_start,
         bad_ticks=ticks,
+        funding_gaps_path=gaps_file,
     )
     dataset_dir = workspace / "data" / "datasets" / frozen.dataset_id
     if source_counts:
@@ -378,6 +386,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     workspace = Path(args.workspace)
     
     runner = BacktestRunner(config_path, workspace)
+    if getattr(args, "funding_gaps", None):
+        runner.config["funding_gaps"] = args.funding_gaps
     try:
         results = runner.run()
     finally:
@@ -647,9 +657,19 @@ def main() -> None:
         default=None,
         help="Versioned bad_ticks.yaml (confirmed rows excluded from signals)",
     )
+    freeze_parser.add_argument(
+        "--funding-gaps",
+        required=True,
+        help="Versioned funding_gaps.yaml actually hashed into the freeze",
+    )
     
     run_parser = subparsers.add_parser("run", help="Run backtest")
     run_parser.add_argument("config", help="Path to run config YAML")
+    run_parser.add_argument(
+        "--funding-gaps",
+        default=None,
+        help="Funding-gap registry to hash and pass to attach_funding_as_of",
+    )
 
     manifest_parser = subparsers.add_parser(
         "strategy-manifest",

@@ -191,7 +191,16 @@ def funding_gaps_hash(path: Path | None = None) -> str:
     candidate = path or default_funding_gaps_path()
     if not candidate.exists():
         raise ValueError(f"funding gaps file not found: {candidate}")
-    return "sha256:" + hashlib.sha256(candidate.read_bytes()).hexdigest()
+    digest = "sha256:" + hashlib.sha256(candidate.read_bytes()).hexdigest()
+    packaged = default_funding_gaps_path()
+    if candidate.resolve() == packaged.resolve():
+        expected = "sha256:" + EXPECTED_FUNDING_GAPS_SHA256
+        if digest != expected:
+            raise ValueError(
+                "packaged funding_gaps.yaml does not match "
+                "EXPECTED_FUNDING_GAPS_SHA256"
+            )
+    return digest
 
 
 def require_funding_settlement_gaps(
@@ -517,12 +526,16 @@ def bad_ticks_hash(path: Path | None, ticks: Iterable[BadTick] | None = None) ->
 
 def apply_bad_ticks(df: pd.DataFrame, symbol: str, ticks: Iterable[BadTick]) -> pd.DataFrame:
     work = df.copy()
-    if "incomplete" not in work.columns:
-        work["incomplete"] = False
-    if "non_comparable" not in work.columns:
-        work["non_comparable"] = False
-    if "bad_tick" not in work.columns:
-        work["bad_tick"] = False
+    missing = [
+        name
+        for name in ("incomplete", "non_comparable", "bad_tick")
+        if name not in work.columns
+    ]
+    if missing:
+        raise ValueError(
+            f"{symbol} apply_bad_ticks missing required flag columns: {missing}. "
+            "Refuse to invent False."
+        )
     if "bad_tick_kind" not in work.columns:
         work["bad_tick_kind"] = ""
     if work.empty:

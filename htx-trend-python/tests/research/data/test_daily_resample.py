@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 
@@ -161,6 +162,9 @@ def test_freeze_1day_writes_daily_cut_and_resample_to_manifest(tmp_path):
             stitch_config=str(stitch_yaml),
             non_comparable_window=30,
             bad_ticks=None,
+            funding_gaps=str(
+                Path(__file__).resolve().parents[3] / "data" / "quality" / "funding_gaps.yaml"
+            ),
         )
     )
     manifests = list((tmp_path / "data" / "datasets" / "manifests").glob("*.json"))
@@ -212,6 +216,9 @@ def test_freeze_1day_excludes_incomplete_and_does_not_cross_source_resample(tmp_
             stitch_config=str(stitch_yaml),
             non_comparable_window=30,
             bad_ticks=None,
+            funding_gaps=str(
+                Path(__file__).resolve().parents[3] / "data" / "quality" / "funding_gaps.yaml"
+            ),
         )
     )
     datasets_root = tmp_path / "data" / "datasets"
