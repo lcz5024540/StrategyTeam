@@ -48,18 +48,23 @@ class EntryExecutionConfig:
 
     @classmethod
     def from_env(cls) -> "EntryExecutionConfig":
+        defaults = cls()
+
         def dec(name: str, default: Decimal) -> Decimal:
             return Decimal(environ.get(name, str(default)))
-        return cls(leverage=int(environ.get("HTX_TREND_LEVERAGE", str(cls.leverage))),
-                   entry_order_type="market",
-                   margin_safety_ratio=dec("HTX_CONTRACT_MARGIN_SAFETY_RATIO", cls.margin_safety_ratio),
-                   strong_quality_multiplier=dec("HTX_TREND_STRONG_QUALITY_POSITION_MULTIPLIER", cls.strong_quality_multiplier),
-                   breadth_aligned_multiplier=dec("HTX_TREND_MARKET_BREADTH_ALIGNED_POSITION_MULTIPLIER", cls.breadth_aligned_multiplier),
-                   breadth_counter_multiplier=dec("HTX_TREND_MARKET_BREADTH_COUNTER_POSITION_MULTIPLIER", cls.breadth_counter_multiplier),
-                   combination_mixed_market_multiplier=dec("HTX_TREND_COMBINATION_MIXED_MARKET_POSITION_MULTIPLIER", cls.combination_mixed_market_multiplier),
-                   min_adaptive_multiplier=dec("HTX_TREND_MIN_ADAPTIVE_POSITION_MULTIPLIER", cls.min_adaptive_multiplier),
-                   max_adaptive_multiplier=dec("HTX_TREND_MAX_ADAPTIVE_POSITION_MULTIPLIER", cls.max_adaptive_multiplier),
-                   max_active_positions=int(environ.get("HTX_TREND_MAX_ACTIVE_POSITIONS", str(cls.max_active_positions))))
+
+        return cls(
+            leverage=int(environ.get("HTX_TREND_LEVERAGE", str(defaults.leverage))),
+            entry_order_type="market",
+            margin_safety_ratio=dec("HTX_CONTRACT_MARGIN_SAFETY_RATIO", defaults.margin_safety_ratio),
+            strong_quality_multiplier=dec("HTX_TREND_STRONG_QUALITY_POSITION_MULTIPLIER", defaults.strong_quality_multiplier),
+            breadth_aligned_multiplier=dec("HTX_TREND_MARKET_BREADTH_ALIGNED_POSITION_MULTIPLIER", defaults.breadth_aligned_multiplier),
+            breadth_counter_multiplier=dec("HTX_TREND_MARKET_BREADTH_COUNTER_POSITION_MULTIPLIER", defaults.breadth_counter_multiplier),
+            combination_mixed_market_multiplier=dec("HTX_TREND_COMBINATION_MIXED_MARKET_POSITION_MULTIPLIER", defaults.combination_mixed_market_multiplier),
+            min_adaptive_multiplier=dec("HTX_TREND_MIN_ADAPTIVE_POSITION_MULTIPLIER", defaults.min_adaptive_multiplier),
+            max_adaptive_multiplier=dec("HTX_TREND_MAX_ADAPTIVE_POSITION_MULTIPLIER", defaults.max_adaptive_multiplier),
+            max_active_positions=int(environ.get("HTX_TREND_MAX_ACTIVE_POSITIONS", str(defaults.max_active_positions))),
+        )
 
 
 @dataclass(frozen=True, slots=True)

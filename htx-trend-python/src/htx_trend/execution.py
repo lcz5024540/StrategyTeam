@@ -77,47 +77,52 @@ class ExecutionConfig:
     @classmethod
     def from_env(cls) -> "ExecutionConfig":
         """Read the same HTX_TREND entry knobs as Java application.yml."""
+        defaults = cls()
+
         def dec(name: str, default: Decimal) -> Decimal:
             return Decimal(environ.get(name, str(default)))
+
         def integer(name: str, default: int) -> int:
             return int(environ.get(name, str(default)))
+
         def flag(name: str, default: bool) -> bool:
             return environ.get(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+
         return cls(
-            max_spread_rate=dec("HTX_TREND_MAX_ENTRY_SPREAD_RATE", cls.max_spread_rate),
-            min_average_turnover=dec("HTX_TREND_MIN_ENTRY_AVG_TURNOVER_USDT", cls.min_average_turnover),
-            liquidity_lookback=integer("HTX_TREND_LIQUIDITY_LOOKBACK_BARS", cls.liquidity_lookback),
-            max_adverse_funding_rate=dec("HTX_TREND_MAX_ENTRY_FUNDING_COST_RATE", cls.max_adverse_funding_rate),
-            fee_rate=dec("HTX_TREND_ESTIMATED_TAKER_FEE_RATE", cls.fee_rate),
-            target_notional=dec("HTX_TREND_TARGET_QUOTE_NOTIONAL", cls.target_notional),
-            min_notional=dec("HTX_TREND_MIN_QUOTE_NOTIONAL", cls.min_notional),
-            max_notional=dec("HTX_TREND_MAX_QUOTE_NOTIONAL", cls.max_notional),
-            risk_per_trade=dec("HTX_TREND_RISK_PER_TRADE_USDT", cls.risk_per_trade),
-            loss_cooldown_seconds=integer("HTX_TREND_LOSS_COOLDOWN_MS", cls.loss_cooldown_seconds * 1000) // 1000,
-            breakeven_cooldown_seconds=integer("HTX_TREND_BREAKEVEN_COOLDOWN_MS", cls.breakeven_cooldown_seconds * 1000) // 1000,
-            profit_cooldown_seconds=integer("HTX_TREND_PROFIT_COOLDOWN_MS", cls.profit_cooldown_seconds * 1000) // 1000,
-            strong_reentry_seconds=integer("HTX_TREND_PROFIT_COOLDOWN_STRONG_REENTRY_AFTER_MS", cls.strong_reentry_seconds * 1000) // 1000,
-            profit_threshold=dec("HTX_TREND_PROFIT_COOLDOWN_MIN_NET_PROFIT_USDT", cls.profit_threshold),
-            signal_freshness_seconds=integer("HTX_TREND_MAX_ENTRY_SIGNAL_AGE_SECONDS", cls.signal_freshness_seconds),
-            max_entry_chase_atr_multiplier=dec("HTX_TREND_MAX_ENTRY_SIGNAL_CHASE_ATR_MULTIPLIER", cls.max_entry_chase_atr_multiplier),
-            max_entry_chase_rate=dec("HTX_TREND_MAX_ENTRY_SIGNAL_CHASE_RATE", cls.max_entry_chase_rate),
-            min_depth_multiple=dec("HTX_TREND_MIN_ENTRY_DEPTH_MULTIPLIER", cls.min_depth_multiple),
-            min_fib_volume_ratio=dec("HTX_TREND_FIBONACCI_MIN_VOLUME_RATIO", cls.min_fib_volume_ratio),
-            min_fib_body_to_range=dec("HTX_TREND_FIBONACCI_MIN_BODY_TO_RANGE", cls.min_fib_body_to_range),
-            max_fib_counter_wick_to_range=dec("HTX_TREND_FIBONACCI_MAX_COUNTER_WICK_TO_RANGE", cls.max_fib_counter_wick_to_range),
-            max_fib_entry_range_atr=dec("HTX_TREND_FIBONACCI_MAX_ENTRY_RANGE_ATR", cls.max_fib_entry_range_atr),
-            max_atr_pct=dec("HTX_TREND_MAX_ENTRY_ATR_PCT", cls.max_atr_pct),
-            margin_safety_ratio=dec("HTX_CONTRACT_MARGIN_SAFETY_RATIO", cls.margin_safety_ratio),
-            min_available_margin=dec("HTX_TREND_MIN_CONTRACT_MARGIN_AVAILABLE", cls.min_available_margin),
-            fee_protection_enabled=flag("HTX_TREND_FEE_PROTECTION_ENABLED", cls.fee_protection_enabled),
-            min_expected_move_atr_multiplier=dec("HTX_TREND_MIN_EXPECTED_MOVE_ATR_MULTIPLIER", cls.min_expected_move_atr_multiplier),
-            min_net_profit_rate=dec("HTX_TREND_MIN_NET_PROFIT_RATE", cls.min_net_profit_rate),
-            candidate_trend_state_gate_enabled=flag("HTX_TREND_CANDIDATE_TREND_STATE_GATE_ENABLED", cls.candidate_trend_state_gate_enabled),
-            counter_market_strong_candidate_enabled=flag("HTX_TREND_COUNTER_MARKET_STRONG_CANDIDATE_ENABLED", cls.counter_market_strong_candidate_enabled),
-            mixed_market_requires_strong_candidate=flag("HTX_TREND_MIXED_MARKET_REQUIRES_STRONG_CANDIDATE", cls.mixed_market_requires_strong_candidate),
-            mixed_market_min_model_score=dec("HTX_TREND_MIXED_MARKET_MIN_MODEL_SCORE", cls.mixed_market_min_model_score),
-            mixed_market_min_expected_r=dec("HTX_TREND_MIXED_MARKET_MIN_EXPECTED_R", cls.mixed_market_min_expected_r),
-            mixed_market_min_momentum_score=dec("HTX_TREND_MIXED_MARKET_MIN_MOMENTUM_SCORE", cls.mixed_market_min_momentum_score),
+            max_spread_rate=dec("HTX_TREND_MAX_ENTRY_SPREAD_RATE", defaults.max_spread_rate),
+            min_average_turnover=dec("HTX_TREND_MIN_ENTRY_AVG_TURNOVER_USDT", defaults.min_average_turnover),
+            liquidity_lookback=integer("HTX_TREND_LIQUIDITY_LOOKBACK_BARS", defaults.liquidity_lookback),
+            max_adverse_funding_rate=dec("HTX_TREND_MAX_ENTRY_FUNDING_COST_RATE", defaults.max_adverse_funding_rate),
+            fee_rate=dec("HTX_TREND_ESTIMATED_TAKER_FEE_RATE", defaults.fee_rate),
+            target_notional=dec("HTX_TREND_TARGET_QUOTE_NOTIONAL", defaults.target_notional),
+            min_notional=dec("HTX_TREND_MIN_QUOTE_NOTIONAL", defaults.min_notional),
+            max_notional=dec("HTX_TREND_MAX_QUOTE_NOTIONAL", defaults.max_notional),
+            risk_per_trade=dec("HTX_TREND_RISK_PER_TRADE_USDT", defaults.risk_per_trade),
+            loss_cooldown_seconds=integer("HTX_TREND_LOSS_COOLDOWN_MS", defaults.loss_cooldown_seconds * 1000) // 1000,
+            breakeven_cooldown_seconds=integer("HTX_TREND_BREAKEVEN_COOLDOWN_MS", defaults.breakeven_cooldown_seconds * 1000) // 1000,
+            profit_cooldown_seconds=integer("HTX_TREND_PROFIT_COOLDOWN_MS", defaults.profit_cooldown_seconds * 1000) // 1000,
+            strong_reentry_seconds=integer("HTX_TREND_PROFIT_COOLDOWN_STRONG_REENTRY_AFTER_MS", defaults.strong_reentry_seconds * 1000) // 1000,
+            profit_threshold=dec("HTX_TREND_PROFIT_COOLDOWN_MIN_NET_PROFIT_USDT", defaults.profit_threshold),
+            signal_freshness_seconds=integer("HTX_TREND_MAX_ENTRY_SIGNAL_AGE_SECONDS", defaults.signal_freshness_seconds),
+            max_entry_chase_atr_multiplier=dec("HTX_TREND_MAX_ENTRY_SIGNAL_CHASE_ATR_MULTIPLIER", defaults.max_entry_chase_atr_multiplier),
+            max_entry_chase_rate=dec("HTX_TREND_MAX_ENTRY_SIGNAL_CHASE_RATE", defaults.max_entry_chase_rate),
+            min_depth_multiple=dec("HTX_TREND_MIN_ENTRY_DEPTH_MULTIPLIER", defaults.min_depth_multiple),
+            min_fib_volume_ratio=dec("HTX_TREND_FIBONACCI_MIN_VOLUME_RATIO", defaults.min_fib_volume_ratio),
+            min_fib_body_to_range=dec("HTX_TREND_FIBONACCI_MIN_BODY_TO_RANGE", defaults.min_fib_body_to_range),
+            max_fib_counter_wick_to_range=dec("HTX_TREND_FIBONACCI_MAX_COUNTER_WICK_TO_RANGE", defaults.max_fib_counter_wick_to_range),
+            max_fib_entry_range_atr=dec("HTX_TREND_FIBONACCI_MAX_ENTRY_RANGE_ATR", defaults.max_fib_entry_range_atr),
+            max_atr_pct=dec("HTX_TREND_MAX_ENTRY_ATR_PCT", defaults.max_atr_pct),
+            margin_safety_ratio=dec("HTX_CONTRACT_MARGIN_SAFETY_RATIO", defaults.margin_safety_ratio),
+            min_available_margin=dec("HTX_TREND_MIN_CONTRACT_MARGIN_AVAILABLE", defaults.min_available_margin),
+            fee_protection_enabled=flag("HTX_TREND_FEE_PROTECTION_ENABLED", defaults.fee_protection_enabled),
+            min_expected_move_atr_multiplier=dec("HTX_TREND_MIN_EXPECTED_MOVE_ATR_MULTIPLIER", defaults.min_expected_move_atr_multiplier),
+            min_net_profit_rate=dec("HTX_TREND_MIN_NET_PROFIT_RATE", defaults.min_net_profit_rate),
+            candidate_trend_state_gate_enabled=flag("HTX_TREND_CANDIDATE_TREND_STATE_GATE_ENABLED", defaults.candidate_trend_state_gate_enabled),
+            counter_market_strong_candidate_enabled=flag("HTX_TREND_COUNTER_MARKET_STRONG_CANDIDATE_ENABLED", defaults.counter_market_strong_candidate_enabled),
+            mixed_market_requires_strong_candidate=flag("HTX_TREND_MIXED_MARKET_REQUIRES_STRONG_CANDIDATE", defaults.mixed_market_requires_strong_candidate),
+            mixed_market_min_model_score=dec("HTX_TREND_MIXED_MARKET_MIN_MODEL_SCORE", defaults.mixed_market_min_model_score),
+            mixed_market_min_expected_r=dec("HTX_TREND_MIXED_MARKET_MIN_EXPECTED_R", defaults.mixed_market_min_expected_r),
+            mixed_market_min_momentum_score=dec("HTX_TREND_MIXED_MARKET_MIN_MOMENTUM_SCORE", defaults.mixed_market_min_momentum_score),
         )
 
 
