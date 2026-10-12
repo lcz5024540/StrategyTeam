@@ -5,6 +5,15 @@ All notable changes to the HTX Trend Research System will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-rc.2] - 2026-10-12
+
+**Candidate only** (addresses 行研bot PR #18 conditional review).
+
+### Fixed
+- Permutation null: disable C01/strategy entries when `forced_entry_queues` is active.
+- `trend_state` bootstrap slices: three keys `trend` / `range` / `transition` (合并 TREND_UP/DOWN).
+- Permutation: resample until per-symbol and total trade counts match observed; hard fail if attempts exhausted.
+
 ## [0.1.1-rc.1] - 2026-10-12
 
 **Candidate only** (stats-gates handoff for 策略测试bot; not official v0.1.0).

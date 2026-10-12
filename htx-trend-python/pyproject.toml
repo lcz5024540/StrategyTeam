@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "coinstrategy-htx-trend"
-version = "0.1.1-rc.1"  # Keep in sync with src/htx_trend/research/_version.py
+version = "0.1.1-rc.2"  # Keep in sync with src/htx_trend/research/_version.py
 description = "HTX USDT perpetual trend strategy runtime"
 dynamic = []
 readme = "README.md"
