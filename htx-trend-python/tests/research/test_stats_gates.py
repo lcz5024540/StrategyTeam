@@ -14,6 +14,7 @@ from htx_trend.research.stats.metrics import profit_factor, summarize_pf_bootstr
 from collections import deque
 
 from htx_trend.research.stats.permutation import (
+    _counts_match,
     _stratified_sample_indices,
     build_forced_entry_queues,
     run_permutation_test,
@@ -177,6 +178,28 @@ def test_forced_queues_disable_c01_entries(tmp_path: Path) -> None:
 
     assert normal_entries > 1
     assert forced_entries == 1
+
+
+def test_counts_match_requires_every_symbol_not_total_only() -> None:
+    observed = {"BTC-USDT": 47, "ETH-USDT": 41}
+    assert not _counts_match(
+        observed,
+        {"BTC-USDT": 88, "ETH-USDT": 0},
+        observed_total=88,
+        actual_total=88,
+    )
+    assert not _counts_match(
+        observed,
+        {"BTC-USDT": 47, "ETH-USDT": 40},
+        observed_total=88,
+        actual_total=87,
+    )
+    assert _counts_match(
+        observed,
+        {"BTC-USDT": 47, "ETH-USDT": 41},
+        observed_total=88,
+        actual_total=88,
+    )
 
 
 def test_stratified_sample_spreads_indices() -> None:

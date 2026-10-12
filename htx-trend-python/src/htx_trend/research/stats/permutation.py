@@ -231,8 +231,18 @@ def run_permutation_test(
             "max_attempts_per_draw": max_resample_attempts_per_draw,
             "invalidated_resample_attempts": invalidated_resample_attempts,
             "match_rule": "per_symbol_and_total_completed_round_trips",
+            "hard_fail_on_exhaustion": True,
+            "accept_total_count_only": False,
+            "eligible_entry_bars_by_symbol": {
+                symbol: len(bars) for symbol, bars in eligible.items()
+            },
             "entry_time_sampler": "stratified_uniform_over_eligible_bars",
             "forced_entry_execution": "defer_until_flat_on_or_after_scheduled_bar",
+            "rc2_blocker_note": (
+                "Eligible bar count is not the bottleneck for BTC=47/ETH=41; "
+                "rc.2 discarded overdue forced entries while still in a position, "
+                "shrinking feasible null schedules toward zero."
+            ),
         },
         "primary_metric": "mean_net_pnl_per_trade_after_costs",
         "observed": {
