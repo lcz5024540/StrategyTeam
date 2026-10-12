@@ -68,33 +68,27 @@
 
 ---
 
-### A2. t 收盘出信号，t+1 成交
+### A2. t 收盘出信号，t+1 开盘+滑点成交；入场棒止损用 t 的 ATR
 
 **状态**: ✅ PASS
 
-**要求**: 信号产生和成交之间有执行延迟
+**要求**:
+1. t 收盘确认的信号，只在 t+1 开盘价加不利滑点成交；成交价不得等于通道/突破价或 t 收盘价。
+2. 入场棒止损按实际成交价计算；用 t+1 的 high/low 触发；计算止损的 ATR 只允许用到 t 收盘（信号棒），不得用 t+1 收盘。截断到 t 的 ATR 必须等于全序列在 t 处的 ATR；改 t+1 收盘不得改止损位。
 
-**证据**:
-- **代码**: `src/htx_trend/research/engine/backtest/sim_broker.py:139-169`
-  ```python
-  def process_next_bar(self, symbol: str, bar: dict) -> None:
-      """Process pending orders with next bar (t+1 execution)"""
-      bar_time = bar.get("bar_time") or bar.get("timestamp")
-      open_price = bar["open"]
-      
-      for order, signal_time in self.pending_orders:
-          if order.symbol != symbol:
-              continue
-          
-          # Fill at t+1 open
-          fill = Fill(...)
-  ```
+**代码**:
+- `src/htx_trend/research/engine/backtest/sim_broker.py`：`process_next_bar` 入场 `_adverse_entry_fill(side, open, slippage)`
+- `src/htx_trend/research/runner.py`：t 收盘 `ENTER` 写入 `signal_atr`；t+1 `CONFIRM_ENTRY` 用成交价 + `signal_atr` 算止损，再用当前棒 high/low 评估 C02
+- `src/htx_trend/research/conditions/c02_atr_stop.py`：入场棒触发对照已确定止损与 t+1 high/low
 
-- **架构**: `src/htx_trend/research/runner.py:192-250`
-  - t 时刻：产生信号，调用 `broker.place_order()` → 订单加入 `pending_orders`
-  - t+1 时刻：`broker.process_next_bar()` → 以 t+1 开盘价成交
+**测试位置**（`tests/research/test_runner_e2e.py`）:
+- ✅ `test_signal_at_bar_t_close_fills_at_next_open_plus_slippage` — 成交价 = t+1 open + tick 滑点；≠ 通道高点、≠ t close、≠ t+1 close、≠ 突破价
+- ✅ `test_entry_fill_stop_from_actual_fill` — 止损从实际成交价算，不是信号收盘价
+- ✅ `test_stop_hit_on_entry_bar` — 入场棒 EXIT 的 `bar_time` 是 t+1；止损=成交价−2×ATR(t)；t+1 low 击穿，t low 未击穿
+- ✅ `test_entry_bar_stop_ignores_signal_bar_extreme` — t low 击穿止损但 t+1 low 未击穿 → 不标 `entry_bar_stop`
+- ✅ `test_entry_stop_atr_uses_signal_bar_only_not_next_close` — `FeatureCalculator.atr(df[:t+1])[-1] == atr(df)[t]`；t+1 close 改成 999 止损不变；用 t+1 ATR 算出的 poisoned stop 与实际止损不等
 
-**结论**: 严格执行 t 收盘信号 → t+1 开盘成交。
+**结论**: t 收盘信号 → t+1 开盘+滑点成交；入场止损绑定成交价，ATR 截断在信号棒收盘。
 
 ---
 
@@ -960,7 +954,7 @@
 
 **状态**: ✅ PASS（同 A6）
 
-C02 只朝有利方向移动已由 `tests/research/conditions/test_c02_trailing_stop.py` 覆盖。
+C02 只朝有利方向移动已由 `tests/research/conditions/test_c02_trailing_stop.py` 覆盖。入场成交价与 ATR 截断见 A2 / `tests/research/test_runner_e2e.py`。
 
 ---
 

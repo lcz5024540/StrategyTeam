@@ -13,6 +13,7 @@ import pytest
 from htx_trend.research.risk.liquidation_check import AccountLiquidationChecker
 from htx_trend.research.conditions.c02_atr_stop import C02ATRStop
 from htx_trend.research.engine.contract_value import periods_per_year
+from htx_trend.research.features.indicators import FeatureCalculator
 from tests.research.helpers import (
     DEFAULT_SPECS,
     create_test_dataset,
@@ -206,7 +207,7 @@ def test_trial_export_includes_sharpe_trades_and_return_series(tmp_path):
 
 def _ohlc_workspace(tmp_path, n=230, mutate=None):
     workspace = tmp_path / "ws"
-    workspace.mkdir()
+    workspace.mkdir(parents=True)
     close = np.full(n, 100.0)
     high = close + 1.0
     low = close - 1.0
@@ -226,6 +227,32 @@ def _ohlc_workspace(tmp_path, n=230, mutate=None):
     return workspace
 
 
+def _entry_workspace(tmp_path, run_id, mutate):
+    workspace = _ohlc_workspace(tmp_path, mutate=mutate)
+    runner = write_runner(
+        workspace,
+        runner_config(
+            workspace,
+            run_id,
+            "ohlc",
+            symbols=["BTC-USDT"],
+            initial_equity=10_000.0,
+            conditions={
+                "C01": {"enabled": True, "periods": [5], "threshold": 0.0},
+                "C02": {
+                    "atr_period": 14,
+                    "atr_multiplier": 2.0,
+                    "tick_size": 0.1,
+                    "stop_slippage_ticks": 1,
+                },
+            },
+        ),
+    )
+    results = runner.run()
+    df = pd.read_parquet(workspace / "data" / "datasets" / "ohlc" / "BTC-USDT.parquet")
+    return workspace, results, df
+
+
 def test_stop_hit_on_entry_bar(tmp_path):
     def mutate(open_, high, low, close):
         close[210] = 110.0
@@ -237,12 +264,77 @@ def test_stop_hit_on_entry_bar(tmp_path):
         high[211] = 111.0
         low[211] = 50.0
 
-    workspace = _ohlc_workspace(tmp_path, mutate=mutate)
+    _, results, df = _entry_workspace(tmp_path, "ENTRYSTOP", mutate)
+    decisions = results["decisions"]
+    enters = decisions[decisions["action"] == "ENTER"]
+    exits = decisions[decisions["action"] == "EXIT"]
+    fills = [fill for fill in results["fills"] if fill.is_entry]
+    assert not enters.empty
+    assert not exits.empty
+    assert fills
+    signal_idx = df.index[pd.to_datetime(df["bar_time"]) == pd.to_datetime(enters.iloc[0]["bar_time"])][0]
+    next_bar = df.iloc[signal_idx + 1]
+    slip = 0.1 * 1
+    expected_fill = float(next_bar["open"]) + slip
+    truncated = FeatureCalculator.atr(df.iloc[: signal_idx + 1], 14).iloc[-1]
+    c02 = C02ATRStop(atr_period=14, atr_multiplier=2.0, tick_size=0.1, stop_slippage_ticks=1)
+    expected_stop = c02.calculate_stop_loss(expected_fill, float(truncated), "LONG")
+    exit_row = exits.iloc[0]
+    assert bool(exit_row["entry_bar_stop"])
+    assert pd.to_datetime(exit_row["bar_time"]) == pd.to_datetime(next_bar["bar_time"])
+    assert float(fills[0].price) == pytest.approx(expected_fill)
+    assert float(exit_row["entry_price"]) == pytest.approx(expected_fill)
+    assert float(exit_row["stop_loss"]) == pytest.approx(expected_stop)
+    assert float(next_bar["low"]) <= float(exit_row["stop_loss"])
+    assert float(df.iloc[signal_idx]["low"]) > float(exit_row["stop_loss"])
+
+
+def test_entry_bar_stop_ignores_signal_bar_extreme(tmp_path):
+    def mutate(open_, high, low, close):
+        close[210] = 110.0
+        high[210] = 111.0
+        low[210] = 50.0
+        open_[210] = 100.0
+        open_[211] = 120.0
+        close[211] = 120.0
+        high[211] = 121.0
+        low[211] = 119.0
+
+    _, results, df = _entry_workspace(tmp_path, "NOSIGSTOP", mutate)
+    decisions = results["decisions"]
+    enters = decisions[decisions["action"] == "ENTER"]
+    confirms = decisions[decisions["action"] == "CONFIRM_ENTRY"]
+    exits = decisions[decisions["action"] == "EXIT"]
+    assert not enters.empty
+    assert not confirms.empty
+    assert "entry_bar_stop" not in exits.columns or not bool(exits.get("entry_bar_stop").fillna(False).any())
+    signal_idx = df.index[pd.to_datetime(df["bar_time"]) == pd.to_datetime(enters.iloc[0]["bar_time"])][0]
+    next_bar = df.iloc[signal_idx + 1]
+    fill = [item for item in results["fills"] if item.is_entry][0]
+    stop = float(confirms.iloc[0]["stop_loss"])
+    assert float(df.iloc[signal_idx]["low"]) <= stop
+    assert float(next_bar["low"]) > stop
+    assert float(fill.price) == pytest.approx(float(next_bar["open"]) + 0.1)
+    assert float(confirms.iloc[0]["entry_price"]) == pytest.approx(float(fill.price))
+
+
+def _confirm_entry(workspace, run_id, next_close):
+    def mutate(open_, high, low, close):
+        close[210] = 110.0
+        high[210] = 111.0
+        low[210] = 109.0
+        open_[210] = 100.0
+        open_[211] = 120.0
+        close[211] = next_close
+        high[211] = max(121.0, next_close)
+        low[211] = 119.0
+
+    workspace = _ohlc_workspace(workspace, mutate=mutate)
     runner = write_runner(
         workspace,
         runner_config(
             workspace,
-            "ENTRYSTOP",
+            run_id,
             "ohlc",
             symbols=["BTC-USDT"],
             initial_equity=10_000.0,
@@ -259,11 +351,62 @@ def test_stop_hit_on_entry_bar(tmp_path):
     )
     results = runner.run()
     decisions = results["decisions"]
-    entry_stops = decisions[decisions.get("entry_bar_stop") == True] if "entry_bar_stop" in decisions.columns else pd.DataFrame()
-    exits = decisions[decisions["action"] == "EXIT"]
-    assert not exits.empty
-    assert (exits.get("entry_bar_stop") == True).any()
-    assert not entry_stops.empty
+    enters = decisions[decisions["action"] == "ENTER"]
+    confirms = decisions[decisions["action"] == "CONFIRM_ENTRY"]
+    assert not enters.empty
+    assert not confirms.empty
+    fills = [fill for fill in results["fills"] if fill.is_entry]
+    return workspace, enters.iloc[0], confirms.iloc[0], fills[0]
+
+
+def test_signal_at_bar_t_close_fills_at_next_open_plus_slippage(tmp_path):
+    workspace, enter, confirm, fill = _confirm_entry(tmp_path / "fill", "FILLNEXT", 120.0)
+    parquet = workspace / "data" / "datasets" / "ohlc" / "BTC-USDT.parquet"
+    df = pd.read_parquet(parquet)
+    signal_idx = df.index[pd.to_datetime(df["bar_time"]) == pd.to_datetime(enter["bar_time"])][0]
+    next_bar = df.iloc[signal_idx + 1]
+    slip = 0.1 * 1
+    expected_fill = float(next_bar["open"]) + slip
+    channel = float(df["high"].iloc[signal_idx - 5 : signal_idx].max())
+    assert float(fill.price) == pytest.approx(expected_fill)
+    assert float(confirm["entry_price"]) == pytest.approx(expected_fill)
+    assert pd.to_datetime(fill.time) == pd.to_datetime(next_bar["bar_time"])
+    assert float(confirm["entry_price"]) != pytest.approx(float(enter["close"]))
+    assert float(confirm["entry_price"]) != pytest.approx(float(df.iloc[signal_idx]["close"]))
+    assert float(confirm["entry_price"]) != pytest.approx(channel)
+    assert float(confirm["entry_price"]) != pytest.approx(float(next_bar["close"]))
+    breakout = float(enter["close"])
+    assert float(confirm["entry_price"]) != pytest.approx(breakout)
+
+
+def test_entry_stop_atr_uses_signal_bar_only_not_next_close(tmp_path):
+    _, enter_a, confirm_a, fill_a = _confirm_entry(tmp_path / "atr_a", "ATRA", 120.0)
+    _, enter_b, confirm_b, fill_b = _confirm_entry(tmp_path / "atr_b", "ATRB", 999.0)
+    workspace_a = tmp_path / "atr_a" / "ws"
+    df = pd.read_parquet(workspace_a / "data" / "datasets" / "ohlc" / "BTC-USDT.parquet")
+    signal_idx = df.index[pd.to_datetime(df["bar_time"]) == pd.to_datetime(enter_a["bar_time"])][0]
+    truncated = FeatureCalculator.atr(df.iloc[: signal_idx + 1], 14).iloc[-1]
+    full_through_t = FeatureCalculator.atr(df, 14).iloc[signal_idx]
+    assert truncated == pytest.approx(full_through_t)
+    c02 = C02ATRStop(atr_period=14, atr_multiplier=2.0, tick_size=0.1, stop_slippage_ticks=1)
+    expected_stop = c02.calculate_stop_loss(float(fill_a.price), float(truncated), "LONG")
+    implied_atr = (float(confirm_a["entry_price"]) - float(confirm_a["stop_loss"])) / 2.0
+    assert implied_atr == pytest.approx(float(truncated))
+    assert float(confirm_a["stop_loss"]) == pytest.approx(expected_stop)
+    assert float(confirm_a["entry_price"]) == pytest.approx(float(fill_a.price))
+    assert float(confirm_b["stop_loss"]) == pytest.approx(float(confirm_a["stop_loss"]))
+    assert float(confirm_b["entry_price"]) == pytest.approx(float(confirm_a["entry_price"]))
+    next_close_atr = FeatureCalculator.atr(
+        pd.concat(
+            [
+                df.iloc[: signal_idx + 1],
+                df.iloc[signal_idx + 1 : signal_idx + 2].assign(close=999.0),
+            ]
+        ).reset_index(drop=True),
+        14,
+    ).iloc[signal_idx + 1]
+    poisoned_stop = c02.calculate_stop_loss(float(fill_b.price), float(next_close_atr), "LONG")
+    assert float(confirm_b["stop_loss"]) != pytest.approx(poisoned_stop)
 
 
 def test_entry_fill_stop_from_actual_fill(tmp_path):

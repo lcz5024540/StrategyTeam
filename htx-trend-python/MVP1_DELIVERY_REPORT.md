@@ -42,9 +42,11 @@
    - 最小张数校验
 
 7. **回测引擎**
-   - t 收盘信号 → t+1 成交
+   - t 收盘信号 → t+1 开盘+不利滑点成交（不是通道价/突破价/t 收盘）
+   - 入场棒止损：按实际成交价；用 t+1 high/low 触发；ATR 只用到 t 收盘
    - 四种成本场景
    - 逐期资金费
+   - 测试位置见下文「成交与入场止损测试证据」
 
 8. **账本系统**
    - SQLite：runs, registrations, trials, test_set_locks
@@ -261,6 +263,22 @@ htx-trend-python/
 - Python 文件: 49 个
 - 代码行数: ~4,800 行
 - 测试文件: 7 个
+
+---
+
+## 成交与入场止损测试证据
+
+文件：`tests/research/test_runner_e2e.py`
+
+| 断言 | 测试 |
+| --- | --- |
+| t 收盘信号在 t+1 开盘+滑点成交；≠ 通道价、突破价、t close、t+1 close | `test_signal_at_bar_t_close_fills_at_next_open_plus_slippage` |
+| 止损从实际成交价计算，不是信号收盘价 | `test_entry_fill_stop_from_actual_fill` |
+| 入场棒用 t+1 high/low 触发；EXIT 的 `bar_time` 是 t+1；止损=成交价−2×ATR(t) | `test_stop_hit_on_entry_bar` |
+| 信号棒极值击穿止损、t+1 未击穿 → 不触发 `entry_bar_stop` | `test_entry_bar_stop_ignores_signal_bar_extreme` |
+| ATR(截断到 t) == ATR(全序列)[t]；改 t+1 close 止损不变；t+1 ATR 的 poisoned stop ≠ 实际止损 | `test_entry_stop_atr_uses_signal_bar_only_not_next_close` |
+
+配套：`tests/research/conditions/test_c02_trailing_stop.py`（跟踪止损只朝有利方向、无前视触发）。
 
 ---
 
