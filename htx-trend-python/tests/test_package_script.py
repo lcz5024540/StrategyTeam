@@ -134,3 +134,4 @@ def test_create_package_includes_quality_fixtures_deployment_and_sql(tmp_path):
     assert any(name.endswith("tests/fixtures/java/schema.sql") for name in names)
     assert any(name.endswith("tests/fixtures/trend-exit-v5/golden.json") for name in names)
     assert any(name.endswith("configs/runs/R0001.yaml") for name in names)
+    assert any(name.endswith("CHANGELOG.md") for name in names)

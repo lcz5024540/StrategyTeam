@@ -22,6 +22,7 @@ PACKAGE_GLOBS = (
     "pyproject.toml",
     "README.md",
     "RESEARCH_SYSTEM.md",
+    "CHANGELOG.md",
     "requirements.lock",
     "scripts/compile_lock.sh",
     "scripts/check_lock_hygiene.py",
