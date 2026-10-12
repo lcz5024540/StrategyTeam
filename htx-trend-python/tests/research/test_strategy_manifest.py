@@ -73,10 +73,10 @@ def test_code_sha256_is_sha256_of_condition_module_bytes():
 
 
 def test_manifest_level_fields_come_from_config_and_package():
-    from htx_trend.research._version import __version__
+    from htx_trend.research.version_info import get_version_info
 
     built = build_strategy_manifest(_r0001(), git_commit="abc123")
-    assert built["package_version"] == __version__
+    assert built["package_version"] == get_version_info().version
     assert built["git_commit"] == "abc123"
     assert built["timeframe"] == "4hour"
     assert built["symbols"] == ["BTC-USDT", "ETH-USDT"]
