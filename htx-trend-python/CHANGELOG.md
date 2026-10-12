@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Candidate formal automatic LIVE package — does not enable trading by install alone.**
 
+### Fixed
+- `EntryExecutionConfig.from_env` / `ExecutionConfig.from_env`: use `defaults=cls()` instead of `cls.<field>` so slots dataclass member descriptors are not passed to `int()` / arithmetic when env vars are unset (P0 worker start crash).
+
 ### Added
 - `formal_live.validate_formal_live_deployment()` — R0001 first-cut caps (5 pos, 2%/10% on 300U, same-dir ≤3, BTC+ETH, 4h).
 - `credentials.materialize_live_primary()` — ENC-only RSA decrypt; forbids env API keys (same as probe).
