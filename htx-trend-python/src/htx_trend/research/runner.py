@@ -576,8 +576,12 @@ class BacktestRunner:
         return spec
 
     def _run_backtest(
-        self, data: dict[str, pd.DataFrame], frozen: Any
+        self,
+        data: dict[str, pd.DataFrame],
+        frozen: Any,
+        forced_entry_queues: dict[str, deque[tuple[pd.Timestamp, str]]] | None = None,
     ) -> dict[str, Any]:
+        self._forced_entry_queues = forced_entry_queues
         initial_equity = self.config["initial_equity"]
         cost_scenario = CostScenario(self.config["cost_scenario"])
         fee_config = self.config.get("fees") or {}
@@ -649,7 +653,11 @@ class BacktestRunner:
             self.config.get("timeframe"),
         )
 
-        from collections import defaultdict
+        from collections import defaultdict, deque
+
+        forced_queues: dict[str, deque[tuple[pd.Timestamp, str]]] | None = None
+        if getattr(self, "_forced_entry_queues", None):
+            forced_queues = self._forced_entry_queues
 
         events: dict[pd.Timestamp, list[tuple[str, int]]] = defaultdict(list)
         for symbol, df in data.items():
@@ -735,11 +743,45 @@ class BacktestRunner:
                         all_decisions.append(decision_record)
                         continue
                     ctx.current_position = None
-                    c01_result = c01.evaluate(ctx, {})
-                    decision_record["c01_status"] = c01_result.status
-                    decision_record["c01_value"] = c01_result.value
-                    if c01_result.status == "PASS" and c01_result.value is not None:
-                        side = "LONG" if c01_result.value > 0 else "SHORT"
+                    forced_side: str | None = None
+                    if forced_queues is not None:
+                        queue = forced_queues.get(symbol)
+                        bar_ts = pd.Timestamp(bar["bar_time"])
+                        if bar_ts.tzinfo is None:
+                            bar_ts = bar_ts.tz_localize("UTC")
+                        else:
+                            bar_ts = bar_ts.tz_convert("UTC")
+                        if queue:
+                            while queue and queue[0][0] < bar_ts:
+                                queue.popleft()
+                            if queue and queue[0][0] == bar_ts:
+                                _, forced_side = queue.popleft()
+                    if forced_queues is not None:
+                        decision_record["strategy_entry_disabled"] = True
+                        if forced_side:
+                            side = forced_side
+                            decision_record["c01_status"] = "SKIPPED"
+                            decision_record["c01_value"] = None
+                            decision_record["forced_entry"] = True
+                            c01_pass = True
+                        else:
+                            side = None
+                            c01_pass = False
+                            decision_record["c01_status"] = "SKIPPED"
+                            decision_record["c01_value"] = None
+                    else:
+                        c01_result = c01.evaluate(ctx, {})
+                        decision_record["c01_status"] = c01_result.status
+                        decision_record["c01_value"] = c01_result.value
+                        c01_pass = (
+                            c01_result.status == "PASS" and c01_result.value is not None
+                        )
+                        side = (
+                            "LONG" if c01_result.value > 0 else "SHORT"
+                            if c01_pass
+                            else None
+                        )
+                    if c01_pass and side is not None:
                         if atr_col not in bar.index or pd.isna(bar[atr_col]):
                             raise ValueError(
                                 f"signal bar missing {atr_col}; refusing to size/stop without ATR"
@@ -998,6 +1040,7 @@ class BacktestRunner:
         fee_rates_record = {}
         for symbol, rates in broker.fee_rates_used.items():
             fee_rates_record[symbol] = rates.to_dict()
+        self._forced_entry_queues = None
         return {
             "fills": broker.fills,
             "decisions": decisions_df,
