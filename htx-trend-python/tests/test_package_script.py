@@ -131,6 +131,9 @@ def test_create_package_includes_quality_fixtures_deployment_and_sql(tmp_path):
         names = {name.replace("\\", "/") for name in tar.getnames()}
     assert any(name.endswith("data/quality/bad_ticks.yaml") for name in names)
     assert any(name.endswith("deployment/systemd/htx-trend-collector.service") for name in names)
+    assert any(name.endswith("deployment/systemd/htx-trend-probe-1contract@.service") for name in names)
+    assert any(name.endswith("docs/primary-apikey-read-method.md") for name in names)
+    assert any(name.endswith("PROBE_ACCEPTANCE.md") for name in names)
     assert any(name.endswith("sql/schema.sql") for name in names)
     assert any("tests/fixtures/real/" in name for name in names)
     assert any(name.endswith("tests/fixtures/java/schema.sql") for name in names)

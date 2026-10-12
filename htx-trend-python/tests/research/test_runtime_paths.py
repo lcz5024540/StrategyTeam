@@ -60,6 +60,7 @@ def test_systemd_readwrite_paths_are_optional_dirs_only():
     assert set(units) == {
         "htx-trend-collector.service",
         "htx-trend-heartbeat.service",
+        "htx-trend-probe-1contract@.service",
     }
     for name, text in units.items():
         paths = _readwrite_paths(text)

@@ -5,6 +5,14 @@ All notable changes to the HTX Trend Research System will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-probe] - 2026-10-12
+
+### Added
+- Separate one-shot live connectivity probe: `python -m htx_trend.probe_1contract open|close|status`.
+- Hard qty ≤ 1, `LIVE_1CONTRACT_PROBE` gate, BTC-USDT default (buy open / sell close). Not the formal strategy worker.
+- Probe PRIMARY credential loader (`account_role='PRIMARY' AND enabled=1 AND trend_enabled=1`), ENC-only RSA-OAEP, no env key fallback, no MIRROR rows.
+- systemd `htx-trend-probe-1contract@.service` (oneshot). Formal R0001 risk params unchanged (5 / 2% / 10%).
+
 ## [0.1.0-rc.13] - 2026-10-12
 
 ### Changed

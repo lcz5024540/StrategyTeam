@@ -268,6 +268,20 @@ class HtxTrendMySqlRepository:
         return AccountCredentialRecord(int(row["id"]), str(row["account_label"]), str(row["api_key_cipher"]),
                                        str(row["secret_key_cipher"]), str(row["base_url"]))
 
+    def primary_probe_account_rows(self, pinned_account_id: int | None = None) -> list[dict[str, Any]]:
+        """Probe-only: PRIMARY + enabled + trend_enabled. Never SELECT *; no MIRROR scan."""
+        sql = (
+            "SELECT id, account_label, exchange, market_type, base_url, "
+            "api_key_cipher, secret_key_cipher, account_role "
+            "FROM htx_trade_account "
+            "WHERE account_role = 'PRIMARY' AND enabled = 1 AND trend_enabled = 1"
+        )
+        params: tuple[Any, ...] = ()
+        if pinned_account_id is not None:
+            sql += " AND id=%s"
+            params = (int(pinned_account_id),)
+        return self._all(sql, params)
+
     def enabled_strategy_policies(self) -> list[StrategyPolicyRecord]:
         rows = self._all("""SELECT policy_code,policy_version,primary_model,confirmation_models,base_notional_usdt,
           max_notional_usdt,score_threshold,box_window_bars FROM htx_trend_strategy_policy
