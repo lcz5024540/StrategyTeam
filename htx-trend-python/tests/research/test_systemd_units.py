@@ -9,6 +9,7 @@ UNIFIED = frozenset(
         "htx-trend-collector.service",
         "htx-trend-heartbeat.service",
         "htx-trend-probe-1contract@.service",
+        "htx-trend-worker@.service",
     }
 )
 CURRENT = "/opt/coinstrategy/htx-trend-py/current"
@@ -49,6 +50,11 @@ def test_repo_has_only_unified_venv_systemd_units():
     assert "HTX_ACCESS_KEY" not in probe_text
     assert "HTX_SECRET_KEY" not in probe_text
     assert "HTX_TREND_MIRROR" not in probe_text
+    worker = next(path for path in services if path.name == "htx-trend-worker@.service")
+    worker_text = worker.read_text()
+    assert "python -m htx_trend.worker" in worker_text
+    assert "probe_1contract" not in worker_text
+    assert "LIVE_1CONTRACT_PROBE" not in worker_text
     for path in services:
         text = path.read_text()
         for line in text.splitlines():

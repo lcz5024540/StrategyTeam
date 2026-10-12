@@ -7,7 +7,8 @@ import time
 from pathlib import Path
 
 from .account_facts import HtxAccountFactsAdapter
-from .credentials import materialize
+from .credentials import forbid_exchange_plaintext_env, materialize, materialize_live_primary
+from .formal_live import validate_formal_live_deployment
 from .execution import ExecutionConfig
 from .execution_service import EntryExecutionConfig, HtxTrendEntryExecutor
 from .htx_v5 import HtxV5Client
@@ -27,7 +28,10 @@ def _account_client(repository: HtxTrendMySqlRepository, account_id: int, *, liv
     record = repository.account_credentials(account_id)
     if record is None:
         raise RuntimeError(f"registered HTX account id={account_id} has no credentials")
-    credentials = materialize(record)
+    if live:
+        credentials = materialize_live_primary(record)
+    else:
+        credentials = materialize(record)
     return HtxV5Client(credentials.access_key, credentials.secret_key, base_url=credentials.base_url,
                        live_trading_enabled=live)
 
@@ -91,6 +95,8 @@ def main() -> None:
             # Certification and the approved MIXED policy are deployment gates,
             # not alternative strategy thresholds.
             _validate_first_live_cutover()
+            validate_formal_live_deployment()
+            forbid_exchange_plaintext_env()
             if any(a.role != "PRIMARY" and a.mirror_enabled for a in repository.enabled_trend_accounts()):
                 raise SystemExit("first Python cutover is primary-only; mirror recovery acceptance is still required")
             writer_lock = TrendWriterLock(connect(MySqlSettings.from_env()))
