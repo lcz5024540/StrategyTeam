@@ -11,6 +11,12 @@ from ..engine.contract_value import coin_notional, require_contract_size
 
 CORE_SYMBOLS = frozenset({"BTC-USDT", "ETH-USDT"})
 
+# R0002 market-state slices (prereg three-state; regime labels are TREND_*_*, RANGE_*, TRANSITION_*).
+TREND_STATE_SLICE_TREND = "trend"  # 趋势 (TREND_UP + TREND_DOWN)
+TREND_STATE_SLICE_RANGE = "range"  # 震荡
+TREND_STATE_SLICE_TRANSITION = "transition"  # 过渡
+TREND_STATE_SLICE_UNKNOWN = "unknown"
+
 
 def run_artifacts_dir(workspace: Path, run_id: str) -> Path:
     return workspace / "runs" / run_id
@@ -88,6 +94,19 @@ def net_pnls_from_fills(fills: Sequence[Any]) -> list[float]:
     return pnls
 
 
+def completed_trade_counts_by_symbol(fills: Sequence[Any]) -> dict[str, int]:
+    open_fills: dict[str, Any] = {}
+    counts: dict[str, int] = {}
+    for fill in fills:
+        if fill.is_entry:
+            open_fills[fill.symbol] = fill
+            continue
+        entry = open_fills.pop(fill.symbol, None)
+        if entry is not None:
+            counts[fill.symbol] = counts.get(fill.symbol, 0) + 1
+    return counts
+
+
 def attach_regime_from_decisions(
     trades: pd.DataFrame,
     decisions_path: Path,
@@ -112,14 +131,22 @@ def attach_regime_from_decisions(
     return out
 
 
-def _trend_state_from_regime(regime: Any) -> str:
+def trend_state_slice_from_regime(regime: Any) -> str:
+    """Map bar regime to one of trend / range / transition (R0002 gates)."""
     if regime is None or (isinstance(regime, float) and pd.isna(regime)):
-        return "UNKNOWN"
+        return TREND_STATE_SLICE_UNKNOWN
     text = str(regime)
-    for prefix in ("TREND_UP", "TREND_DOWN", "RANGE", "TRANSITION"):
-        if text.startswith(prefix):
-            return prefix
-    return "UNKNOWN"
+    if text.startswith("TREND_UP") or text.startswith("TREND_DOWN"):
+        return TREND_STATE_SLICE_TREND
+    if text.startswith("RANGE"):
+        return TREND_STATE_SLICE_RANGE
+    if text.startswith("TRANSITION"):
+        return TREND_STATE_SLICE_TRANSITION
+    return TREND_STATE_SLICE_UNKNOWN
+
+
+def _trend_state_from_regime(regime: Any) -> str:
+    return trend_state_slice_from_regime(regime)
 
 
 def coin_group(symbol: str) -> str:

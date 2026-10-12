@@ -756,12 +756,19 @@ class BacktestRunner:
                                 queue.popleft()
                             if queue and queue[0][0] == bar_ts:
                                 _, forced_side = queue.popleft()
-                    if forced_side:
-                        side = forced_side
-                        decision_record["c01_status"] = "SKIPPED"
-                        decision_record["c01_value"] = None
-                        decision_record["forced_entry"] = True
-                        c01_pass = True
+                    if forced_queues is not None:
+                        decision_record["strategy_entry_disabled"] = True
+                        if forced_side:
+                            side = forced_side
+                            decision_record["c01_status"] = "SKIPPED"
+                            decision_record["c01_value"] = None
+                            decision_record["forced_entry"] = True
+                            c01_pass = True
+                        else:
+                            side = None
+                            c01_pass = False
+                            decision_record["c01_status"] = "SKIPPED"
+                            decision_record["c01_value"] = None
                     else:
                         c01_result = c01.evaluate(ctx, {})
                         decision_record["c01_status"] = c01_result.status

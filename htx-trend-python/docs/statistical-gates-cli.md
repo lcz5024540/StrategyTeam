@@ -4,7 +4,7 @@ Formal acceptance stats for R0002+ (see prereg-batch1). These commands do **not*
 
 ## `pf-bootstrap`
 
-Resample completed trade `net_pnl` with replacement (default **10 000** draws). Reports observed profit factor and a **percentile bootstrap** confidence interval (default **90%**). The gate uses **`ci_lower`** (90% CI lower bound).
+Resample completed trade `net_pnl` with replacement (default **10 000** draws). Reports observed profit factor and a **percentile bootstrap** confidence interval (default **90%**). The gate uses **`ci_lower`** (90% CI lower bound). For R0002 slice gates, compare each slice’s `ci_lower` to **≥ 0.8** (overall PF point gate remains separate in prereg).
 
 ```bash
 htx-trend-research --workspace /path/to/ws pf-bootstrap \
@@ -15,6 +15,18 @@ htx-trend-research --workspace /path/to/ws pf-bootstrap \
   --group-by coin_group \
   --group-by trend_state
 ```
+
+### `--group-by trend_state` (R0002 three states)
+
+Regime at entry (from `decisions.parquet`) is collapsed to **three** slice keys (not four):
+
+| Slice key | Chinese (report) | Source regimes |
+|-----------|------------------|----------------|
+| `trend` | 趋势 | `TREND_UP_*`, `TREND_DOWN_*` |
+| `range` | 震荡 | `RANGE_*` |
+| `transition` | 过渡 | `TRANSITION_*` |
+
+JSON slice names look like `trend_state:trend`, `trend_state:range`, `trend_state:transition`.
 
 Inputs:
 
@@ -28,7 +40,13 @@ Outputs:
 
 ## `permutation`
 
-Random-entry null: per symbol, keep actual trade count and long/short sequence; shuffle entry times among eligible bars (excludes `non_comparable` / `bad_tick`; C02 exits and conservative costs via the research backtest engine). Primary metric: **mean net PnL per trade**; p-value vs H₀ (strategy ≤ random entry), gate **p < 0.05**.
+Random-entry null: per symbol, keep actual trade count and long/short sequence; shuffle entry times among eligible bars (excludes `non_comparable` / `bad_tick`; C02 exits and conservative costs via the research backtest engine). While the null is running, **C01 and all strategy entry paths are disabled** — only forced-queue entries may open positions.
+
+Primary metric: **mean net PnL per trade**; p-value vs H₀ (strategy ≤ random entry), gate **p < 0.05**.
+
+**Null draw validity:** Each permutation draw resamples entry times until completed round-trip counts **per symbol and total** match the observed run. If a schedule would drop forced entries because a symbol is not `FLAT`, that resample is discarded and retried (up to **200** attempts per draw by default). Exhausting attempts fails the command. Invalid attempts are counted in `null_resample_policy.invalidated_resample_attempts` in the JSON output.
+
+Source run should use the same **conservative** `cost_scenario` as formal acceptance.
 
 ```bash
 htx-trend-research --workspace /path/to/ws permutation \

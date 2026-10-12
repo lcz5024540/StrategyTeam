@@ -15,7 +15,15 @@ import yaml
 from ..ledger import LedgerManager
 from ..runner import BacktestRunner
 from .metrics import mean_net_pnl_per_trade
-from .trades import load_completed_trades, net_pnls_from_fills, run_artifacts_dir
+from .trades import (
+    completed_trade_counts_by_symbol,
+    load_completed_trades,
+    net_pnls_from_fills,
+    run_artifacts_dir,
+)
+
+# Resample entry times until per-symbol completed trade counts match observed.
+MAX_RESAMPLE_ATTEMPTS_PER_DRAW = 200
 
 
 def _default_seed(run_id: str) -> int:
@@ -70,6 +78,20 @@ def build_forced_entry_queues(
     return queues
 
 
+def _counts_match(
+    observed: dict[str, int],
+    actual: dict[str, int],
+    observed_total: int,
+    actual_total: int,
+) -> bool:
+    if actual_total != observed_total:
+        return False
+    for symbol, need in observed.items():
+        if actual.get(symbol, 0) != need:
+            return False
+    return True
+
+
 def _resolve_config_path(
     workspace: Path,
     source_run_id: str,
@@ -93,6 +115,7 @@ def run_permutation_test(
     seed: int | None,
     output: Path | None,
     write_ledger: bool,
+    max_resample_attempts_per_draw: int = MAX_RESAMPLE_ATTEMPTS_PER_DRAW,
 ) -> dict[str, Any]:
     trades_path = run_artifacts_dir(workspace, source_run_id) / "return_series.parquet"
     trades = load_completed_trades(trades_path)
@@ -117,6 +140,8 @@ def run_permutation_test(
 
     runner = BacktestRunner(resolved_config, workspace)
     templates = _trade_templates(trades)
+    observed_counts = trades.groupby("symbol").size().astype(int).to_dict()
+    observed_total = len(trades)
 
     data, frozen = runner._load_dataset()
     if runner._is_smoke:
@@ -136,16 +161,39 @@ def run_permutation_test(
         raise ValueError("source run produced no closed-trade PnL")
 
     null_metrics: list[float] = []
-    for _ in range(n_permutations):
-        queues = build_forced_entry_queues(templates, eligible, rng)
-        null_results = runner._run_backtest(data, frozen, forced_entry_queues=queues)
-        pnls = net_pnls_from_fills(null_results["fills"])
-        metric = mean_net_pnl_per_trade(pnls)
-        if metric is not None:
-            null_metrics.append(metric)
+    invalidated_resample_attempts = 0
 
-    if not null_metrics:
-        raise ValueError("permutation loop produced no valid null metrics")
+    for draw_index in range(n_permutations):
+        accepted = False
+        for _attempt in range(max_resample_attempts_per_draw):
+            queues = build_forced_entry_queues(templates, eligible, rng)
+            null_results = runner._run_backtest(
+                data, frozen, forced_entry_queues=queues
+            )
+            pnls = net_pnls_from_fills(null_results["fills"])
+            actual_counts = completed_trade_counts_by_symbol(null_results["fills"])
+            actual_total = len(pnls)
+            if not _counts_match(
+                observed_counts, actual_counts, observed_total, actual_total
+            ):
+                invalidated_resample_attempts += 1
+                continue
+            metric = mean_net_pnl_per_trade(pnls)
+            if metric is None:
+                invalidated_resample_attempts += 1
+                continue
+            null_metrics.append(metric)
+            accepted = True
+            break
+        if not accepted:
+            raise ValueError(
+                f"permutation draw {draw_index + 1}/{n_permutations}: could not obtain "
+                f"null sample with matching trade counts per symbol after "
+                f"{max_resample_attempts_per_draw} resample attempts "
+                f"(observed per symbol: {observed_counts}, total={observed_total}). "
+                f"Total invalidated resample attempts so far: "
+                f"{invalidated_resample_attempts}"
+            )
 
     null_arr = np.asarray(null_metrics, dtype=np.float64)
     p_value = float((np.sum(null_arr >= observed_metric) + 1) / (len(null_arr) + 1))
@@ -157,10 +205,16 @@ def run_permutation_test(
         "config_path": str(resolved_config),
         "seed": chosen_seed,
         "n_permutations": n_permutations,
+        "null_resample_policy": {
+            "max_attempts_per_draw": max_resample_attempts_per_draw,
+            "invalidated_resample_attempts": invalidated_resample_attempts,
+            "match_rule": "per_symbol_and_total_completed_round_trips",
+        },
         "primary_metric": "mean_net_pnl_per_trade_after_costs",
         "observed": {
             "mean_net_pnl_per_trade": observed_metric,
-            "n_trades": len(observed_pnls),
+            "n_trades": observed_total,
+            "n_trades_by_symbol": observed_counts,
         },
         "null_distribution": {
             "mean": float(np.mean(null_arr)),
@@ -191,6 +245,9 @@ def run_permutation_test(
             "seed": chosen_seed,
             "n_permutations": n_permutations,
             "p_value": p_value,
+            "gate_pass": p_value < 0.05,
+            "null_n_samples": len(null_arr),
+            "invalidated_resample_attempts": invalidated_resample_attempts,
             "output_path": str(output),
             "observed_mean_net_pnl_per_trade": observed_metric,
         }
