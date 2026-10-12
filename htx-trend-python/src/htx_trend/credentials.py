@@ -89,7 +89,7 @@ def decrypt_probe_secret(value: str, *, private_key_path: str | None = None) -> 
                 label=None,
             ),
         )
-        return plaintext.decode("utf-8")
+        return plaintext.decode("utf-8").strip()
     except ProbeCredentialError:
         raise
     except Exception as error:

@@ -41,7 +41,7 @@ def require_probe_env() -> None:
     if value not in PROBE_ENV_OK:
         raise ProbeAborted(
             "LIVE_PROBE_DISABLED",
-            f"{PROBE_ENV_NAME} must be exactly 1 or true to place a live probe order",
+            f"{PROBE_ENV_NAME} must be exactly 1 or true before any probe HTTP",
         )
 
 
@@ -158,6 +158,7 @@ def main(
 ) -> int:
     forbid_exchange_plaintext_env()
     args = _parse_args(argv)
+    require_probe_env()
     symbol = str(args.symbol).upper()
     if symbol not in ALLOWED_SYMBOLS:
         raise SystemExit(f"PROBE_SYMBOL_FORBIDDEN: {symbol} not in {ALLOWED_SYMBOLS}")
@@ -184,7 +185,6 @@ def main(
             evidence["fills"] = []
             _write_evidence(args.evidence, evidence)
             return 0
-        require_probe_env()
         if args.action == "open":
             request = SwapOrderRequest(
                 symbol, "long", "buy", "market", _client_order_id("open"), str(PROBE_MAX_QTY)

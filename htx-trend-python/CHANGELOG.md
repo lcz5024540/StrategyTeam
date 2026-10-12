@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Probe PRIMARY credential loader (`account_role='PRIMARY' AND enabled=1 AND trend_enabled=1`), ENC-only RSA-OAEP, no env key fallback, no MIRROR rows.
 - systemd `htx-trend-probe-1contract@.service` (oneshot). Formal R0001 risk params unchanged (5 / 2% / 10%).
 
+### Fixed
+- HTX `_signed` payload now joins METHOD/host/path/query with real `0x0a` newlines (Java `HtxSignUtils`). The previous f-string used a two-character backslash-n sequence and caused 校验失败 on `GET /v5/trade/position/opens`.
+- `LIVE_1CONTRACT_PROBE` is required at the start of `main` for status/open/close, before any HTTP.
+
 ## [0.1.0-rc.13] - 2026-10-12
 
 ### Changed

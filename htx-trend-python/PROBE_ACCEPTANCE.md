@@ -9,7 +9,8 @@ This probe is **not** the formal live strategy. R0001 stays max 5 positions, 2% 
 
 ## Gates
 
-- [ ] `LIVE_1CONTRACT_PROBE` is exactly `1` or `true` before `open`/`close`. Any other value refuses with `LIVE_PROBE_DISABLED`.
+- [ ] **Gate before any HTTP:** `require_probe_env()` runs at the start of `main` for `status` / `open` / `close`, **before** credentials, client, or signed HTX calls. `LIVE_1CONTRACT_PROBE` must be exactly `1` or `true`. Unset/`0` → `LIVE_PROBE_DISABLED` with zero HTTP.
+- [ ] **Signature newlines:** `HtxV5Client._signed` payload uses real `0x0a` newlines (`METHOD\\nHOST\\nPATH\\nQUERY` with actual LF), matching Java `HtxSignUtils`. Literal two-char `\\n` is a ship-blocker (ops 校验失败).
 - [ ] CLI: `python -m htx_trend.probe_1contract open|close|status`
 - [ ] Defaults: symbol `BTC-USDT`, buy open / sell close, volume `1` hard-capped.
 - [ ] Allowed symbols: `BTC-USDT`, `ETH-USDT` only.

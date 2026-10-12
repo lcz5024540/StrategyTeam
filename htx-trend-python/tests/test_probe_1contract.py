@@ -245,6 +245,23 @@ def test_close_failure_does_not_place_reverse(tmp_path, monkeypatch):
     assert payload["action"] == "close"
 
 
+@pytest.mark.parametrize("action", ["status", "open", "close"])
+@pytest.mark.parametrize("env_value", [None, "0", "", "false"])
+def test_main_refuses_before_any_http_when_probe_env_off(
+    action, env_value, tmp_path, monkeypatch
+):
+    if env_value is None:
+        monkeypatch.delenv("LIVE_1CONTRACT_PROBE", raising=False)
+    else:
+        monkeypatch.setenv("LIVE_1CONTRACT_PROBE", env_value)
+    with pytest.raises(ProbeAborted, match="LIVE_PROBE_DISABLED"):
+        main(
+            [action, "--evidence", str(tmp_path / "e.json")],
+            client_factory=lambda *a, **k: pytest.fail("no client"),
+            credentials_loader=lambda: pytest.fail("no creds"),
+        )
+
+
 def test_unknown_symbol_rejected(tmp_path, monkeypatch):
     monkeypatch.setenv("LIVE_1CONTRACT_PROBE", "1")
     with pytest.raises(SystemExit):
