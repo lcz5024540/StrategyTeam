@@ -212,6 +212,10 @@ def bad_ticks_hash(path: Path | None, ticks: Iterable[BadTick] | None = None) ->
 
 def apply_bad_ticks(df: pd.DataFrame, symbol: str, ticks: Iterable[BadTick]) -> pd.DataFrame:
     work = df.copy()
+    if "incomplete" not in work.columns:
+        work["incomplete"] = False
+    if "non_comparable" not in work.columns:
+        work["non_comparable"] = False
     if "bad_tick" not in work.columns:
         work["bad_tick"] = False
     if "bad_tick_kind" not in work.columns:

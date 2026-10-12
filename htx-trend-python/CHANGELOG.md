@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Regime labeling: trend_state × vol_state (9 combinations)
 - Condition plugin system: C01 Donchian ensemble, C02 ATR stop
 - Strategy state machine: FLAT → ENTRY_PENDING → OPEN → EXIT_PENDING
-- Position sizing: 0.5% risk per trade, ≤1.5% total risk, ≤3 positions
+- Position sizing: 1% risk per trade (300U, max 3U loss), ≤2% total risk, ≤2 positions
 - Single-position liquidation check (1.5× stop distance buffer)
 - Account-level liquidation check for CROSS margin with all-stops-hit scenario
 - Non-strategy position identification in account status

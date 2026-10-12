@@ -46,6 +46,29 @@ from .runner import BacktestRunner
 from .version_info import get_version_info
 
 
+def packaged_bad_ticks_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "data" / "quality" / "bad_ticks.yaml"
+
+
+def resolve_bad_ticks_file(workspace: Path, bad_ticks_path: str | None) -> Path:
+    if bad_ticks_path:
+        ticks_file = Path(bad_ticks_path)
+        if not ticks_file.is_file():
+            raise SystemExit(f"bad_ticks file not found: {ticks_file}")
+        return ticks_file
+    candidates = [
+        Path(workspace) / "data" / "quality" / "bad_ticks.yaml",
+        packaged_bad_ticks_path(),
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise SystemExit(
+        "bad_ticks.yaml not found. Pass --bad-ticks PATH or include "
+        "data/quality/bad_ticks.yaml in the package."
+    )
+
+
 def resolve_freeze_split_args(args: argparse.Namespace) -> tuple[str, str | None, str | None]:
     """Return (cutoff, validation_start, test_start)."""
     split_from = getattr(args, "split_from_manifest", None)
@@ -121,17 +144,11 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     stitch_override = getattr(args, "stitch_point", None)
     stitch_config = getattr(args, "stitch_config", None)
     window_bars = int(getattr(args, "non_comparable_window", None) or STITCH_WINDOW_BARS)
-    bad_ticks_path = getattr(args, "bad_ticks", None)
-    if bad_ticks_path:
-        ticks_file = Path(bad_ticks_path)
-    else:
-        ticks_file = workspace / "data" / "quality" / "bad_ticks.yaml"
-        if not ticks_file.exists():
-            ticks_file = Path(__file__).resolve().parents[3] / "data" / "quality" / "bad_ticks.yaml"
+    ticks_file = resolve_bad_ticks_file(workspace, getattr(args, "bad_ticks", None))
     stitch_file = Path(stitch_config) if stitch_config else None
     stitch_points = load_stitch_points(stitch_file, override=stitch_override)
-    ticks = load_bad_ticks(ticks_file if ticks_file.exists() else None)
-    ticks_digest = bad_ticks_hash(ticks_file if ticks_file.exists() else None, ticks)
+    ticks = load_bad_ticks(ticks_file)
+    ticks_digest = bad_ticks_hash(ticks_file, ticks)
 
     stitcher = DataStitcher(
         close_deviation_threshold=args.overlap_threshold or 0.003,

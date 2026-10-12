@@ -11,6 +11,11 @@ import pandas as pd
 import pytest
 
 from htx_trend.research.risk.liquidation_check import AccountLiquidationChecker
+from htx_trend.research.risk.position_sizing import (
+    SKIP_MAX_POSITIONS,
+    SKIP_MIN_CONTRACT_EXCEEDS_RISK_BUDGET,
+    SKIP_TOTAL_RISK_CAP,
+)
 from htx_trend.research.conditions.c02_atr_stop import C02ATRStop
 from htx_trend.research.engine.contract_value import periods_per_year
 from htx_trend.research.features.indicators import FeatureCalculator
@@ -19,6 +24,7 @@ from tests.research.helpers import (
     DEFAULT_SPECS,
     create_test_dataset,
     runner_config,
+    write_batch_manifest,
     write_runner,
 )
 
@@ -69,6 +75,24 @@ def _breakout_config(workspace, run_id="E2E1", **overrides):
     return cfg
 
 
+@pytest.mark.parametrize("column", ["incomplete", "non_comparable", "bad_tick"])
+def test_missing_quality_flag_column_raises(tmp_path, column):
+    workspace = _breakout_workspace(tmp_path)
+    parquet = workspace / "data" / "datasets" / "breakout" / "BTC-USDT.parquet"
+    df = pd.read_parquet(parquet)
+    for flag in ("incomplete", "non_comparable", "bad_tick"):
+        if flag == column:
+            if flag in df.columns:
+                df = df.drop(columns=[flag])
+        elif flag not in df.columns:
+            df[flag] = False
+    df.to_parquet(parquet, index=False)
+    write_batch_manifest(workspace, "breakout")
+    runner = write_runner(workspace, _breakout_config(workspace, "NOFLAGS"))
+    with pytest.raises(ValueError, match=column):
+        runner.run()
+
+
 def test_min_order_size_over_budget_skips_entry(tmp_path):
     specs = {
         "BTC-USDT": {**DEFAULT_SPECS["BTC-USDT"], "min_order_size": 1_000_000},
@@ -80,7 +104,60 @@ def test_min_order_size_over_budget_skips_entry(tmp_path):
     assert not decisions.empty
     skips = decisions[decisions["action"] == "SKIP"]
     assert not skips.empty
-    assert skips["skip_reason"].astype(str).str.contains("Min order size").any()
+    assert (skips["skip_reason"] == SKIP_MIN_CONTRACT_EXCEEDS_RISK_BUDGET).any()
+    assert (decisions["action"] == "ENTER").sum() == 0
+    blocked = skips[skips["skip_reason"] == SKIP_MIN_CONTRACT_EXCEEDS_RISK_BUDGET]
+    row = blocked.iloc[0]
+    assert row["symbol"] == "BTC-USDT"
+    assert pd.notna(row["bar_time"])
+    assert row["side"] in {"LONG", "SHORT"}
+    assert float(row["signal_atr"]) > 0
+    assert float(row["close"]) > 0
+    assert float(row["atr_pct"]) == pytest.approx(float(row["signal_atr"]) / float(row["close"]))
+    assert float(row["one_contract_risk_usdt"]) > 0
+    assert float(row["risk_budget_usdt"]) > 0
+    assert float(row["one_contract_risk_usdt"]) > float(row["risk_budget_usdt"])
+    assert bool(row["eligible_for_entry"]) is False
+    assert not blocked["eligible_for_entry"].astype(bool).any()
+
+
+def test_eligible_for_entry_true_on_unblocked_entries(tmp_path):
+    workspace = _breakout_workspace(tmp_path)
+    results = write_runner(workspace, _breakout_config(workspace, "ELIG")).run()
+    decisions = results["decisions"]
+    assert "eligible_for_entry" in decisions.columns
+    enters = decisions[decisions["action"] == "ENTER"]
+    assert not enters.empty
+    assert enters["eligible_for_entry"].astype(bool).all()
+    if "skip_reason" in decisions.columns:
+        quality_blocked = decisions[
+            decisions["skip_reason"].isin(["bad_tick", "blocked_bar"])
+        ]
+        if not quality_blocked.empty:
+            assert not quality_blocked["eligible_for_entry"].astype(bool).any()
+
+
+def test_max_positions_skip_is_recorded_in_decisions(tmp_path):
+    workspace = _breakout_workspace(tmp_path)
+    cfg = _breakout_config(workspace, "MAXPOS", max_positions=0)
+    runner = write_runner(workspace, cfg)
+    results = runner.run()
+    decisions = results["decisions"]
+    skips = decisions[decisions["action"] == "SKIP"]
+    assert not skips.empty
+    assert (skips["skip_reason"] == SKIP_MAX_POSITIONS).any()
+    assert (decisions["action"] == "ENTER").sum() == 0
+
+
+def test_total_risk_cap_skip_is_recorded_in_decisions(tmp_path):
+    workspace = _breakout_workspace(tmp_path)
+    cfg = _breakout_config(workspace, "RISKCAP", max_total_risk=0.0, max_positions=5)
+    runner = write_runner(workspace, cfg)
+    results = runner.run()
+    decisions = results["decisions"]
+    skips = decisions[decisions["action"] == "SKIP"]
+    assert not skips.empty
+    assert (skips["skip_reason"] == SKIP_TOTAL_RISK_CAP).any()
     assert (decisions["action"] == "ENTER").sum() == 0
 
 
@@ -384,19 +461,23 @@ def test_entry_stop_atr_uses_signal_bar_only_not_next_close(tmp_path):
     _, enter_a, confirm_a, fill_a = _confirm_entry(tmp_path / "atr_a", "ATRA", 120.0)
     _, enter_b, confirm_b, fill_b = _confirm_entry(tmp_path / "atr_b", "ATRB", 999.0)
     workspace_a = tmp_path / "atr_a" / "ws"
-    df = pd.read_parquet(workspace_a / "data" / "datasets" / "ohlc" / "BTC-USDT.parquet")
-    signal_idx = df.index[pd.to_datetime(df["bar_time"]) == pd.to_datetime(enter_a["bar_time"])][0]
-    truncated = FeatureCalculator.atr(df.iloc[: signal_idx + 1], 14).iloc[-1]
-    full_through_t = FeatureCalculator.atr(df, 14).iloc[signal_idx]
-    assert truncated == pytest.approx(full_through_t)
+    workspace_b = tmp_path / "atr_b" / "ws"
+    df_a = pd.read_parquet(workspace_a / "data" / "datasets" / "ohlc" / "BTC-USDT.parquet")
+    df_b = pd.read_parquet(workspace_b / "data" / "datasets" / "ohlc" / "BTC-USDT.parquet")
+    signal_idx = df_a.index[pd.to_datetime(df_a["bar_time"]) == pd.to_datetime(enter_a["bar_time"])][0]
+    truncated = FeatureCalculator.atr(df_a.iloc[: signal_idx + 1], 14).iloc[-1]
+    lookahead_b = FeatureCalculator.atr(df_b.iloc[: signal_idx + 2], 14).iloc[-1]
     c02 = C02ATRStop(atr_period=14, atr_multiplier=2.0, tick_size=0.1, stop_slippage_ticks=1)
     expected_stop = c02.calculate_stop_loss(float(fill_a.price), float(truncated), "LONG")
+    lookahead_stop = c02.calculate_stop_loss(float(fill_b.price), float(lookahead_b), "LONG")
     implied_atr = (float(confirm_a["entry_price"]) - float(confirm_a["stop_loss"])) / 2.0
     assert implied_atr == pytest.approx(float(truncated))
+    assert implied_atr != pytest.approx(float(lookahead_b))
     assert float(confirm_a["stop_loss"]) == pytest.approx(expected_stop)
     assert float(confirm_a["entry_price"]) == pytest.approx(float(fill_a.price))
     assert float(confirm_b["stop_loss"]) == pytest.approx(float(confirm_a["stop_loss"]))
     assert float(confirm_b["entry_price"]) == pytest.approx(float(confirm_a["entry_price"]))
+    assert float(confirm_b["stop_loss"]) != pytest.approx(lookahead_stop)
     close_based_stop = c02.calculate_stop_loss(float(enter_a["close"]), float(truncated), "LONG")
     assert float(confirm_a["stop_loss"]) != pytest.approx(close_based_stop)
     assert float(fill_a.price) != pytest.approx(float(enter_a["close"]))
@@ -436,6 +517,26 @@ def test_missing_signal_atr_raises_instead_of_next_bar_atr(tmp_path):
 def test_zero_signal_atr_raises_instead_of_next_bar_atr(tmp_path):
     with pytest.raises(ValueError, match="signal_atr"):
         _run_with_signal_atr(tmp_path, "ZEROATR", 0)
+
+
+def test_none_signal_atr_raises_instead_of_next_bar_atr(tmp_path):
+    with pytest.raises(ValueError, match="signal_atr"):
+        _run_with_signal_atr(tmp_path, "NONEATR", None)
+
+
+def test_nan_signal_atr_raises_instead_of_next_bar_atr(tmp_path):
+    with pytest.raises(ValueError, match="signal_atr"):
+        _run_with_signal_atr(tmp_path, "NANATR", float("nan"))
+
+
+def test_negative_signal_atr_raises_instead_of_next_bar_atr(tmp_path):
+    with pytest.raises(ValueError, match="signal_atr"):
+        _run_with_signal_atr(tmp_path, "NEGATR", -1.0)
+
+
+def test_inf_signal_atr_raises_instead_of_next_bar_atr(tmp_path):
+    with pytest.raises(ValueError, match="signal_atr"):
+        _run_with_signal_atr(tmp_path, "INFATR", float("inf"))
 
 
 def test_missing_position_id_raises_instead_of_synthesizing(tmp_path):
@@ -552,8 +653,7 @@ def test_sharpe_net_of_fees_and_annualized(tmp_path):
     )
     results = runner.run()
     series = pd.read_parquet(workspace / "runs" / "SHARPE" / "return_series.parquet")
-    if series.empty:
-        pytest.skip("fixture produced no closed trades")
+    assert not series.empty
     assert "fees" in series.columns
     assert "funding" in series.columns
     assert results["sharpe"] is not None

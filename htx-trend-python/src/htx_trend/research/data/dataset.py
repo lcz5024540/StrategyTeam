@@ -108,10 +108,23 @@ def compute_split_boundaries(
     return validation_start, test_start
 
 
+def require_timeframe(*values: object) -> str:
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    raise ValueError("timeframe is required; refusing to default to '4hour'")
+
+
 def assert_split_bounds(
     validation_start: datetime,
     test_start: datetime,
     cutoff: datetime,
+    *,
+    data_start: datetime | None = None,
+    data_end: datetime | None = None,
 ) -> None:
     val = parse_utc_datetime(validation_start)
     test = parse_utc_datetime(test_start)
@@ -121,6 +134,22 @@ def assert_split_bounds(
             "split bounds must satisfy validation_start < test_start <= cutoff, "
             f"got {utc_iso(val)} / {utc_iso(test)} / {utc_iso(cut)}"
         )
+    if data_start is not None:
+        start = parse_utc_datetime(data_start)
+        if val < start or test < start:
+            raise ValueError(
+                "split bounds must fall within the data time range, "
+                f"got validation_start={utc_iso(val)} test_start={utc_iso(test)} "
+                f"data_start={utc_iso(start)}"
+            )
+    if data_end is not None:
+        end = parse_utc_datetime(data_end)
+        if val > end or test > end:
+            raise ValueError(
+                "split bounds must fall within the data time range, "
+                f"got validation_start={utc_iso(val)} test_start={utc_iso(test)} "
+                f"data_end={utc_iso(end)}"
+            )
 
 
 def load_split_from_manifest(path: Path | str) -> tuple[str, str, str]:
@@ -323,7 +352,15 @@ class DatasetManager:
             test_start_utc=test_start_utc,
             validation_start_utc=validation_start_utc,
         )
-        assert_split_bounds(validation_start, test_start, cutoff)
+        last_open = parse_utc_datetime(max(all_dates))
+        last_close = last_open + bar_duration(timeframe)
+        assert_split_bounds(
+            validation_start,
+            test_start,
+            cutoff,
+            data_start=days[0],
+            data_end=last_close,
+        )
         assert_stitch_in_train((extra_metadata or {}).get("stitch_points"), validation_start)
 
         all_dates = sorted(set(all_dates))
@@ -365,7 +402,12 @@ class DatasetManager:
 
         for symbol, df in data.items():
             output_path = dataset_dir / f"{symbol}.parquet"
-            df.to_parquet(output_path, index=False)
+            frame = df.copy()
+            for flag in ("incomplete", "non_comparable", "bad_tick"):
+                if flag not in frame.columns:
+                    frame[flag] = False
+            frame.to_parquet(output_path, index=False)
+            data[symbol] = frame
 
         segment_counts: dict[str, dict[str, int]] = {}
         for symbol in symbols:
@@ -511,7 +553,7 @@ class DatasetManager:
 
         symbols_to_load = symbols or frozen.symbols
         data = {}
-        timeframe = frozen.timeframe or manifest.get("timeframe") or "4hour"
+        timeframe = require_timeframe(frozen.timeframe, manifest.get("timeframe"))
 
         for symbol in symbols_to_load:
             parquet_path = (verified_kline_paths or {}).get(symbol)

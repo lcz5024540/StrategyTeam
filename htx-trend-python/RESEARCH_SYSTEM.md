@@ -41,7 +41,7 @@ htx_trend/research/
 - **插件接口**：统一的 `evaluate(DecisionContext, params) → ConditionResult`
 
 ### 4. 风险管理
-- **仓位计算**：单笔风险0.5%，总风险≤1.5%，≤3仓位
+- **仓位计算**：单笔风险1%（300U 账户最大亏损 3U），总风险≤2%，≤2仓位（BTC/ETH 各一）
 - **强平检查**：强平距离 ≥ 1.5×止损距离，否则降杠杆
 - **最小张数**：超过风险预算则跳过
 
@@ -210,9 +210,9 @@ timeframe: 4hour
 initial_equity: 1000.0
 cost_scenario: base
 
-risk_per_trade: 0.005
-max_total_risk: 0.015
-max_positions: 3
+risk_per_trade: 0.01
+max_total_risk: 0.02
+max_positions: 2
 
 conditions:
   C01:

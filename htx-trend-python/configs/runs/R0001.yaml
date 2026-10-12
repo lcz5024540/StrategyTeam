@@ -29,7 +29,7 @@ split: train  # train / validation / test
 timeframe: 4hour
 
 # 回测参数
-initial_equity: 400.0  # 初始资金 400 USDT（真实账户起始资金）
+initial_equity: 300  # 初始资金 300 USDT；单笔 1% 最大亏损 3U
 cost_scenario: base  # zero / optimistic / base / conservative
 
 # 费率配置（可选）
@@ -43,9 +43,10 @@ fees:
   # Sharpe 年化：4hour = 6*365=2190，1day = 365（periods_per_year）
 
 # 风险管理
-risk_per_trade: 0.005  # 0.5%
-max_total_risk: 0.015  # 1.5%
-max_positions: 3
+# 无 force-1-contract：1 张也超单笔风险预算则拒绝，skip_reason=min_contract_exceeds_risk_budget
+risk_per_trade: 0.01  # 1%（300U 账户单笔最大亏损 3U）
+max_total_risk: 0.02  # 2%
+max_positions: 2  # BTC + ETH 各一仓
 
 # 条件配置
 conditions:

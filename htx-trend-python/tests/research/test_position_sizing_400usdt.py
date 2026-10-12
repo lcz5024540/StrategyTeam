@@ -78,8 +78,7 @@ def test_position_sizing_rejects_too_small_account():
     # 合约数量 = 25 / 50 = 0.5 → 取整为 0 < min_order_size
     
     assert pos.size == 0, f"Should skip, got size {pos.size}"
-    assert pos.skip_reason is not None
-    assert "Min order size" in pos.skip_reason
+    assert pos.skip_reason == "min_contract_exceeds_risk_budget"
 
 
 def test_position_sizing_with_400_usdt_tight_stop():
@@ -152,7 +151,7 @@ def test_position_sizing_respects_max_total_risk_with_400_usdt():
     
     # 总风险已达 1.5%，应拒绝新仓位
     assert pos.size == 0
-    assert "Total risk limit" in pos.skip_reason
+    assert pos.skip_reason == "total_risk_cap_reached"
 
 
 def test_position_sizing_eth_with_400_usdt():

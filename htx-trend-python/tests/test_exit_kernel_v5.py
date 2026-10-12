@@ -235,7 +235,7 @@ def _from_fixture(cls, values, decimal_fields=(), enum_fields=None):
 
 
 def test_shared_golden_fixture_matches_every_decision_and_state_field():
-    fixture_path=Path(__file__).resolve().parents[2]/'fixtures/trend-exit-v5/golden.json'
+    fixture_path=Path(__file__).resolve().parent/'fixtures'/'trend-exit-v5'/'golden.json'
     fixture=json.loads(fixture_path.read_text())
     contract=_from_fixture(EntryThesisV5,fixture['contract'],
         ('entry_price','contract_size','immutable_initial_stop','failure_zone','target_price','atr_at_entry','entry_fee'),

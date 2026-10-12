@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import subprocess
 import uuid
@@ -18,6 +19,7 @@ import yaml
 from .adapters.htx.fees import create_fee_provider
 from .conditions import C01DonchianEnsemble, C02ATRStop, DecisionContext
 from .data import DatasetManager
+from .data.dataset import require_timeframe
 from .data.quality import normalize_bad_tick_kind, stop_on_bar_for_kind
 from .engine.backtest import CostScenario, SimBroker
 from .engine.contract_value import coin_notional, periods_per_year, require_contract_size
@@ -31,6 +33,7 @@ from .ledger import ExperimentRegistration, LedgerManager, RunRecord
 from .ops import log_event, LogComponent, LogLevel, set_run_id, setup_logging
 from .reports import ReportGenerator
 from .risk import AccountLiquidationChecker, LiquidationChecker, PositionSizer
+from .risk.position_sizing import SKIP_MIN_CONTRACT_EXCEEDS_RISK_BUDGET
 from .strategy import Position, StateMachine, StrategyState
 from .version_info import get_version_info
 
@@ -68,6 +71,18 @@ def _marked_equity(broker: Any) -> float:
     return float(broker.get_account_equity())
 
 
+QUALITY_FLAG_COLUMNS = ("incomplete", "non_comparable", "bad_tick")
+
+
+def require_quality_flag_columns(df: pd.DataFrame, *, symbol: str) -> None:
+    missing = [name for name in QUALITY_FLAG_COLUMNS if name not in df.columns]
+    if missing:
+        raise ValueError(
+            f"{symbol} dataset missing required quality flag columns: {missing}. "
+            "Only an existing column with value False means a normal bar."
+        )
+
+
 def require_signal_atr(metadata: dict[str, Any] | None) -> float:
     if not metadata or "signal_atr" not in metadata or metadata["signal_atr"] is None:
         raise ValueError(
@@ -75,7 +90,7 @@ def require_signal_atr(metadata: dict[str, Any] | None) -> float:
             "refusing to use the current (t+1) bar ATR"
         )
     atr = float(metadata["signal_atr"])
-    if atr == 0.0 or atr != atr:
+    if not math.isfinite(atr) or atr <= 0:
         raise ValueError(
             f"ENTRY_PENDING signal_atr={metadata['signal_atr']!r} is not usable; "
             "refusing to use the current (t+1) bar ATR"
@@ -423,22 +438,21 @@ class BacktestRunner:
         verified_funding = getattr(frozen, "verified_funding_paths", {}) or {}
         for symbol, df in data.items():
             df = df.copy()
+            require_quality_flag_columns(df, symbol=symbol)
             total_bars = len(df)
-            non_comparable_count = df.get("non_comparable", pd.Series([False] * len(df))).sum()
-            bad_tick_count = df.get("bad_tick", pd.Series([False] * len(df))).sum()
+            non_comparable_count = df["non_comparable"].sum()
+            bad_tick_count = df["bad_tick"].sum()
             external_count = df.get("external", pd.Series([False] * len(df))).sum()
-            if "non_comparable" not in df.columns:
-                df["non_comparable"] = False
-            if "bad_tick" not in df.columns:
-                df["bad_tick"] = False
             if "external" not in df.columns:
                 df["external"] = False
-            if "incomplete" in df.columns:
-                df.loc[df["incomplete"] == True, "non_comparable"] = True
+            df.loc[df["incomplete"] == True, "non_comparable"] = True
             df["_original_source"] = df.get("source", "htx")
             funding_path = verified_funding.get(symbol)
             if funding_path is not None:
-                interval = frozen.timeframe if getattr(frozen, "timeframe", None) else "4hour"
+                interval = require_timeframe(
+                    getattr(frozen, "timeframe", None),
+                    self.config.get("timeframe"),
+                )
                 funding_df = pd.read_parquet(funding_path)
                 self._funding_by_symbol[symbol] = funding_df
                 df = attach_funding_as_of(df, funding_df, interval)
@@ -580,7 +594,10 @@ class BacktestRunner:
         state_machines = {symbol: StateMachine() for symbol in data}
         all_decisions = []
         equity_curve: list[dict[str, Any]] = []
-        interval = frozen.timeframe if getattr(frozen, "timeframe", None) else "4hour"
+        interval = require_timeframe(
+            getattr(frozen, "timeframe", None),
+            self.config.get("timeframe"),
+        )
 
         from collections import defaultdict
 
@@ -600,9 +617,9 @@ class BacktestRunner:
                 df = data[symbol]
                 spec = specs[symbol]
                 bar = df.iloc[idx]
-                incomplete = bool(bar.get("incomplete", False))
-                non_comparable = bool(bar.get("non_comparable", False))
-                is_bad_tick = bool(bar.get("bad_tick", False))
+                incomplete = bool(bar["incomplete"])
+                non_comparable = bool(bar["non_comparable"])
+                is_bad_tick = bool(bar["bad_tick"])
                 kind = bar.get("bad_tick_kind")
                 if is_bad_tick:
                     kind = normalize_bad_tick_kind(kind)
@@ -632,9 +649,6 @@ class BacktestRunner:
                 funding_df = getattr(self, "_funding_by_symbol", {}).get(symbol)
                 if funding_df is not None:
                     apply_bar_settlements(broker, symbol, bar_payload, interval, funding_df)
-                if skip_signals and not check_stop:
-                    continue
-
                 sm = state_machines[symbol]
                 current_state = sm.get_state(symbol)
                 current_position = sm.get_position(symbol)
@@ -653,7 +667,14 @@ class BacktestRunner:
                     "regime": bar.get("regime", "UNKNOWN"),
                     "state": current_state.value,
                     "action": "HOLD",
+                    "eligible_for_entry": not skip_signals,
                 }
+                if skip_signals and not check_stop:
+                    decision_record["skip_reason"] = "bad_tick" if is_bad_tick else "blocked_bar"
+                    if is_bad_tick:
+                        decision_record["bad_tick_kind"] = bar.get("bad_tick_kind")
+                    all_decisions.append(decision_record)
+                    continue
 
                 if current_state == StrategyState.FLAT:
                     if skip_signals:
@@ -674,9 +695,10 @@ class BacktestRunner:
                                 f"signal bar missing {atr_col}; refusing to size/stop without ATR"
                             )
                         atr = float(bar[atr_col])
-                        if atr == 0.0:
+                        if not math.isfinite(atr) or atr <= 0:
                             raise ValueError(
-                                f"signal bar {atr_col} is 0; refusing to size/stop with zero ATR"
+                                f"signal bar {atr_col}={bar[atr_col]!r} is not usable; "
+                                "refusing to size/stop without a finite positive ATR"
                             )
                         stop_loss = c02.calculate_stop_loss(bar["close"], atr, side)
                         existing_for_sizer = []
@@ -716,6 +738,20 @@ class BacktestRunner:
                         if pos_size.skip_reason:
                             decision_record["action"] = "SKIP"
                             decision_record["skip_reason"] = pos_size.skip_reason
+                            decision_record["side"] = side
+                            if pos_size.skip_reason == SKIP_MIN_CONTRACT_EXCEEDS_RISK_BUDGET:
+                                close_px = float(bar["close"])
+                                decision_record["signal_atr"] = atr
+                                decision_record["atr_pct"] = atr / close_px
+                                decision_record["one_contract_risk_usdt"] = (
+                                    pos_size.one_contract_risk_usdt
+                                )
+                                decision_record["risk_budget_usdt"] = (
+                                    pos_size.risk_budget_usdt
+                                )
+                                decision_record["eligible_for_entry"] = False
+                            else:
+                                decision_record["eligible_for_entry"] = True
                         else:
                             proposed = {
                                 "symbol": symbol,
@@ -778,6 +814,7 @@ class BacktestRunner:
                                     )
                                 )
                                 decision_record["action"] = "ENTER"
+                                decision_record["eligible_for_entry"] = True
                                 decision_record["side"] = side
                                 decision_record["size"] = pos_size.size
                                 decision_record["stop_loss"] = stop_loss
@@ -1034,7 +1071,10 @@ class BacktestRunner:
         n_trades = len(trades)
         path = output_dir / "return_series.parquet"
         ppy = periods_per_year(
-            getattr(frozen, "timeframe", None) or self.config.get("timeframe") or "4hour"
+            require_timeframe(
+                getattr(frozen, "timeframe", None),
+                self.config.get("timeframe"),
+            )
         )
         columns = [
             "symbol",

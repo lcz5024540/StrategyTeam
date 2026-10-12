@@ -40,6 +40,9 @@ def create_fixture_dataset(workspace: Path) -> str:
             "volume": np.random.rand(300) * 1000,
             "amount": np.random.rand(300) * 100000,
             "source": "fixture",
+            "incomplete": False,
+            "non_comparable": False,
+            "bad_tick": False,
         })
         
         dataset_id = "4hour_fixture_test"

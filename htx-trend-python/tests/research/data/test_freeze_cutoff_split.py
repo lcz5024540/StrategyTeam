@@ -85,6 +85,14 @@ def _as_utc(value) -> pd.Timestamp:
     return ts.tz_convert("UTC")
 
 
+def test_require_timeframe_rejects_missing_and_blank():
+    with pytest.raises(ValueError, match="timeframe"):
+        dataset_mod.require_timeframe(None, None)
+    with pytest.raises(ValueError, match="timeframe"):
+        dataset_mod.require_timeframe("", "  ")
+    assert dataset_mod.require_timeframe(None, "4hour") == "4hour"
+
+
 def test_library_freeze_requires_explicit_cutoff(tmp_path):
     assert not hasattr(dataset_mod, "DEFAULT_DATA_CUTOFF_CLOSE_UTC")
     mgr = DatasetManager(tmp_path / "data" / "datasets")
@@ -110,6 +118,27 @@ def test_split_bounds_must_be_strictly_ordered_and_at_or_before_cutoff(tmp_path)
             data_cutoff_close_utc="2026-10-01T00:00:00Z",
             validation_start_utc="2026-09-25T00:00:00Z",
             test_start_utc="2026-10-02T00:00:00Z",
+        )
+
+
+def test_split_bounds_must_fall_within_data_time_range(tmp_path):
+    df = _bars("2026-09-21", 21 * 6)
+    mgr = DatasetManager(tmp_path / "data" / "datasets")
+    with pytest.raises(ValueError, match="data time range"):
+        mgr.freeze_dataset(
+            {"BTC-USDT": df},
+            timeframe="4hour",
+            data_cutoff_close_utc=V010_CUTOFF,
+            validation_start_utc="2020-01-01T00:00:00Z",
+            test_start_utc="2020-06-01T00:00:00Z",
+        )
+    with pytest.raises(ValueError, match="data time range"):
+        mgr.freeze_dataset(
+            {"BTC-USDT": df},
+            timeframe="4hour",
+            data_cutoff_close_utc="2027-01-01T00:00:00Z",
+            validation_start_utc="2026-09-25T00:00:00Z",
+            test_start_utc="2026-12-01T00:00:00Z",
         )
 
 

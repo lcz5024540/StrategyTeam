@@ -8,8 +8,45 @@ import os
 import subprocess
 import sys
 import tarfile
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+
+PACKAGE_GLOBS = (
+    "src/**/*.py",
+    "tests/**/*",
+    "configs/**/*",
+    "deployment/**/*",
+    "sql/**/*",
+    "data/quality/**/*",
+    "pyproject.toml",
+    "README.md",
+    "RESEARCH_SYSTEM.md",
+    "requirements.lock",
+    "scripts/compile_lock.sh",
+    "scripts/check_lock_hygiene.py",
+    "scripts/smoke_e2e.sh",
+    "scripts/package.py",
+)
+SKIP_DIR_NAMES = {"__pycache__", ".pytest_cache", ".venv"}
+SKIP_SUFFIXES = {".pyc", ".pyo"}
+
+
+def iter_package_files(repo_root: Path):
+    seen: set[Path] = set()
+    for pattern in PACKAGE_GLOBS:
+        for file_path in repo_root.glob(pattern):
+            if not file_path.is_file():
+                continue
+            if any(part in SKIP_DIR_NAMES for part in file_path.parts):
+                continue
+            if file_path.suffix in SKIP_SUFFIXES:
+                continue
+            rel = file_path.relative_to(repo_root)
+            if rel in seen:
+                continue
+            seen.add(rel)
+            yield file_path, rel
 
 
 def run_command(cmd: list[str], cwd: Path | None = None) -> str:
@@ -127,25 +164,9 @@ def create_package(
     print(f"Creating package: {tar_path}")
     
     with tarfile.open(tar_path, "w:gz") as tar:
-        for pattern in [
-            "src/**/*.py",
-            "tests/**/*.py",
-            "configs/**/*.yaml",
-            "pyproject.toml",
-            "README.md",
-            "RESEARCH_SYSTEM.md",
-            "requirements.lock",
-            "scripts/compile_lock.sh",
-            "scripts/check_lock_hygiene.py",
-            "scripts/smoke_e2e.sh",
-            "scripts/package.py",
-        ]:
-            for file_path in repo_root.glob(pattern):
-                if "__pycache__" in str(file_path):
-                    continue
-                arcname = file_path.relative_to(repo_root)
-                tar.add(file_path, arcname=arcname)
-                print(f"  Added: {arcname}")
+        for file_path, arcname in iter_package_files(repo_root):
+            tar.add(file_path, arcname=arcname)
+            print(f"  Added: {arcname}")
     
     sha256_hash = hashlib.sha256()
     with open(tar_path, "rb") as f:
@@ -163,6 +184,45 @@ def create_package(
     print(f"SHA256 file: {sha256_file}")
     
     return tar_path, sha256
+
+
+def verify_extracted_package(tar_path: Path) -> None:
+    """Extract the tarball into an empty temp dir and run the full pytest suite."""
+    print("Verifying extracted package with a clean venv + pytest...")
+    with tempfile.TemporaryDirectory(prefix="htx-pkg-verify-") as tmp:
+        tmp_path = Path(tmp)
+        extract_dir = tmp_path / "extract"
+        extract_dir.mkdir()
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(extract_dir)
+        venv_dir = tmp_path / "venv"
+        subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
+        pip = venv_dir / "bin" / "pip"
+        python = venv_dir / "bin" / "python"
+        subprocess.run([str(pip), "install", "--upgrade", "pip"], check=True)
+        subprocess.run(
+            [
+                str(pip),
+                "install",
+                "--require-hashes",
+                "-r",
+                str(extract_dir / "requirements.lock"),
+            ],
+            check=True,
+            cwd=extract_dir,
+        )
+        subprocess.run(
+            [str(pip), "install", "--no-deps", "-e", "."],
+            check=True,
+            cwd=extract_dir,
+        )
+        result = subprocess.run(
+            [str(python), "-m", "pytest", "tests", "-q"],
+            cwd=extract_dir,
+        )
+        if result.returncode != 0:
+            raise SystemExit("extracted-package pytest failed")
+        print("Extracted-package pytest passed.")
 
 
 def generate_delivery_template(
@@ -253,13 +313,12 @@ fees:
 ### Prerequisites
 - Python 3.12
 - pip
-- A venv with `requirements.lock` already installed (the deploy venv is fine)
+- The deploy venv at `/opt/coinstrategy/htx-trend-py/.venv` (reuse it; do not `pip freeze` the host)
 
 ### Packaging environment
 
 Build the tarball inside a **Python 3.12** virtualenv that has
-`requirements.lock` installed. Reuse the deploy venv rather than
-`pip freeze` of the host:
+`requirements.lock` installed:
 
 ```bash
 source /opt/coinstrategy/htx-trend-py/.venv/bin/activate
@@ -269,33 +328,51 @@ python scripts/package.py --branch <release-branch>
 
 Detached HEAD must pass `--branch`; the script refuses to write `branch='HEAD'`.
 
-The script writes a tarball and a sibling SHA256 file. Copy those two
-files onto the ops host, verify the digest, then extract. Keep
-`src/htx_trend/research/data` from the tarball (it is source, not runtime
-`/data`).
+The tarball members are **repo-relative** (`src/`, `tests/`, `data/quality/`, …),
+not a versioned wrapper directory. Keep `src/htx_trend/research/data` from the
+tarball (it is source, not runtime `/data`).
+
+### Deploy by extract-and-copy
+
+Extract into a temp directory, then copy package files over
+`/opt/coinstrategy/htx-trend-py` **without** replacing runtime directories.
+
+Preserve on the host:
+- `data/` (raw/datasets — except refresh `data/quality/` from the package)
+- `.venv/`
+- `run/`
+- `logs/`
 
 ```bash
-sha256sum -c {tar_path.name}.sha256
-tar -xzf {tar_path.name}
-```
+set -euo pipefail
+tarball={tar_path.name}
+dest=/opt/coinstrategy/htx-trend-py
+extract=$(mktemp -d)
+trap 'rm -rf "$extract"' EXIT
+sha256sum -c "${{tarball}}.sha256"
+tar -xzf "$tarball" -C "$extract"
+src="$extract"
+mkdir -p "$dest"
+for item in src tests configs sql deployment scripts pyproject.toml \\
+            requirements.lock README.md RESEARCH_SYSTEM.md; do
+  rm -rf "$dest/$item"
+  cp -a "$src/$item" "$dest/$item"
+done
+mkdir -p "$dest/data/quality"
+cp -a "$src/data/quality/." "$dest/data/quality/"
+# Do not copy or delete: $dest/data/raw $dest/data/datasets
+# $dest/.venv $dest/run $dest/logs
 
-### Steps
-```bash
-# Verify and extract package
-sha256sum -c {tar_path.name}.sha256
-tar -xzf {tar_path.name}
-cd htx-trend-python-{version}-{git_info['short_sha']}
-
-# Install pinned runtime+test deps, then the package without resolving again
-python3.12 -m venv .venv
+cd "$dest"
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.lock
+python -m pip install --require-hashes -r requirements.lock
 python -m pip install --no-deps -e .
-
-# Verify installation
 python -m htx_trend.research --help
 ```
+
+`pip install --require-hashes -r requirements.lock` and
+`python -m pip install --no-deps -e .` **must run after every update** so the
+venv matches the new lock and the editable install sees the new `src/`.
 
 ### Freeze dataset (v0.1.0)
 
@@ -476,6 +553,10 @@ def main(argv: list[str] | None = None) -> int:
     
     tar_path, sha256 = create_package(version, git_info)
     print()
+
+    if os.environ.get("SKIP_PACKAGE_VERIFY") != "1":
+        verify_extracted_package(tar_path)
+        print()
     
     delivery_path = generate_delivery_template(version, git_info, sha256, tar_path)
     print()

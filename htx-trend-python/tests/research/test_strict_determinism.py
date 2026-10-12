@@ -155,6 +155,9 @@ def test_no_lookahead_truncation_invariance(tmp_path):
                 "volume": np.random.rand(len(close)) * 1000,
                 "amount": np.random.rand(len(close)) * 100000,
                 "source": "fixture",
+                "incomplete": False,
+                "non_comparable": False,
+                "bad_tick": False,
             })
             
             df.to_parquet(dataset_dir / f"{symbol}.parquet", index=False)

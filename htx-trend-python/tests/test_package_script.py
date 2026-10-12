@@ -35,6 +35,25 @@ def test_explicit_head_branch_is_rejected():
         package_mod.resolve_branch("main", "HEAD")
 
 
+def test_java_and_golden_fixtures_are_vendored():
+    assert (ROOT / "tests/fixtures/java/schema.sql").is_file()
+    assert (
+        ROOT / "tests/fixtures/java/2026-10-07b__htx_trend_structure_lifecycle_and_final_pnl.sql"
+    ).is_file()
+    assert (ROOT / "tests/fixtures/trend-exit-v5/golden.json").is_file()
+
+
+def test_tests_contain_no_absolute_workspace_paths():
+    hits = []
+    for path in (ROOT / "tests").rglob("*"):
+        if not path.is_file() or path.suffix not in {".py", ".md", ".yaml", ".sql", ".json"}:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if ("/" + "workspace" + "/") in text:
+            hits.append(str(path.relative_to(ROOT)))
+    assert hits == []
+
+
 def test_delivery_template_documents_packaging_env_and_anchored_exclude(tmp_path):
     path = package_mod.generate_delivery_template(
         "0.2.0",
@@ -57,6 +76,13 @@ def test_delivery_template_documents_packaging_env_and_anchored_exclude(tmp_path
     assert "test_start_utc" in text
     assert "sha256sum -c" in text
     assert "rsync" not in text.lower()
+    assert "/opt/coinstrategy/htx-trend-py" in text
+    assert ".venv" in text
+    assert "run/" in text
+    assert "logs/" in text
+    assert "pip install --require-hashes" in text
+    assert "cp -a" in text
+    assert "data/quality" in text
 
 
 def test_package_script_has_no_rsync_dependency():
@@ -77,3 +103,22 @@ def test_create_package_writes_tarball_and_sha256(tmp_path):
     recorded = digest_file.read_text().split()[0]
     assert recorded == sha256
     assert len(sha256) == 64
+
+
+def test_create_package_includes_quality_fixtures_deployment_and_sql(tmp_path):
+    import tarfile
+
+    tar_path, _ = package_mod.create_package(
+        "0.2.0",
+        {"short_sha": "deadbeef", "commit": "deadbeef", "branch": "release", "dirty": False},
+        output_dir=tmp_path,
+    )
+    with tarfile.open(tar_path) as tar:
+        names = {name.replace("\\", "/") for name in tar.getnames()}
+    assert any(name.endswith("data/quality/bad_ticks.yaml") for name in names)
+    assert any(name.endswith("deployment/systemd/htx-trend-collector.service") for name in names)
+    assert any(name.endswith("sql/schema.sql") for name in names)
+    assert any("tests/fixtures/real/" in name for name in names)
+    assert any(name.endswith("tests/fixtures/java/schema.sql") for name in names)
+    assert any(name.endswith("tests/fixtures/trend-exit-v5/golden.json") for name in names)
+    assert any(name.endswith("configs/runs/R0001.yaml") for name in names)

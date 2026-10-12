@@ -5,6 +5,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+SKIP_MIN_CONTRACT_EXCEEDS_RISK_BUDGET = "min_contract_exceeds_risk_budget"
+SKIP_MAX_POSITIONS = "max_positions_reached"
+SKIP_TOTAL_RISK_CAP = "total_risk_cap_reached"
+
+
+def one_contract_risk_usdt(
+    entry_price: float,
+    stop_loss: float,
+    contract_size: float,
+    min_order_size: int = 1,
+) -> float:
+    return abs(float(entry_price) - float(stop_loss)) * float(contract_size) * int(min_order_size)
+
 
 @dataclass
 class PositionSize:
@@ -15,14 +28,16 @@ class PositionSize:
     stop_loss: float
     risk_pct: float
     skip_reason: str | None = None
+    one_contract_risk_usdt: float | None = None
+    risk_budget_usdt: float | None = None
 
 
 class PositionSizer:
     def __init__(
         self,
-        risk_per_trade_pct: float = 0.005,
-        max_total_risk_pct: float = 0.015,
-        max_positions: int = 3,
+        risk_per_trade_pct: float = 0.01,
+        max_total_risk_pct: float = 0.02,
+        max_positions: int = 2,
         target_leverage: float = 5.0,
     ):
         self.risk_per_trade_pct = risk_per_trade_pct
@@ -41,6 +56,10 @@ class PositionSizer:
         min_order_size: int,
         existing_positions: list[dict],
     ) -> PositionSize:
+        budget = float(account_equity) * self.risk_per_trade_pct
+        one_risk = one_contract_risk_usdt(
+            entry_price, stop_loss, contract_size, min_order_size
+        )
         if len(existing_positions) >= self.max_positions:
             return PositionSize(
                 symbol=symbol,
@@ -49,7 +68,9 @@ class PositionSizer:
                 leverage=self.target_leverage,
                 stop_loss=stop_loss,
                 risk_pct=0,
-                skip_reason=f"Max positions reached ({self.max_positions})",
+                skip_reason=SKIP_MAX_POSITIONS,
+                one_contract_risk_usdt=one_risk,
+                risk_budget_usdt=budget,
             )
         
         existing_risk = 0.0
@@ -68,12 +89,14 @@ class PositionSizer:
                 leverage=self.target_leverage,
                 stop_loss=stop_loss,
                 risk_pct=0,
-                skip_reason=f"Total risk limit reached ({existing_risk*100:.2f}%)",
+                skip_reason=SKIP_TOTAL_RISK_CAP,
+                one_contract_risk_usdt=one_risk,
+                risk_budget_usdt=budget,
             )
         
         stop_distance_pct = abs(entry_price - stop_loss) / entry_price
         
-        risk_amount = account_equity * self.risk_per_trade_pct
+        risk_amount = budget
         
         notional_value = risk_amount / stop_distance_pct
         
@@ -88,7 +111,9 @@ class PositionSizer:
                 leverage=self.target_leverage,
                 stop_loss=stop_loss,
                 risk_pct=0,
-                skip_reason=f"Min order size {min_order_size} exceeds risk budget",
+                skip_reason=SKIP_MIN_CONTRACT_EXCEEDS_RISK_BUDGET,
+                one_contract_risk_usdt=one_risk,
+                risk_budget_usdt=budget,
             )
         
         actual_notional = num_contracts * entry_price * contract_size
@@ -102,4 +127,6 @@ class PositionSizer:
             stop_loss=stop_loss,
             risk_pct=actual_risk_pct,
             skip_reason=None,
+            one_contract_risk_usdt=one_risk,
+            risk_budget_usdt=budget,
         )

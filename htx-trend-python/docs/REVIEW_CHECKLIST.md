@@ -96,7 +96,7 @@
 
 **状态**: ✅ PASS
 
-**要求**: 单笔风险 0.5%，总风险 ≤1.5%，最大 3 仓位
+**要求**: 单笔风险 1%，总风险 ≤2%，最大 2 仓位
 
 **证据**:
 - **代码**: `src/htx_trend/research/risk/position_sizing.py:20-101`
@@ -104,9 +104,9 @@
   class PositionSizer:
       def __init__(
           self,
-          risk_per_trade_pct: float = 0.005,  # 0.5%
-          max_total_risk_pct: float = 0.015,  # 1.5%
-          max_positions: int = 3,
+          risk_per_trade_pct: float = 0.01,  # 1%
+          max_total_risk_pct: float = 0.02,  # 2%
+          max_positions: int = 2,
       ):
       
       def calculate_position(...):
@@ -139,7 +139,7 @@
           symbol=symbol,
           side=side,
           size=0,
-          skip_reason=f"Min order size {min_order_size} exceeds risk budget",
+          skip_reason="min_contract_exceeds_risk_budget",
       )
   ```
 
@@ -205,9 +205,9 @@
 | **回看期集成** | [42, 84, 126, 168] 根（4h × [1w, 2w, 3w, 4w]） | 1d 取 [7, 14, 21, 28]；4h 取 [42, 84, 126, 168]（同一天数换算） | §2 表格，行 2 |
 | **集成阈值** | threshold=0.25 | 集成值取平均，多回看期等权 | §2 表格，行 3 |
 | **ATR 止损** | ATR(14)×2 | ATR 周期 14 或 20；初始止损 2×ATR | §2 表格，行 4 |
-| **单笔风险** | 0.5% | 0.5%-1%（海龟 1%，示例 0.5%） | §2 表格，行 5 |
-| **总风险限制** | max 1.5%，max 3 仓位 | 框架计划要求 | 风控边界 |
-| **初始资金** | 400 USDT | 真实账户起始资金 | §4 保本算术 |
+| **单笔风险** | 1%（300U 最大亏损 3U） | 海龟 1%；产品决策 R0001 | §2 表格，行 5 |
+| **总风险限制** | max 2%，max 2 仓位 | 产品决策：BTC/ETH 各一仓 | 风控边界 |
+| **初始资金** | 300 USDT | 真实账户起始资金 | §4 保本算术 |
 | **手续费** | Maker 0.02%, Taker 0.06% | HTX Prime 0 官方费率 | §4 HTX 费率 |
 | **成交假设** | t 收盘信号 → t+1 成交 | 四种成本场景（BASE/ZERO/OPTIMISTIC/CONSERVATIVE） | §2 表格，行 12 |
 
@@ -765,20 +765,22 @@
 
 ---
 
-### F3. 回测初始资金和实际账户一致（400 USDT）
+### F3. 回测初始资金和实际账户一致（300 USDT）
 
 **状态**: ✅ PASS
 
 **证据**:
-- **配置**: `configs/runs/R0001.yaml:30`
+- **配置**: `configs/runs/R0001.yaml`
   ```yaml
-  initial_equity: 400.0  # 初始资金 400 USDT（真实账户起始资金）
+  initial_equity: 300  # 初始资金 300 USDT；单笔 1% 最大亏损 3U
+  risk_per_trade: 0.01
+  max_total_risk: 0.02
+  max_positions: 2
   ```
 
-- **测试**: `tests/research/test_position_sizing_400usdt.py`
-  - ✅ 5 tests 验证 400 USDT 下的仓位计算
+- **测试**: `tests/research/test_r0001_prereg.py`、`tests/research/test_position_sizing_r0001.py`
 
-**结论**: 回测初始资金与实际账户一致。
+**结论**: 回测初始资金与实际账户一致（300 USDT）。
 
 ---
 
