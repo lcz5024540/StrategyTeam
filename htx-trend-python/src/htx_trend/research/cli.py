@@ -43,6 +43,8 @@ from .ops.runtime_paths import (
 )
 from .ops.status import StatusInterface, set_status_file_path
 from .runner import BacktestRunner
+from .stats.bootstrap import run_pf_bootstrap
+from .stats.permutation import run_permutation_test
 from .strategy_manifest import (
     PACKAGE_ROOT as RESEARCH_PACKAGE_ROOT,
     build_strategy_manifest,
@@ -537,6 +539,39 @@ def cmd_strategy_manifest(args: argparse.Namespace) -> None:
     print(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True))
 
 
+def cmd_pf_bootstrap(args: argparse.Namespace) -> None:
+    workspace = Path(args.workspace)
+    if not args.run_id and not args.trades:
+        raise SystemExit("pf-bootstrap requires --run-id or --trades")
+    payload = run_pf_bootstrap(
+        workspace,
+        run_id=args.run_id,
+        trades_path=args.trades,
+        target_run_id=args.target_run_id,
+        n_bootstrap=args.n_bootstrap,
+        confidence=args.confidence,
+        seed=args.seed,
+        group_by=list(args.group_by or []),
+        output=Path(args.output) if args.output else None,
+        write_ledger=not args.no_ledger,
+    )
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def cmd_permutation(args: argparse.Namespace) -> None:
+    workspace = Path(args.workspace)
+    payload = run_permutation_test(
+        workspace,
+        source_run_id=args.run_id,
+        config_path=Path(args.config) if args.config else None,
+        n_permutations=args.n_permutations,
+        seed=args.seed,
+        output=Path(args.output) if args.output else None,
+        write_ledger=not args.no_ledger,
+    )
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
 def cmd_update_conclusion(args: argparse.Namespace) -> None:
     workspace = Path(args.workspace)
     ledger = LedgerManager(workspace / "ledger.db")
@@ -718,6 +753,51 @@ def main() -> None:
     export_parser.add_argument("--format", choices=["csv", "json"], default="csv")
     export_parser.add_argument("--output", help="Output file path")
 
+    pf_parser = subparsers.add_parser(
+        "pf-bootstrap",
+        help="Bootstrap profit factor (percentile CI) on completed trades",
+    )
+    pf_parser.add_argument("--run-id", help="Backtest run id (loads runs/<id>/return_series.parquet)")
+    pf_parser.add_argument("--trades", help="Explicit return_series.parquet or compatible trades file")
+    pf_parser.add_argument(
+        "--target-run-id",
+        help="Ledger run id to attach results (defaults to --run-id)",
+    )
+    pf_parser.add_argument("--n-bootstrap", type=int, default=10000)
+    pf_parser.add_argument("--confidence", type=float, default=0.9)
+    pf_parser.add_argument("--seed", type=int, default=None)
+    pf_parser.add_argument(
+        "--group-by",
+        action="append",
+        choices=["coin_group", "trend_state"],
+        help="Optional slice dimension (repeatable)",
+    )
+    pf_parser.add_argument("--output", help="JSON output path (default: runs/<run>/stats/pf_bootstrap.json)")
+    pf_parser.add_argument(
+        "--no-ledger",
+        action="store_true",
+        help="Do not append statistical_gates to ledger run_metrics",
+    )
+
+    perm_parser = subparsers.add_parser(
+        "permutation",
+        help="Random-entry permutation test (mean net PnL per trade)",
+    )
+    perm_parser.add_argument(
+        "--run-id",
+        required=True,
+        help="Source backtest run id (trade templates + ledger config)",
+    )
+    perm_parser.add_argument("--config", help="Run config YAML (if not using ledger snapshot)")
+    perm_parser.add_argument("--n-permutations", type=int, default=1000)
+    perm_parser.add_argument("--seed", type=int, default=None)
+    perm_parser.add_argument("--output", help="JSON output path (default: runs/<run>/stats/permutation.json)")
+    perm_parser.add_argument(
+        "--no-ledger",
+        action="store_true",
+        help="Do not append statistical_gates to ledger run_metrics",
+    )
+
     conclusion_parser = subparsers.add_parser("update-conclusion", help="Append conclusion and decision")
     conclusion_parser.add_argument("--run-id", required=True)
     conclusion_parser.add_argument("--conclusion", required=True)
@@ -745,6 +825,10 @@ def main() -> None:
         cmd_check_approval(args)
     elif args.command == "export-trials":
         cmd_export_trials(args)
+    elif args.command == "pf-bootstrap":
+        cmd_pf_bootstrap(args)
+    elif args.command == "permutation":
+        cmd_permutation(args)
     elif args.command == "update-conclusion":
         cmd_update_conclusion(args)
 
