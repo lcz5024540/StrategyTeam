@@ -186,19 +186,29 @@ def test_flat_at_settlement_is_not_charged():
 def test_settlement_on_frozen_bar_is_still_charged(tmp_path):
     workspace = _ohlc_workspace(tmp_path, "fundfrz")
     target = pd.read_parquet(workspace / "data" / "datasets" / "ohlc" / "BTC-USDT.parquet")
-    frozen_open = pd.Timestamp(target.loc[212, "bar_time"])
-    frozen_close = frozen_open + pd.Timedelta(hours=4)
-    _mark_bar(workspace, 212, bad_tick=True, bad_tick_kind="frozen")
-    funding = pd.DataFrame(
-        {
-            "funding_time": [frozen_close],
-            "funding_rate": [RATE],
-        }
+    from tests.research.helpers import record_funding_files, runner_config, write_nominal_funding
+
+    write_nominal_funding(workspace, ["BTC-USDT"], dataset_id="ohlc", rate=RATE)
+    funding_times = set(
+        pd.to_datetime(
+            pd.read_parquet(workspace / "data" / "raw" / "BTC-USDT_funding.parquet")[
+                "funding_time"
+            ],
+            utc=True,
+        )
     )
-    raw = workspace / "data" / "raw"
-    raw.mkdir(parents=True, exist_ok=True)
-    funding.to_parquet(raw / "BTC-USDT_funding.parquet", index=False)
-    from tests.research.helpers import record_funding_files, runner_config
+    idx = None
+    frozen_close = None
+    for i, open_t in enumerate(pd.to_datetime(target["bar_time"], utc=True)):
+        if i < 212:
+            continue
+        close_t = open_t + pd.Timedelta(hours=4)
+        if close_t in funding_times:
+            idx = i
+            frozen_close = close_t
+            break
+    assert idx is not None
+    _mark_bar(workspace, idx, bad_tick=True, bad_tick_kind="frozen")
 
     manifest_hash = record_funding_files(workspace, "ohlc", ["BTC-USDT"])
     cfg = runner_config(
@@ -222,8 +232,18 @@ def test_settlement_on_frozen_bar_is_still_charged(tmp_path):
     cfg["manifest_hash"] = manifest_hash
     results = write_runner(workspace, cfg).run()
     events = results["funding_events"]
-    times = [pd.Timestamp(item["settlement_time"]) for item in events]
-    assert any(stamp == frozen_close for stamp in times)
+    times = [
+        pd.Timestamp(item["settlement_time"])
+        if pd.Timestamp(item["settlement_time"]).tzinfo
+        else pd.Timestamp(item["settlement_time"], tz="UTC")
+        for item in events
+    ]
+    want = pd.Timestamp(frozen_close)
+    if want.tzinfo is None:
+        want = want.tz_localize("UTC")
+    else:
+        want = want.tz_convert("UTC")
+    assert any(stamp.tz_convert("UTC") == want for stamp in times)
     assert any(item["funding_rate"] == RATE for item in events)
 
 
@@ -240,13 +260,9 @@ def test_runner_does_not_charge_every_4h_asof_rate(tmp_path):
         symbols=["BTC-USDT"],
         specs={"BTC-USDT": DEFAULT_SPECS["BTC-USDT"]},
     )
-    bars = pd.read_parquet(workspace / "data" / "datasets" / "ohlc" / "BTC-USDT.parquet")
-    start = pd.Timestamp(bars["bar_time"].iloc[200])
-    day = start.normalize()
-    funding = _funding_day(day.to_pydatetime())
-    (workspace / "data" / "raw").mkdir(parents=True, exist_ok=True)
-    funding.to_parquet(workspace / "data" / "raw" / "BTC-USDT_funding.parquet", index=False)
-    from tests.research.helpers import record_funding_files, runner_config
+    from tests.research.helpers import record_funding_files, runner_config, write_nominal_funding
+
+    write_nominal_funding(workspace, ["BTC-USDT"], dataset_id="ohlc", rate=RATE)
 
     manifest_hash = record_funding_files(workspace, "ohlc", ["BTC-USDT"])
     cfg = runner_config(

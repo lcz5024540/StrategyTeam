@@ -313,6 +313,7 @@ def test_sql_migration_documents_build_info_columns():
     assert "build_info_version" in text
     assert "build_info_branch" in text
     assert "package_content_hash" in text
+    assert "integrity_verified" in text
 
 
 def test_ledger_stores_build_info_and_package_content_hash(tmp_path):
@@ -326,6 +327,7 @@ def test_ledger_stores_build_info_and_package_content_hash(tmp_path):
     }
     assert "build_info_commit" in cols
     assert "package_content_hash" in cols
+    assert "integrity_verified" in cols
     ledger.register_run(
         RunRecord(
             run_id="M2",

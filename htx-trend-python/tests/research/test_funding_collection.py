@@ -208,7 +208,7 @@ def test_collect_freeze_131_htx_pages_and_binance_sources(tmp_path):
 
     times = _around_stitch(before=80, after=200)
     _write_raw(tmp_path, times)
-    cmd_freeze(_freeze_args(tmp_path, stitch_point="2020-11-01T00:00:00Z"))
+    cmd_freeze(_freeze_args(tmp_path, stitch_point=["BTC-USDT=2020-11-01T00:00:00Z"]))
     dataset_dir = next(
         path
         for path in (tmp_path / "data" / "datasets").iterdir()

@@ -15,6 +15,11 @@ import yaml
 STITCH_WINDOW_BARS = 30
 OVERLAP_AUDIT_THRESHOLD = 0.003
 MANUAL_REVIEW_THRESHOLD = 0.015
+NOMINAL_FUNDING_INTERVAL_HOURS = 8
+NOMINAL_FUNDING_INTERVAL = pd.Timedelta(hours=NOMINAL_FUNDING_INTERVAL_HOURS)
+EXPECTED_FUNDING_GAPS_SHA256 = (
+    "08b52442ca4a60cf2d95a9e047b8f602a3d753a73a2832c86b1f81276fdbd221"
+)
 REGISTERED_DROP_REASONS = frozenset(
     {
         "htx_before_stitch",
@@ -98,6 +103,16 @@ class BadTick:
     stop_on_bar: bool | None = None
 
 
+@dataclass(frozen=True)
+class FundingGap:
+    symbol: str
+    prev: datetime
+    next: datetime
+    reason: str
+    hours: float | None = None
+    split: str | None = None
+
+
 def normalize_bad_tick_kind(kind: str | None) -> str:
     if kind is None:
         raise ValueError("bad_tick kind is required; expected 'frozen' or 'spike'")
@@ -135,6 +150,126 @@ def default_quality_dir() -> Path:
     return Path(__file__).resolve().parents[4] / "data" / "quality"
 
 
+def utc_iso_z(value: datetime | pd.Timestamp | str) -> str:
+    stamp = pd.Timestamp(value)
+    if stamp.tzinfo is None:
+        stamp = stamp.tz_localize("UTC")
+    else:
+        stamp = stamp.tz_convert("UTC")
+    return stamp.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def default_funding_gaps_path() -> Path:
+    return default_quality_dir() / "funding_gaps.yaml"
+
+
+def load_funding_gaps(path: Path | None = None) -> list[FundingGap]:
+    candidate = path or default_funding_gaps_path()
+    if not candidate.exists():
+        raise ValueError(f"funding gaps file not found: {candidate}")
+    payload = yaml.safe_load(candidate.read_text()) or {}
+    rows = payload.get("gaps")
+    if not isinstance(rows, list):
+        raise ValueError(f"funding gaps file {candidate} must have a top-level gaps list")
+    gaps: list[FundingGap] = []
+    for item in rows:
+        hours = item.get("hours")
+        gaps.append(
+            FundingGap(
+                symbol=str(item["symbol"]),
+                prev=parse_utc(item["prev"]),
+                next=parse_utc(item["next"]),
+                reason=str(item.get("reason") or ""),
+                hours=None if hours is None else float(hours),
+                split=None if item.get("split") is None else str(item.get("split")),
+            )
+        )
+    return gaps
+
+
+def funding_gaps_hash(path: Path | None = None) -> str:
+    candidate = path or default_funding_gaps_path()
+    if not candidate.exists():
+        raise ValueError(f"funding gaps file not found: {candidate}")
+    return "sha256:" + hashlib.sha256(candidate.read_bytes()).hexdigest()
+
+
+def require_funding_settlement_gaps(
+    symbol: str,
+    funding_times,
+    gaps: Iterable[FundingGap],
+    *,
+    cutoff: datetime | str | None = None,
+    last_bar_close: datetime | pd.Timestamp | None = None,
+) -> None:
+    times = (
+        pd.to_datetime(pd.Series(list(funding_times)), utc=True)
+        .sort_values()
+        .drop_duplicates()
+        .reset_index(drop=True)
+    )
+    if times.empty:
+        return
+    registry = {
+        (gap.symbol, utc_iso_z(gap.prev), utc_iso_z(gap.next)) for gap in gaps
+    }
+    pairs: list[tuple[str, str]] = []
+    for prev, nxt in zip(times.iloc[:-1], times.iloc[1:]):
+        prev_s, next_s = utc_iso_z(prev), utc_iso_z(nxt)
+        pairs.append((prev_s, next_s))
+        delta = pd.Timestamp(nxt) - pd.Timestamp(prev)
+        if delta != NOMINAL_FUNDING_INTERVAL:
+            if (symbol, prev_s, next_s) not in registry:
+                raise ValueError(
+                    f"unregistered funding gap for {symbol}: {prev_s} -> {next_s} "
+                    f"({delta})"
+                )
+    data_min = pd.Timestamp(times.iloc[0])
+    data_max = pd.Timestamp(times.iloc[-1])
+    if cutoff is not None:
+        cut = pd.Timestamp(parse_utc(cutoff) if not isinstance(cutoff, datetime) else cutoff)
+        if cut.tzinfo is None:
+            cut = cut.tz_localize("UTC")
+        else:
+            cut = cut.tz_convert("UTC")
+        data_max = min(data_max, cut)
+    pair_set = set(pairs)
+    for gap in gaps:
+        if gap.symbol != symbol:
+            continue
+        prev_ts = pd.Timestamp(gap.prev)
+        next_ts = pd.Timestamp(gap.next)
+        if prev_ts.tzinfo is None:
+            prev_ts = prev_ts.tz_localize("UTC")
+        else:
+            prev_ts = prev_ts.tz_convert("UTC")
+        if next_ts.tzinfo is None:
+            next_ts = next_ts.tz_localize("UTC")
+        else:
+            next_ts = next_ts.tz_convert("UTC")
+        if prev_ts < data_min or next_ts > data_max:
+            continue
+        key = (utc_iso_z(prev_ts), utc_iso_z(next_ts))
+        if key not in pair_set:
+            raise ValueError(
+                f"registered funding gap missing from data for {symbol}: "
+                f"{key[0]} -> {key[1]}"
+            )
+    if last_bar_close is not None:
+        last = pd.Timestamp(times.iloc[-1])
+        close = pd.Timestamp(last_bar_close)
+        if close.tzinfo is None:
+            close = close.tz_localize("UTC")
+        else:
+            close = close.tz_convert("UTC")
+        if close - last > NOMINAL_FUNDING_INTERVAL:
+            raise ValueError(
+                f"bars more than one nominal funding interval after last "
+                f"settlement for {symbol}: last={utc_iso_z(last)} "
+                f"bar_close={utc_iso_z(close)}"
+            )
+
+
 def parse_stitch_declaration(value: Any) -> datetime | None:
     if value is None:
         return None
@@ -163,9 +298,36 @@ def stitch_points_for_manifest(
     return payload
 
 
+def parse_stitch_point_overrides(
+    values: list[str] | str | datetime | None,
+) -> dict[str, datetime]:
+    """Accept only repeatable SYMBOL=TIME forms. Bare timestamps raise."""
+    if values is None:
+        return {}
+    if isinstance(values, datetime):
+        raise ValueError("bare stitch-point time is not allowed; use SYMBOL=TIME")
+    items = values if isinstance(values, list) else [values]
+    parsed: dict[str, datetime] = {}
+    for item in items:
+        if isinstance(item, datetime):
+            raise ValueError("bare stitch-point time is not allowed; use SYMBOL=TIME")
+        text = str(item).strip()
+        if not text:
+            continue
+        if "=" not in text:
+            raise ValueError(f"stitch-point must be SYMBOL=TIME, got {item!r}")
+        symbol, _, raw = text.partition("=")
+        symbol = symbol.strip()
+        stamp = raw.strip()
+        if not symbol or not stamp:
+            raise ValueError(f"stitch-point must be SYMBOL=TIME, got {item!r}")
+        parsed[symbol] = parse_utc(stamp)
+    return parsed
+
+
 def load_stitch_points(
     path: Path | None = None,
-    override: str | datetime | None = None,
+    override: list[str] | str | datetime | None = None,
 ) -> dict[str, datetime | None]:
     candidate = path or default_quality_dir() / "stitch_points.yaml"
     if not candidate.exists():
@@ -179,9 +341,13 @@ def load_stitch_points(
         if symbol in {"version", "points", "stitch"}:
             continue
         points[str(symbol)] = parse_stitch_declaration(value)
-    if override is not None:
-        stamp = parse_stitch_declaration(override)
-        return {symbol: stamp for symbol in points}
+    overrides = parse_stitch_point_overrides(override)
+    for symbol, stamp in overrides.items():
+        if symbol not in points:
+            raise ValueError(
+                f"unknown/undeclared stitch-point symbol: {symbol}"
+            )
+        points[symbol] = stamp
     return points
 
 
@@ -205,10 +371,18 @@ def require_declared_stitch_points(
 def stitch_point_for(
     symbol: str,
     points: dict[str, datetime | None] | None = None,
-    override: str | datetime | None = None,
+    override: list[str] | str | datetime | None = None,
 ) -> datetime | None:
     if override is not None:
-        return parse_stitch_declaration(override)
+        if isinstance(override, datetime):
+            return parse_utc(override)
+        overrides = parse_stitch_point_overrides(override)
+        if symbol in overrides:
+            return overrides[symbol]
+        if not overrides and not isinstance(override, list):
+            raise ValueError(
+                f"stitch-point must be SYMBOL=TIME, got {override!r}"
+            )
     table = load_stitch_points() if points is None else points
     if symbol not in table:
         raise ValueError(

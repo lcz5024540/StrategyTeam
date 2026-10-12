@@ -172,6 +172,7 @@ def test_no_lookahead_truncation_invariance(tmp_path):
             "total_bars": len(dates),
             "manifest_hash": dataset_id,
             "created_at": "2024-01-01T00:00:00",
+            "stitch_points": {"BTC-USDT": None},
             **split_manifest_fields(
                 dates, min(180, truncate_at), min(240, truncate_at)
             ),

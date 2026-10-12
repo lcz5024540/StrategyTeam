@@ -22,6 +22,7 @@ from .quality import (
     STITCH_WINDOW_BARS,
     BadTick,
     confirmed_bad_ticks,
+    funding_gaps_hash,
     load_bad_ticks,
     require_declared_stitch_points,
     require_quality_flag_column,
@@ -590,6 +591,9 @@ class DatasetManager:
             "non_comparable_window_bars": window_bars,
             "stitch_points": stitch_manifest,
         }
+        manifest["funding_gaps_hash"] = (
+            (extra_metadata or {}).get("funding_gaps_hash") or funding_gaps_hash()
+        )
         if extra_metadata:
             for key in (
                 "bad_ticks_hash",
@@ -697,6 +701,7 @@ class DatasetManager:
         }
         if extra_metadata:
             batch_meta.update(extra_metadata)
+        batch_meta["funding_gaps_hash"] = manifest["funding_gaps_hash"]
         batch_manifest.metadata.update(batch_meta)
         aux = dict(batch_manifest.metadata.get("aux_files") or {})
         aux["dataset_manifest"] = {

@@ -42,7 +42,6 @@ from .strategy import Position, StateMachine, StrategyState
 from .strategy_manifest import build_strategy_manifest, require_c02_enabled
 from .version_info import (
     get_version_info,
-    load_package_manifest,
     require_runtime_integrity,
 )
 
@@ -169,6 +168,8 @@ class BacktestRunner:
         return True
 
     def run(self) -> dict[str, Any]:
+        self._package_content_hash = require_runtime_integrity(is_smoke=self._is_smoke)
+        self._integrity_verified = not self._is_smoke
         from ..arrow_runtime import configure_arrow
 
         configure_arrow()
@@ -180,7 +181,6 @@ class BacktestRunner:
         self._family_id = family_id
         self._changed_key = None
         self._require_run_fields()
-        require_runtime_integrity(is_smoke=self._is_smoke)
 
         if not self._is_smoke:
             self.ledger.start_trial(
@@ -222,7 +222,6 @@ class BacktestRunner:
             data, frozen = self._load_dataset()
             environment = "SMOKE" if self._is_smoke else "BACKTEST"
             version = get_version_info()
-            package_manifest = load_package_manifest()
 
             run_record = RunRecord(
                 run_id=self.run_id,
@@ -239,7 +238,10 @@ class BacktestRunner:
                 build_info_commit=version.commit,
                 build_info_version=version.version,
                 build_info_branch=version.branch,
-                package_content_hash=package_manifest.get("content_hash"),
+                package_content_hash=(
+                    None if self._is_smoke else self._package_content_hash
+                ),
+                integrity_verified=self._integrity_verified,
             )
             self.ledger.register_run(run_record)
 
@@ -479,7 +481,9 @@ class BacktestRunner:
                     df,
                     funding_df,
                     interval,
+                    symbol=symbol,
                     allow_missing_funding=allow_missing_funding,
+                    cutoff=getattr(frozen, "data_cutoff_close_utc", None),
                 )
             elif allow_missing_funding:
                 self._funding_missing.append(symbol)
@@ -1126,10 +1130,14 @@ class BacktestRunner:
 
     def _load_stitch_points(self) -> dict[str, Any] | None:
         frozen = getattr(self, "_frozen", None)
-        points = getattr(frozen, "stitch_points", None) if frozen is not None else None
-        if points:
-            return points
-        return self.config.get("stitch_points")
+        if frozen is None:
+            return None
+        points = getattr(frozen, "stitch_points", None)
+        if not points:
+            raise ValueError(
+                "frozen manifest missing stitch_points; refusing config fallback"
+            )
+        return points
 
     def _load_overlap_deviation(self) -> dict[str, Any] | None:
         frozen = getattr(self, "_frozen", None)

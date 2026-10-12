@@ -189,6 +189,7 @@ def test_freeze_htx_only_declared_none_keeps_all_bars_and_hashes_none(tmp_path):
         "split": written["split"],
         "non_comparable_window_bars": 30,
         "stitch_points": {"SOL-USDT": None},
+        "funding_gaps_hash": written["funding_gaps_hash"],
     }
     digest = hashlib.sha256(json.dumps(hashed, sort_keys=True).encode()).hexdigest()[:16]
     assert frozen.manifest_hash == digest
@@ -352,8 +353,10 @@ def test_empty_funding_raises_unless_allow_missing():
     bars = _bars(pd.date_range("2024-01-01", periods=4, freq="4h", tz="UTC"))
     empty = pd.DataFrame(columns=["funding_time", "funding_rate"])
     with pytest.raises(ValueError, match="funding"):
-        attach_funding_as_of(bars, empty, "4hour")
-    out = attach_funding_as_of(bars, empty, "4hour", allow_missing_funding=True)
+        attach_funding_as_of(bars, empty, "4hour", symbol="BTC-USDT")
+    out = attach_funding_as_of(
+        bars, empty, "4hour", symbol="BTC-USDT", allow_missing_funding=True
+    )
     assert bool(out["funding_missing"].all())
     assert (out["funding_rate"] == 0).all()
 
@@ -371,7 +374,7 @@ def test_pre_first_funding_is_zero_with_marker():
             "funding_rate": [0.5],
         }
     )
-    out = attach_funding_as_of(bars, funding, "4hour")
+    out = attach_funding_as_of(bars, funding, "4hour", symbol="BTC-USDT", gaps=[])
     assert float(out.loc[0, "funding_rate"]) == 0.0
     assert bool(out.loc[0, "pre_first_funding"]) is True
 
@@ -390,7 +393,7 @@ def test_other_funding_nan_raises():
         }
     )
     with pytest.raises(ValueError, match="NaN"):
-        attach_funding_as_of(bars, funding, "4hour")
+        attach_funding_as_of(bars, funding, "4hour", symbol="BTC-USDT", gaps=[])
 
 
 def test_runner_missing_source_raises(tmp_path):

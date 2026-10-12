@@ -5,6 +5,18 @@ All notable changes to the HTX Trend Research System will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-rc.12] - 2026-10-12
+
+### Changed
+- Package integrity now reverse-scans the entire package root. Any file not in `PACKAGE_MANIFEST` fails as `unexpected file`. The only exclusions are a hardcoded constant: `__pycache__` / `*.pyc`, plus runtime write paths `runs/`, `logs/`, `run/`, `data/raw/`, `data/datasets/`, `data/klines/`, `ledger.db`.
+- `_build_info.py` is listed in `PACKAGE_MANIFEST` and stores `PACKAGE_CONTENT_HASH` (the manifest `content_hash`). The listed SHA256 of `_build_info.py` excludes that one line so the cycle can close. Runtime recomputes the hash and refuses a consistent rewrite of file hashes. Packaged trees require `PACKAGE_MANIFEST`; git mode requires `git` toplevel == package root.
+- `require_runtime_integrity` is the first statement of `BacktestRunner.run()`. SMOKE records `package_content_hash=null` and `integrity_verified=false`.
+- Funding gaps: consecutive settlements whose interval is not 8h must match `data/quality/funding_gaps.yaml` (`symbol`,`prev`,`next`). Registry rows in-range without a matching interval raise. The file SHA256 enters the frozen manifest hash. Missing file raises.
+- `--stitch-point` accepts only repeatable `SYMBOL=TIME`. Bare timestamps and unknown symbols raise. Runner stitch points come only from the frozen manifest.
+
+### Testing
+- Counterexamples for added files, shadow package dirs, rewritten manifests, nested git, extracted-package e2e, 10-day funding holes, registered gaps, and stitch-point CLI forms.
+
 ## [0.1.0-rc.11] - 2026-10-12
 
 ### Changed

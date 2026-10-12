@@ -14,6 +14,7 @@ from tests.research.helpers import (
     create_test_dataset,
     record_funding_files,
     runner_config,
+    write_nominal_funding,
     write_runner,
 )
 
@@ -72,15 +73,15 @@ def test_equity_conservation_with_known_funding_and_open_position(tmp_path):
             "ETH-USDT": _stay_open(),
         },
     )
+    write_nominal_funding(
+        workspace, ["BTC-USDT", "ETH-USDT"], dataset_id="fund", rate=0.0
+    )
+    wanted = set(FUNDING_TIMES)
     for symbol in ("BTC-USDT", "ETH-USDT"):
-        frame = pd.DataFrame(
-            {
-                "funding_time": list(FUNDING_TIMES),
-                "funding_rate": [FUNDING_RATE, FUNDING_RATE],
-                "symbol": [symbol, symbol],
-            }
-        )
         path = workspace / "data" / "raw" / f"{symbol}_funding.parquet"
+        frame = pd.read_parquet(path)
+        times = pd.to_datetime(frame["funding_time"], utc=True)
+        frame.loc[times.isin(wanted), "funding_rate"] = FUNDING_RATE
         frame.to_parquet(path, index=False)
     record_funding_files(workspace, "fund", ["BTC-USDT", "ETH-USDT"])
 
@@ -116,6 +117,7 @@ def test_equity_conservation_with_known_funding_and_open_position(tmp_path):
     assert {fill.size for fill in entries} == {FIXED_SIZE}
 
     events = results["funding_events"]
+    events = [event for event in events if float(event["payment"]) != 0]
     assert len(events) == 4
     assert {event["symbol"] for event in events} == {"BTC-USDT", "ETH-USDT"}
     assert sum(float(event["payment"]) for event in events) == pytest.approx(

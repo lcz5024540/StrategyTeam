@@ -13,3 +13,4 @@ ALTER TABLE runs ADD COLUMN build_info_commit TEXT;
 ALTER TABLE runs ADD COLUMN build_info_version TEXT;
 ALTER TABLE runs ADD COLUMN build_info_branch TEXT;
 ALTER TABLE runs ADD COLUMN package_content_hash TEXT;
+ALTER TABLE runs ADD COLUMN integrity_verified INTEGER;

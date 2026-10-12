@@ -21,18 +21,17 @@ def test_funding_as_of_uses_settlement_at_or_before_close():
         {
             "funding_time": [
                 pd.Timestamp("2024-01-01 00:00", tz="UTC"),
-                pd.Timestamp("2024-01-01 04:00", tz="UTC"),
                 pd.Timestamp("2024-01-01 08:00", tz="UTC"),
+                pd.Timestamp("2024-01-01 16:00", tz="UTC"),
             ],
             "funding_rate": [0.001, 0.002, 0.099],
         }
     )
-    out = attach_funding_as_of(bars, funding, "4hour")
-    # first bar closes 04:00, may use 00:00 or 04:00, not 08:00
-    assert float(out.loc[0, "funding_rate"]) in {0.001, 0.002}
-    assert float(out.loc[0, "funding_rate"]) != 0.099
+    out = attach_funding_as_of(bars, funding, "4hour", symbol="BTC-USDT", gaps=[])
+    # first bar closes 04:00, may use 00:00, not 08:00/16:00
+    assert float(out.loc[0, "funding_rate"]) == 0.001
     # second bar closes 08:00, may use 08:00
-    assert float(out.loc[1, "funding_rate"]) == 0.099
+    assert float(out.loc[1, "funding_rate"]) == 0.002
 
 
 def test_funding_after_bar_close_is_not_used():
@@ -48,14 +47,20 @@ def test_funding_after_bar_close_is_not_used():
             "funding_rate": [0.5],
         }
     )
-    out = attach_funding_as_of(bars, funding, "4hour")
+    out = attach_funding_as_of(bars, funding, "4hour", symbol="BTC-USDT", gaps=[])
     assert float(out.loc[0, "funding_rate"]) == 0.0
     assert bool(out.loc[0, "pre_first_funding"]) is True
 
 
 def test_runner_attaches_funding_as_of_bar_close(tmp_path, monkeypatch):
     from htx_trend.research.features.funding_asof import attach_funding_as_of as real_attach
-    from tests.research.helpers import create_test_dataset, runner_config, write_runner
+    from tests.research.helpers import (
+        create_test_dataset,
+        record_funding_files,
+        runner_config,
+        write_nominal_funding,
+        write_runner,
+    )
 
     seen = {}
 
@@ -69,19 +74,20 @@ def test_runner_attaches_funding_as_of_bar_close(tmp_path, monkeypatch):
         "htx_trend.research.runner.attach_funding_as_of", _wrap
     )
     create_test_dataset(tmp_path, "fund-asof", n_bars=48, symbols=["BTC-USDT"])
-    funding = pd.DataFrame(
+    write_nominal_funding(tmp_path, ["BTC-USDT"], dataset_id="fund-asof", rate=0.001)
+    funding = pd.read_parquet(tmp_path / "data" / "raw" / "BTC-USDT_funding.parquet")
+    last = pd.to_datetime(funding["funding_time"], utc=True).max()
+    extra = pd.DataFrame(
         {
-            "funding_time": [
-                pd.Timestamp("2024-01-01 00:00", tz="UTC"),
-                pd.Timestamp("2024-01-01 04:00", tz="UTC"),
-                pd.Timestamp("2099-01-01 00:00", tz="UTC"),
-            ],
-            "funding_rate": [0.001, 0.002, 0.5],
+            "symbol": ["BTC-USDT"],
+            "funding_time": [last + pd.Timedelta(hours=8)],
+            "funding_rate": [0.5],
+            "source": ["htx"],
         }
     )
-    funding.to_parquet(tmp_path / "data" / "raw" / "BTC-USDT_funding.parquet", index=False)
-    from tests.research.helpers import record_funding_files
-
+    pd.concat([funding, extra], ignore_index=True).to_parquet(
+        tmp_path / "data" / "raw" / "BTC-USDT_funding.parquet", index=False
+    )
     manifest_hash = record_funding_files(tmp_path, "fund-asof", ["BTC-USDT"])
     cfg = runner_config(
         tmp_path,

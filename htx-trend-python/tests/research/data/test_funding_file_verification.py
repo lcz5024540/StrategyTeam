@@ -9,7 +9,12 @@ import pytest
 
 from htx_trend.research.data.dataset import DatasetManager
 from htx_trend.research.data.manifest import DatasetManifest
-from tests.research.helpers import create_test_dataset, runner_config, write_runner
+from tests.research.helpers import (
+    create_test_dataset,
+    runner_config,
+    write_nominal_funding,
+    write_runner,
+)
 
 
 def _hash_file(path) -> str:
@@ -82,11 +87,12 @@ def test_runner_loads_funding_from_verified_path_not_rebuilt_default(tmp_path):
     raw = workspace / "data" / "raw"
     alt_dir = raw / "verified"
     alt_dir.mkdir(parents=True)
-    poison = _funding_frame("BTC-USDT", 0.9999)
-    good = _funding_frame("BTC-USDT", 0.0001)
-    poison.to_parquet(raw / "BTC-USDT_funding.parquet", index=False)
+    write_nominal_funding(workspace, ["BTC-USDT"], dataset_id="verpath", rate=0.0001)
+    poison = pd.read_parquet(raw / "BTC-USDT_funding.parquet").copy()
+    poison["funding_rate"] = 0.9999
+    poison.to_parquet(raw / "BTC-USDT_poison.parquet", index=False)
     alt = alt_dir / "BTC-USDT_funding.parquet"
-    good.to_parquet(alt, index=False)
+    pd.read_parquet(raw / "BTC-USDT_funding.parquet").to_parquet(alt, index=False)
     manifest_hash = _set_funding_files(
         workspace,
         "verpath",

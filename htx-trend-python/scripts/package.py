@@ -163,13 +163,21 @@ def file_sha256(path: Path) -> str:
 
 
 def build_package_manifest(repo_root: Path) -> dict:
+    src = repo_root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from htx_trend.research.version_info import (
+        file_sha256_for_manifest,
+        package_content_hash_from_files,
+    )
+
     files = {}
     for path, rel in sorted(iter_package_files(repo_root), key=lambda item: str(item[1])):
-        files[str(rel).replace("\\", "/")] = file_sha256(path)
-    blob = json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
+        key = str(rel).replace("\\", "/")
+        files[key] = file_sha256_for_manifest(path, key)
     return {
         "files": files,
-        "content_hash": hashlib.sha256(blob).hexdigest(),
+        "content_hash": package_content_hash_from_files(files),
     }
 
 
@@ -335,6 +343,7 @@ def generate_delivery_template(
 {_strategy_manifest_notes(strategy_manifest)}
 **Notes**:
 - rc.6: R0001 risk params changed to 300U / 2% / 10% / 5 positions per user decision; replaces rc.5's 1%/2%/2
+- venv `site-packages` `*.pth` files are **outside** the package tree. The integrity scan does not cover them. Create the venv fresh from `requirements.lock` (`pip install --require-hashes -r requirements.lock`) and do not add extra `.pth` files.
 
 ---
 
@@ -633,9 +642,19 @@ def main(argv: list[str] | None = None) -> int:
         version,
         git_info,
         strategy_manifest_sha256=strategy_sha,
+        package_content_hash="",
+    )
+    package_manifest = build_package_manifest(repo_root)
+    write_build_info(
+        build_info_path,
+        version,
+        git_info,
+        strategy_manifest_sha256=strategy_sha,
+        package_content_hash=package_manifest["content_hash"],
     )
     print(f"Wrote build info: {build_info_path}")
     print(f"STRATEGY_MANIFEST_SHA256: {strategy_sha}")
+    print(f"PACKAGE_CONTENT_HASH: {package_manifest['content_hash']}")
     
     tar_path, sha256 = create_package(version, git_info)
     write_build_info(
@@ -652,6 +671,7 @@ def main(argv: list[str] | None = None) -> int:
         'VERSION = ""\n'
         "DIRTY = False\n"
         'STRATEGY_MANIFEST_SHA256 = ""\n'
+        'PACKAGE_CONTENT_HASH = ""\n'
     )
     print()
 

@@ -153,7 +153,7 @@ def _freeze_args(workspace: Path, **extra):
         "backfill_binance": True,
         "overlap_threshold": 0.003,
         "daily_cut": None,
-        "stitch_point": "2020-11-01T00:00:00Z",
+        "stitch_point": ["BTC-USDT=2020-11-01T00:00:00Z"],
         "stitch_config": None,
         "non_comparable_window": 30,
         "bad_ticks": None,
@@ -190,7 +190,7 @@ def test_written_dataset_manifest_json_contains_stitch_points_and_bad_ticks_hash
             ]
         )
     )
-    cmd_freeze(_freeze_args(tmp_path, stitch_point="2020-11-01T00:00:00Z", bad_ticks=str(yaml_path)))
+    cmd_freeze(_freeze_args(tmp_path, stitch_point=["BTC-USDT=2020-11-01T00:00:00Z"], bad_ticks=str(yaml_path)))
     dataset_dir = next(
         path
         for path in (tmp_path / "data" / "datasets").iterdir()
@@ -228,7 +228,7 @@ def test_freeze_records_funding_file_hashes_and_load_rejects_mismatch(tmp_path):
         }
     )
     funding.to_parquet(raw / "BTC-USDT_funding.parquet", index=False)
-    cmd_freeze(_freeze_args(tmp_path, stitch_point="2020-11-01T00:00:00Z"))
+    cmd_freeze(_freeze_args(tmp_path, stitch_point=["BTC-USDT=2020-11-01T00:00:00Z"]))
     dataset_dir = next(
         path
         for path in (tmp_path / "data" / "datasets").iterdir()
@@ -282,7 +282,7 @@ def test_freeze_records_funding_sources_in_manifest_and_hash(tmp_path):
         }
     )
     funding.to_parquet(raw / "BTC-USDT_funding.parquet", index=False)
-    cmd_freeze(_freeze_args(tmp_path, stitch_point="2020-11-01T00:00:00Z"))
+    cmd_freeze(_freeze_args(tmp_path, stitch_point=["BTC-USDT=2020-11-01T00:00:00Z"]))
     dataset_dir = next(
         path
         for path in (tmp_path / "data" / "datasets").iterdir()
@@ -307,7 +307,7 @@ def test_freeze_records_funding_sources_in_manifest_and_hash(tmp_path):
 def test_freeze_records_stitch_point_and_bad_ticks_in_manifest_hash(tmp_path):
     times = pd.date_range("2020-09-01", periods=200 * 6, freq="4h", tz="UTC")
     _write_raw(tmp_path, times)
-    cmd_freeze(_freeze_args(tmp_path, stitch_point="2020-11-01T00:00:00Z"))
+    cmd_freeze(_freeze_args(tmp_path, stitch_point=["BTC-USDT=2020-11-01T00:00:00Z"]))
     manifests = list((tmp_path / "data" / "datasets" / "manifests").glob("*.json"))
     assert len(manifests) == 1
     batch = DatasetManifest.load(manifests[0])
@@ -324,7 +324,7 @@ def test_freeze_records_stitch_point_and_bad_ticks_in_manifest_hash(tmp_path):
 
     other = tmp_path / "other"
     _write_raw(other, times)
-    cmd_freeze(_freeze_args(other, stitch_point="2020-12-01T00:00:00Z"))
+    cmd_freeze(_freeze_args(other, stitch_point=["BTC-USDT=2020-12-01T00:00:00Z"]))
     other_batch = DatasetManifest.load(
         next((other / "data" / "datasets" / "manifests").glob("*.json"))
     )

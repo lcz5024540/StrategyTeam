@@ -127,6 +127,7 @@ def test_freeze_manifest_records_non_comparable_window_bars_in_hash(tmp_path):
         "split": written["split"],
         "non_comparable_window_bars": 30,
         "stitch_points": written["stitch_points"],
+        "funding_gaps_hash": written["funding_gaps_hash"],
     }
     digest = hashlib.sha256(json.dumps(hashed, sort_keys=True).encode()).hexdigest()[:16]
     assert frozen.manifest_hash == digest

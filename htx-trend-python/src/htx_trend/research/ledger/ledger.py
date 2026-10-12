@@ -74,6 +74,7 @@ class RunRecord:
     build_info_version: str | None = None
     build_info_branch: str | None = None
     package_content_hash: str | None = None
+    integrity_verified: bool | None = None
 
 
 @dataclass
@@ -184,6 +185,8 @@ class LedgerManager:
             conn.execute("ALTER TABLE runs ADD COLUMN build_info_branch TEXT")
         if "package_content_hash" not in run_cols:
             conn.execute("ALTER TABLE runs ADD COLUMN package_content_hash TEXT")
+        if "integrity_verified" not in run_cols:
+            conn.execute("ALTER TABLE runs ADD COLUMN integrity_verified INTEGER")
 
         trial_cols = {row[1] for row in conn.execute("PRAGMA table_info(trials)")}
         if "event_id" not in trial_cols:
@@ -355,8 +358,8 @@ class LedgerManager:
                     created_at, total_trades, metrics, manifest_hash,
                     strategy_manifest_sha256, strategy_manifest,
                     build_info_commit, build_info_version, build_info_branch,
-                    package_content_hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    package_content_hash, integrity_verified
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run.run_id,
@@ -376,6 +379,7 @@ class LedgerManager:
                     run.build_info_version,
                     run.build_info_branch,
                     run.package_content_hash,
+                    None if run.integrity_verified is None else int(bool(run.integrity_verified)),
                 ),
             )
     
@@ -396,7 +400,7 @@ class LedgerManager:
                        total_trades, metrics, manifest_hash,
                        strategy_manifest_sha256, strategy_manifest,
                        build_info_commit, build_info_version, build_info_branch,
-                       package_content_hash
+                       package_content_hash, integrity_verified
                 FROM runs
                 WHERE run_id = ?
                 """,
@@ -441,6 +445,9 @@ class LedgerManager:
                 build_info_version=row[14] if len(row) > 14 else None,
                 build_info_branch=row[15] if len(row) > 15 else None,
                 package_content_hash=row[16] if len(row) > 16 else None,
+                integrity_verified=(
+                    None if len(row) <= 17 or row[17] is None else bool(row[17])
+                ),
             )
     
     def register_experiment(self, exp: ExperimentRegistration) -> None:

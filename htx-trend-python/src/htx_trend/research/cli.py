@@ -25,6 +25,7 @@ from .data.quality import (
     STITCH_WINDOW_BARS,
     apply_bad_ticks,
     bad_ticks_hash,
+    funding_gaps_hash,
     load_bad_ticks,
     load_stitch_points,
     stitch_point_for,
@@ -161,6 +162,10 @@ def cmd_freeze(args: argparse.Namespace) -> None:
     stitch_points = load_stitch_points(stitch_file, override=stitch_override)
     ticks = load_bad_ticks(ticks_file)
     ticks_digest = bad_ticks_hash(ticks_file, ticks)
+    gaps_file = workspace / "data" / "quality" / "funding_gaps.yaml"
+    if not gaps_file.exists():
+        gaps_file = None
+    gaps_digest = funding_gaps_hash(gaps_file)
 
     stitcher = DataStitcher(
         close_deviation_threshold=args.overlap_threshold or 0.003,
@@ -181,7 +186,7 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         
         import pandas as pd
         htx_df = pd.read_parquet(htx_file)
-        point = stitch_point_for(contract, stitch_points, override=stitch_override)
+        point = stitch_point_for(contract, stitch_points)
         used_stitch_points[contract] = None if point is None else point.isoformat()
         
         if timeframe == "1day":
@@ -272,6 +277,7 @@ def cmd_freeze(args: argparse.Namespace) -> None:
         "stitch_points": used_stitch_points,
         "non_comparable_window_bars": window_bars,
         "bad_ticks_hash": ticks_digest,
+        "funding_gaps_hash": gaps_digest,
     }
     if stitch_row_counts:
         extra_metadata["stitch_row_count_accounting"] = stitch_row_counts
@@ -625,8 +631,9 @@ def main() -> None:
     freeze_parser.add_argument("--daily-cut", choices=["UTC00", "UTC16"])
     freeze_parser.add_argument(
         "--stitch-point",
+        action="append",
         default=None,
-        help="ISO UTC stitch instant (default 2020-11-01T00:00:00Z for BTC/ETH)",
+        help="Repeatable SYMBOL=ISO-UTC override. Bare timestamps are rejected.",
     )
     freeze_parser.add_argument("--stitch-config", default=None, help="YAML map of symbol -> stitch point")
     freeze_parser.add_argument(

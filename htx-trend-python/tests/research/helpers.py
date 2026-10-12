@@ -36,6 +36,42 @@ DEFAULT_SPECS = {
 }
 
 
+def write_nominal_funding(
+    workspace: Path,
+    symbols: list[str],
+    *,
+    dataset_id: str | None = None,
+    start=None,
+    end=None,
+    rate: float = 0.0001,
+) -> None:
+    """Write 8h funding covering the fixture bars so gap checks pass."""
+    raw = workspace / "data" / "raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    if start is None or end is None:
+        if not dataset_id:
+            raise ValueError("write_nominal_funding requires dataset_id or start/end")
+        frames = [
+            pd.read_parquet(path)
+            for path in sorted((workspace / "data" / "datasets" / dataset_id).glob("*.parquet"))
+        ]
+        times = pd.concat(
+            [pd.to_datetime(frame["bar_time"], utc=True) for frame in frames]
+        )
+        start = times.min() - pd.Timedelta(hours=8)
+        end = times.max() + pd.Timedelta(hours=8)
+    stamps = pd.date_range(start, end, freq="8h", tz="UTC")
+    for symbol in symbols:
+        pd.DataFrame(
+            {
+                "symbol": [symbol] * len(stamps),
+                "funding_time": stamps,
+                "funding_rate": [rate] * len(stamps),
+                "source": ["htx"] * len(stamps),
+            }
+        ).to_parquet(raw / f"{symbol}_funding.parquet", index=False)
+
+
 def write_contract_specs(workspace: Path, specs: dict | None = None) -> None:
     raw = workspace / "data" / "raw"
     raw.mkdir(parents=True, exist_ok=True)
@@ -102,6 +138,9 @@ def write_batch_manifest(workspace: Path, dataset_id: str) -> str:
     aux: dict[str, dict[str, str]] = {}
     simple = dataset_dir / "manifest.json"
     if simple.exists():
+        written = json.loads(simple.read_text())
+        if "stitch_points" in written:
+            manifest.metadata["stitch_points"] = written["stitch_points"]
         aux["dataset_manifest"] = {
             "path": "manifest.json",
             "sha256": f"sha256:{hashlib.sha256(simple.read_bytes()).hexdigest()}",
@@ -190,6 +229,7 @@ def create_test_dataset(
             for symbol in symbols
         },
         **split_manifest_fields(used_dates, train_end_idx, val_end_idx),
+        "stitch_points": {symbol: None for symbol in symbols},
     }
     (dataset_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
     write_contract_specs(workspace, specs)
