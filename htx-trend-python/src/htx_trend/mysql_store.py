@@ -286,10 +286,10 @@ class HtxTrendMySqlRepository:
         """
         row = self._one("""SELECT COUNT(*) AS total_count,
           COALESCE(SUM(CASE WHEN latest.trend_signal = 'LONG'
-              OR latest.reason LIKE '%trend=LONG%' OR latest.reason LIKE '%uptrend%'
+              OR latest.reason LIKE '%%trend=LONG%%' OR latest.reason LIKE '%%uptrend%%'
               THEN 1 ELSE 0 END), 0) AS long_context_count,
           COALESCE(SUM(CASE WHEN latest.trend_signal = 'SHORT'
-              OR latest.reason LIKE '%trend=SHORT%' OR latest.reason LIKE '%downtrend%'
+              OR latest.reason LIKE '%%trend=SHORT%%' OR latest.reason LIKE '%%downtrend%%'
               THEN 1 ELSE 0 END), 0) AS short_context_count,
           COALESCE(SUM(CASE WHEN latest.trend_signal = 'LONG' THEN 1 ELSE 0 END), 0) AS long_signal_count,
           COALESCE(SUM(CASE WHEN latest.trend_signal = 'SHORT' THEN 1 ELSE 0 END), 0) AS short_signal_count
