@@ -403,11 +403,20 @@ class HtxTrendMySqlRepository:
             AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT','UNKNOWN')""", ())
         return int(row["count"]) if row else 0
 
-    def latest_done_trade(self, *, account_id: int, contract_code: str) -> dict[str, Any] | None:
-        """Literal Java ``findLastDone`` scope for primary trend cooldown."""
+    def active_contract_position(self, *, account_id: int, contract_code: str) -> dict[str, Any] | None:
+        """Account-level mutex: an exchange contract belongs to one profile until terminal."""
+        return self._one("""SELECT id,contract_code,timeframe_profile,status FROM htx_trend_position
+          WHERE account_id=%s AND contract_code=%s AND source_position_id IS NULL
+          AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT','UNKNOWN')
+          ORDER BY id LIMIT 1""", (account_id, contract_code))
+
+    def latest_done_trade(self, *, account_id: int, contract_code: str,
+                          timeframe_profile: str = "INTRADAY_15M") -> dict[str, Any] | None:
+        """Profile-local cooldown; a 15m close cannot cool down a 4h lifecycle."""
         return self._one("""SELECT id,contract_code,updated_at,realized_profit,entry_fee,close_fee,message
           FROM htx_trend_position WHERE contract_code=%s AND source_position_id IS NULL
-          AND account_label='primary' AND status='DONE' ORDER BY updated_at DESC,id DESC LIMIT 1""", (contract_code,))
+          AND account_id=%s AND timeframe_profile=%s AND status='DONE'
+          ORDER BY updated_at DESC,id DESC LIMIT 1""", (contract_code, account_id, timeframe_profile))
 
     def claim_entry_cycle(self, *, structure_key: str, contract_code: str, timeframe: str,
                           direction: str, primary_model: str, breakout_bar_time: int | None,
@@ -595,7 +604,7 @@ class HtxTrendMySqlRepository:
           ON DUPLICATE KEY UPDATE signal_score=VALUES(signal_score),entry_reason=VALUES(entry_reason),confirmation_models=VALUES(confirmation_models),
           policy_version=VALUES(policy_version),run_id=VALUES(run_id),factor_snapshot_id=VALUES(factor_snapshot_id),
           invalidation_price=VALUES(invalidation_price),target_zone_low=VALUES(target_zone_low),target_zone_high=VALUES(target_zone_high),
-          expected_r_multiple=VALUES(expected_r_multiple),gate_result=VALUES(gate_result),gate_reason=VALUES(gate_reason),
+          expected_r_multiple=VALUES(expected_r_multiple),shadow=VALUES(shadow),gate_result=VALUES(gate_result),gate_reason=VALUES(gate_reason),
           sizing_multiplier=VALUES(sizing_multiplier),planned_notional_usdt=VALUES(planned_notional_usdt)""",
           (contract_code,period,bar_time,direction,regime,score,close_price,factors.get("ema_fast"),factors.get("ema_medium"),
            factors.get("ema_slow"),factors.get("atr"),factors.get("atr_pct"),factors.get("adx"),factors.get("roc"),

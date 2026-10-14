@@ -27,6 +27,7 @@ from .strategy_platform import ExecutionMode, StrategyWorker, WorkerHealth
 from .mysql_store import HtxTrendMySqlRepository, RuntimeInstance
 from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
 from .strategy_decision import HtxStrategyDecisionEngine, LEGACY_STRATEGY_VERSION
+from .timeframes import TimeframeProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +38,7 @@ class LiveTrendWorkerConfig:
     entry_enabled: bool = True
     entry_period: str = "15min"
     trend_period: str = "60min"
+    timeframe_profile: TimeframeProfile = TimeframeProfile.INTRADAY_15M
     kline_size: int = 160
     max_concurrency: int = 6
     # The live worker deliberately shares the Java ensemble defaults.  Python
@@ -100,7 +102,7 @@ class LiveTrendWorkerConfig:
                              "TIA-USDT", "JUP-USDT", "ENA-USDT", "ONDO-USDT", "ALGO-USDT", "OKB-USDT", "DASH-USDT",
                              "ZEC-USDT", "XAUT-USDT", "PAXG-USDT", "PEOPLE-USDT", "ORDI-USDT", "BOME-USDT", "RAY-USDT",
                              "CHZ-USDT", "ETHFI-USDT", "ACE-USDT")
-        return cls(
+        config = cls(
             contracts=values("HTX_TREND_CONTRACTS", default_contracts),
             enabled=flag("HTX_TREND_ENABLED", defaults.enabled),
             observe_only=flag("HTX_TREND_OBSERVE_ONLY", defaults.observe_only),
@@ -132,6 +134,41 @@ class LiveTrendWorkerConfig:
             max_active_positions=integer("HTX_TREND_MAX_ACTIVE_POSITIONS", defaults.max_active_positions),
             combination_entry_enabled=flag("HTX_TREND_COMBINATION_ENTRY_ENABLED", defaults.combination_entry_enabled),
         )
+        profile_name = environ.get("HTX_TREND_TIMEFRAME_PROFILE", "").strip().upper()
+        profile = TimeframeProfile(profile_name) if profile_name else TimeframeProfile.for_period(config.entry_period)
+        profile.validate(config.entry_period, config.trend_period)
+        return replace(config, timeframe_profile=profile)
+
+    @classmethod
+    def profiles_from_env(cls) -> tuple["LiveTrendWorkerConfig", ...]:
+        """Build independent profile runtimes while retaining legacy single-period configuration."""
+        raw = environ.get("HTX_TREND_PROFILES", "").strip()
+        if not raw:
+            return (cls.from_env(),)
+        saved = {name: environ.get(name) for name in (
+            "HTX_TREND_PERIOD", "HTX_TREND_TREND_PERIOD", "HTX_TREND_TIMEFRAME_PROFILE")}
+        try:
+            environ["HTX_TREND_PERIOD"] = "15min"
+            environ["HTX_TREND_TREND_PERIOD"] = "60min"
+            environ["HTX_TREND_TIMEFRAME_PROFILE"] = TimeframeProfile.INTRADAY_15M.value
+            base = cls.from_env()
+        finally:
+            for name, value in saved.items():
+                if value is None: environ.pop(name, None)
+                else: environ[name] = value
+        profiles = tuple(dict.fromkeys(
+            TimeframeProfile(item.strip().upper()) for item in raw.split(",") if item.strip()))
+        if not profiles:
+            raise ValueError("HTX_TREND_PROFILES must contain at least one profile")
+        output = []
+        for profile in profiles:
+            contract = profile.contract
+            default_live = base.entry_enabled if profile is TimeframeProfile.INTRADAY_15M else False
+            live = environ.get(f"HTX_TREND_{profile.value}_LIVE_ENABLED", str(default_live)).strip().lower() in {
+                "1", "true", "yes", "on"}
+            output.append(replace(base, entry_period=contract.entry_period, trend_period=contract.trend_period,
+                                  timeframe_profile=profile, entry_enabled=base.entry_enabled and live))
+        return tuple(output)
 
 
 class _EvidenceUnavailable(RuntimeError):
@@ -167,6 +204,10 @@ class LiveTrendWorker(StrategyWorker):
             raise ValueError("live trend worker requires at least one contract")
         if not config.combination_entry_enabled:
             raise ValueError("LiveTrendWorker requires HTX_TREND_COMBINATION_ENTRY_ENABLED=true; Java legacy entry is not implemented in Python")
+        config.timeframe_profile.validate(config.entry_period, config.trend_period)
+        if (config.timeframe_profile is TimeframeProfile.SWING_4H and not config.observe_only
+                and config.entry_enabled and instance.strategy_name == LEGACY_STRATEGY_VERSION):
+            raise ValueError("SWING_4H live entry requires a non-legacy strategy version with sealed admission")
         self._instance, self._repository, self._market, self._executor = instance, repository, market, executor
         self._config, self._trend_config, self._stopped = config, trend_config or config.java_entry, False
         self._diagnosis_rows: dict[tuple[str, int], dict[str, Any]] = {}
@@ -253,6 +294,11 @@ class LiveTrendWorker(StrategyWorker):
                 self._diagnose(scan, stage=stage, code=code, selected=len(chosen), flags=flags)
                 if chosen:
                     self._pending[scan.contract] = (chosen[0], scan, factor_id)
+                    shadow = self._config.observe_only or not self._config.entry_enabled
+                    self._record_candidate(chosen[0], scan, factor_id, context, shadow=shadow,
+                                           gate_result="SHADOW_ONLY" if shadow else "PRE_FLIGHT",
+                                           gate_reason=("profile live entry disabled" if shadow
+                                                        else "live account/exchange preflight pending"))
                 else:
                     self._pending.pop(scan.contract, None)
         else:
@@ -277,6 +323,7 @@ class LiveTrendWorker(StrategyWorker):
         elif not self._config.observe_only and not self._config.entry_enabled:
             for _, scan, _ in ranked:
                 self._diagnose(scan, stage="QUEUE", code=RejectCode.ENTRY_DISABLED)
+                self._pending.pop(scan.contract, None)
         if entry_attempt_allowed and self._config.observe_only:
             active = self._repository.active_position_count(account_id=self._instance.account_id or -1)
             # Java enters openIfEligible in observe-only mode when capacity is
@@ -297,24 +344,12 @@ class LiveTrendWorker(StrategyWorker):
             for policy, scan, factor_id in ranked[:slots]:
                 candidate = policy.candidate
                 run_id = f"trend-entry:{scan.contract}:{self._config.entry_period}:{candidate.bar_time}"
-                self._repository.record_candidate(contract_code=scan.contract, period=self._config.entry_period,
-                    bar_time=candidate.bar_time, direction=candidate.side.value,
-                    regime=candidate.market_regime or context.regime.value,
-                    score=candidate.score, close_price=candidate.entry_price,
-                    factors={"ema_fast": scan.signal.indicators.ema_fast, "ema_medium": scan.signal.indicators.ema_medium,
-                             "ema_slow": scan.signal.indicators.ema_slow, "atr": scan.signal.indicators.atr,
-                             "atr_pct": scan.signal.indicators.atr_pct, "adx": scan.signal.indicators.adx,
-                             "roc": scan.signal.indicators.roc}, reason="; ".join(candidate.evidence), model=candidate.model.value,
-                    run_id=run_id, factor_snapshot_id=factor_id, invalidation_price=candidate.invalidation_price,
-                    target_low=candidate.target_low, target_high=candidate.target_high, expected_r=candidate.expected_r,
-                    shadow=False, confirmation_models=policy.confirmation_models, policy_version=policy.policy.policy_version,
-                    gate_result="PRE_FLIGHT", gate_reason="live account/exchange preflight pending",
-                    sizing_multiplier=policy.sizing_multiplier, planned_notional_usdt=policy.planned_notional_usdt)
                 gate = self._executor.submit(run_id=run_id, candidate=candidate, period=self._config.entry_period,
                     atr=scan.signal.indicators.atr, ema_fast=scan.signal.indicators.ema_fast,
                     ema_slow=scan.signal.indicators.ema_slow, adx=scan.signal.indicators.adx,
                     recent_candles=scan.entry.candles, book=scan.book, contract=scan.contract_spec, funding=scan.funding,
-                    market_context=context, factor_snapshot_id=factor_id, now_epoch=now_epoch,
+                    market_context=context, factor_snapshot_id=factor_id,
+                    timeframe_profile=self._config.timeframe_profile.value, now_epoch=now_epoch,
                     evidence_refs=scan.entry.evidence_refs + scan.trend.evidence_refs)
                 self._repository.mark_candidate_execution_gate(run_id, scan.contract, candidate.model.value,
                     "PASSED" if gate.accepted else gate.gate.stage, gate.reason)
@@ -343,6 +378,24 @@ class LiveTrendWorker(StrategyWorker):
         active = self._repository.active_position_count(account_id=self._instance.account_id or -1)
         return WorkerHealth("DEGRADED" if failures else "HEALTHY", detail, len(ranked), active)
 
+    def _record_candidate(self, policy: PolicySelection, scan: _Scan, factor_id: int,
+                          context: MarketContext, *, shadow: bool, gate_result: str, gate_reason: str) -> None:
+        candidate = policy.candidate
+        run_id = f"trend-entry:{scan.contract}:{self._config.entry_period}:{candidate.bar_time}"
+        self._repository.record_candidate(contract_code=scan.contract, period=self._config.entry_period,
+            bar_time=candidate.bar_time, direction=candidate.side.value,
+            regime=candidate.market_regime or context.regime.value,
+            score=candidate.score, close_price=candidate.entry_price,
+            factors={"ema_fast": scan.signal.indicators.ema_fast, "ema_medium": scan.signal.indicators.ema_medium,
+                     "ema_slow": scan.signal.indicators.ema_slow, "atr": scan.signal.indicators.atr,
+                     "atr_pct": scan.signal.indicators.atr_pct, "adx": scan.signal.indicators.adx,
+                     "roc": scan.signal.indicators.roc}, reason="; ".join(candidate.evidence), model=candidate.model.value,
+            run_id=run_id, factor_snapshot_id=factor_id, invalidation_price=candidate.invalidation_price,
+            target_low=candidate.target_low, target_high=candidate.target_high, expected_r=candidate.expected_r,
+            shadow=shadow, confirmation_models=policy.confirmation_models, policy_version=policy.policy.policy_version,
+            gate_result=gate_result, gate_reason=gate_reason,
+            sizing_multiplier=policy.sizing_multiplier, planned_notional_usdt=policy.planned_notional_usdt)
+
     def _diagnose(self, scan: _Scan | None, *, stage: str | None, code: str | None,
                   selected: int | None = None, flags: dict | None = None,
                   contract: str | None = None, bar_time: int | None = None) -> None:
@@ -362,7 +415,7 @@ class LiveTrendWorker(StrategyWorker):
             instance_key=self._instance.instance_key,
             run_id=f"trend-entry:{contract}:{self._config.entry_period}:{bar_time}",
             contract_code=contract, period=self._config.entry_period, bar_time=bar_time,
-            timeframe_profile=None,  # R0 does not infer or enable an R1 profile.
+            timeframe_profile=self._config.timeframe_profile.value,
             signal_side=signal.side.value if signal else None, signal_score=signal.score if signal else None,
             score_gap=signal.score_gap if signal else None, regime=signal.regime if signal else None,
             market_regime_source=self._market_regime_source if scan else "UNCLASSIFIED",
@@ -506,7 +559,9 @@ class LiveTrendWorker(StrategyWorker):
             return self._repository.record_factor_snapshot(snapshot_key=sha256(f"empty:{scan.contract}".encode()).hexdigest(),
                 contract_code=scan.contract, period=self._config.entry_period, bar_time=0, market_regime=context.regime.value, factors={})
         factors = {name: getattr(factor, name) for name in ("ema_fast", "ema_medium", "ema_slow", "atr", "atr_pct", "adx", "roc", "vwap")}
-        snapshot_key = sha256(f"python-live:{self._instance.instance_key}:{scan.contract}:{scan.signal.bar_time}:{factors}".encode()).hexdigest()
+        snapshot_key = sha256(
+            f"python-live:{self._instance.instance_key}:{self._config.timeframe_profile.value}:"
+            f"{scan.contract}:{scan.signal.bar_time}:{factors}".encode()).hexdigest()
         factor_id = self._repository.record_factor_snapshot(snapshot_key=snapshot_key, contract_code=scan.contract,
             period=self._config.entry_period, bar_time=scan.signal.bar_time, market_regime=context.regime.value, factors=factors)
         self._repository.record_signal(contract_code=scan.contract, period=self._config.entry_period, bar_time=scan.signal.bar_time,
@@ -515,3 +570,31 @@ class LiveTrendWorker(StrategyWorker):
             atr=factor.atr, atr_pct=factor.atr_pct, adx=factor.adx, spread_rate=scan.book.top.spread_rate,
             funding_rate=scan.funding.rate if scan.funding else None, reason=scan.signal.reason)
         return factor_id
+
+
+class MultiTimeframeLiveTrendWorker(StrategyWorker):
+    """Run independent timeframe lifecycles behind one account writer lock."""
+
+    def __init__(self, workers: tuple[LiveTrendWorker, ...]) -> None:
+        if not workers:
+            raise ValueError("multi-timeframe worker requires at least one profile")
+        profiles = [worker._config.timeframe_profile for worker in workers]
+        if len(set(profiles)) != len(profiles):
+            raise ValueError("duplicate timeframe profile")
+        self._workers = workers
+
+    def stop(self) -> None:
+        for worker in self._workers:
+            worker.stop()
+
+    def tick(self) -> WorkerHealth:
+        outcomes = [(worker._config.timeframe_profile, worker.tick()) for worker in self._workers]
+        status = ("DEGRADED" if any(outcome.status == "DEGRADED" for _, outcome in outcomes)
+                  else "STOPPED" if all(outcome.status == "STOPPED" for _, outcome in outcomes)
+                  else "HEALTHY")
+        # MySQL heartbeat detail is capped at 1024 characters. Preserve a
+        # bounded slice from every profile instead of letting the first one
+        # hide the second profile's state.
+        detail = " | ".join(f"{profile.value}[{outcome.detail[:440]}]" for profile, outcome in outcomes)
+        return WorkerHealth(status, detail, sum(outcome.candidate_count for _, outcome in outcomes),
+                            max(outcome.active_position_count for _, outcome in outcomes))

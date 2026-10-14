@@ -7,6 +7,7 @@ from htx_trend.models import TrendSide
 from htx_trend.mysql_store import RuntimeInstance, TradeAccount
 from htx_trend.position_manager import LivePositionManager, ExitConfig
 from htx_trend.strategy_context import MarketContext
+from htx_trend.timeframes import TimeframeProfile
 
 
 class Repo:
@@ -53,6 +54,25 @@ def manager(repo=None,market=None,client=None,executor=None):
     return LivePositionManager(repo or Repo(),RuntimeInstance('p','TREND','HTX_TREND_V1',7,'primary','LIVE',True,'unit',None),
         TradeAccount(7,'primary','PRIMARY',True,False,'test'),market or Market(),client or Client(),executor or Executor(),
         config=ExitConfig(engine_enabled=True,engine_live=True))
+
+
+def test_manager_only_processes_positions_owned_by_its_profile():
+    repo = Repo()
+    intraday = position()
+    swing = {**position(), 'id': 2, 'position_key': 'swing', 'contract_code': 'ETH-USDT',
+             'timeframe_profile': 'SWING_4H'}
+    repo.managed_positions = lambda _: [intraday, swing]
+    managed = []
+    worker = manager(repo=repo)
+    worker._manage = lambda row, *_: managed.append(row['id'])
+    worker.manage(144900, MarketContext())
+    assert managed == [1]
+    swing_worker = LivePositionManager(repo, worker.instance, worker.account, worker.market, worker.client, worker.executor,
+        period='4hour', timeframe_profile=TimeframeProfile.SWING_4H,
+        config=ExitConfig(engine_enabled=True, engine_live=True))
+    swing_worker._manage = lambda row, *_: managed.append(row['id'])
+    swing_worker.manage(144900, MarketContext())
+    assert managed == [1, 2]
 
 
 def test_initial_stop_sends_reduce_only_after_intent_without_decrementing_quantity():

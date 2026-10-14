@@ -14,7 +14,7 @@ from .htx_v5 import HtxV5Client
 from .position_manager import LivePositionManager, ExitConfig
 from .writer_lock import TrendWriterLock
 from .live import HtxLiveExecutor, LiveAuthority
-from .live_worker import LiveTrendWorker, LiveTrendWorkerConfig
+from .live_worker import LiveTrendWorker, LiveTrendWorkerConfig, MultiTimeframeLiveTrendWorker
 from .market_data import HtxMarketData
 from .mysql_store import HtxTrendMySqlRepository, MySqlSettings, connect
 from .strategy_platform import DisabledStrategyWorker, ExecutionMode, StrategySupervisor, TrendObservationWorker, TrendObserverConfig
@@ -102,12 +102,16 @@ def main() -> None:
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
                 facts=HtxAccountFactsAdapter(private_client), executor=live, execution=ExecutionConfig.from_env(),
                 config=entry_config, admission=admission, evidence_store=evidence_store)
-            scan_config = LiveTrendWorkerConfig.from_env()
-            manager = LivePositionManager(repository, instance, account, market, private_client, live,
-                period=scan_config.entry_period, java_config=scan_config.java_entry, config=ExitConfig.from_env(),
-                evidence_store=evidence_store)
-            worker = LiveTrendWorker(instance, repository, market, entry, scan_config,
-                position_manager=manager, writer_guard=writer_lock.assert_owned, admission=admission)
+            scan_configs = LiveTrendWorkerConfig.profiles_from_env()
+            profile_workers = []
+            for scan_config in scan_configs:
+                manager = LivePositionManager(repository, instance, account, market, private_client, live,
+                    period=scan_config.entry_period, timeframe_profile=scan_config.timeframe_profile,
+                    java_config=scan_config.java_entry, config=ExitConfig.from_env(), evidence_store=evidence_store)
+                profile_workers.append(LiveTrendWorker(instance, repository, market, entry, scan_config,
+                    position_manager=manager, writer_guard=writer_lock.assert_owned, admission=admission))
+            worker = (profile_workers[0] if len(profile_workers) == 1
+                      else MultiTimeframeLiveTrendWorker(tuple(profile_workers)))
         elif family in {"CARRY_SINGLE", "CARRY_CROSS"}:
             worker = DisabledStrategyWorker(instance, repository)
         else:

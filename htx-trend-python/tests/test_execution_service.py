@@ -139,6 +139,20 @@ def test_entry_refuses_candidate_without_database_authorized_policy() -> None:
     assert not live.calls
 
 
+def test_entry_refuses_contract_owned_by_another_timeframe_profile() -> None:
+    repo, live = Repository(), Executor()
+    repo.active_contract_position = lambda **_: {
+        "id": 99, "contract_code": "BTC-USDT", "timeframe_profile": "INTRADAY_15M", "status": "ACTIVE"}
+    bars = (Candle(9_000, Decimal("99"), Decimal("101"), Decimal("98"), Decimal("100"), turnover=Decimal("1000")),)
+    result = executor(repo, live).submit(run_id="swing", candidate=candidate(), period="4hour", atr=Decimal("2"),
+        ema_fast=Decimal("101"), ema_slow=Decimal("99"), adx=Decimal("30"), recent_candles=bars,
+        book=OrderBook(((Decimal("99.99"), Decimal("100")),), ((Decimal("100.01"), Decimal("100")),)),
+        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1), funding=None,
+        market_context=MarketContext(), timeframe_profile="SWING_4H", now_epoch=10_000)
+    assert not result.accepted and result.gate.stage == "PROFILE_CONTRACT_MUTEX"
+    assert "INTRADAY_15M" in result.reason and not live.calls and not repo.calls
+
+
 def test_reconciliation_does_not_apply_python_only_risk_reservation_gate() -> None:
     repo, live = Repository(), Executor()
     executor(repo, live).reconcile(client_order_id="1", contract_code="BTC-USDT", position_id=7, leg="PARTIAL_CLOSE",

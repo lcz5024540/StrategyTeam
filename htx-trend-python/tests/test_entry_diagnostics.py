@@ -17,6 +17,8 @@ from htx_trend.mysql_store import HtxTrendMySqlRepository, RuntimeInstance
 from htx_trend.policy import explain_policy, select_policy
 from htx_trend.strategy_context import MarketContext
 from htx_trend.strategy_decision import HtxStrategyDecisionEngine
+from htx_trend.strategy_admission import (DecisionSurface, ResearchStage, StageEvidence, StageStatus, build_artifact)
+from htx_trend.timeframes import TimeframeProfile
 from test_java_entry_contract import _uptrend, _downtrend, _flat
 from test_policy import candidate, policy
 
@@ -27,8 +29,10 @@ def test_explain_count_matches_unchanged_candidates(bars, period):
     signal = evaluate(bars)
     explanation = explain_candidates(bars, signal, period=period)
     assert explanation.candidate_count == len(candidates(bars, signal, period=period))
-    if period != '15min':
+    if period == '30min':
         assert explanation.code == R.TIMEFRAME_UNSUPPORTED
+    else:
+        assert explanation.code != R.TIMEFRAME_UNSUPPORTED
 
 
 def test_signal_regime_and_structure_reasons():
@@ -78,7 +82,7 @@ def test_decision_hash_has_original_payload_only():
                    input_hash=decision.input_hash, config_hash=decision.config_hash, bar_time=decision.signal.bar_time,
                    side=decision.signal.side.value, candidate_models=[c.model.value for c in decision.candidates])
     assert decision.decision_hash == sha256(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    assert decision.diagnosis.code == R.TIMEFRAME_UNSUPPORTED
+    assert decision.diagnosis.code is None
     assert replace(decision, diagnosis=None).decision_hash == decision.decision_hash
 
 
@@ -139,7 +143,18 @@ def test_missing_table_degrades_without_leaking_error_details(caplog):
     assert 'entry diagnosis write unavailable' in caplog.text and 'secret' not in caplog.text
 
 
-def make_worker(monkeypatch, *, period='15min', policies=None, active=0, **config):
+def admitted_v2():
+    digest = 'a' * 64
+    return build_artifact(strategy_id='htx-trend', strategy_version='HTX_TREND_V2', experiment_id='EXP-20261015-001',
+        source_commit='test', policy_hash=digest, config_hash=digest, dataset_manifest_hash=digest,
+        stages=tuple(StageEvidence(stage, StageStatus.PASS, f'e/{stage.name}', digest, 'passed')
+                     for stage in ResearchStage),
+        allowed_surfaces=(DecisionSurface.RANKING, DecisionSurface.GATE, DecisionSurface.SIZING),
+        failure_conditions=('negative expectancy',), pause_conditions=('unknown exchange state',))
+
+
+def make_worker(monkeypatch, *, period='15min', policies=None, active=0,
+                strategy_name='HTX_TREND_V1', admission=None, **config):
     import htx_trend.live_worker as module
     class Clock:
         @staticmethod
@@ -161,31 +176,51 @@ def make_worker(monkeypatch, *, period='15min', policies=None, active=0, **confi
     executor.submit.return_value = NS(accepted=False, gate=NS(stage='gate.model_score'), reason='score')
     manager = Mock()
     manager.manage.return_value = []
-    worker = LiveTrendWorker(RuntimeInstance('one', 'TREND', 'HTX_TREND_V1', 7, 'test', 'LIVE', True, 'test', None),
+    profile = TimeframeProfile.for_period(period)
+    worker = LiveTrendWorker(RuntimeInstance('one', 'TREND', strategy_name, 7, 'test', 'LIVE', True, 'test', None),
         repo, market, executor, LiveTrendWorkerConfig(('BTC-USDT',), enabled=True, combination_entry_enabled=True,
-        entry_period=period, adaptive_sizing_enabled=False, market_anchor_enabled=False, **config),
-        position_manager=manager, writer_guard=lambda: None)
+        entry_period=period, trend_period=profile.contract.trend_period, timeframe_profile=profile,
+        adaptive_sizing_enabled=False, market_anchor_enabled=False, **config),
+        position_manager=manager, writer_guard=lambda: None, admission=admission)
     return worker, repo, market, executor, connection
 
 
-def test_live_4hour_preserves_observations_and_cached_diagnosis(monkeypatch):
+def test_live_4hour_generates_shadow_candidates_and_cached_diagnosis(monkeypatch):
     worker, repo, market, executor, connection = make_worker(monkeypatch, period='4hour')
     first, second = worker.tick(), worker.tick()
     assert len(connection.rows) == 1 and market.kline_window.call_count == 2
     row = next(iter(connection.rows.values()))
-    assert row['reject_code'] == R.TIMEFRAME_UNSUPPORTED and row['decision_hash']
-    assert row['policy_selected_count'] == row['raw_candidate_count'] == 0
-    assert 'TIMEFRAME_UNSUPPORTED' in first.detail and 'TIMEFRAME_UNSUPPORTED' in second.detail
+    assert row['reject_code'] == R.OBSERVE_ONLY_DISCARDED and row['decision_hash']
+    assert row['policy_selected_count'] > 0 and row['raw_candidate_count'] > 0
+    assert 'TIMEFRAME_UNSUPPORTED' not in first.detail + second.detail
+    assert 'period=4hour' in first.detail
     repo.record_signal.assert_called_once()
     repo.record_factor_snapshot.assert_called_once()
-    repo.record_candidate.assert_not_called()
+    assert repo.record_candidate.call_args.kwargs['shadow'] is True
     executor.submit.assert_not_called()
+
+
+def test_4hour_profile_live_switch_is_the_only_path_to_real_executor(monkeypatch):
+    shadow, repo, _, executor, _ = make_worker(
+        monkeypatch, period='4hour', observe_only=False, entry_enabled=False)
+    shadow.tick()
+    assert repo.record_candidate.call_args.kwargs['shadow'] is True
+    executor.submit.assert_not_called()
+
+    live, repo, _, executor, _ = make_worker(
+        monkeypatch, period='4hour', observe_only=False, entry_enabled=True,
+        strategy_name='HTX_TREND_V2', admission=admitted_v2())
+    live.tick()
+    assert repo.record_candidate.call_args.kwargs['shadow'] is False
+    assert executor.submit.call_count == 1
+    assert executor.submit.call_args.kwargs['period'] == '4hour'
+    assert executor.submit.call_args.kwargs['timeframe_profile'] == 'SWING_4H'
 
 
 @pytest.mark.parametrize('options,code,pending,attempts', [
     ({}, R.OBSERVE_ONLY_DISCARDED, False, 0),
     ({'active': 1}, R.CAPACITY_FULL, True, 0),
-    ({'observe_only': False, 'entry_enabled': False}, R.ENTRY_DISABLED, True, 0),
+    ({'observe_only': False, 'entry_enabled': False}, R.ENTRY_DISABLED, False, 0),
     ({'observe_only': False}, 'gate.model_score', False, 1),
     ({'policies': []}, R.NO_ENABLED_POLICY, False, 0),
     ({'signal_freshness_seconds': -1}, R.EXPIRED, False, 0),
@@ -196,7 +231,7 @@ def test_live_queue_policy_exec_diagnostics_do_not_change_actions(monkeypatch, o
     assert next(iter(connection.rows.values()))['reject_code'] == code
     assert bool(worker._pending) is pending
     assert executor.submit.call_count == attempts
-    assert repo.record_candidate.call_count == attempts
+    assert repo.record_candidate.call_count == (0 if options.get('policies') == [] else 1)
 
 
 @pytest.mark.parametrize('evidence', [False, True])
@@ -255,9 +290,9 @@ def test_diagnosis_ddl_has_bar_identity_and_mock_sql_mogrifies():
 
 @pytest.mark.parametrize('bars,period,expected', [
     (_uptrend(), '15min', 'fed1590ca7b3379e424a523389ac3062ef928e3f25ab7213c97e49847331ed17'),
-    (_uptrend(), '4hour', 'c497bc936db21e2f2d2662e164a30bba72750ca151f87afafe66a1eead24b271'),
+    (_uptrend(), '4hour', '5519ac83dd9b768ce92f3eef8aa4724dc23d4b548f24cd71afc62d94398dc562'),
     (_downtrend(), '15min', '88304c1a263add58d1fea0cc2c5d908d03b9641014a39facd23962a19fd2b9d8'),
-    (_downtrend(), '4hour', '08d460472fadaa1c22b7901fd5d58ff92b19b79e66e427816c9a22fc93235225'),
+    (_downtrend(), '4hour', '3698bd06bb389e2572b107b8f6863b42a4b99461ddb655da4523cdd151927cad'),
     (_flat(), '15min', 'a822042e11fdb784beb8cfeece7af81f7cfd465abd24737d4b8493040adbf02d'),
     (_flat(), '4hour', '2a6537f9207c4cd07554332aee7263445f37c178961b9a3f33597634e1eea465'),
 ])

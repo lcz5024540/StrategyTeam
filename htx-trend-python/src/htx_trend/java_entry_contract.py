@@ -17,6 +17,7 @@ from .diagnostics import CandidateDiagnosis, RejectCode
 from .indicators import IndicatorSnapshot, adx, atr, divide, ema, roc, snapshot
 from .market_data import Candle
 from .models import ModelCandidate, ModelCode, PriceStructure, TrendSide
+from .timeframes import TimeframeProfile
 
 ZERO = Decimal("0")
 HUNDRED = Decimal("100")
@@ -109,7 +110,11 @@ def evaluate(candles: Sequence[Candle], config: JavaEntryConfig = JavaEntryConfi
 def candidates(candles: Sequence[Candle], signal: JavaTrendSignal,
                config: JavaEntryConfig = JavaEntryConfig(), period: str = "15min") -> tuple[ModelCandidate, ...]:
     """Port Java combination candidates and their canonical policy evidence."""
-    if period != "15min" or signal.side is TrendSide.FLAT or signal.indicators is None:
+    try:
+        TimeframeProfile.for_period(period)
+    except ValueError:
+        return ()
+    if signal.side is TrendSide.FLAT or signal.indicators is None:
         return ()
     if config.combination_require_trending_regime and signal.regime not in {"TRENDING_UP", "TRENDING_DOWN"}:
         return ()
@@ -154,7 +159,9 @@ def explain_candidates(candles: Sequence[Candle], signal: JavaTrendSignal,
     In particular the period gate wins even over a FLAT signal. Structure
     flags reuse the combination helpers without creating or altering candidates.
     """
-    if period != "15min":
+    try:
+        TimeframeProfile.for_period(period)
+    except ValueError:
         return CandidateDiagnosis("CONTRACT", RejectCode.TIMEFRAME_UNSUPPORTED)
     if signal.indicators is None:
         return CandidateDiagnosis("SIGNAL", RejectCode.INSUFFICIENT_BARS)
