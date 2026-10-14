@@ -110,9 +110,15 @@
 
 ## 【策略运维】
 
-更新：2026-10-12 23:01 CST · 策略运维bot  
+更新：2026-10-14 · 策略运维bot
 原则：服务器**不拉仓库**；发版只装 tar+SHA；合 PR **勿动线上包**。SSH：box `/home/box/.ssh/id_ed25519_htx_ops` → `ubuntu@49.51.250.174`。  
 **权威落点**：本共享文档本节；勿再维护单独运维档（原 `ops-todos-support_htx_python.md` 仅作素材、已废止）。
+
+### 热修要点归档
+
+- Env：在 `htx-python.env` 显式设置 `HTX_TREND_LEVERAGE=10`；`from_env` 按 int 读取，未设置时 dataclass 默认值仍为 5。breadth PyMySQL 热修无需新增 env 键（`LIKE` 的 `%%` 说明见本节第 4 小节）。
+- 启动：`from_env` slots 修复后，未设置 `HTX_TREND_*` 冷却 MS 变量应不再导致启动崩溃；预期 LIVE 杠杆仍须按上条显式设置。
+- 紧急回滚：breadth `%%` 热修线的 `0.1.1-live-05395708` 包由 commit `05395708e496e490aa2c0f5a03bf0e94c43214e7` 构建；该基线仍有 breadth `%` 崩溃问题，仅供紧急回滚。
 
 ### 1. 当前正式 LIVE 运行态（基线）
 
