@@ -13,12 +13,15 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from hashlib import sha256
 from typing import Any
+import logging
+from importlib.metadata import PackageNotFoundError, version
 
+from .diagnostics import CandidateDiagnosis, RejectCode, heartbeat_detail
 from .execution_service import HtxTrendEntryExecutor
 from .market_data import HtxMarketData, period_seconds
 from .models import TrendSide
-from .java_entry_contract import JavaEntryConfig
-from .policy import StrategyPolicy, PolicySelection, select_policy
+from .java_entry_contract import JavaEntryConfig, explain_candidates
+from .policy import StrategyPolicy, PolicySelection, select_policy, explain_policy
 from .strategy_context import MarketContext, MarketRegime
 from .strategy_platform import ExecutionMode, StrategyWorker, WorkerHealth
 from .mysql_store import HtxTrendMySqlRepository, RuntimeInstance
@@ -131,6 +134,10 @@ class LiveTrendWorkerConfig:
         )
 
 
+class _EvidenceUnavailable(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class _Scan:
     contract: str
@@ -141,6 +148,8 @@ class _Scan:
     book: Any
     contract_spec: Any
     funding: Any
+    decision_hash: str | None = None
+    diagnosis: CandidateDiagnosis | None = None
 
 
 class LiveTrendWorker(StrategyWorker):
@@ -160,6 +169,13 @@ class LiveTrendWorker(StrategyWorker):
             raise ValueError("LiveTrendWorker requires HTX_TREND_COMBINATION_ENTRY_ENABLED=true; Java legacy entry is not implemented in Python")
         self._instance, self._repository, self._market, self._executor = instance, repository, market, executor
         self._config, self._trend_config, self._stopped = config, trend_config or config.java_entry, False
+        self._diagnosis_rows: dict[tuple[str, int], dict[str, Any]] = {}
+        self._raw_candidates = self._policy_selected = 0
+        self._market_regime_source = "UNCLASSIFIED"
+        try:
+            self._package_version = version("coinstrategy-htx-trend")
+        except PackageNotFoundError:
+            self._package_version = None
         self._admission = admission
         self._last_scanned_close_epoch: int | None = None
         self._pending: dict[str, tuple[PolicySelection, _Scan, int]] = {}
@@ -194,6 +210,8 @@ class LiveTrendWorker(StrategyWorker):
         scans: list[_Scan] = []
         failures: list[str] = []
         if fresh_scan:
+            self._diagnosis_rows = {}
+            self._raw_candidates = self._policy_selected = 0
             # This is intentionally read *before* writing this scan's signals,
             # matching Java's marketBreadthContext() ordering.
             breadth = (self._repository.latest_breadth_stats(
@@ -210,9 +228,29 @@ class LiveTrendWorker(StrategyWorker):
                 config=self._config,
             )
             self._last_context = context
+            self._market_regime_source = ("BREADTH" if breadth and breadth.total_count >= max(1, self._config.market_breadth_min_symbols)
+                                          else "UNCLASSIFIED")
             for scan in scans:
                 factor_id = self._persist_observation(scan, context)
                 chosen = select_policy(scan.candidates, policies, context)
+                diagnosis = scan.diagnosis or explain_candidates(scan.entry.candles, scan.signal, java_config, self._config.entry_period)
+                policy_diagnoses = explain_policy(scan.candidates, policies)
+                self._raw_candidates += len(scan.candidates)
+                self._policy_selected += len(chosen)
+                code, stage = diagnosis.code, diagnosis.stage
+                flags = dict(diagnosis.flags)
+                if not code and not chosen:
+                    stage = "POLICY"
+                    code = (RejectCode.NO_ENABLED_POLICY if not policies else
+                            RejectCode.POLICY_SCORE_BELOW_THRESHOLD if any(
+                                item.code == RejectCode.POLICY_SCORE_BELOW_THRESHOLD for item in policy_diagnoses)
+                            else RejectCode.POLICY_NOT_MATCHED)
+                    rejected = next((item for item in policy_diagnoses if item.code == code), None)
+                    if rejected:
+                        flags["policy"] = {"model": rejected.model, "confirmations": rejected.confirmations,
+                                           "score": str(rejected.score),
+                                           "thresholds": [str(value) for value in rejected.thresholds[:4]]}
+                self._diagnose(scan, stage=stage, code=code, selected=len(chosen), flags=flags)
                 if chosen:
                     self._pending[scan.contract] = (chosen[0], scan, factor_id)
                 else:
@@ -220,6 +258,9 @@ class LiveTrendWorker(StrategyWorker):
         else:
             context = self._last_context
 
+        for policy, scan, _ in self._pending.values():
+            if not self._candidate_fresh(policy.candidate, now_epoch):
+                self._diagnose(scan, stage="QUEUE", code=RejectCode.EXPIRED)
         self._expire_pending(now_epoch)
         ranked = sorted(self._pending.values(), key=lambda item: (item[0].effective_score, item[0].base_score,
                                                                     item[0].candidate.expected_r), reverse=True)
@@ -230,6 +271,12 @@ class LiveTrendWorker(StrategyWorker):
         execution_block_reason = ("trend observe-only enabled" if self._config.observe_only
                                   else "new trend entries disabled" if not self._config.entry_enabled else None)
         entry_attempt_allowed = ranked and (within_window or carryover)
+        if not entry_attempt_allowed:
+            for _, scan, _ in ranked:
+                self._diagnose(scan, stage="QUEUE", code=RejectCode.OUT_OF_WINDOW)
+        elif not self._config.observe_only and not self._config.entry_enabled:
+            for _, scan, _ in ranked:
+                self._diagnose(scan, stage="QUEUE", code=RejectCode.ENTRY_DISABLED)
         if entry_attempt_allowed and self._config.observe_only:
             active = self._repository.active_position_count(account_id=self._instance.account_id or -1)
             # Java enters openIfEligible in observe-only mode when capacity is
@@ -237,10 +284,16 @@ class LiveTrendWorker(StrategyWorker):
             # a later flag flip from submitting an old bar as a live order.
             if self._remaining_slots(len(ranked), active) > 0:
                 for _, scan, _ in ranked:
+                    self._diagnose(scan, stage="QUEUE", code=RejectCode.OBSERVE_ONLY_DISCARDED)
                     self._pending.pop(scan.contract, None)
+            else:
+                for _, scan, _ in ranked:
+                    self._diagnose(scan, stage="QUEUE", code=RejectCode.CAPACITY_FULL)
         elif entry_attempt_allowed and execution_block_reason is None:
             active = self._repository.active_position_count(account_id=self._instance.account_id or -1)
             slots = self._remaining_slots(len(ranked), active)
+            for _, scan, _ in ranked[slots:]:
+                self._diagnose(scan, stage="QUEUE", code=RejectCode.CAPACITY_FULL)
             for policy, scan, factor_id in ranked[:slots]:
                 candidate = policy.candidate
                 run_id = f"trend-entry:{scan.contract}:{self._config.entry_period}:{candidate.bar_time}"
@@ -265,6 +318,7 @@ class LiveTrendWorker(StrategyWorker):
                     evidence_refs=scan.entry.evidence_refs + scan.trend.evidence_refs)
                 self._repository.mark_candidate_execution_gate(run_id, scan.contract, candidate.model.value,
                     "PASSED" if gate.accepted else gate.gate.stage, gate.reason)
+                self._diagnose(scan, stage="EXEC", code=None if gate.accepted else gate.gate.stage)
                 accepted += int(gate.accepted)
                 attempted += 1
                 # Java removes a candidate after its gate/order evaluation;
@@ -277,8 +331,45 @@ class LiveTrendWorker(StrategyWorker):
             detail += f" entrySkipped={execution_block_reason}"
         if failures:
             detail += " failures=" + ",".join(failures[:8])
+        rejections = {row["contract_code"]: row["reject_code"] for row in self._diagnosis_rows.values() if row["reject_code"]}
+        detail = heartbeat_detail(detail, period=self._config.entry_period, raw_candidates=self._raw_candidates,
+                                  policy_selected=self._policy_selected, rejections=rejections)
+        for row in self._diagnosis_rows.values():
+            try:
+                self._repository.record_entry_diagnosis(**row)
+            except Exception as error:
+                # Diagnostics must not interrupt an otherwise valid trading tick.
+                logging.getLogger(__name__).warning("entry diagnosis unavailable: %s", type(error).__name__)
         active = self._repository.active_position_count(account_id=self._instance.account_id or -1)
         return WorkerHealth("DEGRADED" if failures else "HEALTHY", detail, len(ranked), active)
+
+    def _diagnose(self, scan: _Scan | None, *, stage: str | None, code: str | None,
+                  selected: int | None = None, flags: dict | None = None,
+                  contract: str | None = None, bar_time: int | None = None) -> None:
+        if scan is not None:
+            contract = scan.contract
+            bar_time = scan.signal.bar_time
+            if bar_time is None:
+                bar_time = max((c.open_time for c in scan.entry.candles), default=None)
+        if bar_time is None:
+            bar_time = (self._last_scanned_close_epoch or 0) - period_seconds(self._config.entry_period)
+        key = (contract, bar_time)
+        previous = self._diagnosis_rows.get(key)
+        if previous and previous["reject_code"]:
+            return  # First rejecting stage wins; queue observations never mutate pending.
+        signal = scan.signal if scan else None
+        self._diagnosis_rows[key] = dict(
+            instance_key=self._instance.instance_key,
+            run_id=f"trend-entry:{contract}:{self._config.entry_period}:{bar_time}",
+            contract_code=contract, period=self._config.entry_period, bar_time=bar_time,
+            timeframe_profile=None,  # R0 does not infer or enable an R1 profile.
+            signal_side=signal.side.value if signal else None, signal_score=signal.score if signal else None,
+            score_gap=signal.score_gap if signal else None, regime=signal.regime if signal else None,
+            market_regime_source=self._market_regime_source if scan else "UNCLASSIFIED",
+            stage=stage, reject_code=code, raw_candidate_count=len(scan.candidates) if scan else 0,
+            policy_selected_count=selected if selected is not None else previous["policy_selected_count"] if previous else int(scan is not None),
+            flags=flags if flags is not None else previous["flags"] if previous else {},
+            decision_hash=scan.decision_hash if scan else None, package_version=self._package_version)
 
     def _remaining_slots(self, candidate_count: int, active_position_count: int) -> int:
         """Literal Java combination-mode capacity semantics.
@@ -384,14 +475,18 @@ class LiveTrendWorker(StrategyWorker):
                 try:
                     scans.append(future.result())
                 except Exception as error:
-                    failures.append(f"{contract}:{type(error).__name__}")
+                    failures.append(f"{contract}:{'RuntimeError' if isinstance(error, _EvidenceUnavailable) else type(error).__name__}")
+                    code = (RejectCode.EVIDENCE_UNAVAILABLE if isinstance(error, _EvidenceUnavailable)
+                            else RejectCode.SCAN_FAILED)
+                    self._diagnose(None, contract=contract, bar_time=self._stable_candle_close_epoch(now_epoch)
+                                   - period_seconds(self._config.entry_period), stage="SCAN", code=code)
         return scans, failures
 
     def _scan_one(self, contract: str, now_epoch: int, java_config: JavaEntryConfig) -> _Scan:
         entry = self._market.kline_window(contract, self._config.entry_period, self._config.kline_size, now_epoch=now_epoch)
         trend = self._market.kline_window(contract, self._config.trend_period, self._config.kline_size, now_epoch=now_epoch)
         if entry.evidence_status == "FAILED" or trend.evidence_status == "FAILED":
-            raise RuntimeError("evidence persistence unavailable; new risk is paused")
+            raise _EvidenceUnavailable("evidence persistence unavailable; new risk is paused")
         decision = HtxStrategyDecisionEngine(
             strategy_version=self._instance.strategy_name or LEGACY_STRATEGY_VERSION,
             config=java_config, admission=self._admission, evidence_store=self._market.evidence_store,
@@ -402,7 +497,8 @@ class LiveTrendWorker(StrategyWorker):
         except Exception:
             funding = None
         return _Scan(contract, entry, trend, decision.signal, decision.candidates,
-                     self._market.order_book(contract), self._market.contract_spec(contract), funding)
+                     self._market.order_book(contract), self._market.contract_spec(contract), funding,
+                     decision.decision_hash, decision.diagnosis)
 
     def _persist_observation(self, scan: _Scan, context: MarketContext) -> int:
         factor = scan.signal.indicators

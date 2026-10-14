@@ -13,6 +13,7 @@ from decimal import Decimal
 from os import environ
 from typing import Sequence
 
+from .diagnostics import CandidateDiagnosis, RejectCode
 from .indicators import IndicatorSnapshot, adx, atr, divide, ema, roc, snapshot
 from .market_data import Candle
 from .models import ModelCandidate, ModelCode, PriceStructure, TrendSide
@@ -144,6 +145,48 @@ def candidates(candles: Sequence[Candle], signal: JavaTrendSignal,
         result.append(_candidate(ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION, "EMA_STACK,MOMENTUM", signal, structure, latest, prior,
                                  signal.score + Decimal("12"), "EMA stack and momentum continuation"))
     return tuple(sorted(result, key=lambda item: item.score, reverse=True))
+
+
+def explain_candidates(candles: Sequence[Candle], signal: JavaTrendSignal,
+                       config: JavaEntryConfig = JavaEntryConfig(), period: str = "15min") -> CandidateDiagnosis:
+    """Explain the existing gates in their actual evaluation order.
+
+    In particular the period gate wins even over a FLAT signal. Structure
+    flags reuse the combination helpers without creating or altering candidates.
+    """
+    if period != "15min":
+        return CandidateDiagnosis("CONTRACT", RejectCode.TIMEFRAME_UNSUPPORTED)
+    if signal.indicators is None:
+        return CandidateDiagnosis("SIGNAL", RejectCode.INSUFFICIENT_BARS)
+    if signal.side is TrendSide.FLAT:
+        return CandidateDiagnosis("SIGNAL", RejectCode.NO_DIRECTION_SIGNAL, flags={
+            "score_below_threshold": signal.score < config.entry_score_threshold,
+            "gap_below_threshold": signal.score_gap < config.min_score_gap})
+    if config.combination_require_trending_regime and signal.regime not in {"TRENDING_UP", "TRENDING_DOWN"}:
+        return CandidateDiagnosis("CONTRACT", RejectCode.REGIME_NOT_TRENDING, flags={"regime": signal.regime})
+    ordered = tuple(sorted(candles, key=lambda candle: candle.open_time))
+    box = max(2, config.box_window_bars)
+    if len(ordered) < box + 1:
+        return CandidateDiagnosis("SIGNAL", RejectCode.INSUFFICIENT_BARS)
+    factor = signal.indicators
+    structure = _structure(ordered, box)
+    box_breakout = signal.close_price > structure.box_high if signal.side is TrendSide.LONG else signal.close_price < structure.box_low
+    donchian = signal.close_price > signal.breakout_high if signal.side is TrendSide.LONG else signal.close_price < signal.breakout_low
+    prior = _prior_breakout(ordered, signal.side, box, config.fib_source_lookback_bars)
+    fib_retest = prior is not None and _fib_retest(signal.side, signal.close_price, prior, factor.ema_fast)
+    stack = ((factor.ema_fast > factor.ema_medium > factor.ema_slow and factor.roc > ZERO)
+             if signal.side is TrendSide.LONG else (factor.ema_fast < factor.ema_medium < factor.ema_slow and factor.roc < ZERO))
+    fib_box = bool(fib_retest and (box_breakout or prior[0]))
+    fib_channel = bool(fib_retest and (donchian or prior[1]))
+    count = int(donchian) + int(fib_box) + int(fib_channel) + int(fib_box and fib_channel) + int(stack and factor.adx >= Decimal("20"))
+    flags = {"box_breakout": box_breakout, "donchian": donchian, "fib_retest": fib_retest,
+             "ema_stack": stack, "adx": str(factor.adx)}
+    if not count:
+        flags["subcodes"] = [code.value for passed, code in (
+            (box_breakout, RejectCode.NO_BOX_BREAKOUT), (donchian, RejectCode.NO_DONCHIAN_BREAKOUT),
+            (fib_retest, RejectCode.NO_FIB_RETEST), (stack, RejectCode.EMA_MOMENTUM_CONFLICT),
+            (factor.adx >= Decimal("20"), RejectCode.ADX_BELOW_20)) if not passed]
+    return CandidateDiagnosis(None if count else "CONTRACT", None if count else RejectCode.NO_STRUCTURE, count, flags)
 
 
 def _score(close: Decimal, factor: IndicatorSnapshot, high: Decimal, low: Decimal, volume_ratio: Decimal,

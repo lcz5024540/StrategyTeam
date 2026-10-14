@@ -13,6 +13,7 @@ from os import environ
 from typing import Any, Protocol
 import hashlib
 import json
+import logging
 
 
 class Cursor(Protocol):
@@ -638,6 +639,43 @@ class HtxTrendMySqlRepository:
           trailing_armed_at=%s,trailing_arm_reason=%s,max_favorable_r=%s,exit_phase=%s WHERE id=%s""",
           (state['highest'],state['lowest'],decision.protection_price,decision.trailing_armed_at,
            decision.trailing_arm_reason,decision.max_favorable_r,decision.phase.value,position_id))
+
+    def record_entry_diagnosis(self, *, instance_key: str, run_id: str, contract_code: str,
+                               period: str, bar_time: int, timeframe_profile: str | None = None,
+                               signal_side: str | None = None, signal_score: Decimal | None = None,
+                               score_gap: Decimal | None = None, regime: str | None = None,
+                               market_regime_source: str = "UNCLASSIFIED", stage: str | None = None,
+                               reject_code: str | None = None, raw_candidate_count: int = 0,
+                               policy_selected_count: int = 0, flags: dict | None = None,
+                               decision_hash: str | None = None, package_version: str | None = None) -> bool:
+        """One row per instance/contract/bar; retain the first rejection on retries.
+
+        Successful scans can later acquire a queue/EXEC rejection. A rejection
+        already recorded is immutable, including across process restarts.
+        Missing DDL (or any diagnostic write failure) degrades to a safe log.
+        """
+        compact_flags = dict(flags or {})
+        encoded = json.dumps(compact_flags, default=str, sort_keys=True, separators=(",", ":"))
+        # Keep valid JSON rather than slicing in the middle of a string/value.
+        while len(encoded) > 512 and compact_flags:
+            compact_flags.pop(next(reversed(compact_flags)))
+            encoded = json.dumps({**compact_flags, "truncated": True}, default=str, sort_keys=True, separators=(",", ":"))
+        columns = ("instance_key", "run_id", "contract_code", "period", "bar_time", "timeframe_profile",
+                   "signal_side", "signal_score", "score_gap", "regime", "market_regime_source", "stage",
+                   "raw_candidate_count", "policy_selected_count", "flags_json", "decision_hash", "package_version", "reject_code")
+        params = (instance_key, run_id, contract_code, period, bar_time, timeframe_profile, signal_side,
+                  signal_score, score_gap, regime, market_regime_source, stage, raw_candidate_count,
+                  policy_selected_count, encoded, decision_hash, package_version, reject_code)
+        # reject_code must be assigned last: MySQL evaluates assignments left to right.
+        updates = ",".join(f"{name}=IF(reject_code IS NULL,VALUES({name}),{name})" for name in columns[5:])
+        query = ("INSERT INTO htx_trend_entry_diagnosis (" + ",".join(columns) + ") VALUES ("
+                 + ",".join(["%s"] * len(columns)) + ") ON DUPLICATE KEY UPDATE " + updates)
+        try:
+            self._write(query, params)
+        except Exception as error:
+            logging.getLogger(__name__).warning("entry diagnosis write unavailable: %s", type(error).__name__)
+            return False
+        return True
 
     def heartbeat(self, *, instance_key: str, status: str, detail: str, candidate_count: int, active_position_count: int) -> None:
         self._write("INSERT INTO strategy_runtime_heartbeat(instance_key,heartbeat_at,status,detail,candidate_count,active_position_count) VALUES(%s,CURRENT_TIMESTAMP(3),%s,%s,%s,%s)",
