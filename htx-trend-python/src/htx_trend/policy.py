@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Iterable
 
+from .diagnostics import PolicyDiagnosis, RejectCode
 from .models import ModelCandidate, ModelCode, TrendSide
 from .strategy_context import MarketContext, MarketRegime
 
@@ -132,3 +133,20 @@ def select_policy(candidates: Iterable[ModelCandidate], policies: Iterable[Strat
                                             multiplier, planned, confirmations))
     return tuple(sorted(resolved, key=lambda item: (item.effective_score, item.base_score,
                                                      item.candidate.expected_r), reverse=True))
+
+
+def explain_policy(candidates: Iterable[ModelCandidate], policies: Iterable[StrategyPolicy]) -> tuple[PolicyDiagnosis, ...]:
+    """Explain exact evidence matching and raw-score thresholds, without ranking."""
+    enabled = tuple(policies)
+    result = []
+    for candidate in candidates:
+        confirmations = confirmation_models(candidate)
+        matches = tuple(policy for policy in enabled if policy.primary_model == candidate.model.value
+                        and policy.confirmation_models == confirmations)
+        code = (RejectCode.NO_ENABLED_POLICY if not enabled else
+                RejectCode.POLICY_NOT_MATCHED if not matches else
+                RejectCode.POLICY_SCORE_BELOW_THRESHOLD if all(candidate.score < p.score_threshold for p in matches)
+                else None)
+        result.append(PolicyDiagnosis(candidate.model.value, confirmations, code, candidate.score,
+                                      tuple(p.score_threshold for p in matches)))
+    return tuple(result)
