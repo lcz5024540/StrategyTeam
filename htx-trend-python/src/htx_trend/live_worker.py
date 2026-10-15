@@ -394,7 +394,8 @@ class LiveTrendWorker(StrategyWorker):
             target_low=candidate.target_low, target_high=candidate.target_high, expected_r=candidate.expected_r,
             shadow=shadow, confirmation_models=policy.confirmation_models, policy_version=policy.policy.policy_version,
             gate_result=gate_result, gate_reason=gate_reason,
-            sizing_multiplier=policy.sizing_multiplier, planned_notional_usdt=policy.planned_notional_usdt)
+            sizing_multiplier=policy.sizing_multiplier, planned_notional_usdt=policy.planned_notional_usdt,
+            timeframe_profile=self._config.timeframe_profile.value)
 
     def _diagnose(self, scan: _Scan | None, *, stage: str | None, code: str | None,
                   selected: int | None = None, flags: dict | None = None,

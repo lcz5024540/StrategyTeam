@@ -26,6 +26,7 @@ from .mysql_store import HtxTrendMySqlRepository, RuntimeInstance
 from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
 from .strategy_decision import HtxStrategyDecisionEngine, LEGACY_STRATEGY_VERSION
 from .strategy_context import MarketContext, MarketRegime
+from .timeframes import TimeframeProfile
 
 
 class ExecutionMode(StrEnum):
@@ -221,7 +222,9 @@ class TrendObservationWorker:
                 policy_version=selection.policy.policy_version if selection else None,
                 gate_result=gate_result, gate_reason=gate_reason,
                 sizing_multiplier=selection.sizing_multiplier if selection else None,
-                planned_notional_usdt=selection.planned_notional_usdt if selection else None)
+                planned_notional_usdt=selection.planned_notional_usdt if selection else None,
+                timeframe_profile=(TimeframeProfile.for_period(self._config.entry_period).value
+                                   if self._config.entry_period in {"15min", "4hour"} else None))
             self._repository.mark_candidate_execution_gate(run_id, result.contract, item.model.value, "OBSERVE_ONLY",
                                                             f"{gate_reason}; real account, book, fee, margin and order preflight not entered")
         return len(result.model_candidates)
