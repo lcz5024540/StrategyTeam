@@ -191,7 +191,7 @@ class HtxV5Client:
             **(query or {}),
         }
         canonical = self.canonical_query(signed_query)
-        payload = f"{method.upper()}\\n{self._host}\\n{path}\\n{canonical}"
+        payload = f"{method.upper()}\n{self._host}\n{path}\n{canonical}"
         signature = base64.b64encode(hmac.new(self._secret_key.encode(), payload.encode(), hashlib.sha256).digest()).decode()
         signed_query["Signature"] = signature
         return self._request(method, path, query=signed_query, body=body)

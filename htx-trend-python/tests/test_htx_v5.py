@@ -32,7 +32,7 @@ def test_private_request_uses_htx_canonical_hmac_signature() -> None:
         signature = query.pop("Signature")[0]
         flattened = {key: values[0] for key, values in query.items()}
         canonical = HtxV5Client.canonical_query(flattened)
-        payload = f"GET\\nexample.test\\n/v5/trade/position/opens\\n{canonical}"
+        payload = f"GET\nexample.test\n/v5/trade/position/opens\n{canonical}"
         expected = base64.b64encode(hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest()).decode()
         assert signature == expected
         assert flattened["AccessKeyId"] == "access"
