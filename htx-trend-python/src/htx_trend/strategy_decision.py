@@ -8,7 +8,8 @@ from hashlib import sha256
 from typing import Sequence
 import json
 
-from .java_entry_contract import JavaEntryConfig, JavaTrendSignal, candidates, evaluate
+from .diagnostics import CandidateDiagnosis
+from .java_entry_contract import JavaEntryConfig, JavaTrendSignal, candidates, evaluate, explain_candidates
 from .market_data import Candle
 from .models import ModelCandidate
 from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
@@ -27,6 +28,7 @@ class StrategyDecision:
     config_hash: str
     decision_hash: str
     trace_ref: str | None = None
+    diagnosis: CandidateDiagnosis | None = None
 
 
 class HtxStrategyDecisionEngine:
@@ -67,7 +69,8 @@ class HtxStrategyDecisionEngine:
             trace = trace_entry(context, ordered, period, signal, output, self.config)
             trace_ref = self.evidence_store.put("decision_trace", trace, refs=evidence_refs)
         return StrategyDecision(self.strategy_version, contract_code, period, signal, output,
-                                input_hash, config_hash, decision_hash, trace_ref)
+                                input_hash, config_hash, decision_hash, trace_ref,
+                                explain_candidates(ordered, signal, self.config, period))
 
     def require(self, surface: DecisionSurface | str) -> None:
         self._authorize(DecisionSurface(surface))

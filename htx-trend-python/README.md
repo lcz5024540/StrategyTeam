@@ -45,6 +45,16 @@ Python 的生产事实账本是现有 MySQL，不是本地 SQLite。订单查询
 
 `HTX_TREND_V1` 保留为存量兼容版本。其他 `strategy_name` 启动前必须设置 `HTX_TREND_STRATEGY_ADMISSION_PATH=/path/admission.json`；缺失、版本不匹配、证据阶段不足或内容 hash 被改写都会失败关闭。通过完整准入的新版本按止损距离和 `risk_per_trade` 先计算风险仓位，再受目标名义额和最大名义额约束。
 
+LIVE worker 支持在同一 writer 内同时调度 `INTRADAY_15M` 和 `SWING_4H`。前者固定使用 `15min/60min`，后者固定使用 `4hour/1day`；周期与 profile 不匹配时启动失败。候选、订单和持仓均携带 `timeframe_profile`，持仓只由所属 profile 的管理器读取和退出。账户采用合约互斥：同一合约已有任一 profile 的非终态仓位时，另一 profile 返回 `PROFILE_CONTRACT_MUTEX`，不会叠加或反向接管交易所聚合仓位。硬止损继续使用可执行盘口即时保护，不等待下一根周期 K 线。
+
+```bash
+HTX_TREND_PROFILES=INTRADAY_15M,SWING_4H
+HTX_TREND_INTRADAY_15M_LIVE_ENABLED=true
+HTX_TREND_SWING_4H_LIVE_ENABLED=false
+```
+
+关闭某个 profile 的 LIVE 开关仍会计算并保存其候选，标记 `shadow=true/SHADOW_ONLY`，但不会调用真实订单执行器。重新启用后只处理新扫描产生的候选，不补发开关关闭期间的旧候选。
+
 ```bash
 python -m htx_trend.worker --strategy-instance <instance-key>
 ```

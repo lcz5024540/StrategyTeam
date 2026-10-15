@@ -13,6 +13,7 @@ from os import environ
 from typing import Any, Protocol
 import hashlib
 import json
+import logging
 
 
 class Cursor(Protocol):
@@ -402,11 +403,20 @@ class HtxTrendMySqlRepository:
             AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT','UNKNOWN')""", ())
         return int(row["count"]) if row else 0
 
-    def latest_done_trade(self, *, account_id: int, contract_code: str) -> dict[str, Any] | None:
-        """Literal Java ``findLastDone`` scope for primary trend cooldown."""
+    def active_contract_position(self, *, account_id: int, contract_code: str) -> dict[str, Any] | None:
+        """Account-level mutex: an exchange contract belongs to one profile until terminal."""
+        return self._one("""SELECT id,contract_code,timeframe_profile,status FROM htx_trend_position
+          WHERE account_id=%s AND contract_code=%s AND source_position_id IS NULL
+          AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT','UNKNOWN')
+          ORDER BY id LIMIT 1""", (account_id, contract_code))
+
+    def latest_done_trade(self, *, account_id: int, contract_code: str,
+                          timeframe_profile: str = "INTRADAY_15M") -> dict[str, Any] | None:
+        """Profile-local cooldown; a 15m close cannot cool down a 4h lifecycle."""
         return self._one("""SELECT id,contract_code,updated_at,realized_profit,entry_fee,close_fee,message
           FROM htx_trend_position WHERE contract_code=%s AND source_position_id IS NULL
-          AND account_label='primary' AND status='DONE' ORDER BY updated_at DESC,id DESC LIMIT 1""", (contract_code,))
+          AND account_id=%s AND timeframe_profile=%s AND status='DONE'
+          ORDER BY updated_at DESC,id DESC LIMIT 1""", (contract_code, account_id, timeframe_profile))
 
     def claim_entry_cycle(self, *, structure_key: str, contract_code: str, timeframe: str,
                           direction: str, primary_model: str, breakout_bar_time: int | None,
@@ -594,7 +604,7 @@ class HtxTrendMySqlRepository:
           ON DUPLICATE KEY UPDATE signal_score=VALUES(signal_score),entry_reason=VALUES(entry_reason),confirmation_models=VALUES(confirmation_models),
           policy_version=VALUES(policy_version),run_id=VALUES(run_id),factor_snapshot_id=VALUES(factor_snapshot_id),
           invalidation_price=VALUES(invalidation_price),target_zone_low=VALUES(target_zone_low),target_zone_high=VALUES(target_zone_high),
-          expected_r_multiple=VALUES(expected_r_multiple),gate_result=VALUES(gate_result),gate_reason=VALUES(gate_reason),
+          expected_r_multiple=VALUES(expected_r_multiple),shadow=VALUES(shadow),gate_result=VALUES(gate_result),gate_reason=VALUES(gate_reason),
           sizing_multiplier=VALUES(sizing_multiplier),planned_notional_usdt=VALUES(planned_notional_usdt)""",
           (contract_code,period,bar_time,direction,regime,score,close_price,factors.get("ema_fast"),factors.get("ema_medium"),
            factors.get("ema_slow"),factors.get("atr"),factors.get("atr_pct"),factors.get("adx"),factors.get("roc"),
@@ -638,6 +648,43 @@ class HtxTrendMySqlRepository:
           trailing_armed_at=%s,trailing_arm_reason=%s,max_favorable_r=%s,exit_phase=%s WHERE id=%s""",
           (state['highest'],state['lowest'],decision.protection_price,decision.trailing_armed_at,
            decision.trailing_arm_reason,decision.max_favorable_r,decision.phase.value,position_id))
+
+    def record_entry_diagnosis(self, *, instance_key: str, run_id: str, contract_code: str,
+                               period: str, bar_time: int, timeframe_profile: str | None = None,
+                               signal_side: str | None = None, signal_score: Decimal | None = None,
+                               score_gap: Decimal | None = None, regime: str | None = None,
+                               market_regime_source: str = "UNCLASSIFIED", stage: str | None = None,
+                               reject_code: str | None = None, raw_candidate_count: int = 0,
+                               policy_selected_count: int = 0, flags: dict | None = None,
+                               decision_hash: str | None = None, package_version: str | None = None) -> bool:
+        """One row per instance/contract/bar; retain the first rejection on retries.
+
+        Successful scans can later acquire a queue/EXEC rejection. A rejection
+        already recorded is immutable, including across process restarts.
+        Missing DDL (or any diagnostic write failure) degrades to a safe log.
+        """
+        compact_flags = dict(flags or {})
+        encoded = json.dumps(compact_flags, default=str, sort_keys=True, separators=(",", ":"))
+        # Keep valid JSON rather than slicing in the middle of a string/value.
+        while len(encoded) > 512 and compact_flags:
+            compact_flags.pop(next(reversed(compact_flags)))
+            encoded = json.dumps({**compact_flags, "truncated": True}, default=str, sort_keys=True, separators=(",", ":"))
+        columns = ("instance_key", "run_id", "contract_code", "period", "bar_time", "timeframe_profile",
+                   "signal_side", "signal_score", "score_gap", "regime", "market_regime_source", "stage",
+                   "raw_candidate_count", "policy_selected_count", "flags_json", "decision_hash", "package_version", "reject_code")
+        params = (instance_key, run_id, contract_code, period, bar_time, timeframe_profile, signal_side,
+                  signal_score, score_gap, regime, market_regime_source, stage, raw_candidate_count,
+                  policy_selected_count, encoded, decision_hash, package_version, reject_code)
+        # reject_code must be assigned last: MySQL evaluates assignments left to right.
+        updates = ",".join(f"{name}=IF(reject_code IS NULL,VALUES({name}),{name})" for name in columns[5:])
+        query = ("INSERT INTO htx_trend_entry_diagnosis (" + ",".join(columns) + ") VALUES ("
+                 + ",".join(["%s"] * len(columns)) + ") ON DUPLICATE KEY UPDATE " + updates)
+        try:
+            self._write(query, params)
+        except Exception as error:
+            logging.getLogger(__name__).warning("entry diagnosis write unavailable: %s", type(error).__name__)
+            return False
+        return True
 
     def heartbeat(self, *, instance_key: str, status: str, detail: str, candidate_count: int, active_position_count: int) -> None:
         self._write("INSERT INTO strategy_runtime_heartbeat(instance_key,heartbeat_at,status,detail,candidate_count,active_position_count) VALUES(%s,CURRENT_TIMESTAMP(3),%s,%s,%s,%s)",

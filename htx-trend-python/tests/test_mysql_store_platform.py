@@ -90,8 +90,8 @@ def test_open_like_and_cooldown_queries_match_java_primary_scope() -> None:
     assert "source_position_id IS NULL AND account_label='primary'" in open_like_query
     assert "'UNKNOWN'" in open_like_query
     assert open_like_args == ()
-    assert "source_position_id IS NULL" in done_query and "account_label='primary'" in done_query
-    assert done_args == ("BTC-USDT",)
+    assert "source_position_id IS NULL" in done_query and "timeframe_profile=%s" in done_query
+    assert done_args == ("BTC-USDT", 999, "INTRADAY_15M")
 
 
 def test_runtime_lifecycle_is_explicit_and_never_creates_schema() -> None:

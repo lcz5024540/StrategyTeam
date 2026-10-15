@@ -139,11 +139,20 @@ class HtxTrendEntryExecutor:
             except ValueError as error:
                 gate = GateResult(False, "STRATEGY_ADMISSION", str(error))
                 return EntrySubmission(False, gate, None, None, None, gate.reason)
+        conflict_lookup = getattr(self._repository, "active_contract_position", None)
+        conflict = (conflict_lookup(account_id=self._account.account_id, contract_code=contract.contract_code)
+                    if conflict_lookup is not None else None)
+        if conflict is not None:
+            owner = conflict.get("timeframe_profile") or "INTRADAY_15M"
+            gate = GateResult(False, "PROFILE_CONTRACT_MUTEX",
+                              f"contract already owned by active profile {owner}")
+            return EntrySubmission(False, gate, None, None, None, gate.reason)
         # Java loads the latest completed trade before its cooldown gate.  Live
         # Python used to leave this as None, which silently disabled cooldown.
         if prior_trade is None:
             latest_done = getattr(self._repository, "latest_done_trade", lambda **_: None)(
-                account_id=self._account.account_id, contract_code=contract.contract_code)
+                account_id=self._account.account_id, contract_code=contract.contract_code,
+                timeframe_profile=timeframe_profile)
             prior_trade = _prior_trade(latest_done)
         # Java resolves only the enabled strategy-policy ledger here. Account
         # allocation/reservation rows belong to Python's platform ledger and

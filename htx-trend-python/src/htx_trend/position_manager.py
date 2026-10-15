@@ -19,6 +19,7 @@ from .java_entry_contract import JavaEntryConfig, evaluate
 from .market_data import period_seconds
 from .models import ModelCode, TrendSide
 from .mysql_store import TrendOrderIntent, decision_key
+from .timeframes import TimeframeProfile
 
 ZERO = D(0)
 
@@ -79,10 +80,13 @@ def timeframe_side(candles):
 
 class LivePositionManager:
     def __init__(self, repository, instance, account, market, client, executor, *,
-                 period='15min', java_config=JavaEntryConfig(), config=ExitConfig(), evidence_store=None):
+                 period='15min', timeframe_profile: TimeframeProfile | None = None,
+                 java_config=JavaEntryConfig(), config=ExitConfig(), evidence_store=None):
         self.repo,self.instance,self.account=repository,instance,account
         self.market,self.client,self.executor=market,client,executor
         self.period,self.java_config,self.config=period,java_config,config
+        self.timeframe_profile = timeframe_profile or TimeframeProfile.for_period(period)
+        self.timeframe_profile.validate(period, self.timeframe_profile.contract.trend_period)
         self.evidence_store=evidence_store
 
     def _evidence(self, kind, payload, refs=()):
@@ -97,6 +101,8 @@ class LivePositionManager:
     def manage(self, now_epoch: int, market_context) -> list[str]:
         failures=[]
         for row in self.repo.managed_positions(self.instance):
+            if (row.get('timeframe_profile') or TimeframeProfile.INTRADAY_15M.value) != self.timeframe_profile.value:
+                continue
             try: self._manage(row,now_epoch,market_context)
             except Exception as error:
                 # One broken symbol must not prevent protection on all others.
@@ -152,7 +158,7 @@ class LivePositionManager:
         if now_epoch-last_bar>2*period_seconds(self.period): raise ValueError('stale management candles')
         opposition=0
         evidence_refs=list(window.evidence_refs)
-        for period in ('30min','60min','4hour','1day'):
+        for period in self.timeframe_profile.contract.confirmation_periods:
             higher=self.market.kline_window(code,period,80,now_epoch=now_epoch)
             if not higher.is_complete: raise ValueError('incomplete confirmation candles')
             evidence_refs.extend(higher.evidence_refs)

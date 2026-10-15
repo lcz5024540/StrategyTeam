@@ -13,17 +13,21 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from hashlib import sha256
 from typing import Any
+import logging
+from importlib.metadata import PackageNotFoundError, version
 
+from .diagnostics import CandidateDiagnosis, RejectCode, heartbeat_detail
 from .execution_service import HtxTrendEntryExecutor
 from .market_data import HtxMarketData, period_seconds
 from .models import TrendSide
-from .java_entry_contract import JavaEntryConfig
-from .policy import StrategyPolicy, PolicySelection, select_policy
+from .java_entry_contract import JavaEntryConfig, explain_candidates
+from .policy import StrategyPolicy, PolicySelection, select_policy, explain_policy
 from .strategy_context import MarketContext, MarketRegime
 from .strategy_platform import ExecutionMode, StrategyWorker, WorkerHealth
 from .mysql_store import HtxTrendMySqlRepository, RuntimeInstance
 from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
 from .strategy_decision import HtxStrategyDecisionEngine, LEGACY_STRATEGY_VERSION
+from .timeframes import TimeframeProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +38,7 @@ class LiveTrendWorkerConfig:
     entry_enabled: bool = True
     entry_period: str = "15min"
     trend_period: str = "60min"
+    timeframe_profile: TimeframeProfile = TimeframeProfile.INTRADAY_15M
     kline_size: int = 160
     max_concurrency: int = 6
     # The live worker deliberately shares the Java ensemble defaults.  Python
@@ -97,7 +102,7 @@ class LiveTrendWorkerConfig:
                              "TIA-USDT", "JUP-USDT", "ENA-USDT", "ONDO-USDT", "ALGO-USDT", "OKB-USDT", "DASH-USDT",
                              "ZEC-USDT", "XAUT-USDT", "PAXG-USDT", "PEOPLE-USDT", "ORDI-USDT", "BOME-USDT", "RAY-USDT",
                              "CHZ-USDT", "ETHFI-USDT", "ACE-USDT")
-        return cls(
+        config = cls(
             contracts=values("HTX_TREND_CONTRACTS", default_contracts),
             enabled=flag("HTX_TREND_ENABLED", defaults.enabled),
             observe_only=flag("HTX_TREND_OBSERVE_ONLY", defaults.observe_only),
@@ -129,6 +134,45 @@ class LiveTrendWorkerConfig:
             max_active_positions=integer("HTX_TREND_MAX_ACTIVE_POSITIONS", defaults.max_active_positions),
             combination_entry_enabled=flag("HTX_TREND_COMBINATION_ENTRY_ENABLED", defaults.combination_entry_enabled),
         )
+        profile_name = environ.get("HTX_TREND_TIMEFRAME_PROFILE", "").strip().upper()
+        profile = TimeframeProfile(profile_name) if profile_name else TimeframeProfile.for_period(config.entry_period)
+        profile.validate(config.entry_period, config.trend_period)
+        return replace(config, timeframe_profile=profile)
+
+    @classmethod
+    def profiles_from_env(cls) -> tuple["LiveTrendWorkerConfig", ...]:
+        """Build independent profile runtimes while retaining legacy single-period configuration."""
+        raw = environ.get("HTX_TREND_PROFILES", "").strip()
+        if not raw:
+            return (cls.from_env(),)
+        saved = {name: environ.get(name) for name in (
+            "HTX_TREND_PERIOD", "HTX_TREND_TREND_PERIOD", "HTX_TREND_TIMEFRAME_PROFILE")}
+        try:
+            environ["HTX_TREND_PERIOD"] = "15min"
+            environ["HTX_TREND_TREND_PERIOD"] = "60min"
+            environ["HTX_TREND_TIMEFRAME_PROFILE"] = TimeframeProfile.INTRADAY_15M.value
+            base = cls.from_env()
+        finally:
+            for name, value in saved.items():
+                if value is None: environ.pop(name, None)
+                else: environ[name] = value
+        profiles = tuple(dict.fromkeys(
+            TimeframeProfile(item.strip().upper()) for item in raw.split(",") if item.strip()))
+        if not profiles:
+            raise ValueError("HTX_TREND_PROFILES must contain at least one profile")
+        output = []
+        for profile in profiles:
+            contract = profile.contract
+            default_live = base.entry_enabled if profile is TimeframeProfile.INTRADAY_15M else False
+            live = environ.get(f"HTX_TREND_{profile.value}_LIVE_ENABLED", str(default_live)).strip().lower() in {
+                "1", "true", "yes", "on"}
+            output.append(replace(base, entry_period=contract.entry_period, trend_period=contract.trend_period,
+                                  timeframe_profile=profile, entry_enabled=base.entry_enabled and live))
+        return tuple(output)
+
+
+class _EvidenceUnavailable(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +185,8 @@ class _Scan:
     book: Any
     contract_spec: Any
     funding: Any
+    decision_hash: str | None = None
+    diagnosis: CandidateDiagnosis | None = None
 
 
 class LiveTrendWorker(StrategyWorker):
@@ -158,8 +204,19 @@ class LiveTrendWorker(StrategyWorker):
             raise ValueError("live trend worker requires at least one contract")
         if not config.combination_entry_enabled:
             raise ValueError("LiveTrendWorker requires HTX_TREND_COMBINATION_ENTRY_ENABLED=true; Java legacy entry is not implemented in Python")
+        config.timeframe_profile.validate(config.entry_period, config.trend_period)
+        if (config.timeframe_profile is TimeframeProfile.SWING_4H and not config.observe_only
+                and config.entry_enabled and instance.strategy_name == LEGACY_STRATEGY_VERSION):
+            raise ValueError("SWING_4H live entry requires a non-legacy strategy version with sealed admission")
         self._instance, self._repository, self._market, self._executor = instance, repository, market, executor
         self._config, self._trend_config, self._stopped = config, trend_config or config.java_entry, False
+        self._diagnosis_rows: dict[tuple[str, int], dict[str, Any]] = {}
+        self._raw_candidates = self._policy_selected = 0
+        self._market_regime_source = "UNCLASSIFIED"
+        try:
+            self._package_version = version("coinstrategy-htx-trend")
+        except PackageNotFoundError:
+            self._package_version = None
         self._admission = admission
         self._last_scanned_close_epoch: int | None = None
         self._pending: dict[str, tuple[PolicySelection, _Scan, int]] = {}
@@ -194,6 +251,8 @@ class LiveTrendWorker(StrategyWorker):
         scans: list[_Scan] = []
         failures: list[str] = []
         if fresh_scan:
+            self._diagnosis_rows = {}
+            self._raw_candidates = self._policy_selected = 0
             # This is intentionally read *before* writing this scan's signals,
             # matching Java's marketBreadthContext() ordering.
             breadth = (self._repository.latest_breadth_stats(
@@ -210,16 +269,44 @@ class LiveTrendWorker(StrategyWorker):
                 config=self._config,
             )
             self._last_context = context
+            self._market_regime_source = ("BREADTH" if breadth and breadth.total_count >= max(1, self._config.market_breadth_min_symbols)
+                                          else "UNCLASSIFIED")
             for scan in scans:
                 factor_id = self._persist_observation(scan, context)
                 chosen = select_policy(scan.candidates, policies, context)
+                diagnosis = scan.diagnosis or explain_candidates(scan.entry.candles, scan.signal, java_config, self._config.entry_period)
+                policy_diagnoses = explain_policy(scan.candidates, policies)
+                self._raw_candidates += len(scan.candidates)
+                self._policy_selected += len(chosen)
+                code, stage = diagnosis.code, diagnosis.stage
+                flags = dict(diagnosis.flags)
+                if not code and not chosen:
+                    stage = "POLICY"
+                    code = (RejectCode.NO_ENABLED_POLICY if not policies else
+                            RejectCode.POLICY_SCORE_BELOW_THRESHOLD if any(
+                                item.code == RejectCode.POLICY_SCORE_BELOW_THRESHOLD for item in policy_diagnoses)
+                            else RejectCode.POLICY_NOT_MATCHED)
+                    rejected = next((item for item in policy_diagnoses if item.code == code), None)
+                    if rejected:
+                        flags["policy"] = {"model": rejected.model, "confirmations": rejected.confirmations,
+                                           "score": str(rejected.score),
+                                           "thresholds": [str(value) for value in rejected.thresholds[:4]]}
+                self._diagnose(scan, stage=stage, code=code, selected=len(chosen), flags=flags)
                 if chosen:
                     self._pending[scan.contract] = (chosen[0], scan, factor_id)
+                    shadow = self._config.observe_only or not self._config.entry_enabled
+                    self._record_candidate(chosen[0], scan, factor_id, context, shadow=shadow,
+                                           gate_result="SHADOW_ONLY" if shadow else "PRE_FLIGHT",
+                                           gate_reason=("profile live entry disabled" if shadow
+                                                        else "live account/exchange preflight pending"))
                 else:
                     self._pending.pop(scan.contract, None)
         else:
             context = self._last_context
 
+        for policy, scan, _ in self._pending.values():
+            if not self._candidate_fresh(policy.candidate, now_epoch):
+                self._diagnose(scan, stage="QUEUE", code=RejectCode.EXPIRED)
         self._expire_pending(now_epoch)
         ranked = sorted(self._pending.values(), key=lambda item: (item[0].effective_score, item[0].base_score,
                                                                     item[0].candidate.expected_r), reverse=True)
@@ -230,6 +317,13 @@ class LiveTrendWorker(StrategyWorker):
         execution_block_reason = ("trend observe-only enabled" if self._config.observe_only
                                   else "new trend entries disabled" if not self._config.entry_enabled else None)
         entry_attempt_allowed = ranked and (within_window or carryover)
+        if not entry_attempt_allowed:
+            for _, scan, _ in ranked:
+                self._diagnose(scan, stage="QUEUE", code=RejectCode.OUT_OF_WINDOW)
+        elif not self._config.observe_only and not self._config.entry_enabled:
+            for _, scan, _ in ranked:
+                self._diagnose(scan, stage="QUEUE", code=RejectCode.ENTRY_DISABLED)
+                self._pending.pop(scan.contract, None)
         if entry_attempt_allowed and self._config.observe_only:
             active = self._repository.active_position_count(account_id=self._instance.account_id or -1)
             # Java enters openIfEligible in observe-only mode when capacity is
@@ -237,34 +331,29 @@ class LiveTrendWorker(StrategyWorker):
             # a later flag flip from submitting an old bar as a live order.
             if self._remaining_slots(len(ranked), active) > 0:
                 for _, scan, _ in ranked:
+                    self._diagnose(scan, stage="QUEUE", code=RejectCode.OBSERVE_ONLY_DISCARDED)
                     self._pending.pop(scan.contract, None)
+            else:
+                for _, scan, _ in ranked:
+                    self._diagnose(scan, stage="QUEUE", code=RejectCode.CAPACITY_FULL)
         elif entry_attempt_allowed and execution_block_reason is None:
             active = self._repository.active_position_count(account_id=self._instance.account_id or -1)
             slots = self._remaining_slots(len(ranked), active)
+            for _, scan, _ in ranked[slots:]:
+                self._diagnose(scan, stage="QUEUE", code=RejectCode.CAPACITY_FULL)
             for policy, scan, factor_id in ranked[:slots]:
                 candidate = policy.candidate
                 run_id = f"trend-entry:{scan.contract}:{self._config.entry_period}:{candidate.bar_time}"
-                self._repository.record_candidate(contract_code=scan.contract, period=self._config.entry_period,
-                    bar_time=candidate.bar_time, direction=candidate.side.value,
-                    regime=candidate.market_regime or context.regime.value,
-                    score=candidate.score, close_price=candidate.entry_price,
-                    factors={"ema_fast": scan.signal.indicators.ema_fast, "ema_medium": scan.signal.indicators.ema_medium,
-                             "ema_slow": scan.signal.indicators.ema_slow, "atr": scan.signal.indicators.atr,
-                             "atr_pct": scan.signal.indicators.atr_pct, "adx": scan.signal.indicators.adx,
-                             "roc": scan.signal.indicators.roc}, reason="; ".join(candidate.evidence), model=candidate.model.value,
-                    run_id=run_id, factor_snapshot_id=factor_id, invalidation_price=candidate.invalidation_price,
-                    target_low=candidate.target_low, target_high=candidate.target_high, expected_r=candidate.expected_r,
-                    shadow=False, confirmation_models=policy.confirmation_models, policy_version=policy.policy.policy_version,
-                    gate_result="PRE_FLIGHT", gate_reason="live account/exchange preflight pending",
-                    sizing_multiplier=policy.sizing_multiplier, planned_notional_usdt=policy.planned_notional_usdt)
                 gate = self._executor.submit(run_id=run_id, candidate=candidate, period=self._config.entry_period,
                     atr=scan.signal.indicators.atr, ema_fast=scan.signal.indicators.ema_fast,
                     ema_slow=scan.signal.indicators.ema_slow, adx=scan.signal.indicators.adx,
                     recent_candles=scan.entry.candles, book=scan.book, contract=scan.contract_spec, funding=scan.funding,
-                    market_context=context, factor_snapshot_id=factor_id, now_epoch=now_epoch,
+                    market_context=context, factor_snapshot_id=factor_id,
+                    timeframe_profile=self._config.timeframe_profile.value, now_epoch=now_epoch,
                     evidence_refs=scan.entry.evidence_refs + scan.trend.evidence_refs)
                 self._repository.mark_candidate_execution_gate(run_id, scan.contract, candidate.model.value,
                     "PASSED" if gate.accepted else gate.gate.stage, gate.reason)
+                self._diagnose(scan, stage="EXEC", code=None if gate.accepted else gate.gate.stage)
                 accepted += int(gate.accepted)
                 attempted += 1
                 # Java removes a candidate after its gate/order evaluation;
@@ -277,8 +366,63 @@ class LiveTrendWorker(StrategyWorker):
             detail += f" entrySkipped={execution_block_reason}"
         if failures:
             detail += " failures=" + ",".join(failures[:8])
+        rejections = {row["contract_code"]: row["reject_code"] for row in self._diagnosis_rows.values() if row["reject_code"]}
+        detail = heartbeat_detail(detail, period=self._config.entry_period, raw_candidates=self._raw_candidates,
+                                  policy_selected=self._policy_selected, rejections=rejections)
+        for row in self._diagnosis_rows.values():
+            try:
+                self._repository.record_entry_diagnosis(**row)
+            except Exception as error:
+                # Diagnostics must not interrupt an otherwise valid trading tick.
+                logging.getLogger(__name__).warning("entry diagnosis unavailable: %s", type(error).__name__)
         active = self._repository.active_position_count(account_id=self._instance.account_id or -1)
         return WorkerHealth("DEGRADED" if failures else "HEALTHY", detail, len(ranked), active)
+
+    def _record_candidate(self, policy: PolicySelection, scan: _Scan, factor_id: int,
+                          context: MarketContext, *, shadow: bool, gate_result: str, gate_reason: str) -> None:
+        candidate = policy.candidate
+        run_id = f"trend-entry:{scan.contract}:{self._config.entry_period}:{candidate.bar_time}"
+        self._repository.record_candidate(contract_code=scan.contract, period=self._config.entry_period,
+            bar_time=candidate.bar_time, direction=candidate.side.value,
+            regime=candidate.market_regime or context.regime.value,
+            score=candidate.score, close_price=candidate.entry_price,
+            factors={"ema_fast": scan.signal.indicators.ema_fast, "ema_medium": scan.signal.indicators.ema_medium,
+                     "ema_slow": scan.signal.indicators.ema_slow, "atr": scan.signal.indicators.atr,
+                     "atr_pct": scan.signal.indicators.atr_pct, "adx": scan.signal.indicators.adx,
+                     "roc": scan.signal.indicators.roc}, reason="; ".join(candidate.evidence), model=candidate.model.value,
+            run_id=run_id, factor_snapshot_id=factor_id, invalidation_price=candidate.invalidation_price,
+            target_low=candidate.target_low, target_high=candidate.target_high, expected_r=candidate.expected_r,
+            shadow=shadow, confirmation_models=policy.confirmation_models, policy_version=policy.policy.policy_version,
+            gate_result=gate_result, gate_reason=gate_reason,
+            sizing_multiplier=policy.sizing_multiplier, planned_notional_usdt=policy.planned_notional_usdt)
+
+    def _diagnose(self, scan: _Scan | None, *, stage: str | None, code: str | None,
+                  selected: int | None = None, flags: dict | None = None,
+                  contract: str | None = None, bar_time: int | None = None) -> None:
+        if scan is not None:
+            contract = scan.contract
+            bar_time = scan.signal.bar_time
+            if bar_time is None:
+                bar_time = max((c.open_time for c in scan.entry.candles), default=None)
+        if bar_time is None:
+            bar_time = (self._last_scanned_close_epoch or 0) - period_seconds(self._config.entry_period)
+        key = (contract, bar_time)
+        previous = self._diagnosis_rows.get(key)
+        if previous and previous["reject_code"]:
+            return  # First rejecting stage wins; queue observations never mutate pending.
+        signal = scan.signal if scan else None
+        self._diagnosis_rows[key] = dict(
+            instance_key=self._instance.instance_key,
+            run_id=f"trend-entry:{contract}:{self._config.entry_period}:{bar_time}",
+            contract_code=contract, period=self._config.entry_period, bar_time=bar_time,
+            timeframe_profile=self._config.timeframe_profile.value,
+            signal_side=signal.side.value if signal else None, signal_score=signal.score if signal else None,
+            score_gap=signal.score_gap if signal else None, regime=signal.regime if signal else None,
+            market_regime_source=self._market_regime_source if scan else "UNCLASSIFIED",
+            stage=stage, reject_code=code, raw_candidate_count=len(scan.candidates) if scan else 0,
+            policy_selected_count=selected if selected is not None else previous["policy_selected_count"] if previous else int(scan is not None),
+            flags=flags if flags is not None else previous["flags"] if previous else {},
+            decision_hash=scan.decision_hash if scan else None, package_version=self._package_version)
 
     def _remaining_slots(self, candidate_count: int, active_position_count: int) -> int:
         """Literal Java combination-mode capacity semantics.
@@ -384,14 +528,18 @@ class LiveTrendWorker(StrategyWorker):
                 try:
                     scans.append(future.result())
                 except Exception as error:
-                    failures.append(f"{contract}:{type(error).__name__}")
+                    failures.append(f"{contract}:{'RuntimeError' if isinstance(error, _EvidenceUnavailable) else type(error).__name__}")
+                    code = (RejectCode.EVIDENCE_UNAVAILABLE if isinstance(error, _EvidenceUnavailable)
+                            else RejectCode.SCAN_FAILED)
+                    self._diagnose(None, contract=contract, bar_time=self._stable_candle_close_epoch(now_epoch)
+                                   - period_seconds(self._config.entry_period), stage="SCAN", code=code)
         return scans, failures
 
     def _scan_one(self, contract: str, now_epoch: int, java_config: JavaEntryConfig) -> _Scan:
         entry = self._market.kline_window(contract, self._config.entry_period, self._config.kline_size, now_epoch=now_epoch)
         trend = self._market.kline_window(contract, self._config.trend_period, self._config.kline_size, now_epoch=now_epoch)
         if entry.evidence_status == "FAILED" or trend.evidence_status == "FAILED":
-            raise RuntimeError("evidence persistence unavailable; new risk is paused")
+            raise _EvidenceUnavailable("evidence persistence unavailable; new risk is paused")
         decision = HtxStrategyDecisionEngine(
             strategy_version=self._instance.strategy_name or LEGACY_STRATEGY_VERSION,
             config=java_config, admission=self._admission, evidence_store=self._market.evidence_store,
@@ -402,7 +550,8 @@ class LiveTrendWorker(StrategyWorker):
         except Exception:
             funding = None
         return _Scan(contract, entry, trend, decision.signal, decision.candidates,
-                     self._market.order_book(contract), self._market.contract_spec(contract), funding)
+                     self._market.order_book(contract), self._market.contract_spec(contract), funding,
+                     decision.decision_hash, decision.diagnosis)
 
     def _persist_observation(self, scan: _Scan, context: MarketContext) -> int:
         factor = scan.signal.indicators
@@ -410,7 +559,9 @@ class LiveTrendWorker(StrategyWorker):
             return self._repository.record_factor_snapshot(snapshot_key=sha256(f"empty:{scan.contract}".encode()).hexdigest(),
                 contract_code=scan.contract, period=self._config.entry_period, bar_time=0, market_regime=context.regime.value, factors={})
         factors = {name: getattr(factor, name) for name in ("ema_fast", "ema_medium", "ema_slow", "atr", "atr_pct", "adx", "roc", "vwap")}
-        snapshot_key = sha256(f"python-live:{self._instance.instance_key}:{scan.contract}:{scan.signal.bar_time}:{factors}".encode()).hexdigest()
+        snapshot_key = sha256(
+            f"python-live:{self._instance.instance_key}:{self._config.timeframe_profile.value}:"
+            f"{scan.contract}:{scan.signal.bar_time}:{factors}".encode()).hexdigest()
         factor_id = self._repository.record_factor_snapshot(snapshot_key=snapshot_key, contract_code=scan.contract,
             period=self._config.entry_period, bar_time=scan.signal.bar_time, market_regime=context.regime.value, factors=factors)
         self._repository.record_signal(contract_code=scan.contract, period=self._config.entry_period, bar_time=scan.signal.bar_time,
@@ -419,3 +570,31 @@ class LiveTrendWorker(StrategyWorker):
             atr=factor.atr, atr_pct=factor.atr_pct, adx=factor.adx, spread_rate=scan.book.top.spread_rate,
             funding_rate=scan.funding.rate if scan.funding else None, reason=scan.signal.reason)
         return factor_id
+
+
+class MultiTimeframeLiveTrendWorker(StrategyWorker):
+    """Run independent timeframe lifecycles behind one account writer lock."""
+
+    def __init__(self, workers: tuple[LiveTrendWorker, ...]) -> None:
+        if not workers:
+            raise ValueError("multi-timeframe worker requires at least one profile")
+        profiles = [worker._config.timeframe_profile for worker in workers]
+        if len(set(profiles)) != len(profiles):
+            raise ValueError("duplicate timeframe profile")
+        self._workers = workers
+
+    def stop(self) -> None:
+        for worker in self._workers:
+            worker.stop()
+
+    def tick(self) -> WorkerHealth:
+        outcomes = [(worker._config.timeframe_profile, worker.tick()) for worker in self._workers]
+        status = ("DEGRADED" if any(outcome.status == "DEGRADED" for _, outcome in outcomes)
+                  else "STOPPED" if all(outcome.status == "STOPPED" for _, outcome in outcomes)
+                  else "HEALTHY")
+        # MySQL heartbeat detail is capped at 1024 characters. Preserve a
+        # bounded slice from every profile instead of letting the first one
+        # hide the second profile's state.
+        detail = " | ".join(f"{profile.value}[{outcome.detail[:440]}]" for profile, outcome in outcomes)
+        return WorkerHealth(status, detail, sum(outcome.candidate_count for _, outcome in outcomes),
+                            max(outcome.active_position_count for _, outcome in outcomes))
