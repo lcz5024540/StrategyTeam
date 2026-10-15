@@ -10,7 +10,12 @@
 - [x] 候选追溯字段：`timeframe_profile`、`gate_result` 已追加式迁移并落库；候选写入与 15m/4h 追溯测试已合入 `support_htx_python`。
 - [x] 技术 shadow：`htx-trend-shadow-r1` 已独立运行，`INTRADAY_15M` 与 `SWING_4H` 只做 `OBSERVE`，不绑定账户、不调用真实执行器；主 LIVE R0 未切换。
 - [ ] Shadow 验收：尚未完成 2–3 个完整交易日，不能视为 M4 或正式 R1 放行。
-- [ ] P0 取证：A02 formal LIVE guard 审计、A07 R1 差距矩阵、B07/B08/B10 运维只读核验、C03/A15 研究基线。
+- [x] P0 取证：A02 formal LIVE guard 只读审计已完成；报告见 `docs/architecture-refactor/evidence/HTX_R0001_FORMAL_LIVE_GUARD_AUDIT_20261015.md`。
+- [x] P0 取证：A07 R1 差距矩阵已完成；报告见 `docs/architecture-refactor/evidence/HTX_R0001_R1_GAP_MATRIX_20261015.md`。
+- [x] P0 取证：B07/B08/B10 事实采集已完成；报告见 `docs/architecture-refactor/evidence/HTX_R0001_RUNTIME_FORENSICS_20261015.md`。
+- [ ] B08 失败探针分类与 B10 旧订单人工复核/处置；主实例登记指纹与实际包不一致，先核对发布记录再改。
+- [x] P0 取证：C03/A15 研究基线与 4h provisional 参数记录已完成；报告见 `docs/architecture-refactor/evidence/HTX_R0001_RESEARCH_BASELINE_20261015.md`。
+- [ ] C03 后续：验证集统计复盘、C01 permutation、C02 bootstrap；统计门禁仍未锁。
 - [ ] P1 研究：C01 permutation/消融与 C02 统计备忘；参数和 `run_id` 必须可追溯。
 - [ ] 正式放行：A04/A08 guard 修复、A11–A14 M4 shadow 验收、A16/A17 真实下单评审均未完成。
 - [i] 详细顺序与验收标准：`docs/architecture-refactor/HTX_R0001_REMAINING_TASK_EXECUTION_PLAN_V1.md`。
