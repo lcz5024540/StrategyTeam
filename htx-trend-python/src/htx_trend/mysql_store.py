@@ -595,18 +595,19 @@ class HtxTrendMySqlRepository:
                          target_high: Decimal, expected_r: Decimal, shadow: bool = True,
                          confirmation_models: str | None = None, policy_version: str | None = None,
                          gate_result: str | None = None, gate_reason: str | None = None,
-                         sizing_multiplier: Decimal | None = None, planned_notional_usdt: Decimal | None = None) -> None:
-        self._write("""INSERT INTO htx_trend_candidate_signal(contract_code,period,bar_time,direction,regime,signal_score,close_price,
+                         sizing_multiplier: Decimal | None = None, planned_notional_usdt: Decimal | None = None,
+                         timeframe_profile: str | None = None) -> None:
+        self._write("""INSERT INTO htx_trend_candidate_signal(contract_code,timeframe_profile,period,bar_time,direction,regime,signal_score,close_price,
           ema_fast,ema_medium,ema_slow,atr,atr_pct,adx,momentum_pct,entry_reason,shadow,model_version,primary_model,confirmation_models,
           policy_version,run_id,factor_snapshot_id,invalidation_price,target_zone_low,target_zone_high,expected_r_multiple,gate_result,
           gate_reason,sizing_multiplier,planned_notional_usdt)
-          VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+          VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
           ON DUPLICATE KEY UPDATE signal_score=VALUES(signal_score),entry_reason=VALUES(entry_reason),confirmation_models=VALUES(confirmation_models),
           policy_version=VALUES(policy_version),run_id=VALUES(run_id),factor_snapshot_id=VALUES(factor_snapshot_id),
           invalidation_price=VALUES(invalidation_price),target_zone_low=VALUES(target_zone_low),target_zone_high=VALUES(target_zone_high),
           expected_r_multiple=VALUES(expected_r_multiple),shadow=VALUES(shadow),gate_result=VALUES(gate_result),gate_reason=VALUES(gate_reason),
           sizing_multiplier=VALUES(sizing_multiplier),planned_notional_usdt=VALUES(planned_notional_usdt)""",
-          (contract_code,period,bar_time,direction,regime,score,close_price,factors.get("ema_fast"),factors.get("ema_medium"),
+          (contract_code,timeframe_profile,period,bar_time,direction,regime,score,close_price,factors.get("ema_fast"),factors.get("ema_medium"),
            factors.get("ema_slow"),factors.get("atr"),factors.get("atr_pct"),factors.get("adx"),factors.get("roc"),
            _clip(reason,512),shadow,f"python-trend-v1:{model}",model,confirmation_models,policy_version,run_id,factor_snapshot_id,
            invalidation_price,target_low,target_high,expected_r,gate_result,_clip(gate_reason,1024) if gate_reason else None,

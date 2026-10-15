@@ -794,6 +794,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_order (
 CREATE TABLE IF NOT EXISTS htx_trend_candidate_signal (
     id                   BIGINT         PRIMARY KEY AUTO_INCREMENT,
     contract_code        VARCHAR(32)    NOT NULL,
+    timeframe_profile    VARCHAR(32),
     period               VARCHAR(16)    NOT NULL,
     bar_time             BIGINT,
     direction            VARCHAR(16)    NOT NULL,

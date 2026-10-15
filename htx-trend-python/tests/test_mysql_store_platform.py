@@ -53,7 +53,7 @@ def test_mysql_repository_writes_parameterized_execution_records_without_ddl() -
     repository.record_candidate(contract_code="BTC-USDT", period="15min", bar_time=1, direction="LONG", regime="LONG",
                                 score=Decimal("80"), close_price=Decimal("100"), factors={}, reason="candidate", model="DONCHIAN_BREAKOUT",
                                 run_id="run", factor_snapshot_id=factor_id, invalidation_price=Decimal("90"), target_low=Decimal("120"),
-                                target_high=Decimal("130"), expected_r=Decimal("2"))
+                                target_high=Decimal("130"), expected_r=Decimal("2"), timeframe_profile="INTRADAY_15M")
     position_id = repository.record_position_intent(PositionIntent("position-key", "run", "BTC-USDT", "LONG", Decimal("0.01"), 2, 3,
         account(), "DONCHIAN_BREAKOUT", factor_id, "signal", "gate", Decimal("90"), Decimal("120"), Decimal("130"), Decimal("2")))
     order_id = repository.record_order_intent(TrendOrderIntent(position_id, "position-key", "run", "BTC-USDT", "OPEN", "LONG", "BUY",
@@ -70,8 +70,26 @@ def test_mysql_repository_writes_parameterized_execution_records_without_ddl() -
     assert all("%s" in query for query in statements if query.startswith(("INSERT", "UPDATE")))
     assert all(not query.startswith(("CREATE", "ALTER", "DROP")) for query in statements)
     candidate = next(args for query, args in connection.queries if "htx_trend_candidate_signal" in query)
-    assert candidate[16] == "python-trend-v1:DONCHIAN_BREAKOUT"
+    assert "timeframe_profile" in next(query for query, _ in connection.queries if "htx_trend_candidate_signal" in query)
+    assert candidate[1] == "INTRADAY_15M"
+    assert candidate[17] == "python-trend-v1:DONCHIAN_BREAKOUT"
     assert connection.commits >= 7
+
+
+@pytest.mark.parametrize("timeframe_profile", ["INTRADAY_15M", "SWING_4H"])
+def test_candidate_trace_persists_each_timeframe_profile(timeframe_profile: str) -> None:
+    connection = Connection()
+    repository = HtxTrendMySqlRepository(connection)
+    repository.record_candidate(contract_code="BTC-USDT", period="15min" if timeframe_profile == "INTRADAY_15M" else "4hour",
+                                bar_time=1, direction="LONG", regime="TRENDING_UP", score=Decimal("80"),
+                                close_price=Decimal("100"), factors={}, reason="candidate", model="DONCHIAN_BREAKOUT",
+                                run_id="run", factor_snapshot_id=None, invalidation_price=Decimal("90"),
+                                target_low=Decimal("120"), target_high=Decimal("130"), expected_r=Decimal("2"),
+                                timeframe_profile=timeframe_profile)
+    query, params = next((query, params) for query, params in connection.queries
+                         if "htx_trend_candidate_signal" in query)
+    assert "timeframe_profile" in query
+    assert params[1] == timeframe_profile
 
 
 def test_schema_validation_is_read_only() -> None:
