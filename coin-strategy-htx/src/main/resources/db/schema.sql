@@ -823,7 +823,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_candidate_signal (
     policy_version       VARCHAR(64),
     run_id               VARCHAR(128),
     factor_snapshot_id   BIGINT,
-    gate_result          VARCHAR(16),
+    gate_result          VARCHAR(32),
     gate_reason          VARCHAR(1024),
     execution_gate_result VARCHAR(32),
     execution_gate_reason VARCHAR(1024),

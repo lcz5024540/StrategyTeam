@@ -37,7 +37,7 @@ htx-trend verify-evidence --evidence /var/lib/coinstrategy/htx-python-evidence -
 
 ## 生产运行平台
 
-Python 的生产事实账本是现有 MySQL，不是本地 SQLite。订单查询按交易所累计成交量事务更新订单、仓位和统一账本；部分成交后撤单保留真实剩余仓位，未知提交结果保留为 `UNKNOWN` 并按客户端订单号恢复。SQLite 仍只用于离线回放和事务行为测试。部署前由运维显式执行 [`sql/2026-10-08__python_strategy_platform.sql`](sql/2026-10-08__python_strategy_platform.sql)、[`sql/2026-10-09__python_exit_state.sql`](sql/2026-10-09__python_exit_state.sql) 和仓库根目录的 [`sql/htx/2026-10-15__htx_trend_candidate_timeframe_profile.sql`](../sql/htx/2026-10-15__htx_trend_candidate_timeframe_profile.sql)，worker 启动时只读验表，绝不执行 DDL。最后一份迁移为候选记录补充独立的 15m/4h `timeframe_profile` 追溯字段。
+Python 的生产事实账本是现有 MySQL，不是本地 SQLite。订单查询按交易所累计成交量事务更新订单、仓位和统一账本；部分成交后撤单保留真实剩余仓位，未知提交结果保留为 `UNKNOWN` 并按客户端订单号恢复。SQLite 仍只用于离线回放和事务行为测试。部署前由运维显式执行 [`sql/2026-10-08__python_strategy_platform.sql`](sql/2026-10-08__python_strategy_platform.sql)、[`sql/2026-10-09__python_exit_state.sql`](sql/2026-10-09__python_exit_state.sql)、仓库根目录的 [`sql/htx/2026-10-15__htx_trend_candidate_timeframe_profile.sql`](../sql/htx/2026-10-15__htx_trend_candidate_timeframe_profile.sql) 和 [`sql/htx/2026-10-15__htx_trend_candidate_gate_result_width.sql`](../sql/htx/2026-10-15__htx_trend_candidate_gate_result_width.sql)，worker 启动时只读验表，绝不执行 DDL。前一份迁移为候选记录补充独立的 15m/4h `timeframe_profile` 追溯字段，后一份迁移放宽诊断 Gate 代码的存储宽度。
 
 每个实例对应一个独立 systemd 单元：[`deployment/systemd/coinstrategy-python-strategy@.service`](deployment/systemd/coinstrategy-python-strategy@.service)。实例、心跳与账户资金预算在 MySQL 的 `strategy_runtime_instance`、`strategy_runtime_heartbeat`、`strategy_capital_allocation` 中保存。趋势、单所 carry、跨所 carry 因此可分别启动、停止、回滚；共享账户只通过预算和最大并发仓位做硬约束。
 
