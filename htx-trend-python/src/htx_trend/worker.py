@@ -106,8 +106,9 @@ def main() -> None:
             live = HtxLiveExecutor(private_client, LiveAuthority(True, str(account.account_id)), str(account.account_id), writer_guard=writer_lock.assert_owned)
             # A LIVE worker cannot opt out of the account-level guardrails.
             # Research/PAPER callers may keep the Java-compatible relaxed
-            # sizing path, but real 15m/4h execution always enforces the
-            # 300U / 6U / 30U / same-direction-3 boundary in code.
+            # sizing path, while real execution enforces per-trade risk and
+            # position-count boundaries. Java's account-wide notional cap is
+            # deliberately not part of the trend entry contract.
             entry_execution = replace(ExecutionConfig.from_env(), hard_risk_limits_enabled=True)
             entry_config = EntryExecutionConfig.from_env()
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,

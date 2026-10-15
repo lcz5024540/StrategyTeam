@@ -352,11 +352,12 @@ class HtxTrendMySqlRepository:
 
     def reserve_risk(self, *, reservation_key: str, instance: RuntimeInstance, position_key: str | None,
                      notional_usdt: Decimal, reason: str) -> None:
-        """Atomically reserve an account-level budget before an exchange mutation.
+        """Atomically reserve an account-level position slot before an exchange mutation.
 
         The account limit row is locked first, serializing reservations made by
-        trend and arbitrage workers for the same account.  A missing global
-        limit is a denial, never an implicit unlimited budget.
+        trend and arbitrage workers for the same account. The historical
+        ``max_notional_usdt`` column remains stored for audit and future
+        portfolio policy, but it is not a hard trend-entry capacity gate.
         """
         if instance.account_id is None or instance.account_label is None:
             raise ValueError("cannot reserve risk without an account-bound instance")
@@ -373,8 +374,6 @@ class HtxTrendMySqlRepository:
                 cursor.execute("""SELECT COALESCE(SUM(notional_usdt),0) AS notional_usdt,COALESCE(SUM(position_count),0) AS position_count
                   FROM strategy_risk_reservation WHERE account_id=%s AND status='RESERVED'""", (instance.account_id,))
                 used = cursor.fetchone() or {"notional_usdt": 0, "position_count": 0}
-                if Decimal(str(used["notional_usdt"])) + notional_usdt > Decimal(str(limit["max_notional_usdt"])):
-                    raise ValueError("account risk notional limit exceeded")
                 if int(used["position_count"]) + 1 > int(limit["max_active_positions"]):
                     raise ValueError("account risk position limit exceeded")
                 cursor.execute("""INSERT IGNORE INTO strategy_risk_reservation(reservation_key,account_id,account_label,strategy_family,

@@ -43,7 +43,7 @@ class HtxAccountFactsAdapter:
         self._client, self._config = client, config
 
     def snapshot(self, contract_code: str, side: TrendSide, book: OrderBook, *, active_position_count: int,
-                 max_active_positions: int, reserved_notional_usdt: Decimal, risk_capacity_usdt: Decimal,
+                 max_active_positions: int, reserved_notional_usdt: Decimal, risk_capacity_usdt: Decimal | None,
                  known_strategy_side: TrendSide | None = None,
                  same_direction_position_count: int | None = None) -> AccountSnapshot:
         # Java's HtxSwapFeeRateResolver preserves execution continuity with a

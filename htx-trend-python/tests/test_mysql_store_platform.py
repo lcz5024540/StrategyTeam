@@ -121,7 +121,7 @@ def test_runtime_lifecycle_is_explicit_and_never_creates_schema() -> None:
 
 def test_risk_reservation_locks_the_account_boundary_then_releases() -> None:
     connection = Connection(); repository = HtxTrendMySqlRepository(connection)
-    repository.reserve_risk(reservation_key="reserve", instance=instance(), position_key="position", notional_usdt=Decimal("25"), reason="entry")
+    repository.reserve_risk(reservation_key="reserve", instance=instance(), position_key="position", notional_usdt=Decimal("250"), reason="entry")
     repository.release_risk("reserve", "terminal position reconciliation")
     queries = [query for query, _ in connection.queries]
     assert "FOR UPDATE" in queries[0]
@@ -131,11 +131,12 @@ def test_risk_reservation_locks_the_account_boundary_then_releases() -> None:
 
 
 class AllocationRepository:
-    def __init__(self, active=0): self.active = active
-    def capital_allocation(self, **_): return CapitalAllocation(7, "primary", "TREND", "HTX_TREND_V1", Decimal("100"), 2, None)
+    def __init__(self, active=0, strategy_max=100, account_max=200):
+        self.active, self.strategy_max, self.account_max = active, strategy_max, account_max
+    def capital_allocation(self, **_): return CapitalAllocation(7, "primary", "TREND", "HTX_TREND_V1", Decimal(str(self.strategy_max)), 2, None)
     def account_risk_limit(self, *_):
         from htx_trend.mysql_store import AccountRiskLimit
-        return AccountRiskLimit(7, "primary", Decimal("200"), 2, None)
+        return AccountRiskLimit(7, "primary", Decimal(str(self.account_max)), 2, None)
     def active_risk_reservation_totals(self, *_):
         from htx_trend.mysql_store import RiskReservationTotals
         return RiskReservationTotals(Decimal("0"), self.active)
@@ -150,6 +151,11 @@ def test_capital_coordinator_enforces_budget_and_capacity() -> None:
     assert coordinator.admit(instance(), Decimal("100")).allowed
     assert not coordinator.admit(instance(), Decimal("101")).allowed
     assert not CapitalRiskCoordinator(AllocationRepository(active=2)).admit(instance(), Decimal("10")).allowed
+
+
+def test_capital_coordinator_does_not_apply_account_total_notional_gate() -> None:
+    coordinator = CapitalRiskCoordinator(AllocationRepository(strategy_max=500, account_max=200))
+    assert coordinator.admit(instance(), Decimal("300")).allowed
 
 
 def test_disabled_worker_isolated_and_supervisor_writes_heartbeat() -> None:

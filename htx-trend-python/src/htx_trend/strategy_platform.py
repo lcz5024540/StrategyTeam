@@ -1,4 +1,4 @@
-"""Independently deployable strategy workers and their shared hard-risk boundary.
+"""Independently deployable strategy workers and their shared risk boundary.
 
 Workers do not call each other and do not share mutable strategy state.  They
 may share an account only through :class:`CapitalRiskCoordinator`, which reads
@@ -56,7 +56,11 @@ class Admission:
 
 
 class CapitalRiskCoordinator:
-    """Small shared boundary; no strategy can bypass a missing allocation."""
+    """Small shared boundary; no strategy can bypass allocation or position capacity.
+
+    Account-wide nominal exposure is retained as database evidence but is not
+    used as a trend-entry hard gate, matching the Java trend contract.
+    """
     def __init__(self, repository: HtxTrendMySqlRepository) -> None:
         self._repository = repository
 
@@ -74,8 +78,6 @@ class CapitalRiskCoordinator:
         if limit is None:
             return Admission(False, "no enabled account-level risk limit")
         reserved = self._repository.active_risk_reservation_totals(instance.account_id)
-        if reserved.notional_usdt + requested_notional > limit.max_notional_usdt:
-            return Admission(False, "account-level notional capacity exhausted")
         if reserved.position_count >= limit.max_active_positions:
             return Admission(False, "account-level position capacity exhausted")
         return Admission(True, "allocation and account capacity available")

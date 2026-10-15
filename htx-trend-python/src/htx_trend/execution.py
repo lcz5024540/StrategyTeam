@@ -73,13 +73,13 @@ class ExecutionConfig:
     # Java combination entries size directly from policy planned notional.  A
     # Python-only stop-risk cap would silently create a different order volume.
     java_policy_notional_sizing: bool = False
-    # Hard account guardrails for an approved LIVE worker.  These are kept
-    # separate from the Java-compatible policy values above: policy sizing may
-    # rank a candidate, but it must never raise the account risk ceiling.
+    # Hard account guardrails for an approved LIVE worker. These remain
+    # separate from Java-compatible policy sizing: policy sizing may rank a
+    # candidate, but it must never raise the per-trade or position-count
+    # boundaries.
     hard_risk_limits_enabled: bool = False
     account_equity_usdt: Decimal = Decimal("300")
     max_risk_per_trade_usdt: Decimal = Decimal("6")
-    max_total_exposure_usdt: Decimal = Decimal("30")
     max_same_direction_positions: int = 3
 
     @classmethod
@@ -134,7 +134,6 @@ class ExecutionConfig:
             hard_risk_limits_enabled=flag("HTX_TREND_HARD_RISK_LIMITS_ENABLED", defaults.hard_risk_limits_enabled),
             account_equity_usdt=dec("HTX_TREND_ACCOUNT_EQUITY_USDT", defaults.account_equity_usdt),
             max_risk_per_trade_usdt=dec("HTX_TREND_MAX_RISK_PER_TRADE_USDT", defaults.max_risk_per_trade_usdt),
-            max_total_exposure_usdt=dec("HTX_TREND_MAX_TOTAL_EXPOSURE_USDT", defaults.max_total_exposure_usdt),
             max_same_direction_positions=integer("HTX_TREND_MAX_SAME_DIRECTION_POSITIONS", defaults.max_same_direction_positions),
         )
 
@@ -430,18 +429,14 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
             return GateResult(False, "RISK_LIMIT", "account equity must be positive for LIVE risk limits",
                               planned_price, planned_size)
         max_trade_risk = min(config.max_risk_per_trade_usdt, config.account_equity_usdt * Decimal("0.02"))
-        max_total_exposure = min(config.max_total_exposure_usdt, config.account_equity_usdt * Decimal("0.10"))
         if planned_size.risk_at_stop > max_trade_risk:
             emit("risk.max_per_trade", False, planned_size.risk_at_stop, max_trade_risk)
             return GateResult(False, "RISK_LIMIT", "planned stop risk exceeds per-trade account limit",
                               planned_price, planned_size)
         emit("risk.max_per_trade", True, planned_size.risk_at_stop, max_trade_risk)
-        total_exposure = facts.reserved_notional_usdt + planned_size.notional
-        if total_exposure > max_total_exposure:
-            emit("risk.max_total_exposure", False, total_exposure, max_total_exposure)
-            return GateResult(False, "RISK_LIMIT", "reserved plus planned exposure exceeds account limit",
-                              planned_price, planned_size)
-        emit("risk.max_total_exposure", True, total_exposure, max_total_exposure)
+        emit("risk.total_notional", True, facts.reserved_notional_usdt, None,
+             "account-wide notional gate disabled; position count and exchange margin remain enforced",
+             status="SKIPPED")
         direction_count = facts.same_direction_position_count
         if direction_count is None:
             emit("risk.max_same_direction", False, None, config.max_same_direction_positions,

@@ -193,8 +193,11 @@ class HtxTrendEntryExecutor:
         snapshot = self._facts.snapshot(contract.contract_code,
                                         candidate.side, book, active_position_count=self._repository.active_position_count(account_id=self._account.account_id),
                                         max_active_positions=self._config.max_active_positions,
+                                        # Keep reserved notional as audit evidence, but do not
+                                        # expose the removed 30U account-wide capacity as an
+                                        # active execution boundary.
                                         reserved_notional_usdt=risk_totals.notional_usdt,
-                                        risk_capacity_usdt=effective.max_total_exposure_usdt,
+                                        risk_capacity_usdt=None,
                                         same_direction_position_count=same_direction_count)
         # The live account guard is intentionally applied to the effective
         # config used by this submission, after policy sizing and before any

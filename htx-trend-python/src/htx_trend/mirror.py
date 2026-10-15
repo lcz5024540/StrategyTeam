@@ -74,7 +74,7 @@ class HtxTrendMirrorFollower:
         snapshot = self._facts.snapshot(primary.contract_code, primary.side, book,
             active_position_count=self._repository.active_position_count(account_id=self._account.account_id),
             max_active_positions=min(allocation.max_active_positions, limit.max_active_positions),
-            reserved_notional_usdt=reserved.notional_usdt, risk_capacity_usdt=limit.max_notional_usdt,
+            reserved_notional_usdt=reserved.notional_usdt, risk_capacity_usdt=None,
             known_strategy_side=primary.side)
         if snapshot.opposite_position_contracts > 0:
             return MirrorResult(False, 0, None, "mirror has opposite exchange position")
@@ -85,8 +85,6 @@ class HtxTrendMirrorFollower:
             return MirrorResult(True, 0, None, "mirror already matches confirmed primary fill")
         reference = book.top.ask if primary.side is TrendSide.LONG else book.top.bid
         notional = Decimal(delta) * contract.contract_size * reference
-        if reserved.notional_usdt + notional > limit.max_notional_usdt:
-            return MirrorResult(False, 0, None, "mirror account risk capacity exhausted")
         position_key = f"python-mirror-{uuid.uuid4()}"
         client_order_id = _numeric_client_order_id()
         reservation_key = sha256(f"{self._instance.instance_key}:{position_key}".encode()).hexdigest()[:160]
