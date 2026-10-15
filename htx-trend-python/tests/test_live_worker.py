@@ -68,6 +68,20 @@ def test_dual_profile_configuration_has_independent_live_switches(monkeypatch) -
     ]
 
 
+def test_dual_profile_configuration_can_explicitly_promote_legacy_4h(monkeypatch) -> None:
+    monkeypatch.setenv("HTX_TREND_PROFILES", "INTRADAY_15M,SWING_4H")
+    monkeypatch.setenv("HTX_TREND_ENABLED", "true")
+    monkeypatch.setenv("HTX_TREND_ENTRY_ENABLED", "true")
+    monkeypatch.setenv("HTX_TREND_INTRADAY_15M_LIVE_ENABLED", "true")
+    monkeypatch.setenv("HTX_TREND_SWING_4H_LIVE_ENABLED", "true")
+    monkeypatch.setenv("HTX_TREND_ALLOW_LEGACY_4H_LIVE", "true")
+    configs = LiveTrendWorkerConfig.profiles_from_env()
+    assert [(item.timeframe_profile, item.entry_enabled, item.allow_legacy_swing_live) for item in configs] == [
+        (TimeframeProfile.INTRADAY_15M, True, False),
+        (TimeframeProfile.SWING_4H, True, True),
+    ]
+
+
 def test_profile_period_mismatch_fails_at_startup() -> None:
     with pytest.raises(ValueError, match="SWING_4H requires"):
         LiveTrendWorker(instance(), Repository(), object(), object(), LiveTrendWorkerConfig(
@@ -75,12 +89,20 @@ def test_profile_period_mismatch_fails_at_startup() -> None:
             timeframe_profile=TimeframeProfile.SWING_4H, entry_period="15min", trend_period="60min"))
 
 
-def test_legacy_v1_cannot_enable_swing_live_orders() -> None:
-    with pytest.raises(ValueError, match="sealed admission"):
+def test_legacy_v1_requires_explicit_swing_live_switch() -> None:
+    with pytest.raises(ValueError, match="ALLOW_LEGACY_4H_LIVE"):
         LiveTrendWorker(instance(), Repository(), object(), object(), LiveTrendWorkerConfig(
             ("BTC-USDT",), enabled=True, observe_only=False, entry_enabled=True,
             combination_entry_enabled=True, timeframe_profile=TimeframeProfile.SWING_4H,
             entry_period="4hour", trend_period="1day"))
+
+
+def test_legacy_v1_can_enable_swing_live_orders_with_explicit_switch() -> None:
+    worker = LiveTrendWorker(instance(), Repository(), object(), object(), LiveTrendWorkerConfig(
+        ("BTC-USDT",), enabled=True, observe_only=False, entry_enabled=True,
+        combination_entry_enabled=True, allow_legacy_swing_live=True,
+        timeframe_profile=TimeframeProfile.SWING_4H, entry_period="4hour", trend_period="1day"))
+    assert worker._config.timeframe_profile is TimeframeProfile.SWING_4H
 
 
 def test_multi_timeframe_worker_aggregates_independent_profile_health() -> None:

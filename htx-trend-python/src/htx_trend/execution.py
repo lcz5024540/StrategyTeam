@@ -73,6 +73,14 @@ class ExecutionConfig:
     # Java combination entries size directly from policy planned notional.  A
     # Python-only stop-risk cap would silently create a different order volume.
     java_policy_notional_sizing: bool = False
+    # Hard account guardrails for an approved LIVE worker.  These are kept
+    # separate from the Java-compatible policy values above: policy sizing may
+    # rank a candidate, but it must never raise the account risk ceiling.
+    hard_risk_limits_enabled: bool = False
+    account_equity_usdt: Decimal = Decimal("300")
+    max_risk_per_trade_usdt: Decimal = Decimal("6")
+    max_total_exposure_usdt: Decimal = Decimal("30")
+    max_same_direction_positions: int = 3
 
     @classmethod
     def from_env(cls) -> "ExecutionConfig":
@@ -123,6 +131,11 @@ class ExecutionConfig:
             mixed_market_min_model_score=dec("HTX_TREND_MIXED_MARKET_MIN_MODEL_SCORE", defaults.mixed_market_min_model_score),
             mixed_market_min_expected_r=dec("HTX_TREND_MIXED_MARKET_MIN_EXPECTED_R", defaults.mixed_market_min_expected_r),
             mixed_market_min_momentum_score=dec("HTX_TREND_MIXED_MARKET_MIN_MOMENTUM_SCORE", defaults.mixed_market_min_momentum_score),
+            hard_risk_limits_enabled=flag("HTX_TREND_HARD_RISK_LIMITS_ENABLED", defaults.hard_risk_limits_enabled),
+            account_equity_usdt=dec("HTX_TREND_ACCOUNT_EQUITY_USDT", defaults.account_equity_usdt),
+            max_risk_per_trade_usdt=dec("HTX_TREND_MAX_RISK_PER_TRADE_USDT", defaults.max_risk_per_trade_usdt),
+            max_total_exposure_usdt=dec("HTX_TREND_MAX_TOTAL_EXPOSURE_USDT", defaults.max_total_exposure_usdt),
+            max_same_direction_positions=integer("HTX_TREND_MAX_SAME_DIRECTION_POSITIONS", defaults.max_same_direction_positions),
         )
 
 
@@ -191,6 +204,7 @@ class ExecutionFacts:
     leverage: Decimal | None = None
     active_position_count: int | None = None
     max_active_positions: int | None = None
+    same_direction_position_count: int | None = None
     reserved_notional_usdt: Decimal = ZERO
     risk_capacity_usdt: Decimal | None = None
 
@@ -245,12 +259,17 @@ def size_plan(candidate: ModelCandidate, contract: ContractSpec, price: PricePla
     risk_per_contract = stop_distance * contract.contract_size
     by_target = int((config.target_notional / (price.desired_entry * contract.contract_size)).to_integral_value(rounding=ROUND_DOWN))
     by_max = int((config.max_notional / (price.desired_entry * contract.contract_size)).to_integral_value(rounding=ROUND_DOWN))
-    by_risk = int((config.risk_per_trade / risk_per_contract).to_integral_value(rounding=ROUND_DOWN))
-    contracts = max(0, min(by_target, by_max) if config.java_policy_notional_sizing else min(by_risk, by_target, by_max))
+    risk_budget = (min(config.max_risk_per_trade_usdt, config.account_equity_usdt * Decimal("0.02"))
+                   if config.hard_risk_limits_enabled else config.risk_per_trade)
+    by_risk = int((risk_budget / risk_per_contract).to_integral_value(rounding=ROUND_DOWN))
+    contracts = max(0, (min(by_target, by_max, by_risk) if config.hard_risk_limits_enabled
+                        else min(by_target, by_max) if config.java_policy_notional_sizing
+                        else min(by_risk, by_target, by_max)))
     notional = price.desired_entry * contract.contract_size * contracts
     if contracts == 0 or notional < config.min_notional:
         return SizePlan(0, notional, risk_per_contract * contracts, "sizing below minimum notional")
-    reason = "Java policy notional sized" if config.java_policy_notional_sizing else "risk and notional capped"
+    reason = ("hard account risk and notional capped" if config.hard_risk_limits_enabled
+              else "risk and notional capped")
     return SizePlan(contracts, notional, risk_per_contract * contracts, reason)
 
 
@@ -405,6 +424,35 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
         emit("sizing.valid_contracts", False, planned_size.contracts, ">0", planned_size.reason)
         return GateResult(False, "SIZING", planned_size.reason, planned_price, planned_size)
     emit("sizing.valid_contracts", True, planned_size.contracts, ">0", planned_size.reason)
+    if config.hard_risk_limits_enabled:
+        if config.account_equity_usdt <= ZERO:
+            emit("risk.account_equity", False, config.account_equity_usdt, ">0")
+            return GateResult(False, "RISK_LIMIT", "account equity must be positive for LIVE risk limits",
+                              planned_price, planned_size)
+        max_trade_risk = min(config.max_risk_per_trade_usdt, config.account_equity_usdt * Decimal("0.02"))
+        max_total_exposure = min(config.max_total_exposure_usdt, config.account_equity_usdt * Decimal("0.10"))
+        if planned_size.risk_at_stop > max_trade_risk:
+            emit("risk.max_per_trade", False, planned_size.risk_at_stop, max_trade_risk)
+            return GateResult(False, "RISK_LIMIT", "planned stop risk exceeds per-trade account limit",
+                              planned_price, planned_size)
+        emit("risk.max_per_trade", True, planned_size.risk_at_stop, max_trade_risk)
+        total_exposure = facts.reserved_notional_usdt + planned_size.notional
+        if total_exposure > max_total_exposure:
+            emit("risk.max_total_exposure", False, total_exposure, max_total_exposure)
+            return GateResult(False, "RISK_LIMIT", "reserved plus planned exposure exceeds account limit",
+                              planned_price, planned_size)
+        emit("risk.max_total_exposure", True, total_exposure, max_total_exposure)
+        direction_count = facts.same_direction_position_count
+        if direction_count is None:
+            emit("risk.max_same_direction", False, None, config.max_same_direction_positions,
+                 "same-direction position count unavailable")
+            return GateResult(False, "RISK_LIMIT", "same-direction position count unavailable",
+                              planned_price, planned_size)
+        if direction_count >= config.max_same_direction_positions:
+            emit("risk.max_same_direction", False, direction_count, config.max_same_direction_positions)
+            return GateResult(False, "RISK_LIMIT", "same-direction position limit reached",
+                              planned_price, planned_size)
+        emit("risk.max_same_direction", True, direction_count, config.max_same_direction_positions)
     if config.min_average_turnover > ZERO:
         values = [item.turnover for item in recent_candles[-config.liquidity_lookback:] if item.turnover is not None]
         average = sum(values, ZERO) / Decimal(len(values)) if values else None

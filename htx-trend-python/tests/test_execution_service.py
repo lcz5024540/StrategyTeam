@@ -27,6 +27,11 @@ class Repository:
     def account_risk_limit(self, *_): return AccountRiskLimit(7, "primary", Decimal("200"), 2, None)
     def active_risk_reservation_totals(self, *_): return RiskReservationTotals(Decimal("0"), 0)
     def active_position_count(self, **_): return 0
+    def active_direction_position_count(self, **_): return 0
+    def active_contract_position(self, **_): return None
+    def claim_entry_cycle(self, **_): return True
+    def attach_entry_cycle_intent(self, **_): pass
+    def abandon_entry_cycle(self, **_): pass
     def record_position_intent(self, value): self.calls.append(("position", value)); return 7
     def reserve_risk(self, **value): self.calls.append(("reserve", value))
     def record_order_intent(self, value): self.calls.append(("order", value)); return 8

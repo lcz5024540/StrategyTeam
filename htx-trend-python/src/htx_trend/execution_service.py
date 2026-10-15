@@ -44,7 +44,7 @@ class EntryExecutionConfig:
     combination_mixed_market_multiplier: Decimal = Decimal("0.50")
     min_adaptive_multiplier: Decimal = Decimal("0.25")
     max_adaptive_multiplier: Decimal = Decimal("1.80")
-    max_active_positions: int = 1
+    max_active_positions: int = 5
 
     @classmethod
     def from_env(cls) -> "EntryExecutionConfig":
@@ -186,10 +186,19 @@ class HtxTrendEntryExecutor:
                             # V1 preserves Java parity. Newly admitted Python
                             # versions obey risk-per-trade before notional caps.
                             java_policy_notional_sizing=not new_strategy)
+        risk_totals = self._repository.active_risk_reservation_totals(self._account.account_id)
+        direction_counter = getattr(self._repository, "active_direction_position_count", None)
+        same_direction_count = (direction_counter(account_id=self._account.account_id, side=candidate.side.value)
+                                if direction_counter is not None else None)
         snapshot = self._facts.snapshot(contract.contract_code,
                                         candidate.side, book, active_position_count=self._repository.active_position_count(account_id=self._account.account_id),
                                         max_active_positions=self._config.max_active_positions,
-                                        reserved_notional_usdt=Decimal("0"), risk_capacity_usdt=Decimal("0"))
+                                        reserved_notional_usdt=risk_totals.notional_usdt,
+                                        risk_capacity_usdt=effective.max_total_exposure_usdt,
+                                        same_direction_position_count=same_direction_count)
+        # The live account guard is intentionally applied to the effective
+        # config used by this submission, after policy sizing and before any
+        # database intent or exchange mutation.
         quality = FibonacciQuality.from_candles(recent_candles, candidate.side, atr, ema_fast)
         condition_results: list[dict[str, Any]] = []
         def condition_trace(condition_id, status, actual, threshold, reason):
@@ -214,12 +223,33 @@ class HtxTrendEntryExecutor:
         if not gate.allowed:
             return EntrySubmission(False, gate, None, None, None, gate.reason, gate_ref)
         assert gate.price_plan is not None and gate.size_plan is not None
+        position_key = f"python-trend-{uuid.uuid4()}"
+        client_order_id = _numeric_client_order_id()
+        reservation_key = _reservation_key(self._instance, position_key)
+        risk_reserved = False
+        if effective.hard_risk_limits_enabled:
+            reserve = getattr(self._repository, "reserve_risk", None)
+            if reserve is None:
+                risk_gate = GateResult(False, "RISK_LIMIT", "live risk reservation repository is unavailable",
+                                       gate.price_plan, gate.size_plan)
+                return EntrySubmission(False, risk_gate, None, None, None, risk_gate.reason, gate_ref)
+            try:
+                reserve(reservation_key=reservation_key, instance=self._instance, position_key=position_key,
+                        notional_usdt=gate.size_plan.notional,
+                        reason=f"entry preflight {timeframe_profile} {candidate.side.value}")
+                risk_reserved = True
+            except Exception as error:
+                risk_gate = GateResult(False, "RISK_LIMIT", f"account risk reservation rejected: {type(error).__name__}",
+                                       gate.price_plan, gate.size_plan)
+                return EntrySubmission(False, risk_gate, None, None, None, risk_gate.reason, gate_ref)
         try:
             self._executor.set_leverage(contract.contract_code, "long" if candidate.side is TrendSide.LONG else "short",
                                         self._config.leverage)
         except Exception as error:
             leverage_gate = GateResult(False, "MARGIN_RISK", f"leverage switch failed: {type(error).__name__}",
                                       gate.price_plan, gate.size_plan)
+            if risk_reserved:
+                self._repository.release_risk(reservation_key, f"leverage reservation released: {type(error).__name__}")
             return EntrySubmission(False, leverage_gate, None, None, None, leverage_gate.reason)
         structure_key = _entry_cycle_key(contract.contract_code, candidate.side, candidate.model, run_id,
                                          candidate.source_breakout_time)
@@ -232,11 +262,10 @@ class HtxTrendEntryExecutor:
                                           breakout_bar_time=candidate.source_breakout_time,
                                           source_run_id=run_id):
                 structure_gate = GateResult(False, "COOLDOWN_STRUCTURE", "STRUCTURE_ALREADY_CONSUMED", gate.price_plan, gate.size_plan)
+                if risk_reserved:
+                    self._repository.release_risk(reservation_key, "entry structure already consumed")
                 return EntrySubmission(False, structure_gate, None, None, None, structure_gate.reason)
             structure_claimed = True
-        position_key = f"python-trend-{uuid.uuid4()}"
-        client_order_id = _numeric_client_order_id()
-        reservation_key = sha256(f"{self._instance.instance_key}:{position_key}".encode()).hexdigest()[:160]
         position_id: int | None = None
         submission_started = False
         try:
@@ -292,6 +321,8 @@ class HtxTrendEntryExecutor:
                 self._repository.mark_position_status(position_id=position_id, status=state, message=f"entry {state}: {type(error).__name__}")
             if structure_claimed and not submission_started:
                 self._repository.abandon_entry_cycle(structure_key=structure_key, reason="entry not sent")
+            if risk_reserved and not submission_started:
+                self._repository.release_risk(reservation_key, f"entry reservation released: {type(error).__name__}")
             return EntrySubmission(False, gate, position_id, client_order_id, None,
                                    f"entry {state}: {type(error).__name__}", gate_ref)
 
@@ -316,6 +347,10 @@ class HtxTrendEntryExecutor:
             exchange_client_order_id=_client_id(order), exchange_state=exchange_state,
             filled_contracts=filled, average_price=price, fee=fee,
             fee_currency=order.get("fee_currency"), realized_profit=_decimal(order, "real_profit"))
+        if (self._execution.hard_risk_limits_enabled and leg == "CLOSE" and status == "FILLED"
+                and position_key and hasattr(self._repository, "release_risk")):
+            self._repository.release_risk(_reservation_key(self._instance, position_key),
+                                          "full close confirmed by exchange")
 
         return status
 
@@ -353,9 +388,16 @@ class HtxTrendEntryExecutor:
 
 def _entry_cycle_key(contract_code: str, side: TrendSide, model: str | object, run_id: str,
                      breakout_bar_time: int | None) -> str | None:
-    """Match Java: only Fibonacci owns a persistent entry-cycle key."""
+    """Claim one model/profile/bar execution cycle before sending an order.
+
+    The key deliberately contains the run id, which is derived from the
+    contract, entry period and completed bar.  A later bar is a new cycle; a
+    restart on the same bar is not.  This prevents Donchian and EMA candidates
+    from bypassing the restart/idempotency guard just because Fibonacci was
+    the only model that previously claimed a lifecycle row.
+    """
     model_value = getattr(model, "value", str(model))
-    if model_value != "FIB_PULLBACK_CONTINUATION" or breakout_bar_time is None:
+    if not run_id:
         return None
     return f"{contract_code}:{side.value}:{model_value}:ENTRY_CYCLE:{run_id}"
 

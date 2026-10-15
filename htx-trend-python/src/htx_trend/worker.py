@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from .account_facts import HtxAccountFactsAdapter
@@ -103,9 +104,14 @@ def main() -> None:
             private_client = _account_client(repository, account.account_id, live=True)
             market = HtxMarketData(private_client, evidence_store=evidence_store)
             live = HtxLiveExecutor(private_client, LiveAuthority(True, str(account.account_id)), str(account.account_id), writer_guard=writer_lock.assert_owned)
+            # A LIVE worker cannot opt out of the account-level guardrails.
+            # Research/PAPER callers may keep the Java-compatible relaxed
+            # sizing path, but real 15m/4h execution always enforces the
+            # 300U / 6U / 30U / same-direction-3 boundary in code.
+            entry_execution = replace(ExecutionConfig.from_env(), hard_risk_limits_enabled=True)
             entry_config = EntryExecutionConfig.from_env()
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
-                facts=HtxAccountFactsAdapter(private_client), executor=live, execution=ExecutionConfig.from_env(),
+                facts=HtxAccountFactsAdapter(private_client), executor=live, execution=entry_execution,
                 config=entry_config, admission=admission, evidence_store=evidence_store)
             scan_configs = LiveTrendWorkerConfig.profiles_from_env()
             profile_workers = []

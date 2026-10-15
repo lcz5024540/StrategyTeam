@@ -66,11 +66,15 @@ class LiveTrendWorkerConfig:
     market_breadth_opposite_max: Decimal = Decimal("0.15")
     adaptive_sizing_enabled: bool = True
     market_anchor_enabled: bool = True
-    max_active_positions: int = 1
+    max_active_positions: int = 5
     # Java's multi-contract path is intentionally opt-in.  Its legacy path is
     # not implemented by the Python worker, so allowing this worker to start
     # with the flag off would make it trade a different strategy.
     combination_entry_enabled: bool = False
+    # The legacy strategy can be promoted to the independently managed 4h
+    # lifecycle only through an explicit profile-level deployment switch.  It
+    # is never inferred from HTX_TREND_ENTRY_ENABLED.
+    allow_legacy_swing_live: bool = False
 
     @classmethod
     def from_env(cls) -> "LiveTrendWorkerConfig":
@@ -133,6 +137,7 @@ class LiveTrendWorkerConfig:
             market_anchor_enabled=flag("HTX_TREND_MARKET_ANCHOR_ENABLED", defaults.market_anchor_enabled),
             max_active_positions=integer("HTX_TREND_MAX_ACTIVE_POSITIONS", defaults.max_active_positions),
             combination_entry_enabled=flag("HTX_TREND_COMBINATION_ENTRY_ENABLED", defaults.combination_entry_enabled),
+            allow_legacy_swing_live=flag("HTX_TREND_ALLOW_LEGACY_4H_LIVE", defaults.allow_legacy_swing_live),
         )
         profile_name = environ.get("HTX_TREND_TIMEFRAME_PROFILE", "").strip().upper()
         profile = TimeframeProfile(profile_name) if profile_name else TimeframeProfile.for_period(config.entry_period)
@@ -142,6 +147,9 @@ class LiveTrendWorkerConfig:
     @classmethod
     def profiles_from_env(cls) -> tuple["LiveTrendWorkerConfig", ...]:
         """Build independent profile runtimes while retaining legacy single-period configuration."""
+        def flag(name: str, default: bool) -> bool:
+            return environ.get(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+
         raw = environ.get("HTX_TREND_PROFILES", "").strip()
         if not raw:
             return (cls.from_env(),)
@@ -167,7 +175,9 @@ class LiveTrendWorkerConfig:
             live = environ.get(f"HTX_TREND_{profile.value}_LIVE_ENABLED", str(default_live)).strip().lower() in {
                 "1", "true", "yes", "on"}
             output.append(replace(base, entry_period=contract.entry_period, trend_period=contract.trend_period,
-                                  timeframe_profile=profile, entry_enabled=base.entry_enabled and live))
+                                  timeframe_profile=profile, entry_enabled=base.entry_enabled and live,
+                                  allow_legacy_swing_live=(profile is TimeframeProfile.SWING_4H
+                                                           and flag("HTX_TREND_ALLOW_LEGACY_4H_LIVE", False))))
         return tuple(output)
 
 
@@ -206,8 +216,9 @@ class LiveTrendWorker(StrategyWorker):
             raise ValueError("LiveTrendWorker requires HTX_TREND_COMBINATION_ENTRY_ENABLED=true; Java legacy entry is not implemented in Python")
         config.timeframe_profile.validate(config.entry_period, config.trend_period)
         if (config.timeframe_profile is TimeframeProfile.SWING_4H and not config.observe_only
-                and config.entry_enabled and instance.strategy_name == LEGACY_STRATEGY_VERSION):
-            raise ValueError("SWING_4H live entry requires a non-legacy strategy version with sealed admission")
+                and config.entry_enabled and instance.strategy_name == LEGACY_STRATEGY_VERSION
+                and not config.allow_legacy_swing_live):
+            raise ValueError("SWING_4H legacy live entry requires HTX_TREND_ALLOW_LEGACY_4H_LIVE=true")
         self._instance, self._repository, self._market, self._executor = instance, repository, market, executor
         self._config, self._trend_config, self._stopped = config, trend_config or config.java_entry, False
         self._diagnosis_rows: dict[tuple[str, int], dict[str, Any]] = {}

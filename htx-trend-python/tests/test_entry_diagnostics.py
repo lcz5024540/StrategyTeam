@@ -180,6 +180,7 @@ def make_worker(monkeypatch, *, period='15min', policies=None, active=0,
     worker = LiveTrendWorker(RuntimeInstance('one', 'TREND', strategy_name, 7, 'test', 'LIVE', True, 'test', None),
         repo, market, executor, LiveTrendWorkerConfig(('BTC-USDT',), enabled=True, combination_entry_enabled=True,
         entry_period=period, trend_period=profile.contract.trend_period, timeframe_profile=profile,
+        max_active_positions=1,
         adaptive_sizing_enabled=False, market_anchor_enabled=False, **config),
         position_manager=manager, writer_guard=lambda: None, admission=admission)
     return worker, repo, market, executor, connection

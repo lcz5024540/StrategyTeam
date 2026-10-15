@@ -84,6 +84,40 @@ def test_strict_live_preflight_requires_account_fee_depth_and_margin_facts() -> 
     assert result.allowed
 
 
+def test_hard_live_risk_guard_rejects_exposure_above_thirty_usdt() -> None:
+    strict = ExecutionConfig(min_score=Decimal("70"), min_net_r=Decimal("0"), min_notional=Decimal("1"),
+                             target_notional=Decimal("100"), max_notional=Decimal("100"),
+                             require_execution_facts=True, hard_risk_limits_enabled=True,
+                             max_risk_per_trade_usdt=Decimal("6"), max_total_exposure_usdt=Decimal("30"),
+                             max_same_direction_positions=3)
+    quality = FibonacciQuality(Decimal("1.2"), Decimal("0.5"), Decimal("0.1"), Decimal("1"), True)
+    facts = ExecutionFacts(actual_taker_fee_rate=Decimal("0.0004"), executable_depth_contracts=Decimal("500"),
+                           available_margin_usdt=Decimal("100"), leverage=Decimal("5"),
+                           active_position_count=0, max_active_positions=5,
+                           same_direction_position_count=0, reserved_notional_usdt=Decimal("25"))
+    result = evaluate_gate(candidate(), fibonacci_quality=quality, execution_facts=facts,
+                           **{**inputs(), "config": strict})
+    assert not result.allowed and result.stage == "RISK_LIMIT"
+    assert "exposure" in result.reason
+
+
+def test_hard_live_risk_guard_rejects_fourth_same_direction_position() -> None:
+    strict = ExecutionConfig(min_score=Decimal("70"), min_net_r=Decimal("0"), min_notional=Decimal("1"),
+                             target_notional=Decimal("5"), max_notional=Decimal("5"),
+                             require_execution_facts=True, hard_risk_limits_enabled=True,
+                             max_risk_per_trade_usdt=Decimal("6"), max_total_exposure_usdt=Decimal("30"),
+                             max_same_direction_positions=3)
+    quality = FibonacciQuality(Decimal("1.2"), Decimal("0.5"), Decimal("0.1"), Decimal("1"), True)
+    facts = ExecutionFacts(actual_taker_fee_rate=Decimal("0.0004"), executable_depth_contracts=Decimal("500"),
+                           available_margin_usdt=Decimal("100"), leverage=Decimal("5"),
+                           active_position_count=3, max_active_positions=5,
+                           same_direction_position_count=3, reserved_notional_usdt=Decimal("15"))
+    result = evaluate_gate(candidate(), fibonacci_quality=quality, execution_facts=facts,
+                           **{**inputs(), "config": strict})
+    assert not result.allowed and result.stage == "RISK_LIMIT"
+    assert "same-direction" in result.reason
+
+
 def test_java_gate_rejects_unavailable_funding_before_later_preflight_checks() -> None:
     """Java fundingCostGate is the first real-execution gate after observe mode."""
     result = evaluate_gate(candidate(), **{**inputs(), "funding": None,

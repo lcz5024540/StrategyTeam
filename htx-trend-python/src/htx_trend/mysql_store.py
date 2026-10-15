@@ -403,6 +403,19 @@ class HtxTrendMySqlRepository:
             AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT','UNKNOWN')""", ())
         return int(row["count"]) if row else 0
 
+    def active_direction_position_count(self, *, account_id: int, side: str) -> int:
+        """Count managed primary positions in one direction across all profiles.
+
+        The count is account-wide so 15m and 4h cannot each believe they have
+        a free same-direction slot.  Unknown and in-flight positions remain
+        counted until reconciliation reaches a terminal state.
+        """
+        row = self._one("""SELECT COUNT(*) AS count FROM htx_trend_position
+            WHERE account_id=%s AND source_position_id IS NULL AND side=%s
+            AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT','UNKNOWN')""",
+                        (account_id, side))
+        return int(row["count"]) if row else 0
+
     def active_contract_position(self, *, account_id: int, contract_code: str) -> dict[str, Any] | None:
         """Account-level mutex: an exchange contract belongs to one profile until terminal."""
         return self._one("""SELECT id,contract_code,timeframe_profile,status FROM htx_trend_position

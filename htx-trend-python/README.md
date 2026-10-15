@@ -51,6 +51,8 @@ LIVE worker 支持在同一 writer 内同时调度 `INTRADAY_15M` 和 `SWING_4H`
 HTX_TREND_PROFILES=INTRADAY_15M,SWING_4H
 HTX_TREND_INTRADAY_15M_LIVE_ENABLED=true
 HTX_TREND_SWING_4H_LIVE_ENABLED=false
+# HTX_TREND_V1 only enables 4h after its dedicated acceptance is complete.
+HTX_TREND_ALLOW_LEGACY_4H_LIVE=false
 ```
 
 关闭某个 profile 的 LIVE 开关仍会计算并保存其候选，标记 `shadow=true/SHADOW_ONLY`，但不会调用真实订单执行器。重新启用后只处理新扫描产生的候选，不补发开关关闭期间的旧候选。

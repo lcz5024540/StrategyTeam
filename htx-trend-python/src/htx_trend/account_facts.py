@@ -44,7 +44,8 @@ class HtxAccountFactsAdapter:
 
     def snapshot(self, contract_code: str, side: TrendSide, book: OrderBook, *, active_position_count: int,
                  max_active_positions: int, reserved_notional_usdt: Decimal, risk_capacity_usdt: Decimal,
-                 known_strategy_side: TrendSide | None = None) -> AccountSnapshot:
+                 known_strategy_side: TrendSide | None = None,
+                 same_direction_position_count: int | None = None) -> AccountSnapshot:
         # Java's HtxSwapFeeRateResolver preserves execution continuity with a
         # labelled configured fallback when HTX omits the fee profile.
         try:
@@ -71,6 +72,7 @@ class HtxAccountFactsAdapter:
             executable_depth_contracts=book.executable_contracts(side.value, self._config.depth_levels),
             available_margin_usdt=margin, leverage=Decimal(max(1, self._config.leverage)),
             active_position_count=active_position_count, max_active_positions=max_active_positions,
+            same_direction_position_count=same_direction_position_count,
             reserved_notional_usdt=reserved_notional_usdt, risk_capacity_usdt=risk_capacity_usdt)
         return AccountSnapshot(facts, fee_source, margin, len(orders), same, opposite)
 
