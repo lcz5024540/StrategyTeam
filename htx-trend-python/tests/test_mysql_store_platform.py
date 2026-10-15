@@ -164,3 +164,10 @@ def test_observer_rejects_unapproved_paper_or_live_mode() -> None:
     from htx_trend.strategy_platform import TrendObservationWorker, TrendObserverConfig
     with pytest.raises(ValueError, match="OBSERVE"):
         TrendObservationWorker(instance("PAPER"), HtxTrendMySqlRepository(Connection()), object(), TrendObserverConfig(("BTC-USDT",)))
+
+
+def test_observer_profiles_from_env_map_to_independent_period_contracts(monkeypatch) -> None:
+    from htx_trend.strategy_platform import TrendObserverConfig
+    monkeypatch.setenv("HTX_TREND_PROFILES", "INTRADAY_15M,SWING_4H")
+    profiles = TrendObserverConfig.profiles_from_env(("BTC-USDT", "ETH-USDT"))
+    assert [(item.entry_period, item.trend_period) for item in profiles] == [("15min", "60min"), ("4hour", "1day")]

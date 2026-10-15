@@ -17,7 +17,8 @@ from .live import HtxLiveExecutor, LiveAuthority
 from .live_worker import LiveTrendWorker, LiveTrendWorkerConfig, MultiTimeframeLiveTrendWorker
 from .market_data import HtxMarketData
 from .mysql_store import HtxTrendMySqlRepository, MySqlSettings, connect
-from .strategy_platform import DisabledStrategyWorker, ExecutionMode, StrategySupervisor, TrendObservationWorker, TrendObserverConfig
+from .strategy_platform import (DisabledStrategyWorker, ExecutionMode, MultiTimeframeObservationWorker,
+                                 StrategySupervisor, TrendObservationWorker, TrendObserverConfig)
 from .strategy_admission import StrategyAdmissionArtifact
 from .strategy_decision import LEGACY_STRATEGY_VERSION
 from .research.store import FileEvidenceStore
@@ -80,8 +81,12 @@ def main() -> None:
         if family == "TREND" and instance.execution_mode == ExecutionMode.OBSERVE:
             contracts = tuple(dict.fromkeys(item.strip().upper() for item in os.environ.get("HTX_TREND_CONTRACTS", "").split(",") if item.strip()))
             market_client = HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com"))
-            worker = TrendObservationWorker(instance, repository, HtxMarketData(market_client, evidence_store=evidence_store),
-                                            TrendObserverConfig(contracts), admission=admission)
+            market = HtxMarketData(market_client, evidence_store=evidence_store)
+            observer_workers = tuple(
+                TrendObservationWorker(instance, repository, market, config, admission=admission)
+                for config in TrendObserverConfig.profiles_from_env(contracts))
+            worker = (observer_workers[0] if len(observer_workers) == 1
+                      else MultiTimeframeObservationWorker(observer_workers))
         elif family == "TREND" and instance.execution_mode == ExecutionMode.LIVE:
             if instance.account_id is None:
                 raise SystemExit("LIVE trend instance requires an account-bound runtime instance")

@@ -17,6 +17,7 @@ from hashlib import sha256
 from typing import Protocol, Sequence
 import json
 import uuid
+from os import environ
 
 from .market_data import HtxMarketData
 from .java_entry_contract import JavaEntryConfig
@@ -99,6 +100,21 @@ class TrendObserverConfig:
     trend_period: str = "60min"
     kline_size: int = 160
     max_concurrency: int = 6
+
+    @classmethod
+    def profiles_from_env(cls, contracts: tuple[str, ...]) -> tuple["TrendObserverConfig", ...]:
+        """Build independent OBSERVE profiles without enabling execution."""
+        raw = environ.get("HTX_TREND_PROFILES", "").strip()
+        if not raw:
+            return (cls(contracts,
+                        entry_period=environ.get("HTX_TREND_PERIOD", "15min"),
+                        trend_period=environ.get("HTX_TREND_TREND_PERIOD", "60min")),)
+        profiles = tuple(dict.fromkeys(
+            TimeframeProfile(item.strip().upper()) for item in raw.split(",") if item.strip()))
+        if not profiles:
+            raise ValueError("HTX_TREND_PROFILES must contain at least one profile")
+        return tuple(cls(contracts, entry_period=profile.contract.entry_period,
+                         trend_period=profile.contract.trend_period) for profile in profiles)
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,6 +244,31 @@ class TrendObservationWorker:
             self._repository.mark_candidate_execution_gate(run_id, result.contract, item.model.value, "OBSERVE_ONLY",
                                                             f"{gate_reason}; real account, book, fee, margin and order preflight not entered")
         return len(result.model_candidates)
+
+
+class MultiTimeframeObservationWorker(StrategyWorker):
+    """Run independent 15m/4h observation lifecycles in one safe process."""
+
+    def __init__(self, workers: tuple[TrendObservationWorker, ...]) -> None:
+        if not workers:
+            raise ValueError("multi-timeframe observer requires at least one profile")
+        profiles = [TimeframeProfile.for_period(worker._config.entry_period) for worker in workers]
+        if len(set(profiles)) != len(profiles):
+            raise ValueError("duplicate timeframe profile")
+        self._workers = workers
+
+    def stop(self) -> None:
+        for worker in self._workers:
+            worker.stop()
+
+    def tick(self) -> WorkerHealth:
+        outcomes = [worker.tick() for worker in self._workers]
+        status = "DEGRADED" if any(item.status == "DEGRADED" for item in outcomes) else "HEALTHY"
+        detail = "; ".join(
+            f"{TimeframeProfile.for_period(worker._config.entry_period).value}[{worker._config.entry_period}]:{result.detail}"
+            for worker, result in zip(self._workers, outcomes))
+        return WorkerHealth(status, detail, sum(item.candidate_count for item in outcomes),
+                            sum(item.active_position_count for item in outcomes))
 
 
 class StrategySupervisor:
