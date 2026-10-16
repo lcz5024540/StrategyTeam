@@ -15,7 +15,8 @@ from .htx_v5 import HtxV5Client
 from .position_manager import LivePositionManager, ExitConfig
 from .writer_lock import TrendWriterLock
 from .live import HtxLiveExecutor, LiveAuthority
-from .live_worker import LiveTrendWorker, LiveTrendWorkerConfig, MultiTimeframeLiveTrendWorker
+from .live_worker import (DEFAULT_TREND_CONTRACTS, LiveTrendWorker, LiveTrendWorkerConfig,
+                          MultiTimeframeLiveTrendWorker)
 from .market_data import HtxMarketData
 from .mysql_store import HtxTrendMySqlRepository, MySqlSettings, connect
 from .strategy_platform import (DisabledStrategyWorker, ExecutionMode, MultiTimeframeObservationWorker,
@@ -80,7 +81,8 @@ def main() -> None:
             evidence_store = FileEvidenceStore(Path(os.environ.get(
                 "HTX_PYTHON_EVIDENCE_DIR", "./research-data/evidence")))
         if family == "TREND" and instance.execution_mode == ExecutionMode.OBSERVE:
-            contracts = tuple(dict.fromkeys(item.strip().upper() for item in os.environ.get("HTX_TREND_CONTRACTS", "").split(",") if item.strip()))
+            contracts = tuple(dict.fromkeys(item.strip().upper() for item in os.environ.get(
+                "HTX_TREND_CONTRACTS", ",".join(DEFAULT_TREND_CONTRACTS)).split(",") if item.strip()))
             market_client = HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com"))
             market = HtxMarketData(market_client, evidence_store=evidence_store)
             observer_workers = tuple(

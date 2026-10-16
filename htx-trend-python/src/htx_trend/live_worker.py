@@ -30,6 +30,18 @@ from .strategy_decision import HtxStrategyDecisionEngine, LEGACY_STRATEGY_VERSIO
 from .timeframes import TimeframeProfile
 
 
+DEFAULT_TREND_CONTRACTS = (
+    "BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "BNB-USDT", "DOGE-USDT", "ADA-USDT",
+    "TRX-USDT", "LINK-USDT", "AVAX-USDT", "SUI-USDT", "HYPE-USDT", "HBAR-USDT", "PONS-USDT",
+    "BCH-USDT", "LTC-USDT", "DOT-USDT", "UNI-USDT", "AAVE-USDT", "NEAR-USDT", "ETC-USDT",
+    "XLM-USDT", "FIL-USDT", "ARB-USDT", "OP-USDT", "ATOM-USDT", "ICP-USDT", "APT-USDT",
+    "PEPE-USDT", "SHIB-USDT", "WIF-USDT", "BONK-USDT", "FLOKI-USDT", "TAO-USDT", "WLD-USDT",
+    "TIA-USDT", "JUP-USDT", "ENA-USDT", "ONDO-USDT", "ALGO-USDT", "OKB-USDT", "DASH-USDT",
+    "ZEC-USDT", "XAUT-USDT", "PAXG-USDT", "PEOPLE-USDT", "ORDI-USDT", "BOME-USDT", "RAY-USDT",
+    "CHZ-USDT", "ETHFI-USDT", "ACE-USDT",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class LiveTrendWorkerConfig:
     contracts: tuple[str, ...]
@@ -98,16 +110,8 @@ class LiveTrendWorkerConfig:
             return tuple(dict.fromkeys(item.strip().upper() for item in raw.split(",") if item.strip()))
 
         defaults = cls(())
-        default_contracts = ("BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "BNB-USDT", "DOGE-USDT", "ADA-USDT",
-                             "TRX-USDT", "LINK-USDT", "AVAX-USDT", "SUI-USDT", "HYPE-USDT", "HBAR-USDT", "PONS-USDT",
-                             "BCH-USDT", "LTC-USDT", "DOT-USDT", "UNI-USDT", "AAVE-USDT", "NEAR-USDT", "ETC-USDT",
-                             "XLM-USDT", "FIL-USDT", "ARB-USDT", "OP-USDT", "ATOM-USDT", "ICP-USDT", "APT-USDT",
-                             "PEPE-USDT", "SHIB-USDT", "WIF-USDT", "BONK-USDT", "FLOKI-USDT", "TAO-USDT", "WLD-USDT",
-                             "TIA-USDT", "JUP-USDT", "ENA-USDT", "ONDO-USDT", "ALGO-USDT", "OKB-USDT", "DASH-USDT",
-                             "ZEC-USDT", "XAUT-USDT", "PAXG-USDT", "PEOPLE-USDT", "ORDI-USDT", "BOME-USDT", "RAY-USDT",
-                             "CHZ-USDT", "ETHFI-USDT", "ACE-USDT")
         config = cls(
-            contracts=values("HTX_TREND_CONTRACTS", default_contracts),
+            contracts=values("HTX_TREND_CONTRACTS", DEFAULT_TREND_CONTRACTS),
             enabled=flag("HTX_TREND_ENABLED", defaults.enabled),
             observe_only=flag("HTX_TREND_OBSERVE_ONLY", defaults.observe_only),
             entry_enabled=flag("HTX_TREND_ENTRY_ENABLED", defaults.entry_enabled),
@@ -304,12 +308,29 @@ class LiveTrendWorker(StrategyWorker):
                                            "thresholds": [str(value) for value in rejected.thresholds[:4]]}
                 self._diagnose(scan, stage=stage, code=code, selected=len(chosen), flags=flags)
                 if chosen:
-                    self._pending[scan.contract] = (chosen[0], scan, factor_id)
                     shadow = self._config.observe_only or not self._config.entry_enabled
+                    initial_gate, initial_reason = _initial_candidate_gate(
+                        chosen[0].candidate,
+                        now_epoch=now_epoch,
+                        entry_period_seconds=period_seconds(self._config.entry_period),
+                        signal_freshness_seconds=self._config.signal_freshness_seconds,
+                        shadow=shadow,
+                    )
+                    if initial_gate == "EXPIRED":
+                        # A worker can start after a higher-timeframe candle's
+                        # entry window and freshness deadline have passed. Do
+                        # not label that stale candidate PRE_FLIGHT: it never
+                        # reached account/exchange preflight and must be
+                        # auditable as expired at admission time.
+                        self._diagnose(scan, stage="QUEUE", code=RejectCode.EXPIRED,
+                                       selected=0, flags={"reason": "candidate expired before preflight"})
+                        self._record_candidate(chosen[0], scan, factor_id, context, shadow=shadow,
+                                               gate_result=initial_gate, gate_reason=initial_reason)
+                        self._pending.pop(scan.contract, None)
+                        continue
+                    self._pending[scan.contract] = (chosen[0], scan, factor_id)
                     self._record_candidate(chosen[0], scan, factor_id, context, shadow=shadow,
-                                           gate_result="SHADOW_ONLY" if shadow else "PRE_FLIGHT",
-                                           gate_reason=("profile live entry disabled" if shadow
-                                                        else "live account/exchange preflight pending"))
+                                           gate_result=initial_gate, gate_reason=initial_reason)
                 else:
                     self._pending.pop(scan.contract, None)
         else:
@@ -582,6 +603,21 @@ class LiveTrendWorker(StrategyWorker):
             atr=factor.atr, atr_pct=factor.atr_pct, adx=factor.adx, spread_rate=scan.book.top.spread_rate,
             funding_rate=scan.funding.rate if scan.funding else None, reason=scan.signal.reason)
         return factor_id
+
+
+def _initial_candidate_gate(candidate, *, now_epoch: int, entry_period_seconds: int,
+                            signal_freshness_seconds: int, shadow: bool) -> tuple[str, str]:
+    """Classify a newly selected candidate before it enters the pending queue.
+
+    A process may start after a higher-timeframe candle's freshness deadline.
+    Such a candidate is an observation fact, not a live preflight attempt.
+    """
+    deadline = candidate.bar_time + entry_period_seconds + signal_freshness_seconds
+    if now_epoch > deadline:
+        return "EXPIRED", "candidate expired before live account/exchange preflight"
+    if shadow:
+        return "SHADOW_ONLY", "profile live entry disabled"
+    return "PRE_FLIGHT", "live account/exchange preflight pending"
 
 
 class MultiTimeframeLiveTrendWorker(StrategyWorker):

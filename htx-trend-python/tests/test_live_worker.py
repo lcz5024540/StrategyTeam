@@ -3,7 +3,8 @@ from decimal import Decimal
 import pytest
 
 from htx_trend.credentials import decrypt_if_encrypted
-from htx_trend.live_worker import LiveTrendWorker, LiveTrendWorkerConfig, MultiTimeframeLiveTrendWorker
+from htx_trend.live_worker import (DEFAULT_TREND_CONTRACTS, LiveTrendWorker, LiveTrendWorkerConfig,
+                                   MultiTimeframeLiveTrendWorker, _initial_candidate_gate)
 from htx_trend.mysql_store import RuntimeInstance
 from htx_trend.strategy_platform import ExecutionMode, WorkerHealth
 from htx_trend.timeframes import TimeframeProfile
@@ -53,6 +54,32 @@ def test_live_worker_configuration_reads_java_environment_names(monkeypatch) -> 
     assert config.market_breadth_lookback_seconds == 42 * 60
     assert not config.adaptive_sizing_enabled and not config.market_anchor_enabled
     assert config.combination_entry_enabled
+
+
+def test_live_worker_default_universe_has_52_contracts(monkeypatch) -> None:
+    monkeypatch.delenv("HTX_TREND_CONTRACTS", raising=False)
+    monkeypatch.setenv("HTX_TREND_ENABLED", "true")
+    config = LiveTrendWorkerConfig.from_env()
+    assert len(DEFAULT_TREND_CONTRACTS) == 52
+    assert config.contracts == DEFAULT_TREND_CONTRACTS
+
+
+def test_stale_higher_timeframe_candidate_is_expired_before_preflight() -> None:
+    candidate = type("Candidate", (), {"bar_time": 16 * 3600})()
+    status, reason = _initial_candidate_gate(candidate, now_epoch=21 * 3600,
+                                              entry_period_seconds=4 * 3600,
+                                              signal_freshness_seconds=600, shadow=False)
+    assert status == "EXPIRED"
+    assert "before live account/exchange preflight" in reason
+
+
+def test_fresh_candidate_enters_live_preflight_state() -> None:
+    candidate = type("Candidate", (), {"bar_time": 16 * 3600})()
+    status, reason = _initial_candidate_gate(candidate, now_epoch=20 * 3600 + 30,
+                                              entry_period_seconds=4 * 3600,
+                                              signal_freshness_seconds=600, shadow=False)
+    assert status == "PRE_FLIGHT"
+    assert reason == "live account/exchange preflight pending"
 
 
 def test_dual_profile_configuration_has_independent_live_switches(monkeypatch) -> None:
