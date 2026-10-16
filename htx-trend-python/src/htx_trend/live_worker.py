@@ -385,7 +385,10 @@ class LiveTrendWorker(StrategyWorker):
                     evidence_refs=scan.entry.evidence_refs + scan.trend.evidence_refs)
                 self._repository.mark_candidate_execution_gate(run_id, scan.contract, candidate.model.value,
                     "PASSED" if gate.accepted else gate.gate.stage, gate.reason)
-                self._diagnose(scan, stage="EXEC", code=None if gate.accepted else gate.gate.stage)
+                execution_code = None if gate.accepted else (
+                    RejectCode.ACCOUNT_PREFLIGHT_FAILED.value
+                    if gate.gate.stage == "ACCOUNT_PREFLIGHT" else gate.gate.stage)
+                self._diagnose(scan, stage="EXEC", code=execution_code)
                 accepted += int(gate.accepted)
                 attempted += 1
                 # Java removes a candidate after its gate/order evaluation;

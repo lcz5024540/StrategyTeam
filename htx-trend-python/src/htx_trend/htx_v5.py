@@ -128,15 +128,17 @@ class HtxV5Client:
             "contract_code": contract_code, "business_type": "swap",
         }))
 
-    def swap_account_info(self, contract_code: str) -> list[dict[str, Any]]:
-        """Read isolated margin facts for the Java-compatible margin gate."""
-        response = self._signed("POST", "/linear-swap-api/v1/swap_account_info", body={
-            "contract_code": contract_code,
-        })
-        return self._data_list(response)
+    def account_balance(self) -> dict[str, Any]:
+        """Read the USDT-swap account balance through the HTX V5 API."""
+        return self._data_object(self._signed("GET", "/v5/account/balance"))
 
     def balance(self) -> dict[str, Any]:
-        return self._data_object(self._signed("GET", "/v5/account/balance"))
+        """Compatibility alias for the V5 account balance response."""
+        return self.account_balance()
+
+    def swap_account_info(self, _contract_code: str | None = None) -> list[dict[str, Any]]:
+        """Compatibility shape backed by V5; never call the expired V1 API."""
+        return [self.account_balance()]
 
     def positions(self, contract_code: str) -> list[dict[str, Any]]:
         response = self._signed("GET", "/v5/trade/position/opens", {"contract_code": contract_code})

@@ -73,13 +73,16 @@ def test_live_order_preserves_reduce_only_v5_contract() -> None:
 def test_private_fee_and_margin_reads_match_java_contract_endpoints() -> None:
     seen = []
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.append((request.method, request.url.path, json.loads(request.content)))
+        body = json.loads(request.content) if request.content else {}
+        seen.append((request.method, request.url.path, body))
         if request.url.path.endswith("swap_fee"):
             return httpx.Response(200, json={"status": "ok", "data": [{"taker_fee_rate": "0.0004"}]})
-        return httpx.Response(200, json={"status": "ok", "data": [{"margin_available": "50"}]})
+        assert request.method == "GET"
+        assert request.url.path == "/v5/account/balance"
+        return httpx.Response(200, json={"status": "ok", "data": {"available_margin": "50"}})
     client = HtxV5Client("access", "secret", base_url="https://example.test",
                          client=httpx.Client(transport=httpx.MockTransport(handler)))
     assert client.swap_fee("BTC-USDT")[0]["taker_fee_rate"] == "0.0004"
-    assert client.swap_account_info("BTC-USDT")[0]["margin_available"] == "50"
+    assert client.account_balance()["available_margin"] == "50"
     assert seen == [("POST", "/linear-swap-api/v1/swap_fee", {"contract_code": "BTC-USDT", "business_type": "swap"}),
-                    ("POST", "/linear-swap-api/v1/swap_account_info", {"contract_code": "BTC-USDT"})]
+                    ("GET", "/v5/account/balance", {})]

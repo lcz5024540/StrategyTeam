@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, Mapping
 
 from .execution import ExecutionFacts
 from .htx_v5 import HtxV5Client
@@ -56,7 +56,7 @@ class HtxAccountFactsAdapter:
             fee_source = "CONFIGURED_FALLBACK"
         positions = self._client.positions(contract_code)
         orders = self._client.open_orders(contract_code)
-        accounts = self._client.swap_account_info(contract_code)
+        account_balance = self._client.account_balance()
         same, opposite = _position_volumes(positions, side)
         # The entry service cannot take over a human/external position.  A
         # caller may explicitly identify a managed strategy position only when
@@ -66,7 +66,7 @@ class HtxAccountFactsAdapter:
             external = side
         elif opposite > ZERO:
             external = TrendSide.SHORT if side is TrendSide.LONG else TrendSide.LONG
-        margin = _available_margin(accounts)
+        margin = _available_margin(account_balance)
         facts = ExecutionFacts(actual_taker_fee_rate=fee, contract_open_order=bool(orders),
             external_position_side=external, exchange_position_consistent=True,
             executable_depth_contracts=book.executable_contracts(side.value, self._config.depth_levels),
@@ -111,8 +111,17 @@ def _position_volumes(rows: list[dict[str, Any]], side: TrendSide) -> tuple[Deci
     return same, opposite
 
 
-def _available_margin(rows: list[dict[str, Any]]) -> Decimal:
-    values = [_decimal(row, "margin_available", "marginAvailable", "available_margin") or ZERO for row in rows]
+def _available_margin(value: Mapping[str, Any] | list[dict[str, Any]]) -> Decimal:
+    """Read V5's account-wide margin, with a detail-list compatibility path."""
+    if isinstance(value, Mapping):
+        direct = _decimal(dict(value), "available_margin", "margin_available", "marginAvailable")
+        if direct is not None:
+            return direct
+        details = value.get("details")
+        if isinstance(details, list):
+            return _available_margin(details)
+        raise ValueError("HTX V5 account balance lacks available margin")
+    values = [_decimal(row, "margin_available", "marginAvailable", "available_margin") or ZERO for row in value]
     if not values:
         raise ValueError("HTX account margin response is empty")
     return sum(values, ZERO)

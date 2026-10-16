@@ -54,6 +54,11 @@ class Facts:
             risk_capacity_usdt=Decimal("200")), "HTX_ACCOUNT", Decimal("100"), 0, Decimal("0"), Decimal("0"))
 
 
+class FailingFacts(Facts):
+    def snapshot(self, *_args, **_kwargs):
+        raise RuntimeError("V5 account balance unavailable")
+
+
 class Executor:
     def __init__(self): self.calls = []
     def set_leverage(self, *values): self.calls.append(("leverage", values)); return {}
@@ -89,6 +94,27 @@ def test_entry_writes_intent_reserves_then_submits_java_market_order() -> None:
     assert [name for name, _ in repo.calls[:2]] == ["position", "order"]
     assert live.calls[0][0] == "leverage"
     assert live.calls[1][1].type == "market"
+
+
+def test_account_preflight_failure_is_a_rejection_and_does_not_escape_worker() -> None:
+    repo, live = Repository(), Executor()
+    entry = HtxTrendEntryExecutor(repository=repo,
+        instance=RuntimeInstance("python-main", "TREND", "HTX_TREND_V1", 7, "primary", "LIVE", True, "unit", None),
+        account=TradeAccount(7, "primary", "PRIMARY", True, False, "https://example.test"),
+        facts=FailingFacts(), executor=live,
+        execution=ExecutionConfig(min_score=Decimal("70"), min_net_r=Decimal("0"), min_notional=Decimal("1"),
+                                  target_notional=Decimal("100"), max_notional=Decimal("100")))
+    bars = (Candle(9_000, Decimal("99"), Decimal("101"), Decimal("98"), Decimal("100"), turnover=Decimal("1000")),)
+    result = entry.submit(run_id="run", candidate=candidate(), period="15min", atr=Decimal("2"),
+        ema_fast=Decimal("101"), ema_slow=Decimal("99"), adx=Decimal("30"), recent_candles=bars,
+        book=OrderBook(((Decimal("99.99"), Decimal("100")),), ((Decimal("100.01"), Decimal("100")),)),
+        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1),
+        funding=FundingRate("BTC-USDT", Decimal("0.0001")),
+        market_context=MarketContext(MarketRegime.BROAD_UP, TrendSide.LONG, Decimal("0.8")), now_epoch=10_000)
+    assert not result.accepted
+    assert result.gate.stage == "ACCOUNT_PREFLIGHT"
+    assert "V5 account balance unavailable" in result.reason
+    assert not live.calls and not repo.calls
 
 
 def test_new_strategy_requires_admission_and_uses_risk_first_sizing() -> None:

@@ -190,15 +190,26 @@ class HtxTrendEntryExecutor:
         direction_counter = getattr(self._repository, "active_direction_position_count", None)
         same_direction_count = (direction_counter(account_id=self._account.account_id, side=candidate.side.value)
                                 if direction_counter is not None else None)
-        snapshot = self._facts.snapshot(contract.contract_code,
-                                        candidate.side, book, active_position_count=self._repository.active_position_count(account_id=self._account.account_id),
-                                        max_active_positions=self._config.max_active_positions,
-                                        # Keep reserved notional as audit evidence, but do not
-                                        # expose the removed 30U account-wide capacity as an
-                                        # active execution boundary.
-                                        reserved_notional_usdt=risk_totals.notional_usdt,
-                                        risk_capacity_usdt=None,
-                                        same_direction_position_count=same_direction_count)
+        try:
+            snapshot = self._facts.snapshot(
+                contract.contract_code, candidate.side, book,
+                active_position_count=self._repository.active_position_count(account_id=self._account.account_id),
+                max_active_positions=self._config.max_active_positions,
+                # Keep reserved notional as audit evidence, but do not expose
+                # the removed 30U account-wide capacity as an active boundary.
+                reserved_notional_usdt=risk_totals.notional_usdt,
+                risk_capacity_usdt=None,
+                same_direction_position_count=same_direction_count)
+        except Exception as error:
+            # Account/exchange facts are required for LIVE. Convert an API or
+            # malformed-response failure into a recorded Gate rejection so one
+            # profile cannot abort the multi-timeframe worker or age candidates
+            # into an untraceable PRE_FLIGHT state.
+            preflight_gate = GateResult(
+                False, "ACCOUNT_PREFLIGHT",
+                f"account/exchange preflight failed: {type(error).__name__}: {error}")
+            return EntrySubmission(False, preflight_gate, None, None, None,
+                                   preflight_gate.reason)
         # The live account guard is intentionally applied to the effective
         # config used by this submission, after policy sizing and before any
         # database intent or exchange mutation.
