@@ -1,5 +1,12 @@
 # HTX Python 双周期 V2 冻结数据研究报告（2026-10-17）
 
+> **R2 口径更正（2026-10-18）**：本报告使用每根持仓 K 线固定资金费和统一
+> `0.001` 合约面值，只保留为 legacy 策略问题诊断。P1 已确认该区间 BTC/ETH
+> 合约面值分别为 `0.001/0.01`，并冻结逐合约历史资金费事件。本文的交易数可作
+> 候选行为参考，金额、PF 和准入结论必须用新事实包重新研究，不能继续作为 R2
+> 成本精确结果。实现见
+> [`HTX_PYTHON_MARKET_FACTS_P1_20261018.md`](HTX_PYTHON_MARKET_FACTS_P1_20261018.md)。
+
 ## 结论
 
 本轮研究使用冻结数据 manifest
@@ -67,7 +74,8 @@ RSI、MACD、价格斜率、EMA 方向和 regime，以及候选评分 65/70 邻�
 ```bash
 PYTHONPATH=src .venv/bin/python -m htx_trend.cli profile-research \
   --evidence research-data/six-month-btc-eth \
-  --manifest-hash 66c65fd4d1dd69aa70d0153e63807ea9cb767d84779b41eb9e3aa745c494afe0
+  --manifest-hash 66c65fd4d1dd69aa70d0153e63807ea9cb767d84779b41eb9e3aa745c494afe0 \
+  --market-facts-manifest-hash <complete-market-facts-manifest-sha256>
 ```
 
 ## 准入决定

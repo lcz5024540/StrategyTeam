@@ -9,6 +9,7 @@ from typing import Sequence
 from ..market_data import Candle
 from ..models import TrendSide
 from .features import Performance, performance
+from .market_facts import FrozenMarketFacts
 
 ZERO = Decimal("0")
 
@@ -17,7 +18,6 @@ ZERO = Decimal("0")
 class ExecutionAssumptions:
     fee_rate: Decimal = Decimal("0.0004")
     slippage_rate: Decimal = Decimal("0.0003")
-    funding_rate_per_bar: Decimal = Decimal("0.0001")
     max_volume_participation: Decimal = Decimal("0.01")
     conservative_intrabar_ordering: bool = True
 
@@ -35,6 +35,8 @@ class BacktestIntent:
     target_price: Decimal
     order_type: str = "MARKET"
     limit_price: Decimal | None = None
+    contract_code: str = ""
+    period: str = "15min"
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +55,8 @@ class BacktestTrade:
     gross_pnl: Decimal
     fees: Decimal
     funding: Decimal
+    funding_event_count: int
+    funding_evidence_status: str
     net_pnl: Decimal
     mfe: Decimal
     mae: Decimal
@@ -69,16 +73,18 @@ class LifecycleBacktestResult:
     effective_days: int
     completed_trades_per_day: Decimal
     execution_assumptions: ExecutionAssumptions
+    market_facts_manifest_hash: str
     result_kind: str = "STRATEGY_SIMULATION"
 
 
 class LifecycleBacktestRun:
     """Simulate intents without claiming that synthetic fills are historical facts."""
 
-    def __init__(self, assumptions: ExecutionAssumptions = ExecutionAssumptions()) -> None:
+    def __init__(self, market_facts: FrozenMarketFacts,
+                 assumptions: ExecutionAssumptions = ExecutionAssumptions()) -> None:
         if not ZERO < assumptions.max_volume_participation <= Decimal("1"):
             raise ValueError("volume participation must be in (0,1]")
-        self.assumptions = assumptions
+        self.assumptions, self.market_facts = assumptions, market_facts
 
     def run(self, candles: Sequence[Candle], intents: Sequence[BacktestIntent]) -> LifecycleBacktestResult:
         ordered = tuple(sorted(candles, key=lambda item: item.open_time))
@@ -90,6 +96,11 @@ class LifecycleBacktestRun:
         for intent in intents:
             if intent.quantity < 1 or intent.contract_size <= ZERO:
                 raise ValueError("intent quantity and contract size must be positive")
+            if not intent.contract_code:
+                raise ValueError("intent contract_code is required for observed funding")
+            observed_size = self.market_facts.contract(intent.contract_code).contract_size
+            if intent.contract_size != observed_size:
+                raise ValueError("intent contract size differs from frozen HTX contract fact")
             entry_index = intent.signal_index + 1
             if intent.signal_index < 0 or entry_index >= len(ordered):
                 expired.append(intent.intent_id)
@@ -112,7 +123,7 @@ class LifecycleBacktestRun:
                       "mfe": item.mfe, "mae": item.mae} for item in trades)
         return LifecycleBacktestResult(
             tuple(trades), tuple(missed), tuple(expired), performance(rows), days,
-            Decimal(len(trades)) / Decimal(days), self.assumptions,
+            Decimal(len(trades)) / Decimal(days), self.assumptions, self.market_facts.manifest_hash,
         )
 
     def _entry_price(self, intent: BacktestIntent, candle: Candle) -> Decimal | None:
@@ -137,9 +148,7 @@ class LifecycleBacktestRun:
                   entry_price: Decimal, quantity: int) -> BacktestTrade:
         favorable = adverse = ZERO
         exit_price, exit_time, reason = candles[-1].close, candles[-1].open_time, "END_OF_DATA"
-        bars_held = 0
         for candle in candles[entry_index:]:
-            bars_held += 1
             if intent.side is TrendSide.LONG:
                 favorable = max(favorable, candle.high - entry_price)
                 adverse = max(adverse, entry_price - candle.low)
@@ -159,11 +168,19 @@ class LifecycleBacktestRun:
         gross = ((exit_price - entry_price) if intent.side is TrendSide.LONG
                  else (entry_price - exit_price)) * multiplier
         fees = (entry_price + exit_price) * multiplier * self.assumptions.fee_rate
-        funding = entry_price * multiplier * self.assumptions.funding_rate_per_bar * Decimal(bars_held)
+        charge = self.market_facts.charge(
+            intent.contract_code, intent.side, quantity=quantity,
+            entry_time=candles[entry_index].open_time, exit_time=exit_time,
+            candles=candles, period=intent.period,
+        )
+        if charge.evidence_status != "COMPLETE" or charge.amount is None:
+            raise ValueError(f"funding evidence unavailable: {charge.evidence_status}")
+        funding = charge.amount
         return BacktestTrade(
             intent.intent_id, intent.timeframe_profile, intent.model, intent.side.value,
             candles[intent.signal_index].open_time, candles[entry_index].open_time, exit_time,
             intent.quantity, quantity, entry_price, exit_price, gross, fees, funding,
+            charge.event_count, charge.evidence_status,
             gross - fees - funding, favorable * multiplier, adverse * multiplier, reason,
             quantity < intent.quantity,
         )

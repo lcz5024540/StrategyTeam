@@ -16,6 +16,7 @@ from .research.collector import ContinuousCollector, PERIODS
 from .research.store import FileEvidenceStore
 from .research.replay import replay_entries
 from .research.profile_backtest import run_dual_profile_research
+from .research.market_facts import MarketFactsCollector
 from .live_approval import LegacyLiveWaiver, LiveApproval
 
 
@@ -57,6 +58,12 @@ def main() -> None:
     history.add_argument("--symbols", required=True, nargs="+")
     history.add_argument("--periods", nargs="+", default=list(PERIODS), choices=PERIODS)
     history.add_argument("--start", required=True, type=_epoch); history.add_argument("--end", required=True, type=_epoch)
+    market_facts = commands.add_parser(
+        "collect-market-facts", help="freeze HTX contract specifications and historical funding events")
+    market_facts.add_argument("--evidence", required=True, type=Path)
+    market_facts.add_argument("--symbols", required=True, nargs="+")
+    market_facts.add_argument("--start", required=True, type=_epoch)
+    market_facts.add_argument("--end", required=True, type=_epoch)
     tick = commands.add_parser("collect-tick", help="run one resumable continuous collection tick")
     tick.add_argument("--evidence", required=True, type=Path)
     tick.add_argument("--symbols", required=True, nargs="+")
@@ -71,6 +78,7 @@ def main() -> None:
         "profile-research", help="run frozen 15m/4h lifecycle research through the shared decision stack")
     profile_research.add_argument("--evidence", required=True, type=Path)
     profile_research.add_argument("--manifest-hash", required=True)
+    profile_research.add_argument("--market-facts-manifest-hash", required=True)
     profile_research.add_argument("--without-test", action="store_true",
                                   help="leave the frozen test segment unconsumed")
     args = parser.parse_args()
@@ -107,7 +115,18 @@ def main() -> None:
                               "decisions": len(payload["decisions"])}, ensure_ascii=False)); return
     if args.command == "profile-research":
         print(json.dumps({"status": "COMPLETE", **run_dual_profile_research(
-            args.evidence, args.manifest_hash, include_test=not args.without_test)}, ensure_ascii=False)); return
+            args.evidence, args.manifest_hash, args.market_facts_manifest_hash,
+            include_test=not args.without_test)}, ensure_ascii=False)); return
+    if args.command == "collect-market-facts":
+        with FileEvidenceStore(args.evidence) as store, HtxV5Client() as client:
+            manifest = MarketFactsCollector(client, store).collect(
+                tuple(args.symbols), start=args.start, end=args.end)
+            payload = store.get(manifest)["payload"]
+            print(json.dumps({"status": payload["integrity"], "manifest_hash": manifest,
+                              "failures": payload["failures"]}, ensure_ascii=False))
+            if payload["integrity"] != "COMPLETE":
+                raise SystemExit(1)
+            return
     if args.command in {"collect-history", "collect-tick"}:
         with FileEvidenceStore(args.evidence) as store, HtxV5Client() as client:
             collector = ContinuousCollector(client, store)

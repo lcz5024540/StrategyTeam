@@ -24,6 +24,31 @@ def test_public_kline_request_has_no_credentials() -> None:
     assert client.history_kline("BTC-USDT", "15min", 200) == [{"id": 1}]
 
 
+def test_public_market_fact_requests_use_htx_contract_endpoints() -> None:
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.path, dict(request.url.params)))
+        if request.url.path.endswith("swap_contract_info"):
+            return httpx.Response(200, json={"status": "ok", "data": [{"contract_code": "BTC-USDT"}]})
+        if request.url.path.endswith("swap_query_elements"):
+            return httpx.Response(200, json={"status": "ok", "data": [{"contract_code": "BTC-USDT"}]})
+        return httpx.Response(200, json={"status": "ok", "data": {
+            "total_page": 1, "current_page": 1, "total_size": 0, "data": []}})
+
+    client = HtxV5Client(client=httpx.Client(transport=httpx.MockTransport(handler)))
+    client.contract_info_envelope("BTC-USDT")
+    client.contract_elements_envelope("BTC-USDT")
+    client.historical_funding_rate_envelope("BTC-USDT", page_index=2, page_size=25)
+    assert seen == [
+        ("/linear-swap-api/v1/swap_contract_info",
+         {"contract_code": "BTC-USDT", "business_type": "swap"}),
+        ("/linear-swap-api/v1/swap_query_elements", {"contract_code": "BTC-USDT"}),
+        ("/linear-swap-api/v1/swap_historical_funding_rate",
+         {"contract_code": "BTC-USDT", "page_index": "2", "page_size": "25"}),
+    ]
+
+
 def test_private_request_uses_htx_canonical_hmac_signature() -> None:
     secret = "secret"
 

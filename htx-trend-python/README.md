@@ -28,6 +28,8 @@ htx-trend collect-history --evidence /var/lib/coinstrategy/htx-python-evidence \
   --symbols BTC-USDT ETH-USDT --start 2026-04-01T00:00:00Z --end 2026-10-01T00:00:00Z
 htx-trend collect-tick --evidence /var/lib/coinstrategy/htx-python-evidence \
   --symbols BTC-USDT ETH-USDT
+htx-trend collect-market-facts --evidence /var/lib/coinstrategy/htx-python-evidence \
+  --symbols BTC-USDT ETH-USDT --start 2026-04-11T00:00:00Z --end 2026-10-11T00:00:00Z
 htx-trend verify-evidence --evidence /var/lib/coinstrategy/htx-python-evidence --hash <manifest-sha256>
 ```
 
@@ -61,12 +63,15 @@ HTX_TREND_ALLOW_LEGACY_4H_LIVE=false
 
 ```bash
 htx-trend profile-research --evidence /path/to/evidence \
-  --manifest-hash <complete-dataset-manifest-sha256>
+  --manifest-hash <complete-dataset-manifest-sha256> \
+  --market-facts-manifest-hash <complete-market-facts-manifest-sha256>
 ```
 
-结果明确标记为 `STRATEGY_SIMULATION`，保存完整交易账本、四成本场景、
+结果明确标记为 `STRATEGY_SIMULATION`，保存完整交易账本、四种手续费/滑点场景、
 60/20/20、walk-forward、置换检验、时间块 bootstrap 与经济性结论；历史
-OHLCV 中不存在的盘口、账户和资金费事实会作为模拟假设列出。
+OHLCV 中不存在的盘口和账户事实会作为模拟假设列出。资金费只按冻结的 HTX
+逐合约历史结算事件计入，合约面值和价格 tick 来自同一个事实 manifest；缺少
+完整事实包时研究入口直接失败，不再按 K 线频率虚构资金费。
 
 ```bash
 python -m htx_trend.worker --strategy-instance <instance-key>

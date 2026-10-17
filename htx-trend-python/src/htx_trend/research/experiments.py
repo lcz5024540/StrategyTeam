@@ -18,14 +18,13 @@ class CostScenario:
     name: str
     fee_rate: Decimal
     slippage_rate: Decimal
-    funding_rate: Decimal
 
 
 DEFAULT_COST_SCENARIOS = (
-    CostScenario("ZERO", Decimal("0"), Decimal("0"), Decimal("0")),
-    CostScenario("OPTIMISTIC", Decimal("0.0003"), Decimal("0.0001"), Decimal("0")),
-    CostScenario("BASE", Decimal("0.0004"), Decimal("0.0003"), Decimal("0.0001")),
-    CostScenario("CONSERVATIVE", Decimal("0.0006"), Decimal("0.0010"), Decimal("0.0003")),
+    CostScenario("ZERO", Decimal("0"), Decimal("0")),
+    CostScenario("OPTIMISTIC", Decimal("0.0003"), Decimal("0.0001")),
+    CostScenario("BASE", Decimal("0.0004"), Decimal("0.0003")),
+    CostScenario("CONSERVATIVE", Decimal("0.0006"), Decimal("0.0010")),
 )
 
 

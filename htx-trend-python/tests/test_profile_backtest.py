@@ -35,6 +35,31 @@ def _manifest(store: FileEvidenceStore, count: int = 180):
     return store.put("dataset_manifest", {"integrity": "COMPLETE", "pages": pages}, refs=tuple(pages))
 
 
+def _market_facts(store: FileEvidenceStore, count: int = 180):
+    contract_refs, funding_refs = [], []
+    end = count * 14_400
+    for symbol in ("BTC-USDT", "ETH-USDT"):
+        contract_refs.append(store.put("contract_market_fact", {
+            "contract_code": symbol, "contract_size": ".001", "price_tick": ".1",
+            "minimum_order_contracts": 1, "settlement_period_hours": 8,
+            "contract_status": 1, "observed_at": end,
+        }))
+        events = [{"contract_code": symbol, "funding_time": timestamp,
+                   "funding_rate": ".0001", "realized_rate": None,
+                   "effective_rate": ".0001", "rate_source": "FUNDING_RATE",
+                   "fee_asset": "USDT", "funding_fee_type": "normal"}
+                  for timestamp in range(0, end, 28_800)]
+        funding_refs.append(store.put("historical_funding_page", {
+            "contract_code": symbol, "page_index": 1, "observed_at": end,
+            "events": events, "raw_ref": "test"}))
+    refs = tuple(contract_refs + funding_refs)
+    return store.put("market_facts_manifest", {
+        "integrity": "COMPLETE", "symbols": ("BTC-USDT", "ETH-USDT"),
+        "start": 0, "end_exclusive": end, "contract_fact_refs": contract_refs,
+        "funding_page_refs": funding_refs,
+    }, refs=refs)
+
+
 def test_provisional_admission_is_backtest_only() -> None:
     spec = profile_strategy(TimeframeProfile.INTRADAY_15M, read_env=False)
     admission = provisional_backtest_admission(spec, "a"*64)
@@ -45,7 +70,8 @@ def test_provisional_admission_is_backtest_only() -> None:
 def test_profile_research_is_content_addressed_and_reproducible(tmp_path) -> None:
     with FileEvidenceStore(tmp_path) as store:
         manifest = _manifest(store)
-        runner = ProfileLifecycleResearch(store, manifest, TimeframeProfile.INTRADAY_15M)
+        facts = _market_facts(store)
+        runner = ProfileLifecycleResearch(store, manifest, facts, TimeframeProfile.INTRADAY_15M)
         variant = (ResearchVariant("BASELINE"),)
         first = runner.run(variants=variant, seed=7)
         second = runner.run(variants=variant, seed=7)
@@ -61,7 +87,8 @@ def test_profile_research_is_content_addressed_and_reproducible(tmp_path) -> Non
 def test_future_candle_does_not_change_prior_decision(tmp_path) -> None:
     with FileEvidenceStore(tmp_path) as store:
         manifest = _manifest(store, 180)
-        runner = ProfileLifecycleResearch(store, manifest, TimeframeProfile.INTRADAY_15M)
+        facts = _market_facts(store, 180)
+        runner = ProfileLifecycleResearch(store, manifest, facts, TimeframeProfile.INTRADAY_15M)
         base = _candles(900, 180)
         before = runner._decisions("BTC-USDT", base)[-1]
         extended = base + (Candle(180*900, Decimal("999"), Decimal("1000"), Decimal("998"),

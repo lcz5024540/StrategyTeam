@@ -107,11 +107,29 @@ class HtxV5Client:
         })
         return response.get("tick") or response.get("data") or {}
 
-    def contract_info(self, contract_code: str) -> list[dict[str, Any]]:
-        response = self._public_get("/linear-swap-api/v1/swap_contract_info", {
+    def contract_info_envelope(self, contract_code: str) -> dict[str, Any]:
+        return self._public_get("/linear-swap-api/v1/swap_contract_info", {
             "contract_code": contract_code, "business_type": "swap",
         })
+
+    def contract_info(self, contract_code: str) -> list[dict[str, Any]]:
+        response = self.contract_info_envelope(contract_code)
         return self._data_list(response)
+
+    def contract_elements_envelope(self, contract_code: str) -> dict[str, Any]:
+        return self._public_get("/linear-swap-api/v1/swap_query_elements", {
+            "contract_code": contract_code,
+        })
+
+    def historical_funding_rate_envelope(self, contract_code: str, *, page_index: int = 1,
+                                         page_size: int = 50) -> dict[str, Any]:
+        if page_index < 1 or not 1 <= page_size <= 50:
+            raise ValueError("invalid HTX historical funding page")
+        return self._public_get("/linear-swap-api/v1/swap_historical_funding_rate", {
+            "contract_code": contract_code,
+            "page_index": str(page_index),
+            "page_size": str(page_size),
+        })
 
     def funding_rate(self, contract_code: str) -> dict[str, Any]:
         response = self._public_get("/linear-swap-api/v1/swap_funding_rate", {"contract_code": contract_code})

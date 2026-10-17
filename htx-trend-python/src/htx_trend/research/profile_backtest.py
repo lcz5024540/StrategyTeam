@@ -25,6 +25,7 @@ from ..timeframes import TimeframeProfile
 from .experiments import (DEFAULT_COST_SCENARIOS, ResearchConclusion, block_bootstrap_expectancy_lower,
                           economic_gate, permutation_p_value, walk_forward_bounds)
 from .features import performance
+from .market_facts import FrozenMarketFacts
 from .replay import load_manifest_candles
 from .store import FileEvidenceStore, digest
 
@@ -72,6 +73,8 @@ class SimulatedTrade:
     gross_pnl: Decimal
     fees: Decimal
     funding: Decimal
+    funding_event_count: int
+    funding_evidence_status: str
     net_pnl: Decimal
     mfe: Decimal
     mae: Decimal
@@ -99,9 +102,11 @@ def provisional_backtest_admission(spec: ProfileStrategySpec, manifest_hash: str
 class ProfileLifecycleResearch:
     """Run the shared entry core, Gate, sizing and exit kernel on frozen bars."""
 
-    def __init__(self, store: FileEvidenceStore, manifest_hash: str, profile: TimeframeProfile,
+    def __init__(self, store: FileEvidenceStore, manifest_hash: str, market_facts_manifest_hash: str,
+                 profile: TimeframeProfile,
                  *, window: int = 160, account_equity: Decimal = Decimal("10000")) -> None:
         self.store, self.manifest_hash, self.profile = store, manifest_hash, profile
+        self.market_facts = FrozenMarketFacts.load(store, market_facts_manifest_hash)
         self.window, self.account_equity = window, account_equity
         self.spec = profile_strategy(profile, read_env=False)
         admission = provisional_backtest_admission(self.spec, manifest_hash)
@@ -112,6 +117,7 @@ class ProfileLifecycleResearch:
             variants: Sequence[ResearchVariant] = DEFAULT_VARIANTS,
             *, include_test: bool = True, seed: int = 17) -> str:
         plan_hash = digest({"manifest_hash": self.manifest_hash, "spec_hash": self.spec.spec_hash,
+                            "market_facts_manifest_hash": self.market_facts.manifest_hash,
                             "symbols": tuple(symbols), "variants": tuple(variants), "seed": seed,
                             "split": (60, 20, 20), "costs": DEFAULT_COST_SCENARIOS})
         if include_test:
@@ -136,7 +142,7 @@ class ProfileLifecycleResearch:
                         start, end = len(candles) * split[1] // 100, len(candles) * split[2] // 100
                         trades.extend(self._simulate(symbol, candles, decisions[symbol], start, end,
                                                      variant, cost.name, cost.fee_rate,
-                                                     cost.slippage_rate, cost.funding_rate))
+                                                     cost.slippage_rate))
                     trades.sort(key=lambda item: (item.exit_time, item.symbol, item.entry_time))
                     by_split[split[0]] = trades
                     metrics = performance(tuple({"net_pnl": item.net_pnl, "fees": item.fees,
@@ -155,6 +161,7 @@ class ProfileLifecycleResearch:
             "strategy_version": self.spec.strategy.version,
             "spec_hash": self.spec.spec_hash,
             "manifest_hash": self.manifest_hash,
+            "market_facts_manifest_hash": self.market_facts.manifest_hash,
             "plan_hash": plan_hash,
             "symbols": list(symbols),
             "window": self.window,
@@ -162,17 +169,18 @@ class ProfileLifecycleResearch:
             "execution_assumptions": {
                 "signal": "closed bar", "entry": "next bar open plus directional slippage",
                 "book": "synthetic around next open because frozen OHLCV has no L2 book",
-                "funding": "cost-scenario constant per held bar; not observed funding history",
+                "funding": "HTX historical events only; realized_rate when present, otherwise reported historical funding_rate",
                 "capacity": "at most 1% of candle volume", "intrabar": "stop before target",
                 "positioning": "one position per symbol/profile; no cross-segment carry",
-                "contract_size": "0.001 normalized research contract",
+                "contract_size": "HTX point-in-time contract fact bound by market_facts_manifest_hash",
             },
             "variants": [asdict(item) for item in variants],
             "results": result_rows,
             "conclusions": conclusions,
             "walk_forward": walk_forward,
         }
-        return self.store.put("profile_lifecycle_research", payload, refs=(self.manifest_hash,))
+        return self.store.put("profile_lifecycle_research", payload,
+                              refs=(self.manifest_hash, self.market_facts.manifest_hash))
 
     def _decisions(self, symbol: str, candles: Sequence[Candle]) -> tuple[StrategyDecision | None, ...]:
         rows: list[StrategyDecision | None] = [None] * len(candles)
@@ -184,7 +192,7 @@ class ProfileLifecycleResearch:
 
     def _simulate(self, symbol: str, candles: Sequence[Candle], decisions: Sequence[StrategyDecision | None],
                   start: int, end: int, variant: ResearchVariant, cost_name: str,
-                  fee_rate: Decimal, slippage: Decimal, funding_rate: Decimal) -> list[SimulatedTrade]:
+                  fee_rate: Decimal, slippage: Decimal) -> list[SimulatedTrade]:
         start = max(start, self.window)
         if end - start < 2:
             return []
@@ -195,8 +203,8 @@ class ProfileLifecycleResearch:
             candle = candles[index]
             decision = decisions[index]
             if position is not None:
-                closed = self._manage(position, candle, decision, fee_rate, funding_rate, cost_name,
-                                      variant.variant_id, symbol)
+                closed = self._manage(position, candle, decision, fee_rate, cost_name,
+                                      variant.variant_id, symbol, candles)
                 if closed is not None:
                     trades.append(closed)
                     prior = closed
@@ -227,11 +235,16 @@ class ProfileLifecycleResearch:
                                    account_equity_usdt=self.account_equity, available_margin_usdt=self.account_equity,
                                    leverage=Decimal("5"), active_position_count=0, max_active_positions=3,
                                    same_direction_position_count=0)
+            contract_fact = self.market_facts.contract(symbol)
+            funding_fact = self.market_facts.rate_at(symbol, candidate.bar_time)
             gate = evaluate_gate(candidate, period=self.spec.entry_period,
                                  now_epoch=candidate.bar_time + period_seconds(self.spec.entry_period),
                                  atr=factors.atr, order_book=book,
-                                 contract=ContractSpec(symbol, Decimal("0.001"), Decimal("0.01"), 1),
-                                 funding=FundingRate(symbol, ZERO), recent_candles=candles[max(0,index-20):index],
+                                 contract=ContractSpec(symbol, contract_fact.contract_size,
+                                                       contract_fact.price_tick, contract_fact.contract_status),
+                                 funding=FundingRate(symbol, funding_fact.effective_rate,
+                                                     funding_fact.funding_time),
+                                 recent_candles=candles[max(0,index-20):index],
                                  prior_trade=None, execution_facts=facts, momentum_quality=signal.signal.score,
                                  ema_fast=factors.ema_fast, ema_slow=factors.ema_slow, adx=factors.adx, config=config)
             if not gate.allowed or gate.size_plan is None or gate.price_plan is None:
@@ -241,17 +254,20 @@ class ProfileLifecycleResearch:
             quantity = min(gate.size_plan.contracts, capacity)
             if quantity < 1:
                 continue
-            entry_fee = fill * Decimal("0.001") * quantity * fee_rate
+            entry_fee = fill * contract_fact.contract_size * quantity * fee_rate
             position = {"candidate": candidate, "quantity": quantity, "initial_quantity": quantity,
                         "entry": fill, "signal_time": candidate.bar_time, "entry_time": candle.open_time,
                         "stop": candidate.invalidation_price, "target": candidate.target_low,
                         "highest": fill, "lowest": fill, "mfe": ZERO, "mae": ZERO,
                         "fees": entry_fee, "funding": ZERO, "gross": ZERO, "bars": 0,
+                        "contract_size": contract_fact.contract_size,
+                        "funding_events": 0, "funding_status": "COMPLETE",
+                        "last_funding_cutoff": candle.open_time,
                         "protection": None, "armed": None, "arm_reason": None, "max_r": ZERO,
                         "breach": 0, "flat": 0}
             # The entry candle can hit the stop; manage it after entry without a second signal evaluation.
-            closed = self._manage(position, candle, decision, fee_rate, funding_rate, cost_name,
-                                  variant.variant_id, symbol)
+            closed = self._manage(position, candle, decision, fee_rate, cost_name,
+                                  variant.variant_id, symbol, candles)
             if closed is not None:
                 trades.append(closed); prior = closed; position = None
         if position is not None:
@@ -260,16 +276,24 @@ class ProfileLifecycleResearch:
         return trades
 
     def _manage(self, p: dict, candle: Candle, decision: StrategyDecision | None, fee_rate: Decimal,
-                funding_rate: Decimal, cost_name: str, variant_id: str, symbol: str) -> SimulatedTrade | None:
+                cost_name: str, variant_id: str, symbol: str,
+                candles: Sequence[Candle]) -> SimulatedTrade | None:
         candidate: ModelCandidate = p["candidate"]
         side = candidate.side
         p["bars"] += 1
         p["highest"], p["lowest"] = max(p["highest"], candle.high), min(p["lowest"], candle.low)
         favorable = p["highest"] - p["entry"] if side is TrendSide.LONG else p["entry"] - p["lowest"]
         adverse = p["entry"] - p["lowest"] if side is TrendSide.LONG else p["highest"] - p["entry"]
-        multiplier = Decimal("0.001") * p["quantity"]
+        multiplier = p["contract_size"] * p["quantity"]
         p["mfe"], p["mae"] = max(p["mfe"], favorable * multiplier), max(p["mae"], adverse * multiplier)
-        p["funding"] += p["entry"] * multiplier * funding_rate
+        charge = self.market_facts.charge(
+            symbol, side, quantity=p["quantity"], entry_time=p["last_funding_cutoff"],
+            exit_time=candle.open_time, candles=candles, period=self.spec.entry_period)
+        if charge.evidence_status != "COMPLETE" or charge.amount is None:
+            raise ValueError(f"funding evidence unavailable: {charge.evidence_status}")
+        p["funding"] += charge.amount
+        p["funding_events"] += charge.event_count
+        p["last_funding_cutoff"] = candle.open_time
         stop_hit = candle.low <= p["stop"] if side is TrendSide.LONG else candle.high >= p["stop"]
         target_hit = candle.high >= p["target"] if side is TrendSide.LONG else candle.low <= p["target"]
         if stop_hit:
@@ -288,7 +312,7 @@ class ProfileLifecycleResearch:
             crossed = candle.close <= p["protection"] if side is TrendSide.LONG else candle.close >= p["protection"]
             p["breach"] = p["breach"] + 1 if crossed else 0
         exit_decision = decide(ExitInput(
-            candidate.model, side, p["quantity"], Decimal("0.001"), p["entry"], p["stop"],
+            candidate.model, side, p["quantity"], p["contract_size"], p["entry"], p["stop"],
             candidate.invalidation_price, p["target"], candle.close, p["protection"], p["highest"], p["lowest"],
             factors.atr, decision.signal.side, factors.ema_fast, factors.ema_slow, 0, False,
             pnl - p["fees"] - close_fee - p["funding"], p["fees"], close_fee,
@@ -305,7 +329,7 @@ class ProfileLifecycleResearch:
         if exit_decision.action is ExitAction.PARTIAL_CLOSE and exit_decision.target_remaining_contracts is not None:
             closed = p["quantity"] - exit_decision.target_remaining_contracts
             if closed > 0:
-                part = Decimal("0.001") * closed
+                part = p["contract_size"] * closed
                 p["gross"] += ((candle.close-p["entry"]) if side is TrendSide.LONG else (p["entry"]-candle.close)) * part
                 p["fees"] += candle.close * part * fee_rate
                 p["quantity"] = exit_decision.target_remaining_contracts
@@ -314,12 +338,13 @@ class ProfileLifecycleResearch:
     def _close(self, p: dict, price: Decimal, time: int, reason: str, fee_rate: Decimal,
                cost_name: str, variant_id: str, symbol: str) -> SimulatedTrade:
         candidate: ModelCandidate = p["candidate"]
-        multiplier = Decimal("0.001") * p["quantity"]
+        multiplier = p["contract_size"] * p["quantity"]
         gross = p["gross"] + ((price-p["entry"]) if candidate.side is TrendSide.LONG else (p["entry"]-price)) * multiplier
         fees = p["fees"] + price * multiplier * fee_rate
         return SimulatedTrade(self.profile.value, symbol, variant_id, cost_name, candidate.model.value,
                               candidate.side.value, p["signal_time"], p["entry_time"], time,
                               p["initial_quantity"], p["entry"], price, gross, fees, p["funding"],
+                              p["funding_events"], p["funding_status"],
                               gross-fees-p["funding"], p["mfe"], p["mae"], reason)
 
     @staticmethod
@@ -388,17 +413,19 @@ class ProfileLifecycleResearch:
             for symbol, candles in series.items():
                 start, end = bounds["VALIDATION"]
                 values.extend(item.net_pnl for item in self._simulate(symbol, candles, decisions[symbol], start, end,
-                              variant, base.name, base.fee_rate, base.slippage_rate, base.funding_rate))
+                              variant, base.name, base.fee_rate, base.slippage_rate))
             results.append({"window": number, "bounds": bounds, "trades": len(values),
                             "net_profit": sum(values, ZERO)})
         return {"seed": seed, "windows": results}
 
 
-def run_dual_profile_research(evidence: Path, manifest_hash: str, *, include_test: bool = True) -> dict:
+def run_dual_profile_research(evidence: Path, manifest_hash: str, market_facts_manifest_hash: str,
+                              *, include_test: bool = True) -> dict:
     with FileEvidenceStore(evidence) as store:
         refs = {}
         for profile in (TimeframeProfile.INTRADAY_15M, TimeframeProfile.SWING_4H):
-            refs[profile.value] = ProfileLifecycleResearch(store, manifest_hash, profile).run(include_test=include_test)
+            refs[profile.value] = ProfileLifecycleResearch(
+                store, manifest_hash, market_facts_manifest_hash, profile).run(include_test=include_test)
         payloads = {name: store.get(ref)["payload"] for name, ref in refs.items()}
         baseline = {name: next(item for item in payload["conclusions"]
                                if item["variant_id"] == "BASELINE")
@@ -413,9 +440,10 @@ def run_dual_profile_research(evidence: Path, manifest_hash: str, *, include_tes
                                    else ResearchConclusion.PASS_PROFITABILITY_FREQUENCY_GAP.value)
         combined = store.put("dual_profile_research_index", {
             "manifest_hash": manifest_hash, "profile_results": refs,
+            "market_facts_manifest_hash": market_facts_manifest_hash,
             "test_consumed": include_test,
             "combined_baseline_trades_per_day": combined_rate,
             "combined_conclusion": combined_conclusion,
             "combination_rule": "frequency is evaluated only after both profile economic gates",
-        }, refs=tuple(refs.values()))
+        }, refs=(market_facts_manifest_hash, *refs.values()))
         return {"index_hash": combined, "profile_results": refs}

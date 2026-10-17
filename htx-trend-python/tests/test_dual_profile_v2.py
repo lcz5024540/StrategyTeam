@@ -11,6 +11,8 @@ from htx_trend.models import TrendSide
 from htx_trend.research.experiments import ResearchConclusion, economic_gate
 from htx_trend.research.features import performance
 from htx_trend.research.lifecycle import BacktestIntent, ExecutionAssumptions, LifecycleBacktestRun
+from htx_trend.research.market_facts import (ContractMarketFact, FrozenMarketFacts,
+                                             HistoricalFundingEvent)
 from htx_trend.research.regime import RegimeStatus, profile_regime
 from htx_trend.strategy_profiles import STRATEGY_15M_V2, STRATEGY_4H_V2, profile_strategy
 from htx_trend.timeframes import TimeframeProfile
@@ -98,12 +100,16 @@ def test_regime_requires_every_closed_profile_period_and_has_no_future_leakage()
 def test_lifecycle_uses_next_bar_capacity_costs_and_adverse_intrabar_order() -> None:
     candles = (
         Candle(0, Decimal(100), Decimal(101), Decimal(99), Decimal(100), volume=Decimal(1000)),
-        Candle(900, Decimal(101), Decimal(110), Decimal(90), Decimal(100), volume=Decimal(100)),
-        Candle(1800, Decimal(100), Decimal(102), Decimal(98), Decimal(101), volume=Decimal(1000)),
+        Candle(900, Decimal(101), Decimal(107), Decimal(96), Decimal(100), volume=Decimal(100)),
+        Candle(1800, Decimal(100), Decimal(110), Decimal(90), Decimal(101), volume=Decimal(1000)),
     )
     intent = BacktestIntent("i1", 0, "INTRADAY_15M", "DONCHIAN", TrendSide.LONG, 5,
-                            Decimal(1), Decimal(95), Decimal(108))
-    result = LifecycleBacktestRun(ExecutionAssumptions(max_volume_participation=Decimal("0.01"))).run(
+                            Decimal(1), Decimal(95), Decimal(108), contract_code="BTC-USDT")
+    facts = FrozenMarketFacts(SHA, 0, 2701,
+        {"BTC-USDT": ContractMarketFact("BTC-USDT", Decimal(1), Decimal(".1"), 1, 8, 1, 0, SHA)},
+        {"BTC-USDT": (HistoricalFundingEvent("BTC-USDT", 1800, Decimal(".0001"), None,
+                                             Decimal(".0001"), "FUNDING_RATE", "USDT", None, SHA),)})
+    result = LifecycleBacktestRun(facts, ExecutionAssumptions(max_volume_participation=Decimal("0.01"))).run(
         candles, (intent,))
     trade = result.trades[0]
     assert trade.entry_time == 900
