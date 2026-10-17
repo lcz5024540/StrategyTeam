@@ -4,7 +4,8 @@ from dataclasses import replace
 import pytest
 
 from htx_trend.market_data import Candle
-from htx_trend.research.profile_backtest import (ProfileLifecycleResearch, ResearchVariant,
+from htx_trend.research.profile_backtest import (DEFAULT_VARIANTS, REDUNDANT_RECORD_ONLY_VARIANTS,
+                                                 ProfileLifecycleResearch, ResearchVariant,
                                                  provisional_backtest_admission)
 from htx_trend.research.store import FileEvidenceStore
 from htx_trend.strategy_admission import DecisionSurface
@@ -65,6 +66,16 @@ def test_provisional_admission_is_backtest_only() -> None:
     admission = provisional_backtest_admission(spec, "a"*64)
     admission.require(DecisionSurface.BACKTEST)
     assert admission.allowed_surfaces == (DecisionSurface.BACKTEST,)
+
+
+def test_redundant_p3_variants_are_auditable_but_not_run_by_default() -> None:
+    active = {item.variant_id for item in DEFAULT_VARIANTS}
+    redundant = {item.variant_id for item in REDUNDANT_RECORD_ONLY_VARIANTS}
+    assert redundant == {"ADD_REGIME", "SENSITIVITY_SCORE_65", "SENSITIVITY_SCORE_70"}
+    assert active.isdisjoint(redundant)
+    versions = {item.variant_id: item.condition_version for item in DEFAULT_VARIANTS}
+    assert versions["ADD_PRICE_SLOPE"] == "r2-p3-v2"
+    assert versions["ADD_EMA_SLOPE"] == "r2-p3-v2"
 
 
 def test_profile_research_is_content_addressed_and_reproducible(tmp_path) -> None:

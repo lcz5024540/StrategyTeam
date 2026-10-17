@@ -3,6 +3,7 @@ from decimal import Decimal
 from htx_trend.market_data import Candle
 from htx_trend.models import ModelCandidate, ModelCode, PriceStructure, TrendSide
 from htx_trend.research.candidate_labels import CandidateLabelConfig, CandidateLabelResearch
+from htx_trend.research.condition_audit import ConditionEffectivenessAudit
 from htx_trend.research.store import FileEvidenceStore
 from htx_trend.timeframes import TimeframeProfile
 
@@ -18,7 +19,8 @@ def candles(step: int, count: int) -> tuple[Candle, ...]:
 
 def freeze(store: FileEvidenceStore, count: int = 170) -> tuple[str, str]:
     pages = []
-    for period, step in (("4hour", 14_400), ("1day", 86_400)):
+    for period, step in (("15min", 900), ("30min", 1_800), ("60min", 3_600),
+                         ("4hour", 14_400), ("1day", 86_400)):
         values = candles(step, count)
         pages.append(store.put("kline_page", {"symbol": "BTC-USDT", "period": period,
             "integrity": "COMPLETE", "candles": [{"open_time": row.open_time, "bar": row} for row in values]}))
@@ -102,3 +104,29 @@ def test_same_bar_target_and_stop_uses_adverse_stop_first_order(tmp_path) -> Non
         assert label.stop_first is True and label.target_first is False
         assert label.exit_reason == "STOP_FIRST"
         assert label.exit_time == history[-1].open_time + 14_400
+
+
+def test_condition_audit_is_reproducible_and_exposes_redundant_conditions(tmp_path) -> None:
+    with FileEvidenceStore(tmp_path) as store:
+        manifest, facts = freeze(store)
+        refs = {}
+        for profile in (TimeframeProfile.INTRADAY_15M, TimeframeProfile.SWING_4H):
+            refs[profile.value] = CandidateLabelResearch(
+                store, manifest, facts, profile,
+                label_config=CandidateLabelConfig(3, Decimal(".0004"), Decimal(".0003"))).run(
+                    symbols=("BTC-USDT",))
+        p2_index = store.put("dual_profile_candidate_label_index", {
+            "manifest_hash": manifest, "market_facts_manifest_hash": facts,
+            "profile_results": refs}, refs=(facts, *refs.values()))
+        runner = ConditionEffectivenessAudit(store, p2_index, bootstrap_iterations=100)
+        first = runner.run()
+        second = runner.run()
+        assert first == second
+        for result_ref in store.get(first)["payload"]["profile_results"].values():
+            payload = store.get(result_ref)["payload"]
+            summaries = {row["condition"]["condition_id"]: row for row in payload["summaries"]}
+            for condition in ("ADD_REGIME", "SENSITIVITY_SCORE_65", "SENSITIVITY_SCORE_70"):
+                assert summaries[condition]["overall"]["rejected"] == 0
+                assert summaries[condition]["overall"]["conclusion"] == "REDUNDANT_RECORD_ONLY"
+            assert summaries["LEGACY_EMA_SPREAD_PROXY"]["overall"]["conclusion"] == "DEPRECATED_DIAGNOSTIC_ONLY"
+            assert payload["observation_chunk_refs"]

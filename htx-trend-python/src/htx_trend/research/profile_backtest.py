@@ -26,6 +26,7 @@ from .experiments import (DEFAULT_COST_SCENARIOS, ResearchConclusion, block_boot
                           economic_gate, permutation_p_value, walk_forward_bounds)
 from .features import performance
 from .market_facts import FrozenMarketFacts
+from .conditions import research_confirmation_passes
 from .replay import load_manifest_candles
 from .store import FileEvidenceStore, digest
 
@@ -39,6 +40,7 @@ class ResearchVariant:
     models: tuple[ModelCode, ...] = tuple(ModelCode)
     confirmation: str | None = None
     minimum_score: Decimal | None = None
+    condition_version: str | None = None
 
 
 DEFAULT_VARIANTS = (
@@ -46,11 +48,17 @@ DEFAULT_VARIANTS = (
     ResearchVariant("MODEL_DONCHIAN", (ModelCode.DONCHIAN_BREAKOUT,)),
     ResearchVariant("MODEL_FIB", (ModelCode.FIB_PULLBACK_CONTINUATION,)),
     ResearchVariant("MODEL_EMA_VWAP", (ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,)),
-    ResearchVariant("ADD_RSI", confirmation="RSI"),
-    ResearchVariant("ADD_MACD", confirmation="MACD"),
-    ResearchVariant("ADD_PRICE_SLOPE", confirmation="PRICE_SLOPE"),
-    ResearchVariant("ADD_EMA_SLOPE", confirmation="EMA_SLOPE"),
-    ResearchVariant("ADD_REGIME", confirmation="REGIME"),
+    ResearchVariant("ADD_RSI", confirmation="RSI", condition_version="r2-p3-v1"),
+    ResearchVariant("ADD_MACD", confirmation="MACD", condition_version="r2-p3-v1"),
+    ResearchVariant("ADD_PRICE_SLOPE", confirmation="PRICE_SLOPE", condition_version="r2-p3-v2"),
+    ResearchVariant("ADD_EMA_SLOPE", confirmation="EMA_SLOPE", condition_version="r2-p3-v2"),
+)
+
+# These variants provably select the entire current candidate set.  Preserve
+# their definitions for audit, but do not spend future default experiment runs
+# on no-op filters.
+REDUNDANT_RECORD_ONLY_VARIANTS = (
+    ResearchVariant("ADD_REGIME", confirmation="REGIME", condition_version="r2-p3-v1"),
     ResearchVariant("SENSITIVITY_SCORE_65", minimum_score=Decimal("65")),
     ResearchVariant("SENSITIVITY_SCORE_70", minimum_score=Decimal("70")),
 )
@@ -358,25 +366,14 @@ class ProfileLifecycleResearch:
             candidates = [item for item in candidates if item.score >= variant.minimum_score]
             if not candidates:
                 return None
-        side = candidates[0].side
-        if variant.confirmation == "RSI" and not ((side is TrendSide.LONG and factors.rsi >= 50) or (side is TrendSide.SHORT and factors.rsi <= 50)):
+        selected = max(candidates, key=lambda item: (item.score, item.expected_r, item.model.value))
+        if variant.confirmation and not research_confirmation_passes(
+                variant.confirmation, side=selected.side, factors=factors,
+                candles=candles[max(0, index-159):index+1],
+                local_regime=decision.signal.regime, candidate_score=selected.score,
+                condition_version=variant.condition_version):
             return None
-        if variant.confirmation == "MACD" and not ((side is TrendSide.LONG and factors.macd_histogram > ZERO) or (side is TrendSide.SHORT and factors.macd_histogram < ZERO)):
-            return None
-        if variant.confirmation == "REGIME" and decision.signal.regime == "RANGE":
-            return None
-        if variant.confirmation in {"PRICE_SLOPE", "EMA_SLOPE"} and index < 2:
-            return None
-        if variant.confirmation == "PRICE_SLOPE":
-            slope = candles[index].close - candles[index-2].close
-            if not ((side is TrendSide.LONG and slope > ZERO) or (side is TrendSide.SHORT and slope < ZERO)):
-                return None
-        if variant.confirmation == "EMA_SLOPE":
-            # EMA ordering is a point-in-time, no-lookahead proxy for slope direction.
-            slope = factors.ema_fast - factors.ema_medium
-            if not ((side is TrendSide.LONG and slope > ZERO) or (side is TrendSide.SHORT and slope < ZERO)):
-                return None
-        return max(candidates, key=lambda item: (item.score, item.expected_r, item.model.value))
+        return selected
 
     def _conclusions(self, rows: list[dict], values: dict[tuple[str,str], list[Decimal]],
                      series: dict[str, Sequence[Candle]], variants: Sequence[ResearchVariant], seed: int) -> list[dict]:
