@@ -15,6 +15,7 @@ from .htx_v5 import HtxV5Client
 from .research.collector import ContinuousCollector, PERIODS
 from .research.store import FileEvidenceStore
 from .research.replay import replay_entries
+from .live_approval import LegacyLiveWaiver, LiveApproval
 
 
 def _epoch(value: str) -> int:
@@ -46,6 +47,10 @@ def main() -> None:
     dataset.add_argument("--admission", type=Path)
     admission = commands.add_parser("validate-admission", help="validate a sealed strategy admission artifact")
     admission.add_argument("--artifact", required=True, type=Path)
+    waiver = commands.add_parser("validate-live-waiver", help="validate a sealed legacy LIVE waiver")
+    waiver.add_argument("--artifact", required=True, type=Path)
+    live_approval = commands.add_parser("validate-live-approval", help="validate a sealed V2 LIVE approval")
+    live_approval.add_argument("--artifact", required=True, type=Path)
     history = commands.add_parser("collect-history", help="freeze immutable public HTX K-lines")
     history.add_argument("--evidence", required=True, type=Path)
     history.add_argument("--symbols", required=True, nargs="+")
@@ -74,6 +79,15 @@ def main() -> None:
         print(json.dumps({"status": "valid", "strategy_version": artifact.strategy_version,
                           "artifact_hash": artifact.artifact_hash,
                           "allowed_surfaces": [item.value for item in artifact.allowed_surfaces]})); return
+    if args.command == "validate-live-waiver":
+        artifact = LegacyLiveWaiver.load(args.artifact)
+        print(json.dumps({"status": "valid", "strategy_version": artifact.strategy_version,
+                          "waiver_hash": artifact.waiver_hash, "expires_at": artifact.expires_at})); return
+    if args.command == "validate-live-approval":
+        artifact = LiveApproval.load(args.artifact)
+        print(json.dumps({"status": "valid", "strategy_version": artifact.strategy_version,
+                          "timeframe_profile": artifact.timeframe_profile,
+                          "approval_hash": artifact.approval_hash, "expires_at": artifact.expires_at})); return
     if args.command == "verify-evidence":
         with FileEvidenceStore(args.evidence) as store:
             print(json.dumps(store.verify(args.hash), ensure_ascii=False)); return

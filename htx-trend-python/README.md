@@ -43,7 +43,7 @@ Python 的生产事实账本是现有 MySQL，不是本地 SQLite。订单查询
 
 `OBSERVE` worker 并发读取公开行情、顺序写入同口径证据和心跳，不会创建订单。`LIVE` 代码路径已存在，但启动前必须同时满足：完成退出逐笔验收并显式设置 `HTX_PYTHON_EXIT_PARITY_APPROVED=true`；当前只允许 PRIMARY 且拒绝启用镜像账户；Java 与 Python 使用同一个 `coinstrategy:htx:trend:writer:v1` 生命周期锁；同源趋势和退出开关全部一致。会话已批准的混合市场消融必须显式保留：`HTX_TREND_MIXED_MARKET_REQUIRES_STRONG_CANDIDATE=false`，避免回到默认 `true`。
 
-`HTX_TREND_V1` 保留为存量兼容版本。其他 `strategy_name` 启动前必须设置 `HTX_TREND_STRATEGY_ADMISSION_PATH=/path/admission.json`；缺失、版本不匹配、证据阶段不足或内容 hash 被改写都会失败关闭。通过完整准入的新版本按止损距离和 `risk_per_trade` 先计算风险仓位，再受目标名义额和最大名义额约束。
+`HTX_TREND_V1` 保留为存量兼容版本，但 LIVE 必须额外提供最多 45 天的密封 waiver。其他 `strategy_name` 启动前必须设置 `HTX_TREND_STRATEGY_ADMISSION_PATH=/path/admission.json` 和对应的密封 `LiveApproval`；缺失、版本不匹配、证据阶段不足或内容 hash 被改写都会失败关闭。LIVE 仓位按交易所确认权益计算：单笔止损风险不超过 0.5%，总开放止损风险不超过 1.5%，最多三个持仓；权益事实缺失时停止新增风险。
 
 LIVE worker 支持在同一 writer 内同时调度 `INTRADAY_15M` 和 `SWING_4H`。前者固定使用 `15min/60min`，后者固定使用 `4hour/1day`；周期与 profile 不匹配时启动失败。候选、订单和持仓均携带 `timeframe_profile`，持仓只由所属 profile 的管理器读取和退出。账户采用合约互斥：同一合约已有任一 profile 的非终态仓位时，另一 profile 返回 `PROFILE_CONTRACT_MUTEX`，不会叠加或反向接管交易所聚合仓位。硬止损继续使用可执行盘口即时保护，不等待下一根周期 K 线。
 
@@ -60,5 +60,7 @@ HTX_TREND_ALLOW_LEGACY_4H_LIVE=false
 ```bash
 python -m htx_trend.worker --strategy-instance <instance-key>
 ```
+
+双周期 V2 的代码边界、迁移、验证命令和当前未完成的真实时间证据见 [`../docs/architecture-refactor/HTX_PYTHON_DUAL_PROFILE_V2_IMPLEMENTATION_V1.md`](../docs/architecture-refactor/HTX_PYTHON_DUAL_PROFILE_V2_IMPLEMENTATION_V1.md)。新增 worker 启动前还需显式执行 Python 专用迁移 [`sql/2026-10-17__strategy_risk_reservation_stop_risk.sql`](sql/2026-10-17__strategy_risk_reservation_stop_risk.sql) 与 [`sql/2026-10-17__candidate_strategy_identity.sql`](sql/2026-10-17__candidate_strategy_identity.sql)。
 
 本仓库尚未部署 Python、未执行生产 SQL，也未切换真实执行权。首次切换必须先停旧 writer 并确认锁释放，再启动 Python；锁丢失后进程永久禁止新变更，必须重启恢复。上线与回滚流程见 [`../docs/architecture-refactor/HTX_TREND_PYTHON_LIVE_SAFETY_V1.md`](../docs/architecture-refactor/HTX_TREND_PYTHON_LIVE_SAFETY_V1.md)。

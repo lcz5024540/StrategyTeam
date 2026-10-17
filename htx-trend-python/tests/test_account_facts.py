@@ -9,7 +9,7 @@ class Client:
     def swap_fee(self, _): return [{"taker_fee_rate": "0.0004"}]
     def positions(self, _): return [{"position_side": "long", "volume": "3"}, {"position_side": "short", "available": "2"}]
     def open_orders(self, _): return []
-    def account_balance(self): return {"state": "normal", "available_margin": "50", "details": []}
+    def account_balance(self): return {"state": "normal", "available_margin": "50", "margin_balance": "75", "details": []}
 
 
 def test_account_facts_use_v5_java_wire_names_for_fee_position_and_margin() -> None:
@@ -20,6 +20,7 @@ def test_account_facts_use_v5_java_wire_names_for_fee_position_and_margin() -> N
     assert snapshot.same_position_contracts == Decimal("3")
     assert snapshot.opposite_position_contracts == Decimal("2")
     assert snapshot.facts.available_margin_usdt == Decimal("50")
+    assert snapshot.facts.account_equity_usdt == Decimal("75")
     assert snapshot.facts.executable_depth_contracts == Decimal("11")
 
 

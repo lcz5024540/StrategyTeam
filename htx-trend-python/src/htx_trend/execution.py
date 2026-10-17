@@ -80,6 +80,9 @@ class ExecutionConfig:
     hard_risk_limits_enabled: bool = False
     account_equity_usdt: Decimal = Decimal("300")
     max_risk_per_trade_usdt: Decimal = Decimal("6")
+    max_risk_per_trade_rate: Decimal = Decimal("0.005")
+    max_total_open_risk_rate: Decimal = Decimal("0.015")
+    max_active_positions: int = 3
     max_same_direction_positions: int = 3
 
     @classmethod
@@ -134,6 +137,9 @@ class ExecutionConfig:
             hard_risk_limits_enabled=flag("HTX_TREND_HARD_RISK_LIMITS_ENABLED", defaults.hard_risk_limits_enabled),
             account_equity_usdt=dec("HTX_TREND_ACCOUNT_EQUITY_USDT", defaults.account_equity_usdt),
             max_risk_per_trade_usdt=dec("HTX_TREND_MAX_RISK_PER_TRADE_USDT", defaults.max_risk_per_trade_usdt),
+            max_risk_per_trade_rate=dec("HTX_TREND_MAX_RISK_PER_TRADE_RATE", defaults.max_risk_per_trade_rate),
+            max_total_open_risk_rate=dec("HTX_TREND_MAX_TOTAL_OPEN_RISK_RATE", defaults.max_total_open_risk_rate),
+            max_active_positions=integer("HTX_TREND_MAX_ACTIVE_POSITIONS", defaults.max_active_positions),
             max_same_direction_positions=integer("HTX_TREND_MAX_SAME_DIRECTION_POSITIONS", defaults.max_same_direction_positions),
         )
 
@@ -200,11 +206,13 @@ class ExecutionFacts:
     exchange_position_consistent: bool = True
     executable_depth_contracts: Decimal | None = None
     available_margin_usdt: Decimal | None = None
+    account_equity_usdt: Decimal | None = None
     leverage: Decimal | None = None
     active_position_count: int | None = None
     max_active_positions: int | None = None
     same_direction_position_count: int | None = None
     reserved_notional_usdt: Decimal = ZERO
+    reserved_risk_usdt: Decimal = ZERO
     risk_capacity_usdt: Decimal | None = None
 
 
@@ -258,7 +266,8 @@ def size_plan(candidate: ModelCandidate, contract: ContractSpec, price: PricePla
     risk_per_contract = stop_distance * contract.contract_size
     by_target = int((config.target_notional / (price.desired_entry * contract.contract_size)).to_integral_value(rounding=ROUND_DOWN))
     by_max = int((config.max_notional / (price.desired_entry * contract.contract_size)).to_integral_value(rounding=ROUND_DOWN))
-    risk_budget = (min(config.max_risk_per_trade_usdt, config.account_equity_usdt * Decimal("0.02"))
+    risk_budget = (min(config.max_risk_per_trade_usdt,
+                       config.account_equity_usdt * config.max_risk_per_trade_rate)
                    if config.hard_risk_limits_enabled else config.risk_per_trade)
     by_risk = int((risk_budget / risk_per_contract).to_integral_value(rounding=ROUND_DOWN))
     contracts = max(0, (min(by_target, by_max, by_risk) if config.hard_risk_limits_enabled
@@ -424,16 +433,25 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
         return GateResult(False, "SIZING", planned_size.reason, planned_price, planned_size)
     emit("sizing.valid_contracts", True, planned_size.contracts, ">0", planned_size.reason)
     if config.hard_risk_limits_enabled:
-        if config.account_equity_usdt <= ZERO:
-            emit("risk.account_equity", False, config.account_equity_usdt, ">0")
+        account_equity = facts.account_equity_usdt
+        if account_equity is None or account_equity <= ZERO:
+            emit("risk.account_equity", False, account_equity, ">0")
             return GateResult(False, "RISK_LIMIT", "account equity must be positive for LIVE risk limits",
                               planned_price, planned_size)
-        max_trade_risk = min(config.max_risk_per_trade_usdt, config.account_equity_usdt * Decimal("0.02"))
+        max_trade_risk = min(config.max_risk_per_trade_usdt,
+                             account_equity * config.max_risk_per_trade_rate)
         if planned_size.risk_at_stop > max_trade_risk:
             emit("risk.max_per_trade", False, planned_size.risk_at_stop, max_trade_risk)
             return GateResult(False, "RISK_LIMIT", "planned stop risk exceeds per-trade account limit",
                               planned_price, planned_size)
         emit("risk.max_per_trade", True, planned_size.risk_at_stop, max_trade_risk)
+        max_total_risk = account_equity * config.max_total_open_risk_rate
+        projected_total_risk = facts.reserved_risk_usdt + planned_size.risk_at_stop
+        if projected_total_risk > max_total_risk:
+            emit("risk.max_total_open", False, projected_total_risk, max_total_risk)
+            return GateResult(False, "RISK_LIMIT", "projected total open stop risk exceeds account limit",
+                              planned_price, planned_size)
+        emit("risk.max_total_open", True, projected_total_risk, max_total_risk)
         emit("risk.total_notional", True, facts.reserved_notional_usdt, None,
              "account-wide notional gate disabled; position count and exchange margin remain enforced",
              status="SKIPPED")

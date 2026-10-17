@@ -28,6 +28,8 @@ from .mysql_store import HtxTrendMySqlRepository, RuntimeInstance
 from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
 from .strategy_decision import HtxStrategyDecisionEngine, LEGACY_STRATEGY_VERSION
 from .timeframes import TimeframeProfile
+from .strategy_profiles import profile_entry_config, profile_for_version, profile_strategy
+from .research.regime import RegimeStatus, profile_regime
 
 
 DEFAULT_TREND_CONTRACTS = (
@@ -149,14 +151,23 @@ class LiveTrendWorkerConfig:
         return replace(config, timeframe_profile=profile)
 
     @classmethod
-    def profiles_from_env(cls) -> tuple["LiveTrendWorkerConfig", ...]:
+    def profiles_from_env(cls, *, strategy_version: str = LEGACY_STRATEGY_VERSION) -> tuple["LiveTrendWorkerConfig", ...]:
         """Build independent profile runtimes while retaining legacy single-period configuration."""
         def flag(name: str, default: bool) -> bool:
             return environ.get(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
         raw = environ.get("HTX_TREND_PROFILES", "").strip()
         if not raw:
-            return (cls.from_env(),)
+            version_profile = profile_for_version(strategy_version)
+            if version_profile is None:
+                return (cls.from_env(),)
+            contract = version_profile.contract
+            base = cls.from_env()
+            live = flag(f"HTX_TREND_{version_profile.value}_LIVE_ENABLED", False)
+            return (replace(base, entry_period=contract.entry_period, trend_period=contract.trend_period,
+                            timeframe_profile=version_profile, entry_enabled=base.entry_enabled and live,
+                            java_entry=profile_entry_config(version_profile),
+                            allow_legacy_swing_live=False),)
         saved = {name: environ.get(name) for name in (
             "HTX_TREND_PERIOD", "HTX_TREND_TREND_PERIOD", "HTX_TREND_TIMEFRAME_PROFILE")}
         try:
@@ -172,6 +183,11 @@ class LiveTrendWorkerConfig:
             TimeframeProfile(item.strip().upper()) for item in raw.split(",") if item.strip()))
         if not profiles:
             raise ValueError("HTX_TREND_PROFILES must contain at least one profile")
+        version_profile = profile_for_version(strategy_version)
+        if version_profile is not None and profiles != (version_profile,):
+            raise ValueError(
+                f"{strategy_version} must run only {version_profile.value}; configure a separate runtime instance"
+            )
         output = []
         for profile in profiles:
             contract = profile.contract
@@ -180,6 +196,8 @@ class LiveTrendWorkerConfig:
                 "1", "true", "yes", "on"}
             output.append(replace(base, entry_period=contract.entry_period, trend_period=contract.trend_period,
                                   timeframe_profile=profile, entry_enabled=base.entry_enabled and live,
+                                  java_entry=(profile_entry_config(profile) if version_profile is not None
+                                              else base.java_entry),
                                   allow_legacy_swing_live=(profile is TimeframeProfile.SWING_4H
                                                            and flag("HTX_TREND_ALLOW_LEGACY_4H_LIVE", False))))
         return tuple(output)
@@ -201,6 +219,7 @@ class _Scan:
     funding: Any
     decision_hash: str | None = None
     diagnosis: CandidateDiagnosis | None = None
+    regime_snapshot: Any | None = None
 
 
 class LiveTrendWorker(StrategyWorker):
@@ -430,7 +449,10 @@ class LiveTrendWorker(StrategyWorker):
             shadow=shadow, confirmation_models=policy.confirmation_models, policy_version=policy.policy.policy_version,
             gate_result=gate_result, gate_reason=gate_reason,
             sizing_multiplier=policy.sizing_multiplier, planned_notional_usdt=policy.planned_notional_usdt,
-            timeframe_profile=self._config.timeframe_profile.value)
+            timeframe_profile=self._config.timeframe_profile.value,
+            strategy_version=self._instance.strategy_name,
+            strategy_spec_hash=(profile_strategy(self._config.timeframe_profile).spec_hash
+                                if profile_for_version(self._instance.strategy_name) is not None else None))
 
     def _diagnose(self, scan: _Scan | None, *, stage: str | None, code: str | None,
                   selected: int | None = None, flags: dict | None = None,
@@ -576,18 +598,42 @@ class LiveTrendWorker(StrategyWorker):
         trend = self._market.kline_window(contract, self._config.trend_period, self._config.kline_size, now_epoch=now_epoch)
         if entry.evidence_status == "FAILED" or trend.evidence_status == "FAILED":
             raise _EvidenceUnavailable("evidence persistence unavailable; new risk is paused")
+        book = self._market.order_book(contract)
+        regime = None
+        evidence_refs = entry.evidence_refs + trend.evidence_refs
+        version_profile = profile_for_version(self._instance.strategy_name or LEGACY_STRATEGY_VERSION)
+        if version_profile is not None:
+            windows = {entry.period: entry.candles, trend.period: trend.candles}
+            for period in version_profile.contract.confirmation_periods:
+                if period in windows:
+                    continue
+                window = self._market.kline_window(contract, period, self._config.kline_size, now_epoch=now_epoch)
+                if window.evidence_status == "FAILED":
+                    raise _EvidenceUnavailable("profile confirmation evidence persistence unavailable")
+                windows[period] = window.candles
+                evidence_refs += window.evidence_refs
+            regime = profile_regime(
+                version_profile, windows, as_of_epoch=now_epoch,
+                spread_rate=book.top.spread_rate,
+                executable_depth_contracts=min(
+                    book.executable_contracts("LONG"), book.executable_contracts("SHORT")),
+            )
+            if regime.status is RegimeStatus.UNKNOWN:
+                raise _EvidenceUnavailable(
+                    "required multi-timeframe context unavailable: " + ",".join(regime.missing_periods)
+                )
         decision = HtxStrategyDecisionEngine(
             strategy_version=self._instance.strategy_name or LEGACY_STRATEGY_VERSION,
             config=java_config, admission=self._admission, evidence_store=self._market.evidence_store,
         ).decide(contract_code=contract, period=self._config.entry_period, candles=entry.candles,
-                 surface=DecisionSurface.RANKING, evidence_refs=entry.evidence_refs + trend.evidence_refs)
+                 surface=DecisionSurface.RANKING, evidence_refs=evidence_refs)
         try:
             funding = self._market.funding_rate(contract)
         except Exception:
             funding = None
         return _Scan(contract, entry, trend, decision.signal, decision.candidates,
-                     self._market.order_book(contract), self._market.contract_spec(contract), funding,
-                     decision.decision_hash, decision.diagnosis)
+                     book, self._market.contract_spec(contract), funding,
+                     decision.decision_hash, decision.diagnosis, regime)
 
     def _persist_observation(self, scan: _Scan, context: MarketContext) -> int:
         factor = scan.signal.indicators
@@ -595,6 +641,11 @@ class LiveTrendWorker(StrategyWorker):
             return self._repository.record_factor_snapshot(snapshot_key=sha256(f"empty:{scan.contract}".encode()).hexdigest(),
                 contract_code=scan.contract, period=self._config.entry_period, bar_time=0, market_regime=context.regime.value, factors={})
         factors = {name: getattr(factor, name) for name in ("ema_fast", "ema_medium", "ema_slow", "atr", "atr_pct", "adx", "roc", "vwap")}
+        if scan.regime_snapshot is not None:
+            factors["regime_snapshot_hash"] = scan.regime_snapshot.snapshot_hash
+            factors["regime_trend"] = scan.regime_snapshot.trend.value
+            factors["regime_volatility"] = scan.regime_snapshot.volatility.value
+            factors["regime_liquidity"] = scan.regime_snapshot.liquidity.value
         snapshot_key = sha256(
             f"python-live:{self._instance.instance_key}:{self._config.timeframe_profile.value}:"
             f"{scan.contract}:{scan.signal.bar_time}:{factors}".encode()).hexdigest()

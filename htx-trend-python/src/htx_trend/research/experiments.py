@@ -4,9 +4,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 import re
+import random
+from enum import StrEnum
 from typing import Any, Callable, Sequence
 
 from .contracts import Registry, StrategySpec
+from .features import Performance
 from .store import FileEvidenceStore, digest
 
 
@@ -109,3 +112,102 @@ class ExperimentRunner:
                                         "error_type": type(error).__name__})
         return self.store.put("experiment_result", {"plan_hash": plan.plan_hash,
             "observations": observations, "split_bounds": bounds, "results": results}, refs=(plan_ref,))
+
+
+class ResearchConclusion(StrEnum):
+    PASS = "PASS"
+    PASS_PROFITABILITY_FREQUENCY_GAP = "PASS_PROFITABILITY_FREQUENCY_GAP"
+    REJECT = "REJECT"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+
+
+@dataclass(frozen=True, slots=True)
+class EconomicGateResult:
+    conclusion: ResearchConclusion
+    reasons: tuple[str, ...]
+    combined_trades_per_day: Decimal
+
+
+def permutation_p_value(values: Sequence[Decimal], *, iterations: int = 2_000,
+                        seed: int = 1) -> Decimal:
+    """Two-sided deterministic sign permutation against a zero-expectancy null."""
+    if not values or iterations < 100:
+        raise ValueError("permutation requires observations and at least 100 iterations")
+    observed = abs(sum(values, Decimal("0")) / Decimal(len(values)))
+    rng, extreme = random.Random(seed), 0
+    for _ in range(iterations):
+        trial = sum((value if rng.getrandbits(1) else -value for value in values), Decimal("0"))
+        if abs(trial / Decimal(len(values))) >= observed:
+            extreme += 1
+    return Decimal(extreme + 1) / Decimal(iterations + 1)
+
+
+def block_bootstrap_expectancy_lower(
+    values: Sequence[Decimal], *, block_size: int = 5, iterations: int = 2_000,
+    seed: int = 1, quantile: Decimal = Decimal("0.05"),
+) -> Decimal:
+    """Deterministic moving-block bootstrap lower bound preserving local dependence."""
+    if len(values) < block_size or block_size < 1 or iterations < 100:
+        raise ValueError("bootstrap requires enough observations, a valid block and 100 iterations")
+    if not Decimal("0") < quantile < Decimal("1"):
+        raise ValueError("bootstrap quantile must be in (0,1)")
+    rng = random.Random(seed)
+    starts = range(0, len(values) - block_size + 1)
+    means: list[Decimal] = []
+    for _ in range(iterations):
+        sample: list[Decimal] = []
+        while len(sample) < len(values):
+            start = rng.choice(starts)
+            sample.extend(values[start:start + block_size])
+        sample = sample[:len(values)]
+        means.append(sum(sample, Decimal("0")) / Decimal(len(sample)))
+    means.sort()
+    index = min(len(means) - 1, int((Decimal(len(means)) * quantile).to_integral_value()))
+    return means[index]
+
+
+def walk_forward_bounds(size: int, *, train: int, validate: int, step: int) -> tuple[dict[str, tuple[int, int]], ...]:
+    if min(size, train, validate, step) < 1 or train + validate > size:
+        raise ValueError("invalid walk-forward window")
+    windows = []
+    start = 0
+    while start + train + validate <= size:
+        windows.append({"TRAIN": (start, start + train),
+                        "VALIDATION": (start + train, start + train + validate)})
+        start += step
+    return tuple(windows)
+
+
+def economic_gate(
+    base: Performance,
+    conservative: Performance,
+    *,
+    account_equity: Decimal,
+    permutation_p: Decimal,
+    bootstrap_expectancy_lower: Decimal,
+    combined_trades_per_day: Decimal,
+) -> EconomicGateResult:
+    if base.trades < 30:
+        return EconomicGateResult(ResearchConclusion.INSUFFICIENT_EVIDENCE,
+                                  ("OOS completed trades below 30",), combined_trades_per_day)
+    reasons: list[str] = []
+    expectancy = base.net_profit / Decimal(base.trades)
+    if base.net_profit <= 0:
+        reasons.append("BASE net profit is not positive")
+    if expectancy <= 0:
+        reasons.append("BASE expectancy is not positive")
+    if base.profit_factor is not None and base.profit_factor < Decimal("1.30"):
+        reasons.append("BASE profit factor is below 1.30")
+    if conservative.net_profit < 0:
+        reasons.append("CONSERVATIVE net profit is negative")
+    if account_equity <= 0 or base.max_drawdown > account_equity * Decimal("0.10"):
+        reasons.append("OOS max drawdown exceeds 10% of account equity")
+    if permutation_p >= Decimal("0.05"):
+        reasons.append("permutation p-value is not below 0.05")
+    if bootstrap_expectancy_lower <= 0:
+        reasons.append("bootstrap 95% expectancy lower bound is not positive")
+    if reasons:
+        return EconomicGateResult(ResearchConclusion.REJECT, tuple(reasons), combined_trades_per_day)
+    conclusion = (ResearchConclusion.PASS if combined_trades_per_day >= Decimal("5")
+                  else ResearchConclusion.PASS_PROFITABILITY_FREQUENCY_GAP)
+    return EconomicGateResult(conclusion, (), combined_trades_per_day)

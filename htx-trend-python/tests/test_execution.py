@@ -93,6 +93,7 @@ def test_hard_live_risk_guard_allows_notional_above_legacy_thirty_usdt_cap() -> 
     quality = FibonacciQuality(Decimal("1.2"), Decimal("0.5"), Decimal("0.1"), Decimal("1"), True)
     facts = ExecutionFacts(actual_taker_fee_rate=Decimal("0.0004"), executable_depth_contracts=Decimal("500"),
                            available_margin_usdt=Decimal("100"), leverage=Decimal("5"),
+                           account_equity_usdt=Decimal("300"),
                            active_position_count=0, max_active_positions=5,
                            same_direction_position_count=0, reserved_notional_usdt=Decimal("25"))
     result = evaluate_gate(candidate(), fibonacci_quality=quality, execution_facts=facts,
@@ -109,6 +110,7 @@ def test_hard_live_risk_guard_rejects_fourth_same_direction_position() -> None:
     quality = FibonacciQuality(Decimal("1.2"), Decimal("0.5"), Decimal("0.1"), Decimal("1"), True)
     facts = ExecutionFacts(actual_taker_fee_rate=Decimal("0.0004"), executable_depth_contracts=Decimal("500"),
                            available_margin_usdt=Decimal("100"), leverage=Decimal("5"),
+                           account_equity_usdt=Decimal("300"),
                            active_position_count=3, max_active_positions=5,
                            same_direction_position_count=3, reserved_notional_usdt=Decimal("15"))
     result = evaluate_gate(candidate(), fibonacci_quality=quality, execution_facts=facts,

@@ -12,6 +12,7 @@ from .credentials import materialize
 from .execution import ExecutionConfig
 from .execution_service import EntryExecutionConfig, HtxTrendEntryExecutor
 from .htx_v5 import HtxV5Client
+from .java_entry_contract import JavaEntryConfig
 from .position_manager import LivePositionManager, ExitConfig
 from .writer_lock import TrendWriterLock
 from .live import HtxLiveExecutor, LiveAuthority
@@ -23,6 +24,10 @@ from .strategy_platform import (DisabledStrategyWorker, ExecutionMode, MultiTime
                                  StrategySupervisor, TrendObservationWorker, TrendObserverConfig)
 from .strategy_admission import StrategyAdmissionArtifact
 from .strategy_decision import LEGACY_STRATEGY_VERSION
+from .strategy_profiles import profile_for_version, profile_strategy
+from .strategy_profiles import profile_entry_config
+from .timeframes import TimeframeProfile
+from .live_approval import LegacyLiveWaiver, LiveApproval, LiveRiskPolicy
 from .research.store import FileEvidenceStore
 
 
@@ -30,7 +35,7 @@ def _account_client(repository: HtxTrendMySqlRepository, account_id: int, *, liv
     record = repository.account_credentials(account_id)
     if record is None:
         raise RuntimeError(f"registered HTX account id={account_id} has no credentials")
-    credentials = materialize(record)
+    credentials = materialize(record, require_encrypted=live)
     return HtxV5Client(credentials.access_key, credentials.secret_key, base_url=credentials.base_url,
                        live_trading_enabled=live)
 
@@ -55,6 +60,62 @@ def _load_admission(strategy_version: str) -> StrategyAdmissionArtifact | None:
     if artifact.strategy_version != strategy_version:
         raise SystemExit("strategy runtime and admission artifact versions differ")
     return artifact
+
+
+def _validate_live_approval(instance, account, admission, scan_configs) -> None:
+    approved_risk = LiveRiskPolicy()
+    execution_risk = ExecutionConfig.from_env()
+    entry_risk = EntryExecutionConfig.from_env()
+    if execution_risk.max_risk_per_trade_rate > approved_risk.per_trade_equity_rate:
+        raise SystemExit("LIVE per-trade stop risk exceeds approved 0.5% equity")
+    if execution_risk.max_total_open_risk_rate > approved_risk.total_open_equity_rate:
+        raise SystemExit("LIVE total open stop risk exceeds approved 1.5% equity")
+    if entry_risk.max_active_positions > approved_risk.max_active_positions:
+        raise SystemExit("LIVE active-position limit exceeds approved maximum of three")
+    if any(item.max_active_positions > approved_risk.max_active_positions for item in scan_configs):
+        raise SystemExit("LIVE scan capacity exceeds approved maximum of three")
+    package_sha = os.environ.get("HTX_PYTHON_PACKAGE_SHA256", "").strip()
+    source_commit = os.environ.get("HTX_PYTHON_SOURCE_COMMIT", "").strip()
+    config_fingerprint = (instance.config_fingerprint or "").strip()
+    profiles = tuple(item.timeframe_profile.value for item in scan_configs if item.entry_enabled)
+    if instance.strategy_name == LEGACY_STRATEGY_VERSION:
+        path = os.environ.get("HTX_TREND_LEGACY_LIVE_WAIVER_PATH", "").strip()
+        if not path:
+            raise SystemExit("legacy LIVE requires HTX_TREND_LEGACY_LIVE_WAIVER_PATH")
+        waiver = LegacyLiveWaiver.load(Path(path))
+        expected = {
+            "source_commit": source_commit,
+            "package_sha256": package_sha,
+            "config_fingerprint": config_fingerprint,
+            "account_id": account.account_id,
+        }
+        for name, value in expected.items():
+            if getattr(waiver, name) != value:
+                raise SystemExit(f"legacy LIVE waiver {name} mismatch")
+        if set(profiles) - set(waiver.profiles):
+            raise SystemExit("legacy LIVE waiver does not authorize every enabled profile")
+        return
+    path = os.environ.get("HTX_TREND_LIVE_APPROVAL_PATH", "").strip()
+    if not path or admission is None:
+        raise SystemExit("new strategy LIVE requires approval and sealed admission")
+    approval = LiveApproval.load(Path(path))
+    profile = profile_for_version(instance.strategy_name)
+    if profile is None or len(profiles) != 1 or profiles[0] != profile.value:
+        raise SystemExit("new strategy LIVE instance must own exactly its versioned profile")
+    spec = profile_strategy(profile)
+    expected = {
+        "strategy_version": instance.strategy_name,
+        "timeframe_profile": profile.value,
+        "source_commit": source_commit,
+        "package_sha256": package_sha,
+        "config_fingerprint": config_fingerprint,
+        "strategy_spec_hash": spec.spec_hash,
+        "admission_hash": admission.artifact_hash,
+        "account_id": account.account_id,
+    }
+    for name, value in expected.items():
+        if getattr(approval, name) != value:
+            raise SystemExit(f"LIVE approval {name} mismatch")
 
 
 def main() -> None:
@@ -85,9 +146,22 @@ def main() -> None:
                 "HTX_TREND_CONTRACTS", ",".join(DEFAULT_TREND_CONTRACTS)).split(",") if item.strip()))
             market_client = HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com"))
             market = HtxMarketData(market_client, evidence_store=evidence_store)
+            observer_configs = TrendObserverConfig.profiles_from_env(contracts)
+            observe_profile = profile_for_version(instance.strategy_name)
+            if observe_profile is not None:
+                observer_configs = tuple(item for item in observer_configs
+                                         if TimeframeProfile.for_period(item.entry_period) is observe_profile)
+                if len(observer_configs) != 1:
+                    raise SystemExit(f"{instance.strategy_name} OBSERVE must configure exactly {observe_profile.value}")
             observer_workers = tuple(
-                TrendObservationWorker(instance, repository, market, config, admission=admission)
-                for config in TrendObserverConfig.profiles_from_env(contracts))
+                TrendObservationWorker(
+                    instance, repository, market, config,
+                    entry_config=(profile_entry_config(TimeframeProfile.for_period(config.entry_period))
+                                  if profile_for_version(instance.strategy_name) is not None
+                                  else JavaEntryConfig.from_env()),
+                    admission=admission,
+                )
+                for config in observer_configs)
             worker = (observer_workers[0] if len(observer_workers) == 1
                       else MultiTimeframeObservationWorker(observer_workers))
         elif family == "TREND" and instance.execution_mode == ExecutionMode.LIVE:
@@ -101,6 +175,8 @@ def main() -> None:
             _validate_first_live_cutover()
             if any(a.role != "PRIMARY" and a.mirror_enabled for a in repository.enabled_trend_accounts()):
                 raise SystemExit("first Python cutover is primary-only; mirror recovery acceptance is still required")
+            scan_configs = LiveTrendWorkerConfig.profiles_from_env(strategy_version=instance.strategy_name)
+            _validate_live_approval(instance, account, admission, scan_configs)
             writer_lock = TrendWriterLock(connect(MySqlSettings.from_env()))
             writer_lock.acquire()
             private_client = _account_client(repository, account.account_id, live=True)
@@ -116,7 +192,6 @@ def main() -> None:
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
                 facts=HtxAccountFactsAdapter(private_client), executor=live, execution=entry_execution,
                 config=entry_config, admission=admission, evidence_store=evidence_store)
-            scan_configs = LiveTrendWorkerConfig.profiles_from_env()
             profile_workers = []
             for scan_config in scan_configs:
                 manager = LivePositionManager(repository, instance, account, market, private_client, live,

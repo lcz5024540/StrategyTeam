@@ -198,6 +198,7 @@ class HtxTrendEntryExecutor:
                 # Keep reserved notional as audit evidence, but do not expose
                 # the removed 30U account-wide capacity as an active boundary.
                 reserved_notional_usdt=risk_totals.notional_usdt,
+                reserved_risk_usdt=getattr(risk_totals, "risk_usdt", Decimal("0")),
                 risk_capacity_usdt=None,
                 same_direction_position_count=same_direction_count)
         except Exception as error:
@@ -210,6 +211,12 @@ class HtxTrendEntryExecutor:
                 f"account/exchange preflight failed: {type(error).__name__}: {error}")
             return EntrySubmission(False, preflight_gate, None, None, None,
                                    preflight_gate.reason)
+        if effective.hard_risk_limits_enabled:
+            equity = snapshot.facts.account_equity_usdt
+            if equity is None or equity <= 0:
+                risk_gate = GateResult(False, "RISK_LIMIT", "exchange-confirmed account equity unavailable")
+                return EntrySubmission(False, risk_gate, None, None, None, risk_gate.reason)
+            effective = replace(effective, account_equity_usdt=equity)
         # The live account guard is intentionally applied to the effective
         # config used by this submission, after policy sizing and before any
         # database intent or exchange mutation.
@@ -250,6 +257,9 @@ class HtxTrendEntryExecutor:
             try:
                 reserve(reservation_key=reservation_key, instance=self._instance, position_key=position_key,
                         notional_usdt=gate.size_plan.notional,
+                        risk_usdt=gate.size_plan.risk_at_stop,
+                        max_total_risk_usdt=effective.account_equity_usdt * effective.max_total_open_risk_rate,
+                        max_active_positions=effective.max_active_positions,
                         reason=f"entry preflight {timeframe_profile} {candidate.side.value}")
                 risk_reserved = True
             except Exception as error:

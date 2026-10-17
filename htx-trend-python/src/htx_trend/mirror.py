@@ -97,7 +97,11 @@ class HtxTrendMirrorFollower:
                 None, None, primary.timeframe_profile, None, self._instance.strategy_family, self._instance.strategy_name,
                 primary.source_position_id))
             self._repository.reserve_risk(reservation_key=reservation_key, instance=self._instance, position_key=position_key,
-                                          notional_usdt=notional, reason=f"mirror source={primary.source_position_id}")
+                                          notional_usdt=notional, risk_usdt=Decimal("0"),
+                                          max_total_risk_usdt=Decimal("0"),
+                                          max_active_positions=min(allocation.max_active_positions,
+                                                                   limit.max_active_positions),
+                                          reason=f"legacy mirror source={primary.source_position_id}")
             request = SwapOrderRequest(primary.contract_code, "long" if primary.side is TrendSide.LONG else "short",
                 "buy" if primary.side is TrendSide.LONG else "sell", "market", client_order_id, str(delta))
             self._repository.record_order_intent(TrendOrderIntent(position_id, position_key, primary.run_id, primary.contract_code,

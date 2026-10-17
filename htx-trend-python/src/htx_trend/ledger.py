@@ -107,11 +107,16 @@ class TrendLedger:
             _time(order.filled_at) if order.filled_at else None))
         self._connection.commit()
 
-    def record_fill(self, fill: Fill) -> None:
+    def record_fill(self, fill: Fill, *, order_status: str = "FILLED") -> None:
         self._connection.execute("INSERT INTO trend_fill VALUES(?,?,?,?,?,?,?)", (fill.fill_id, fill.order_id,
                                  fill.account_id, fill.quantity, str(fill.price), str(fill.fee), _time(fill.filled_at)))
-        self._connection.execute("UPDATE trend_order SET status='FILLED',filled_at=? WHERE order_id=?",
-                                 (_time(fill.filled_at), fill.order_id))
+        self._connection.execute("UPDATE trend_order SET status=?,filled_at=? WHERE order_id=?",
+                                 (order_status, _time(fill.filled_at), fill.order_id))
+        self._connection.commit()
+
+    def update_order_status(self, order_id: str, status: str, when: datetime | None = None) -> None:
+        self._connection.execute("UPDATE trend_order SET status=?,filled_at=? WHERE order_id=?",
+                                 (status, _time(when) if when else None, order_id))
         self._connection.commit()
 
     def close_position(self, position_id: str, realized_pnl: Decimal, when: datetime) -> None:

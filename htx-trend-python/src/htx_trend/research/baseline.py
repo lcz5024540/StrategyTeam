@@ -58,6 +58,8 @@ CONDITIONS = (
     _condition("signal.score_threshold", ConditionStage.CANDIDATE, ConditionUsage.STRATEGY_GATE),
     _condition("signal.score_gap", ConditionStage.CANDIDATE, ConditionUsage.STRATEGY_GATE),
     _condition("entry.period_15m", ConditionStage.CANDIDATE, ConditionUsage.STRATEGY_GATE),
+    _condition("entry.profile_contract", ConditionStage.CANDIDATE, ConditionUsage.STRATEGY_GATE,
+               description="entry/trend periods match the versioned timeframe profile"),
     _condition("entry.trending_regime", ConditionStage.CANDIDATE, ConditionUsage.STRATEGY_GATE),
     _condition("entry.donchian_candidate", ConditionStage.CANDIDATE, ConditionUsage.RECORD, ("donchian20",)),
     _condition("entry.fib_candidate", ConditionStage.CANDIDATE, ConditionUsage.RECORD),

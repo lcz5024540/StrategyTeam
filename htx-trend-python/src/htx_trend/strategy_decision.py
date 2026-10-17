@@ -13,6 +13,8 @@ from .java_entry_contract import JavaEntryConfig, JavaTrendSignal, candidates, e
 from .market_data import Candle
 from .models import ModelCandidate
 from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
+from .strategy_profiles import profile_for_version, profile_strategy
+from .timeframes import TimeframeProfile
 
 LEGACY_STRATEGY_VERSION = "HTX_TREND_V1"
 
@@ -29,6 +31,10 @@ class StrategyDecision:
     decision_hash: str
     trace_ref: str | None = None
     diagnosis: CandidateDiagnosis | None = None
+    timeframe_profile: str | None = None
+    strategy_spec_hash: str | None = None
+    feature_hash: str | None = None
+    condition_hash: str | None = None
 
 
 class HtxStrategyDecisionEngine:
@@ -39,14 +45,23 @@ class HtxStrategyDecisionEngine:
     requested surface.
     """
     def __init__(self, *, strategy_version: str = LEGACY_STRATEGY_VERSION,
-                 config: JavaEntryConfig = JavaEntryConfig(),
+                 config: JavaEntryConfig | None = None,
                  admission: StrategyAdmissionArtifact | None = None, evidence_store=None) -> None:
-        self.strategy_version, self.config, self.admission = strategy_version, config, admission
+        profile = profile_for_version(strategy_version)
+        self.profile_spec = profile_strategy(profile) if profile is not None else None
+        self.strategy_version = strategy_version
+        self.config = config or (self.profile_spec.entry_config if self.profile_spec else JavaEntryConfig())
+        self.admission = admission
         self.evidence_store = evidence_store
 
     def decide(self, *, contract_code: str, period: str, candles: Sequence[Candle],
                surface: DecisionSurface | str, evidence_refs: tuple[str, ...] = ()) -> StrategyDecision:
         self._authorize(DecisionSurface(surface))
+        period_profile = TimeframeProfile.for_period(period)
+        if self.profile_spec is not None and period_profile is not self.profile_spec.timeframe_profile:
+            raise ValueError(
+                f"strategy {self.strategy_version} cannot evaluate {period_profile.value}"
+            )
         ordered = tuple(sorted(candles, key=lambda item: item.open_time))
         signal = evaluate(ordered, self.config)
         output = candidates(ordered, signal, self.config, period)
@@ -55,6 +70,11 @@ class HtxStrategyDecisionEngine:
         payload = {"strategy_version": self.strategy_version, "contract_code": contract_code, "period": period,
                    "input_hash": input_hash, "config_hash": config_hash, "bar_time": signal.bar_time,
                    "side": signal.side.value, "candidate_models": [item.model.value for item in output]}
+        if self.profile_spec is not None:
+            payload.update({"timeframe_profile": period_profile.value,
+                            "strategy_spec_hash": self.profile_spec.spec_hash,
+                            "feature_hash": self.profile_spec.feature_hash,
+                            "condition_hash": self.profile_spec.condition_hash})
         decision_hash = sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         trace_ref = None
         if self.evidence_store is not None and self.strategy_version == LEGACY_STRATEGY_VERSION:
@@ -70,7 +90,11 @@ class HtxStrategyDecisionEngine:
             trace_ref = self.evidence_store.put("decision_trace", trace, refs=evidence_refs)
         return StrategyDecision(self.strategy_version, contract_code, period, signal, output,
                                 input_hash, config_hash, decision_hash, trace_ref,
-                                explain_candidates(ordered, signal, self.config, period))
+                                explain_candidates(ordered, signal, self.config, period),
+                                period_profile.value,
+                                self.profile_spec.spec_hash if self.profile_spec else None,
+                                self.profile_spec.feature_hash if self.profile_spec else None,
+                                self.profile_spec.condition_hash if self.profile_spec else None)
 
     def require(self, surface: DecisionSurface | str) -> None:
         self._authorize(DecisionSurface(surface))

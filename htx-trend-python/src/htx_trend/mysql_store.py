@@ -115,6 +115,7 @@ class AccountRiskLimit:
 class RiskReservationTotals:
     notional_usdt: Decimal
     position_count: int
+    risk_usdt: Decimal = Decimal("0")
 
 
 @dataclass(frozen=True, slots=True)
@@ -346,12 +347,16 @@ class HtxTrendMySqlRepository:
                                 else Decimal(str(row["max_daily_loss_usdt"])))
 
     def active_risk_reservation_totals(self, account_id: int) -> RiskReservationTotals:
-        row = self._one("""SELECT COALESCE(SUM(notional_usdt),0) AS notional_usdt,COALESCE(SUM(position_count),0) AS position_count
+        row = self._one("""SELECT COALESCE(SUM(notional_usdt),0) AS notional_usdt,COALESCE(SUM(position_count),0) AS position_count,
+            COALESCE(SUM(risk_usdt),0) AS risk_usdt
             FROM strategy_risk_reservation WHERE account_id=%s AND status='RESERVED'""", (account_id,))
-        return RiskReservationTotals(Decimal(str(row["notional_usdt"])), int(row["position_count"])) if row else RiskReservationTotals(Decimal("0"), 0)
+        return (RiskReservationTotals(Decimal(str(row["notional_usdt"])), int(row["position_count"]),
+                                      Decimal(str(row["risk_usdt"])))
+                if row else RiskReservationTotals(Decimal("0"), 0, Decimal("0")))
 
     def reserve_risk(self, *, reservation_key: str, instance: RuntimeInstance, position_key: str | None,
-                     notional_usdt: Decimal, reason: str) -> None:
+                     notional_usdt: Decimal, risk_usdt: Decimal, max_total_risk_usdt: Decimal,
+                     max_active_positions: int, reason: str) -> None:
         """Atomically reserve an account-level position slot before an exchange mutation.
 
         The account limit row is locked first, serializing reservations made by
@@ -371,16 +376,20 @@ class HtxTrendMySqlRepository:
                 if cursor.fetchone() is not None:
                     self._connection.commit()
                     return
-                cursor.execute("""SELECT COALESCE(SUM(notional_usdt),0) AS notional_usdt,COALESCE(SUM(position_count),0) AS position_count
+                cursor.execute("""SELECT COALESCE(SUM(notional_usdt),0) AS notional_usdt,COALESCE(SUM(position_count),0) AS position_count,
+                  COALESCE(SUM(risk_usdt),0) AS risk_usdt
                   FROM strategy_risk_reservation WHERE account_id=%s AND status='RESERVED'""", (instance.account_id,))
-                used = cursor.fetchone() or {"notional_usdt": 0, "position_count": 0}
-                if int(used["position_count"]) + 1 > int(limit["max_active_positions"]):
+                used = cursor.fetchone() or {"notional_usdt": 0, "position_count": 0, "risk_usdt": 0}
+                effective_positions = min(int(limit["max_active_positions"]), max_active_positions)
+                if int(used["position_count"]) + 1 > effective_positions:
                     raise ValueError("account risk position limit exceeded")
+                if Decimal(str(used["risk_usdt"])) + risk_usdt > max_total_risk_usdt:
+                    raise ValueError("account total open stop risk exceeded")
                 cursor.execute("""INSERT IGNORE INTO strategy_risk_reservation(reservation_key,account_id,account_label,strategy_family,
-                  strategy_name,instance_key,position_key,notional_usdt,position_count,status,reason)
-                  VALUES(%s,%s,%s,%s,%s,%s,%s,%s,1,'RESERVED',%s)""",
+                  strategy_name,instance_key,position_key,notional_usdt,risk_usdt,position_count,status,reason)
+                  VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,1,'RESERVED',%s)""",
                   (reservation_key,instance.account_id,instance.account_label,instance.strategy_family,instance.strategy_name,
-                   instance.instance_key,position_key,notional_usdt,_clip(reason,512)))
+                   instance.instance_key,position_key,notional_usdt,risk_usdt,_clip(reason,512)))
             self._connection.commit()
         except Exception:
             self._connection.rollback()
@@ -608,20 +617,24 @@ class HtxTrendMySqlRepository:
                          confirmation_models: str | None = None, policy_version: str | None = None,
                          gate_result: str | None = None, gate_reason: str | None = None,
                          sizing_multiplier: Decimal | None = None, planned_notional_usdt: Decimal | None = None,
-                         timeframe_profile: str | None = None) -> None:
-        self._write("""INSERT INTO htx_trend_candidate_signal(contract_code,timeframe_profile,period,bar_time,direction,regime,signal_score,close_price,
+                         timeframe_profile: str | None = None, strategy_version: str | None = None,
+                         strategy_spec_hash: str | None = None) -> None:
+        self._write("""INSERT INTO htx_trend_candidate_signal(contract_code,timeframe_profile,strategy_version,strategy_spec_hash,period,bar_time,direction,regime,signal_score,close_price,
           ema_fast,ema_medium,ema_slow,atr,atr_pct,adx,momentum_pct,entry_reason,shadow,model_version,primary_model,confirmation_models,
           policy_version,run_id,factor_snapshot_id,invalidation_price,target_zone_low,target_zone_high,expected_r_multiple,gate_result,
           gate_reason,sizing_multiplier,planned_notional_usdt)
-          VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+          VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
           ON DUPLICATE KEY UPDATE signal_score=VALUES(signal_score),entry_reason=VALUES(entry_reason),confirmation_models=VALUES(confirmation_models),
           policy_version=VALUES(policy_version),run_id=VALUES(run_id),factor_snapshot_id=VALUES(factor_snapshot_id),
+          strategy_version=VALUES(strategy_version),strategy_spec_hash=VALUES(strategy_spec_hash),
           invalidation_price=VALUES(invalidation_price),target_zone_low=VALUES(target_zone_low),target_zone_high=VALUES(target_zone_high),
           expected_r_multiple=VALUES(expected_r_multiple),shadow=VALUES(shadow),gate_result=VALUES(gate_result),gate_reason=VALUES(gate_reason),
           sizing_multiplier=VALUES(sizing_multiplier),planned_notional_usdt=VALUES(planned_notional_usdt)""",
-          (contract_code,timeframe_profile,period,bar_time,direction,regime,score,close_price,factors.get("ema_fast"),factors.get("ema_medium"),
+          (contract_code,timeframe_profile,strategy_version,strategy_spec_hash,period,bar_time,direction,regime,score,close_price,factors.get("ema_fast"),factors.get("ema_medium"),
            factors.get("ema_slow"),factors.get("atr"),factors.get("atr_pct"),factors.get("adx"),factors.get("roc"),
-           _clip(reason,512),shadow,f"python-trend-v1:{model}",model,confirmation_models,policy_version,run_id,factor_snapshot_id,
+           _clip(reason,512),shadow,
+           f"{strategy_version}:{model}" if strategy_version else f"python-trend-v1:{model}",
+           model,confirmation_models,policy_version,run_id,factor_snapshot_id,
            invalidation_price,target_low,target_high,expected_r,gate_result,_clip(gate_reason,1024) if gate_reason else None,
            sizing_multiplier,planned_notional_usdt))
 

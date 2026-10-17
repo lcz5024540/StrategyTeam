@@ -28,6 +28,7 @@ from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
 from .strategy_decision import HtxStrategyDecisionEngine, LEGACY_STRATEGY_VERSION
 from .strategy_context import MarketContext, MarketRegime
 from .timeframes import TimeframeProfile
+from .research.regime import RegimeStatus, profile_regime
 
 
 class ExecutionMode(StrEnum):
@@ -127,6 +128,7 @@ class _TrendObservation:
     funding_rate: Decimal | None
     spread_rate: Decimal | None
     decision_hash: str
+    regime_snapshot: object | None = None
 
 
 class TrendObservationWorker:
@@ -186,16 +188,37 @@ class TrendObservationWorker:
 
     def _observe_one(self, contract: str, now_epoch: int) -> _TrendObservation:
         entry = self._market.kline_window(contract, self._config.entry_period, self._config.kline_size, now_epoch=now_epoch)
+        evidence_refs = entry.evidence_refs
+        regime = None
+        book = self._market.order_book(contract)
+        if self._decision.profile_spec is not None:
+            profile = self._decision.profile_spec.timeframe_profile
+            windows = {entry.period: entry.candles}
+            required = tuple(dict.fromkeys((profile.contract.trend_period, *profile.contract.confirmation_periods)))
+            for period in required:
+                if period in windows:
+                    continue
+                window = self._market.kline_window(contract, period, self._config.kline_size, now_epoch=now_epoch)
+                if window.evidence_status == "FAILED":
+                    raise RuntimeError("profile context evidence persistence unavailable")
+                windows[period] = window.candles
+                evidence_refs += window.evidence_refs
+            regime = profile_regime(
+                profile, windows, as_of_epoch=now_epoch, spread_rate=book.top.spread_rate,
+                executable_depth_contracts=min(
+                    book.executable_contracts("LONG"), book.executable_contracts("SHORT")),
+            )
+            if regime.status is RegimeStatus.UNKNOWN:
+                raise RuntimeError("required profile context unavailable: " + ",".join(regime.missing_periods))
         decision = self._decision.decide(contract_code=contract, period=self._config.entry_period,
                                          candles=entry.candles, surface=DecisionSurface.OBSERVE,
-                                         evidence_refs=entry.evidence_refs)
-        book = self._market.top_of_book(contract)
+                                         evidence_refs=evidence_refs)
         try:
             funding = self._market.funding_rate(contract).rate
         except Exception:
             funding = None
-        return _TrendObservation(contract, decision.signal, decision.candidates, funding, book.spread_rate,
-                                 decision.decision_hash)
+        return _TrendObservation(contract, decision.signal, decision.candidates, funding, book.top.spread_rate,
+                                 decision.decision_hash, regime)
 
     def _persist(self, run_id: str, result: _TrendObservation, context: MarketContext) -> int:
         signal = result.signal
@@ -205,6 +228,11 @@ class TrendObservationWorker:
         values = {name: getattr(factors, name) for name in (
             "ema_fast", "ema_medium", "ema_slow", "atr", "atr_pct", "adx", "roc", "vwap", "rsi", "macd", "macd_signal", "macd_histogram",
         )}
+        if result.regime_snapshot is not None:
+            values.update({"regime_snapshot_hash": result.regime_snapshot.snapshot_hash,
+                           "regime_trend": result.regime_snapshot.trend.value,
+                           "regime_volatility": result.regime_snapshot.volatility.value,
+                           "regime_liquidity": result.regime_snapshot.liquidity.value})
         self._repository.record_signal(contract_code=result.contract, period=self._config.entry_period, bar_time=signal.bar_time,
                                        signal=signal.side.value, close_price=signal.close_price, ema_fast=factors.ema_fast,
                                        ema_slow=factors.ema_slow, breakout_high=signal.breakout_high or Decimal("0"),
@@ -242,7 +270,10 @@ class TrendObservationWorker:
                 sizing_multiplier=selection.sizing_multiplier if selection else None,
                 planned_notional_usdt=selection.planned_notional_usdt if selection else None,
                 timeframe_profile=(TimeframeProfile.for_period(self._config.entry_period).value
-                                   if self._config.entry_period in {"15min", "4hour"} else None))
+                                   if self._config.entry_period in {"15min", "4hour"} else None),
+                strategy_version=self._instance.strategy_name,
+                strategy_spec_hash=(self._decision.profile_spec.spec_hash
+                                    if self._decision.profile_spec is not None else None))
             self._repository.mark_candidate_execution_gate(run_id, result.contract, item.model.value, "OBSERVE_ONLY",
                                                             f"{gate_reason}; real account, book, fee, margin and order preflight not entered")
         return len(result.model_candidates)

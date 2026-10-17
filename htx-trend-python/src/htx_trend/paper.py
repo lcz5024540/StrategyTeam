@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime
-from decimal import Decimal
+from datetime import UTC, datetime
+from decimal import Decimal, ROUND_DOWN
 import uuid
 
 from .ledger import Account, Fill, Order, Position, TrendLedger
 from .market_data import Candle
+from .research.lifecycle import ExecutionAssumptions
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,30 @@ class PaperExchange:
         self._ledger.record_fill(fill)
         return replace(order, status="FILLED", filled_at=request.created_at)
 
+    def submit_next_event(self, request: PaperOrder, next_candle: Candle, *,
+                          assumptions: ExecutionAssumptions = ExecutionAssumptions()) -> Order:
+        """Use the same next-event, cost and participation rules as lifecycle research."""
+        order = Order(str(uuid.uuid4()), request.account_id, request.position_id, request.contract_code, request.side,
+                      request.position_side, request.order_type, request.quantity, request.client_order_id, "OPEN",
+                      request.created_at, request.limit_price, request.parent_order_id, request.strategy_run_id)
+        self._ledger.record_order(order)
+        fill_price = self._next_event_fill_price(request, next_candle, assumptions)
+        if fill_price is None:
+            self._ledger.update_order_status(order.order_id, "EXPIRED")
+            return replace(order, status="EXPIRED")
+        volume = next_candle.volume or Decimal("0")
+        capacity = int((volume * assumptions.max_volume_participation).to_integral_value(rounding=ROUND_DOWN))
+        quantity = min(request.quantity, capacity)
+        if quantity < 1:
+            self._ledger.update_order_status(order.order_id, "MISSED")
+            return replace(order, status="MISSED")
+        fee = fill_price * Decimal(quantity) * assumptions.fee_rate
+        fill = Fill(str(uuid.uuid4()), order.order_id, request.account_id, quantity, fill_price, fee,
+                    datetime.fromtimestamp(next_candle.open_time, UTC))
+        status = "FILLED" if quantity == request.quantity else "PARTIAL"
+        self._ledger.record_fill(fill, order_status=status)
+        return replace(order, status=status, filled_at=fill.filled_at)
+
     def open_position(self, account_id: str, contract_code: str, side: str, quantity: int, entry_price: Decimal,
                       when: datetime, run_id: str, parent_position_id: str | None = None) -> Position:
         position = Position(str(uuid.uuid4()), account_id, contract_code, side, quantity, entry_price, Decimal("0"), "OPEN",
@@ -54,6 +79,17 @@ class PaperExchange:
     def _fill_price(request: PaperOrder, candle: Candle) -> Decimal | None:
         if request.order_type == "MARKET":
             return candle.close
+        if request.limit_price is not None and candle.low <= request.limit_price <= candle.high:
+            return request.limit_price
+        return None
+
+    @staticmethod
+    def _next_event_fill_price(request: PaperOrder, candle: Candle,
+                               assumptions: ExecutionAssumptions) -> Decimal | None:
+        if request.order_type == "MARKET":
+            multiplier = (Decimal("1") + assumptions.slippage_rate
+                          if request.side == "BUY" else Decimal("1") - assumptions.slippage_rate)
+            return candle.open * multiplier
         if request.limit_price is not None and candle.low <= request.limit_price <= candle.high:
             return request.limit_price
         return None

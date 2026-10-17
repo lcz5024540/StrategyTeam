@@ -40,7 +40,13 @@ def decrypt_if_encrypted(value: str, *, private_key_path: str | None = None) -> 
         raise RuntimeError("HTX account secret decryption failed") from error
 
 
-def materialize(record: AccountCredentialRecord, *, private_key_path: str | None = None) -> HtxCredentials:
+def materialize(record: AccountCredentialRecord, *, private_key_path: str | None = None,
+                require_encrypted: bool = False) -> HtxCredentials:
+    if require_encrypted and not all(
+        value.startswith("ENC(") and value.endswith(")")
+        for value in (record.api_key_cipher, record.secret_key_cipher)
+    ):
+        raise RuntimeError("LIVE HTX credentials must be stored as ENC(...) values")
     return HtxCredentials(record.account_id, record.account_label,
                           decrypt_if_encrypted(record.api_key_cipher, private_key_path=private_key_path),
                           decrypt_if_encrypted(record.secret_key_cipher, private_key_path=private_key_path),

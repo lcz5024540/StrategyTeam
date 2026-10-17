@@ -24,7 +24,7 @@ class Cursor:
         if "SELECT max_notional_usdt,max_active_positions FROM strategy_account_risk_limit" in query:
             return {"max_notional_usdt": Decimal("200"), "max_active_positions": 2}
         if "FROM strategy_risk_reservation WHERE account_id" in query:
-            return {"notional_usdt": Decimal("0"), "position_count": 0}
+            return {"notional_usdt": Decimal("0"), "position_count": 0, "risk_usdt": Decimal("0")}
         if "FROM htx_trend_factor_snapshot" in query: return {"id": 11}
         if "FROM htx_trend_position WHERE position_key" in query: return {"id": 12}
         if "FROM htx_trend_order WHERE client_order_id" in query: return {"id": 13}
@@ -72,7 +72,7 @@ def test_mysql_repository_writes_parameterized_execution_records_without_ddl() -
     candidate = next(args for query, args in connection.queries if "htx_trend_candidate_signal" in query)
     assert "timeframe_profile" in next(query for query, _ in connection.queries if "htx_trend_candidate_signal" in query)
     assert candidate[1] == "INTRADAY_15M"
-    assert candidate[17] == "python-trend-v1:DONCHIAN_BREAKOUT"
+    assert candidate[19] == "python-trend-v1:DONCHIAN_BREAKOUT"
     assert connection.commits >= 7
 
 
@@ -121,7 +121,9 @@ def test_runtime_lifecycle_is_explicit_and_never_creates_schema() -> None:
 
 def test_risk_reservation_locks_the_account_boundary_then_releases() -> None:
     connection = Connection(); repository = HtxTrendMySqlRepository(connection)
-    repository.reserve_risk(reservation_key="reserve", instance=instance(), position_key="position", notional_usdt=Decimal("250"), reason="entry")
+    repository.reserve_risk(reservation_key="reserve", instance=instance(), position_key="position",
+                            notional_usdt=Decimal("250"), risk_usdt=Decimal("1"),
+                            max_total_risk_usdt=Decimal("4.5"), max_active_positions=3, reason="entry")
     repository.release_risk("reserve", "terminal position reconciliation")
     queries = [query for query, _ in connection.queries]
     assert "FOR UPDATE" in queries[0]

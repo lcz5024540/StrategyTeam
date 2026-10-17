@@ -44,6 +44,7 @@ class HtxAccountFactsAdapter:
 
     def snapshot(self, contract_code: str, side: TrendSide, book: OrderBook, *, active_position_count: int,
                  max_active_positions: int, reserved_notional_usdt: Decimal, risk_capacity_usdt: Decimal | None,
+                 reserved_risk_usdt: Decimal = ZERO,
                  known_strategy_side: TrendSide | None = None,
                  same_direction_position_count: int | None = None) -> AccountSnapshot:
         # Java's HtxSwapFeeRateResolver preserves execution continuity with a
@@ -67,13 +68,16 @@ class HtxAccountFactsAdapter:
         elif opposite > ZERO:
             external = TrendSide.SHORT if side is TrendSide.LONG else TrendSide.LONG
         margin = _available_margin(account_balance)
+        equity = _account_equity(account_balance)
         facts = ExecutionFacts(actual_taker_fee_rate=fee, contract_open_order=bool(orders),
             external_position_side=external, exchange_position_consistent=True,
             executable_depth_contracts=book.executable_contracts(side.value, self._config.depth_levels),
-            available_margin_usdt=margin, leverage=Decimal(max(1, self._config.leverage)),
+            available_margin_usdt=margin, account_equity_usdt=equity,
+            leverage=Decimal(max(1, self._config.leverage)),
             active_position_count=active_position_count, max_active_positions=max_active_positions,
             same_direction_position_count=same_direction_position_count,
-            reserved_notional_usdt=reserved_notional_usdt, risk_capacity_usdt=risk_capacity_usdt)
+            reserved_notional_usdt=reserved_notional_usdt, reserved_risk_usdt=reserved_risk_usdt,
+            risk_capacity_usdt=risk_capacity_usdt)
         return AccountSnapshot(facts, fee_source, margin, len(orders), same, opposite)
 
 
@@ -125,3 +129,21 @@ def _available_margin(value: Mapping[str, Any] | list[dict[str, Any]]) -> Decima
     if not values:
         raise ValueError("HTX account margin response is empty")
     return sum(values, ZERO)
+
+
+def _account_equity(value: Mapping[str, Any] | list[dict[str, Any]]) -> Decimal:
+    """Return exchange-confirmed equity; never infer it from available margin."""
+    if isinstance(value, Mapping):
+        direct = _decimal(dict(value), "margin_balance", "marginBalance", "margin_equity", "equity")
+        if direct is not None:
+            return direct
+        details = value.get("details")
+        if isinstance(details, list):
+            return _account_equity(details)
+        raise ValueError("HTX V5 account balance lacks account equity")
+    values = [_decimal(row, "margin_balance", "marginBalance", "margin_equity", "equity")
+              for row in value]
+    known = [item for item in values if item is not None]
+    if not known:
+        raise ValueError("HTX account response lacks account equity")
+    return sum(known, ZERO)
