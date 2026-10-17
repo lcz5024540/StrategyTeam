@@ -15,6 +15,7 @@ from .htx_v5 import HtxV5Client
 from .research.collector import ContinuousCollector, PERIODS
 from .research.store import FileEvidenceStore
 from .research.replay import replay_entries
+from .research.profile_backtest import run_dual_profile_research
 from .live_approval import LegacyLiveWaiver, LiveApproval
 
 
@@ -66,6 +67,12 @@ def main() -> None:
     entry_replay.add_argument("--evidence", required=True, type=Path); entry_replay.add_argument("--manifest-hash", required=True)
     entry_replay.add_argument("--symbol", required=True); entry_replay.add_argument("--period", default="15min", choices=PERIODS)
     entry_replay.add_argument("--window", type=int, default=160)
+    profile_research = commands.add_parser(
+        "profile-research", help="run frozen 15m/4h lifecycle research through the shared decision stack")
+    profile_research.add_argument("--evidence", required=True, type=Path)
+    profile_research.add_argument("--manifest-hash", required=True)
+    profile_research.add_argument("--without-test", action="store_true",
+                                  help="leave the frozen test segment unconsumed")
     args = parser.parse_args()
     if args.command == "init-ledger":
         TrendLedger.initialize(args.database, args.schema); print(json.dumps({"status": "initialized", "database": str(args.database)})); return
@@ -98,6 +105,9 @@ def main() -> None:
             payload = store.get(result)["payload"]
             print(json.dumps({"status": "COMPLETE", "result_hash": result,
                               "decisions": len(payload["decisions"])}, ensure_ascii=False)); return
+    if args.command == "profile-research":
+        print(json.dumps({"status": "COMPLETE", **run_dual_profile_research(
+            args.evidence, args.manifest_hash, include_test=not args.without_test)}, ensure_ascii=False)); return
     if args.command in {"collect-history", "collect-tick"}:
         with FileEvidenceStore(args.evidence) as store, HtxV5Client() as client:
             collector = ContinuousCollector(client, store)

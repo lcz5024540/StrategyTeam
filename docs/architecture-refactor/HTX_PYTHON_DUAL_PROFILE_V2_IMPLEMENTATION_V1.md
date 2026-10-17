@@ -4,7 +4,7 @@
 
 基线为 `support_htx_python@86529039`。本轮只修改 Python、Python 专用迁移、测试和文档；未执行生产 SQL、未部署、未启用真实订单，也未修改 V1 入场公式或 V4 退出语义。
 
-真实 Shadow 需要连续 2–3 个自然日，PAPER 每个 profile 至少需要连续 14 个自然日。因此当前工程结论是 `INSUFFICIENT_EVIDENCE`，不能用历史回放替代这两段证据。
+真实 Shadow 需要连续 2–3 个自然日，PAPER 每个 profile 至少需要连续 14 个自然日，不能用历史回放替代。六个月冻结数据的首轮同源研究已实际完成；15m 为 `REJECT`，4h 基线为 `INSUFFICIENT_EVIDENCE`，所以当前也不满足 PAPER/LIVE 晋级条件。
 
 ## 2. 已接通的调用链
 
@@ -41,6 +41,7 @@ strategy_runtime_instance
 - 生命周期模拟明确标记 `STRATEGY_SIMULATION`，使用下一根 K 线、方向性滑点、费用、资金费、1% K 线成交量容量、限价真实穿越、部分成交、跳空止损和同根不利顺序。
 - 研究门槛输出 `PASS`、`PASS_PROFITABILITY_FREQUENCY_GAP`、`REJECT` 或 `INSUFFICIENT_EVIDENCE`；先检查经济性，再检查双 profile 合计每日 5 笔完整闭环交易。
 - 60/20/20、walk-forward、固定种子置换检验、时间块 bootstrap 和 test 数据集单次消费均由研究模块提供。
+- `profile-research` 已把 V2 决策核、共享 Gate/风险 sizing、V4 路由/兼容退出核和完整交易账本接到同一冻结数据调用链。实际结果见 [`HTX_PYTHON_DUAL_PROFILE_V2_RESEARCH_20261017.md`](HTX_PYTHON_DUAL_PROFILE_V2_RESEARCH_20261017.md)。
 
 ## 4. LIVE 约束
 
@@ -71,10 +72,16 @@ sql/2026-10-17__candidate_strategy_identity.sql
 
 工程测试覆盖 profile 参数隔离、waiver/approval 篡改和到期、闭合多周期证据、未来 K 线隔离、next-bar 成交、容量/部分成交、同根不利顺序、成本、统计结论，以及既有 V1 回归。
 
+首轮冻结数据研究 evidence index 为
+`a8bc3c1e82ad848a709d21693989809e14892918d4f1c0ee5c811331a95e8340`，
+15m OOS 271 笔、PF 0.5513、净收益 -48.9259；4h OOS 17 笔、PF 0.1601、
+净收益 -21.6375。双 profile 合计日均 7.7838 笔，但经济性优先门槛失败。
+
 尚需在独立批次完成：
 
 1. 生成并审查真实 waiver/approval/admission 文件；
 2. 在测试数据库执行两份迁移并验证回滚；
 3. 双 profile Shadow 连续运行 2–3 天；
-4. 各 profile 独立 PAPER 至少 14 天；
-5. 用真实结果生成十二阶段报告，再决定是否逐 profile 替换 legacy。
+4. 重新预注册并研究能通过经济性门槛的候选版本；
+5. 通过经济性后，各 profile 独立 PAPER 至少 14 天；
+6. 用真实结果生成十二阶段报告，再决定是否逐 profile 替换 legacy。

@@ -57,6 +57,17 @@ HTX_TREND_ALLOW_LEGACY_4H_LIVE=false
 
 关闭某个 profile 的 LIVE 开关仍会计算并保存其候选，标记 `shadow=true/SHADOW_ONLY`，但不会调用真实订单执行器。重新启用后只处理新扫描产生的候选，不补发开关关闭期间的旧候选。
 
+冻结数据的双 profile 同源生命周期研究使用：
+
+```bash
+htx-trend profile-research --evidence /path/to/evidence \
+  --manifest-hash <complete-dataset-manifest-sha256>
+```
+
+结果明确标记为 `STRATEGY_SIMULATION`，保存完整交易账本、四成本场景、
+60/20/20、walk-forward、置换检验、时间块 bootstrap 与经济性结论；历史
+OHLCV 中不存在的盘口、账户和资金费事实会作为模拟假设列出。
+
 ```bash
 python -m htx_trend.worker --strategy-instance <instance-key>
 ```
