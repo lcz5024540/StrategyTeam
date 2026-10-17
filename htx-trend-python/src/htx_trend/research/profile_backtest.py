@@ -27,6 +27,7 @@ from .experiments import (DEFAULT_COST_SCENARIOS, ResearchConclusion, block_boot
 from .features import performance
 from .market_facts import FrozenMarketFacts
 from .conditions import research_confirmation_passes
+from .model_conditions import model_condition_passes, required_periods
 from .replay import load_manifest_candles
 from .store import FileEvidenceStore, digest
 
@@ -41,6 +42,9 @@ class ResearchVariant:
     confirmation: str | None = None
     minimum_score: Decimal | None = None
     condition_version: str | None = None
+    entry_parameters: tuple[tuple[str, int | Decimal | bool], ...] = ()
+    model_condition: str | None = None
+    model_condition_version: str | None = None
 
 
 DEFAULT_VARIANTS = (
@@ -136,7 +140,25 @@ class ProfileLifecycleResearch:
             self.store.checkpoint(checkpoint, {"plan_hash": plan_hash})
         series = {symbol: load_manifest_candles(self.store, self.manifest_hash, symbol=symbol,
                                                 period=self.spec.entry_period) for symbol in symbols}
-        decisions = {symbol: self._decisions(symbol, candles) for symbol, candles in series.items()}
+        context_periods = tuple(sorted({period for variant in variants
+                                       for period in required_periods(variant.model_condition)}))
+        contexts = {symbol: {period: load_manifest_candles(
+            self.store, self.manifest_hash, symbol=symbol, period=period)
+            for period in context_periods} for symbol in symbols}
+        configs = {variant.variant_id: self._variant_config(variant) for variant in variants}
+        config_keys = {variant.variant_id: digest(configs[variant.variant_id]) for variant in variants}
+        decision_cache = {(symbol, config_key): self._decisions(symbol, candles, config)
+                          for symbol, candles in series.items()
+                          for config_key, config in {config_keys[item.variant_id]: configs[item.variant_id]
+                                                     for item in variants}.items()}
+        decisions = {(symbol, variant.variant_id): decision_cache[(symbol, config_keys[variant.variant_id])]
+                     for symbol in symbols for variant in variants}
+        diagnostics = {(variant.variant_id, split[0]): self._candidate_diagnostics(
+            series, {symbol: decisions[(symbol, variant.variant_id)] for symbol in symbols},
+            variant, split[1], split[2], contexts)
+            for variant in variants for split in (("TRAIN", 0, 60), ("VALIDATION", 60, 80),
+                                                   ("TEST", 80, 100))
+            if split[0] != "TEST" or include_test}
         result_rows: list[dict] = []
         test_values: dict[tuple[str, str], list[Decimal]] = {}
         for variant in variants:
@@ -148,9 +170,10 @@ class ProfileLifecycleResearch:
                     trades: list[SimulatedTrade] = []
                     for symbol, candles in series.items():
                         start, end = len(candles) * split[1] // 100, len(candles) * split[2] // 100
-                        trades.extend(self._simulate(symbol, candles, decisions[symbol], start, end,
+                        trades.extend(self._simulate(symbol, candles, decisions[(symbol, variant.variant_id)], start, end,
                                                      variant, cost.name, cost.fee_rate,
-                                                     cost.slippage_rate))
+                                                     cost.slippage_rate, config=configs[variant.variant_id],
+                                                     context=contexts[symbol]))
                     trades.sort(key=lambda item: (item.exit_time, item.symbol, item.entry_time))
                     by_split[split[0]] = trades
                     metrics = performance(tuple({"net_pnl": item.net_pnl, "fees": item.fees,
@@ -158,11 +181,16 @@ class ProfileLifecycleResearch:
                     result_rows.append({"variant_id": variant.variant_id, "cost": cost.name,
                                         "split": split[0], "metrics": asdict(metrics),
                                         "trades": len(trades),
+                                        "candidate_diagnostics": diagnostics[(variant.variant_id, split[0])],
                                         "trade_ledger": [asdict(item) for item in trades]})
                     if split[0] == "TEST":
                         test_values[(variant.variant_id, cost.name)] = [item.net_pnl for item in trades]
         conclusions = self._conclusions(result_rows, test_values, series, variants, seed)
-        walk_forward = self._walk_forward_summary(series, decisions, variants[0], seed)
+        baseline_decisions = {symbol: decisions[(symbol, variants[0].variant_id)] for symbol in symbols}
+        walk_forward = self._walk_forward_summary(series, baseline_decisions, variants[0], seed,
+                                                  config=configs[variants[0].variant_id],
+                                                  contexts=contexts,
+                                                  end_percent=100 if include_test else 80)
         payload = {
             "result_kind": "STRATEGY_SIMULATION",
             "profile": self.profile.value,
@@ -174,6 +202,7 @@ class ProfileLifecycleResearch:
             "symbols": list(symbols),
             "window": self.window,
             "split": [60, 20, 20],
+            "test_segment": "CONSUMED" if include_test else "NOT_READ",
             "execution_assumptions": {
                 "signal": "closed bar", "entry": "next bar open plus directional slippage",
                 "book": "synthetic around next open because frozen OHLCV has no L2 book",
@@ -190,17 +219,53 @@ class ProfileLifecycleResearch:
         return self.store.put("profile_lifecycle_research", payload,
                               refs=(self.manifest_hash, self.market_facts.manifest_hash))
 
-    def _decisions(self, symbol: str, candles: Sequence[Candle]) -> tuple[StrategyDecision | None, ...]:
+    def _variant_config(self, variant: ResearchVariant):
+        allowed = set(self.spec.entry_config.__dataclass_fields__)
+        values = dict(variant.entry_parameters)
+        unknown = set(values)-allowed
+        if unknown:
+            raise ValueError(f"unknown entry parameters: {','.join(sorted(unknown))}")
+        return replace(self.spec.entry_config, **values)
+
+    def _candidate_diagnostics(self, series: dict[str, Sequence[Candle]],
+                               decisions: dict[str, Sequence[StrategyDecision | None]],
+                               variant: ResearchVariant, start_percent: int, end_percent: int,
+                               contexts: dict[str, dict[str, Sequence[Candle]]]) -> dict[str, int]:
+        unfiltered = replace(variant, confirmation=None, minimum_score=None, condition_version=None,
+                             model_condition=None, model_condition_version=None)
+        available = passed = 0
+        for symbol, candles in series.items():
+            start = max(self.window, len(candles)*start_percent//100)
+            end = len(candles)*end_percent//100
+            for index in range(start, end):
+                decision = decisions[symbol][index]
+                if decision is None:
+                    continue
+                if self._select(decision, candles, index, unfiltered,
+                                context=contexts.get(symbol, {})) is None:
+                    continue
+                available += 1
+                if self._select(decision, candles, index, variant,
+                                context=contexts.get(symbol, {})) is not None:
+                    passed += 1
+        return {"available": available, "passed": passed, "rejected": available-passed}
+
+    def _decisions(self, symbol: str, candles: Sequence[Candle], config=None) -> tuple[StrategyDecision | None, ...]:
+        selected_config = config or self.spec.entry_config
+        admission = provisional_backtest_admission(self.spec, self.manifest_hash)
+        engine = HtxStrategyDecisionEngine(strategy_version=self.spec.strategy.version,
+                                           config=selected_config, admission=admission)
         rows: list[StrategyDecision | None] = [None] * len(candles)
         for end in range(self.window, len(candles) + 1):
-            rows[end - 1] = self.engine.decide(contract_code=symbol, period=self.spec.entry_period,
-                                               candles=candles[end-self.window:end],
-                                               surface=DecisionSurface.BACKTEST)
+            rows[end - 1] = engine.decide(contract_code=symbol, period=self.spec.entry_period,
+                                          candles=candles[end-self.window:end],
+                                          surface=DecisionSurface.BACKTEST)
         return tuple(rows)
 
     def _simulate(self, symbol: str, candles: Sequence[Candle], decisions: Sequence[StrategyDecision | None],
                   start: int, end: int, variant: ResearchVariant, cost_name: str,
-                  fee_rate: Decimal, slippage: Decimal) -> list[SimulatedTrade]:
+                  fee_rate: Decimal, slippage: Decimal, *, config=None,
+                  context=None) -> list[SimulatedTrade]:
         start = max(start, self.window)
         if end - start < 2:
             return []
@@ -222,7 +287,7 @@ class ProfileLifecycleResearch:
             signal = decisions[index - 1]
             if signal is None:
                 continue
-            candidate = self._select(signal, candles, index - 1, variant)
+            candidate = self._select(signal, candles, index - 1, variant, context=context or {})
             if candidate is None:
                 continue
             factors = signal.signal.indicators
@@ -233,12 +298,15 @@ class ProfileLifecycleResearch:
             half_spread = min(Decimal("0.00025"), slippage / Decimal("2"))
             book = TopOfBook(fill * (ONE - half_spread), fill * (ONE + half_spread),
                              Decimal("1000000"), Decimal("1000000"))
-            config = ExecutionConfig(min_score=self.spec.entry_config.entry_score_threshold,
-                                     fee_rate=fee_rate, signal_freshness_seconds=0,
-                                     target_notional=Decimal("100"), min_notional=Decimal("1"),
-                                     max_notional=Decimal("100"), risk_per_trade=self.account_equity * Decimal("0.005"),
-                                     hard_risk_limits_enabled=True, account_equity_usdt=self.account_equity,
-                                     max_risk_per_trade_usdt=self.account_equity * Decimal("0.005"))
+            entry_config = config or self.spec.entry_config
+            execution_config = ExecutionConfig(min_score=entry_config.entry_score_threshold,
+                                                fee_rate=fee_rate, signal_freshness_seconds=0,
+                                                target_notional=Decimal("100"), min_notional=Decimal("1"),
+                                                max_notional=Decimal("100"),
+                                                risk_per_trade=self.account_equity * Decimal("0.005"),
+                                                hard_risk_limits_enabled=True,
+                                                account_equity_usdt=self.account_equity,
+                                                max_risk_per_trade_usdt=self.account_equity * Decimal("0.005"))
             facts = ExecutionFacts(actual_taker_fee_rate=fee_rate, executable_depth_contracts=Decimal("1000000"),
                                    account_equity_usdt=self.account_equity, available_margin_usdt=self.account_equity,
                                    leverage=Decimal("5"), active_position_count=0, max_active_positions=3,
@@ -254,7 +322,8 @@ class ProfileLifecycleResearch:
                                                      funding_fact.funding_time),
                                  recent_candles=candles[max(0,index-20):index],
                                  prior_trade=None, execution_facts=facts, momentum_quality=signal.signal.score,
-                                 ema_fast=factors.ema_fast, ema_slow=factors.ema_slow, adx=factors.adx, config=config)
+                                 ema_fast=factors.ema_fast, ema_slow=factors.ema_slow, adx=factors.adx,
+                                 config=execution_config)
             if not gate.allowed or gate.size_plan is None or gate.price_plan is None:
                 continue
             volume = candle.volume or ZERO
@@ -357,7 +426,7 @@ class ProfileLifecycleResearch:
 
     @staticmethod
     def _select(decision: StrategyDecision, candles: Sequence[Candle], index: int,
-                variant: ResearchVariant) -> ModelCandidate | None:
+                variant: ResearchVariant, *, context=None) -> ModelCandidate | None:
         candidates = [item for item in decision.candidates if item.model in variant.models]
         factors = decision.signal.indicators
         if not candidates or factors is None:
@@ -372,6 +441,11 @@ class ProfileLifecycleResearch:
                 candles=candles[max(0, index-159):index+1],
                 local_regime=decision.signal.regime, candidate_score=selected.score,
                 condition_version=variant.condition_version):
+            return None
+        if variant.model_condition and not model_condition_passes(
+                variant.model_condition, condition_version=variant.model_condition_version,
+                candidate=selected, decision=decision,
+                entry_candles=candles[max(0, index-159):index+1], context=context or {}):
             return None
         return selected
 
@@ -399,9 +473,15 @@ class ProfileLifecycleResearch:
         return conclusions
 
     def _walk_forward_summary(self, series: dict[str, Sequence[Candle]], decisions: dict[str, Sequence[StrategyDecision | None]],
-                              variant: ResearchVariant, seed: int) -> dict:
-        size = min(len(item) for item in series.values())
+                              variant: ResearchVariant, seed: int, *, config=None, contexts=None,
+                              end_percent: int = 100) -> dict:
+        if end_percent not in {80, 100}:
+            raise ValueError("walk-forward end_percent must be 80 or 100")
+        size = min(len(item) for item in series.values()) * end_percent // 100
         train, validate = max(self.window+1, size//2), max(1, size//10)
+        if train+validate > size:
+            return {"seed": seed, "end_percent": end_percent, "windows": [],
+                    "status": "INSUFFICIENT_BARS"}
         windows = walk_forward_bounds(size, train=train, validate=validate, step=validate)
         results = []
         base = next(item for item in DEFAULT_COST_SCENARIOS if item.name == "BASE")
@@ -410,10 +490,11 @@ class ProfileLifecycleResearch:
             for symbol, candles in series.items():
                 start, end = bounds["VALIDATION"]
                 values.extend(item.net_pnl for item in self._simulate(symbol, candles, decisions[symbol], start, end,
-                              variant, base.name, base.fee_rate, base.slippage_rate))
+                              variant, base.name, base.fee_rate, base.slippage_rate,
+                              config=config, context=(contexts or {}).get(symbol, {})))
             results.append({"window": number, "bounds": bounds, "trades": len(values),
                             "net_profit": sum(values, ZERO)})
-        return {"seed": seed, "windows": results}
+        return {"seed": seed, "end_percent": end_percent, "windows": results}
 
 
 def run_dual_profile_research(evidence: Path, manifest_hash: str, market_facts_manifest_hash: str,

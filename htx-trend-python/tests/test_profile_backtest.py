@@ -107,3 +107,20 @@ def test_future_candle_does_not_change_prior_decision(tmp_path) -> None:
         after = runner._decisions("BTC-USDT", extended)[179]
         assert before is not None and after is not None
         assert before.decision_hash == after.decision_hash
+
+
+def test_parameter_override_research_keeps_entry_and_execution_configs_separate(tmp_path) -> None:
+    with FileEvidenceStore(tmp_path) as store:
+        manifest = _manifest(store, 220)
+        facts = _market_facts(store, 220)
+        runner = ProfileLifecycleResearch(store, manifest, facts, TimeframeProfile.INTRADAY_15M)
+        ref = runner.run(variants=(ResearchVariant(
+            "LOOKBACK_16", entry_parameters=(("breakout_lookback", 16),)),),
+            include_test=False, seed=11)
+        payload = store.get(ref)["payload"]
+        assert {row["split"] for row in payload["results"]} == {"TRAIN", "VALIDATION"}
+        assert payload["test_segment"] == "NOT_READ"
+        assert payload["walk_forward"]["end_percent"] == 80
+        assert payload["variants"][0]["entry_parameters"] == [["breakout_lookback", 16]]
+        assert all(row["candidate_diagnostics"]["available"] >=
+                   row["candidate_diagnostics"]["passed"] for row in payload["results"])
