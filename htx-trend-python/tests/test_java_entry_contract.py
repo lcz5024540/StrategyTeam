@@ -1,7 +1,8 @@
 from dataclasses import replace
 from decimal import Decimal
 
-from htx_trend.java_entry_contract import JavaEntryConfig, JavaTrendSignal, candidates, evaluate
+from htx_trend.java_entry_contract import (JavaEntryConfig, JavaTrendSignal, candidates, evaluate,
+                                           model_candidate_evaluations)
 from htx_trend.indicators import IndicatorSnapshot
 from htx_trend.market_data import Candle
 from htx_trend.models import ModelCode, TrendSide
@@ -31,6 +32,21 @@ def test_java_ensemble_contract_produces_java_box_donchian_candidate() -> None:
     assert signal.score >= Decimal("90")
     assert donchian.score == Decimal("100")
     assert donchian.policy_confirmations == "BOX_BREAKOUT"
+
+
+def test_per_model_evaluations_are_the_single_source_for_executable_candidates() -> None:
+    config = JavaEntryConfig(box_window_bars=32)
+    signal = evaluate(_uptrend(), config)
+    evaluations = model_candidate_evaluations(_uptrend(), signal, config)
+    flattened = tuple(sorted((item for row in evaluations for item in row.candidates),
+                             key=lambda item: item.score, reverse=True))
+    assert flattened == candidates(_uptrend(), signal, config)
+    assert {row.model for row in evaluations} == set(ModelCode)
+    assert all(bool(row.candidates) != bool(row.reject_codes) for row in evaluations)
+
+    flat_signal = evaluate(_flat(), config)
+    rejected = model_candidate_evaluations(_flat(), flat_signal, config)
+    assert all(not row.candidates and "NO_DIRECTION_SIGNAL" in row.reject_codes for row in rejected)
 
 
 def test_java_market_rank_requires_breadth_and_both_anchor_symbols() -> None:

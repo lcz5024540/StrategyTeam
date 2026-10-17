@@ -82,6 +82,20 @@ class JavaTrendSignal:
     volume_ratio: Decimal
 
 
+@dataclass(frozen=True, slots=True)
+class ModelCandidateEvaluation:
+    """One model's result from the production candidate calculation.
+
+    Research consumes this record to explain rejected models.  The executable
+    candidate list is flattened from these same records, so diagnostics cannot
+    silently reimplement or drift from the live conditions.
+    """
+
+    model: ModelCode
+    candidates: tuple[ModelCandidate, ...]
+    reject_codes: tuple[str, ...] = ()
+
+
 def evaluate(candles: Sequence[Candle], config: JavaEntryConfig = JavaEntryConfig()) -> JavaTrendSignal:
     """Port Java ensemble scoring, including its deliberately permissive RANGE signal."""
     required = max(config.slow_ema_period, config.breakout_lookback, config.momentum_lookback,
@@ -110,46 +124,82 @@ def evaluate(candles: Sequence[Candle], config: JavaEntryConfig = JavaEntryConfi
 def candidates(candles: Sequence[Candle], signal: JavaTrendSignal,
                config: JavaEntryConfig = JavaEntryConfig(), period: str = "15min") -> tuple[ModelCandidate, ...]:
     """Port Java combination candidates and their canonical policy evidence."""
+    output = [candidate for result in model_candidate_evaluations(candles, signal, config, period)
+              for candidate in result.candidates]
+    return tuple(sorted(output, key=lambda item: item.score, reverse=True))
+
+
+def model_candidate_evaluations(candles: Sequence[Candle], signal: JavaTrendSignal,
+                                config: JavaEntryConfig = JavaEntryConfig(),
+                                period: str = "15min") -> tuple[ModelCandidateEvaluation, ...]:
+    """Return a candidate or explicit rejection for every supported model."""
+    models = tuple(ModelCode)
+
+    def rejected(*codes: str | RejectCode) -> tuple[ModelCandidateEvaluation, ...]:
+        normalized = tuple(code.value if isinstance(code, RejectCode) else str(code) for code in codes)
+        return tuple(ModelCandidateEvaluation(model, (), normalized) for model in models)
+
     try:
         TimeframeProfile.for_period(period)
     except ValueError:
-        return ()
-    if signal.side is TrendSide.FLAT or signal.indicators is None:
-        return ()
+        return rejected(RejectCode.TIMEFRAME_UNSUPPORTED)
+    if signal.indicators is None:
+        return rejected(RejectCode.INSUFFICIENT_BARS)
+    if signal.side is TrendSide.FLAT:
+        codes = [RejectCode.NO_DIRECTION_SIGNAL]
+        if signal.score < config.entry_score_threshold:
+            codes.append("SCORE_BELOW_THRESHOLD")
+        if signal.score_gap < config.min_score_gap:
+            codes.append("SCORE_GAP_BELOW_THRESHOLD")
+        return rejected(*codes)
     if config.combination_require_trending_regime and signal.regime not in {"TRENDING_UP", "TRENDING_DOWN"}:
-        return ()
+        return rejected(RejectCode.REGIME_NOT_TRENDING)
     ordered = tuple(sorted(candles, key=lambda candle: candle.open_time))
     box = max(2, config.box_window_bars)
     if len(ordered) < box + 1:
-        return ()
+        return rejected(RejectCode.INSUFFICIENT_BARS)
     factor, latest = signal.indicators, ordered[-1]
     structure = _structure(ordered, box)
     box_breakout = signal.close_price > structure.box_high if signal.side is TrendSide.LONG else signal.close_price < structure.box_low
     donchian = signal.close_price > signal.breakout_high if signal.side is TrendSide.LONG else signal.close_price < signal.breakout_low
     prior = _prior_breakout(ordered, signal.side, box, config.fib_source_lookback_bars)
     fib_retest = prior is not None and _fib_retest(signal.side, signal.close_price, prior, factor.ema_fast)
-    result: list[ModelCandidate] = []
+    donchian_candidates: list[ModelCandidate] = []
     if box_breakout and donchian:
-        result.append(_candidate(ModelCode.DONCHIAN_BREAKOUT, "BOX_BREAKOUT", signal, structure, latest, prior,
-                                 signal.score + Decimal("15"), "fresh channel breakout confirmed by box"))
+        donchian_candidates.append(_candidate(ModelCode.DONCHIAN_BREAKOUT, "BOX_BREAKOUT", signal, structure, latest, prior,
+                                              signal.score + Decimal("15"), "fresh channel breakout confirmed by box"))
     if donchian and not box_breakout:
-        result.append(_candidate(ModelCode.DONCHIAN_BREAKOUT, "TREND_CONTEXT", signal, structure, latest, prior,
-                                 signal.score + Decimal("12"), "fresh channel breakout aligned with trend context"))
+        donchian_candidates.append(_candidate(ModelCode.DONCHIAN_BREAKOUT, "TREND_CONTEXT", signal, structure, latest, prior,
+                                              signal.score + Decimal("12"), "fresh channel breakout aligned with trend context"))
+    fib_candidates: list[ModelCandidate] = []
     if fib_retest and (box_breakout or prior[0]):
-        result.append(_candidate(ModelCode.FIB_PULLBACK_CONTINUATION, "BOX_BREAKOUT", signal, structure, latest, prior,
-                                 signal.score + Decimal("10"), "Fibonacci retest confirmed by prior box breakout"))
+        fib_candidates.append(_candidate(ModelCode.FIB_PULLBACK_CONTINUATION, "BOX_BREAKOUT", signal, structure, latest, prior,
+                                         signal.score + Decimal("10"), "Fibonacci retest confirmed by prior box breakout"))
     if fib_retest and (donchian or prior[1]):
-        result.append(_candidate(ModelCode.FIB_PULLBACK_CONTINUATION, "DONCHIAN_BREAKOUT", signal, structure, latest, prior,
-                                 signal.score + Decimal("10"), "Fibonacci retest confirmed by prior channel breakout"))
+        fib_candidates.append(_candidate(ModelCode.FIB_PULLBACK_CONTINUATION, "DONCHIAN_BREAKOUT", signal, structure, latest, prior,
+                                         signal.score + Decimal("10"), "Fibonacci retest confirmed by prior channel breakout"))
     if fib_retest and (box_breakout or prior[0]) and (donchian or prior[1]):
-        result.append(_candidate(ModelCode.FIB_PULLBACK_CONTINUATION, "BOX_BREAKOUT,DONCHIAN_BREAKOUT", signal, structure, latest, prior,
-                                 signal.score + Decimal("20"), "Fibonacci retest confirmed by box and channel"))
+        fib_candidates.append(_candidate(ModelCode.FIB_PULLBACK_CONTINUATION, "BOX_BREAKOUT,DONCHIAN_BREAKOUT", signal, structure, latest, prior,
+                                         signal.score + Decimal("20"), "Fibonacci retest confirmed by box and channel"))
     stack = ((factor.ema_fast > factor.ema_medium > factor.ema_slow and factor.roc > ZERO)
              if signal.side is TrendSide.LONG else (factor.ema_fast < factor.ema_medium < factor.ema_slow and factor.roc < ZERO))
-    if factor.adx >= Decimal("20") and stack:
-        result.append(_candidate(ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION, "EMA_STACK,MOMENTUM", signal, structure, latest, prior,
-                                 signal.score + Decimal("12"), "EMA stack and momentum continuation"))
-    return tuple(sorted(result, key=lambda item: item.score, reverse=True))
+    ema_candidates = (() if factor.adx < Decimal("20") or not stack else
+                      (_candidate(ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION, "EMA_STACK,MOMENTUM", signal,
+                                  structure, latest, prior, signal.score + Decimal("12"),
+                                  "EMA stack and momentum continuation"),))
+    fib_rejects = (() if fib_candidates else
+                   (RejectCode.NO_FIB_RETEST.value,) if not fib_retest else
+                   (RejectCode.NO_STRUCTURE.value,))
+    ema_rejects = (() if ema_candidates else tuple(
+        code.value for passed, code in ((stack, RejectCode.EMA_MOMENTUM_CONFLICT),
+                                        (factor.adx >= Decimal("20"), RejectCode.ADX_BELOW_20))
+        if not passed))
+    return (
+        ModelCandidateEvaluation(ModelCode.DONCHIAN_BREAKOUT, tuple(donchian_candidates),
+                                 () if donchian_candidates else (RejectCode.NO_DONCHIAN_BREAKOUT.value,)),
+        ModelCandidateEvaluation(ModelCode.FIB_PULLBACK_CONTINUATION, tuple(fib_candidates), fib_rejects),
+        ModelCandidateEvaluation(ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION, tuple(ema_candidates), ema_rejects),
+    )
 
 
 def explain_candidates(candles: Sequence[Candle], signal: JavaTrendSignal,

@@ -17,6 +17,7 @@ from .research.store import FileEvidenceStore
 from .research.replay import replay_entries
 from .research.profile_backtest import run_dual_profile_research
 from .research.market_facts import MarketFactsCollector
+from .research.candidate_labels import run_dual_profile_candidate_labels
 from .live_approval import LegacyLiveWaiver, LiveApproval
 
 
@@ -81,6 +82,11 @@ def main() -> None:
     profile_research.add_argument("--market-facts-manifest-hash", required=True)
     profile_research.add_argument("--without-test", action="store_true",
                                   help="leave the frozen test segment unconsumed")
+    candidate_labels = commands.add_parser(
+        "candidate-labels", help="record every model evaluation and descriptive future outcome label")
+    candidate_labels.add_argument("--evidence", required=True, type=Path)
+    candidate_labels.add_argument("--manifest-hash", required=True)
+    candidate_labels.add_argument("--market-facts-manifest-hash", required=True)
     args = parser.parse_args()
     if args.command == "init-ledger":
         TrendLedger.initialize(args.database, args.schema); print(json.dumps({"status": "initialized", "database": str(args.database)})); return
@@ -117,6 +123,9 @@ def main() -> None:
         print(json.dumps({"status": "COMPLETE", **run_dual_profile_research(
             args.evidence, args.manifest_hash, args.market_facts_manifest_hash,
             include_test=not args.without_test)}, ensure_ascii=False)); return
+    if args.command == "candidate-labels":
+        print(json.dumps({"status": "COMPLETE", **run_dual_profile_candidate_labels(
+            args.evidence, args.manifest_hash, args.market_facts_manifest_hash)}, ensure_ascii=False)); return
     if args.command == "collect-market-facts":
         with FileEvidenceStore(args.evidence) as store, HtxV5Client() as client:
             manifest = MarketFactsCollector(client, store).collect(
