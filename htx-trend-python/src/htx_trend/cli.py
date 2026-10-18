@@ -21,6 +21,8 @@ from .research.candidate_labels import run_dual_profile_candidate_labels
 from .research.condition_audit import run_condition_audit
 from .research.model_optimization import run_intraday_model_optimization
 from .research.swing_model_optimization import run_swing_model_optimization
+from .research.exit_optimization import run_exit_optimization
+from .timeframes import TimeframeProfile
 from .live_approval import LegacyLiveWaiver, LiveApproval
 
 
@@ -104,6 +106,14 @@ def main() -> None:
     swing_optimize.add_argument("--evidence", required=True, type=Path)
     swing_optimize.add_argument("--manifest-hash", required=True)
     swing_optimize.add_argument("--market-facts-manifest-hash", required=True)
+    exit_optimize = commands.add_parser(
+        "exit-optimize", help="run P6 paired exit research over a frozen parent entry ledger")
+    exit_optimize.add_argument("--evidence", required=True, type=Path)
+    exit_optimize.add_argument("--manifest-hash", required=True)
+    exit_optimize.add_argument("--market-facts-manifest-hash", required=True)
+    exit_optimize.add_argument("--lifecycle-result-hash", required=True)
+    exit_optimize.add_argument("--profile", required=True,
+                               choices=[item.value for item in TimeframeProfile])
     args = parser.parse_args()
     if args.command == "init-ledger":
         TrendLedger.initialize(args.database, args.schema); print(json.dumps({"status": "initialized", "database": str(args.database)})); return
@@ -152,6 +162,10 @@ def main() -> None:
     if args.command == "swing-optimize":
         print(json.dumps({"status": "COMPLETE", **run_swing_model_optimization(
             args.evidence, args.manifest_hash, args.market_facts_manifest_hash)}, ensure_ascii=False)); return
+    if args.command == "exit-optimize":
+        print(json.dumps({"status": "COMPLETE", **run_exit_optimization(
+            args.evidence, args.manifest_hash, args.market_facts_manifest_hash,
+            args.lifecycle_result_hash, TimeframeProfile(args.profile))}, ensure_ascii=False)); return
     if args.command == "collect-market-facts":
         with FileEvidenceStore(args.evidence) as store, HtxV5Client() as client:
             manifest = MarketFactsCollector(client, store).collect(
