@@ -3,7 +3,7 @@ title: 交易策略知识地图
 type: index
 status: active
 tags: [strategy, arbitrage]
-updated: 2026-09-22
+updated: 2026-10-18
 ---
 
 # 交易策略知识地图 (MOC)
@@ -48,6 +48,7 @@ updated: 2026-09-22
 
 ## 三、CEX 趋势与技术分析策略
 
+- [HTX_PYTHON_STRATEGY_CODE_GUIDE_V1](architecture-refactor/HTX_PYTHON_STRATEGY_CODE_GUIDE_V1.md) — 当前 Python 双周期趋势策略源码指南：启动、K 线冻结、指标、候选、Gate、仓位、订单、持仓退出、证据与研究全链路
 - [HTX_TREND_STRATEGY_SYSTEM_V1](architecture-refactor/HTX_TREND_STRATEGY_SYSTEM_V1.md) — HTX 合约趋势策略系统 v1：市场分型、多模型信号、因子评分、gate、sizing、退出、回测与实盘观察骨架
 - [HTX_TREND_EXECUTION_REFACTOR_PLAN_V1](architecture-refactor/HTX_TREND_EXECUTION_REFACTOR_PLAN_V1.md) — HTX 趋势开仓与持仓管理重构计划：执行链路前置、退出引擎、冷却解冻、多周期和外部仓位处理分批计划
 - [HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1](architecture-refactor/HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1.md) — HTX 趋势退出系统重构计划：止损、止盈、分批减仓、利润保护、趋势衰竭、时间退出、模型失效、MFE/MAE 与回测指标
