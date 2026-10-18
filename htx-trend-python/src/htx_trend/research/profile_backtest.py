@@ -28,6 +28,10 @@ from .features import performance
 from .market_facts import FrozenMarketFacts
 from .conditions import research_confirmation_passes
 from .model_conditions import model_condition_passes, model_condition_status, required_periods
+from .independent_conditions import (
+    daily_trend_persistence_decisions,
+    donchian_retest_reclaim_decisions,
+)
 from .replay import load_manifest_candles
 from .store import FileEvidenceStore, digest
 
@@ -45,6 +49,7 @@ class ResearchVariant:
     entry_parameters: tuple[tuple[str, int | Decimal | bool], ...] = ()
     model_condition: str | None = None
     model_condition_version: str | None = None
+    structural_condition: str | None = None
 
 
 DEFAULT_VARIANTS = (
@@ -140,8 +145,10 @@ class ProfileLifecycleResearch:
             self.store.checkpoint(checkpoint, {"plan_hash": plan_hash})
         series = {symbol: load_manifest_candles(self.store, self.manifest_hash, symbol=symbol,
                                                 period=self.spec.entry_period) for symbol in symbols}
-        context_periods = tuple(sorted({period for variant in variants
-                                       for period in required_periods(variant.model_condition)}))
+        context_periods = tuple(sorted(
+            {period for variant in variants for period in required_periods(variant.model_condition)}
+            | ({"1day"} if any(item.structural_condition == "R3_4H_1D_TREND_PERSISTENCE_3"
+                                for item in variants) else set())))
         contexts = {symbol: {period: load_manifest_candles(
             self.store, self.manifest_hash, symbol=symbol, period=period)
             for period in context_periods} for symbol in symbols}
@@ -153,8 +160,19 @@ class ProfileLifecycleResearch:
                           for symbol, candles in series.items()
                           for config_key, config in {config_keys[item.variant_id]: configs[item.variant_id]
                                                      for item in variants}.items()}
-        decisions = {(symbol, variant.variant_id): decision_cache[(symbol, config_keys[variant.variant_id])]
-                     for symbol in symbols for variant in variants}
+        decisions = {}
+        structural_traces = {}
+        for symbol in symbols:
+            for variant in variants:
+                current = decision_cache[(symbol, config_keys[variant.variant_id])]
+                if variant.structural_condition == "R3_15M_DONCHIAN_RETEST_RECLAIM":
+                    current, traces = donchian_retest_reclaim_decisions(series[symbol], current)
+                    structural_traces[f"{symbol}:{variant.variant_id}"] = [asdict(item) for item in traces]
+                elif variant.structural_condition == "R3_4H_1D_TREND_PERSISTENCE_3":
+                    current, traces = daily_trend_persistence_decisions(
+                        series[symbol], current, contexts[symbol]["1day"])
+                    structural_traces[f"{symbol}:{variant.variant_id}"] = [asdict(item) for item in traces]
+                decisions[(symbol, variant.variant_id)] = current
         diagnostics = {(variant.variant_id, split[0]): self._candidate_diagnostics(
             series, {symbol: decisions[(symbol, variant.variant_id)] for symbol in symbols},
             variant, split[1], split[2], contexts)
@@ -214,6 +232,7 @@ class ProfileLifecycleResearch:
                 "contract_size": "HTX point-in-time contract fact bound by market_facts_manifest_hash",
             },
             "variants": [asdict(item) for item in variants],
+            "structural_condition_traces": structural_traces,
             "results": result_rows,
             "conclusions": conclusions,
             "walk_forward": walk_forward,
@@ -242,7 +261,8 @@ class ProfileLifecycleResearch:
                                variant: ResearchVariant, start_percent: int, end_percent: int,
                                contexts: dict[str, dict[str, Sequence[Candle]]]) -> dict[str, int]:
         unfiltered = replace(variant, confirmation=None, minimum_score=None, condition_version=None,
-                             model_condition=None, model_condition_version=None)
+                             model_condition=None, model_condition_version=None,
+                             structural_condition=None)
         available = passed = unknown = 0
         for symbol, candles in series.items():
             start = max(self.window, len(candles)*start_percent//100)
@@ -468,6 +488,9 @@ class ProfileLifecycleResearch:
                 candidate=selected, decision=decision,
                 entry_candles=candles[max(0, index-159):index+1], context=context or {}):
             return None
+        if variant.structural_condition not in (
+                None, "R3_15M_DONCHIAN_RETEST_RECLAIM", "R3_4H_1D_TREND_PERSISTENCE_3"):
+            raise ValueError(f"unknown structural condition: {variant.structural_condition}")
         return selected
 
     def _conclusions(self, rows: list[dict], values: dict[tuple[str,str], list[Decimal]],

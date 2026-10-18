@@ -9,6 +9,8 @@ from htx_trend.research.independent_round import (
     audit_independent_data,
     preregister_independent_round,
 )
+from htx_trend.research.independent_experiments import IndependentProfileStudy
+from htx_trend.timeframes import TimeframeProfile
 from htx_trend.market_data import period_anchor_seconds, period_seconds
 from htx_trend.research.store import FileEvidenceStore
 
@@ -72,3 +74,40 @@ def test_r3_plan_has_two_frozen_hypotheses_and_no_search_grid(tmp_path: Path) ->
         assert len(payload["hypotheses"]) == 2
         assert all(item["mutable_parameters"] == [] for item in payload["hypotheses"])
         assert payload["selection"] == "single-hypothesis paired ablation; no parameter search"
+
+
+@pytest.mark.parametrize("profile", tuple(TimeframeProfile))
+def test_r4_r5_studies_stop_before_reading_outcomes_when_time_gate_is_closed(
+        tmp_path: Path, profile: TimeframeProfile) -> None:
+    with FileEvidenceStore(tmp_path) as store:
+        plan = preregister_independent_round(store)
+        dataset, facts = _manifests(store)
+        readiness = audit_independent_data(store, plan, dataset, facts)
+        result = IndependentProfileStudy(store, readiness, profile).run()
+        payload = store.get(result)["payload"]
+        assert payload["stage"] == ("R4" if profile is TimeframeProfile.INTRADAY_15M else "R5")
+        assert payload["conclusion"] == "INSUFFICIENT_EVIDENCE"
+        assert payload["reason"] == "DATA_TIME_GATE_NOT_READY"
+        assert payload["strategy_outcomes_read"] is False
+        assert payload["test_segment"] == "NOT_READ"
+        assert payload["lifecycle_result_ref"] is None
+        assert store.verify(result)["integrity"] == "VERIFIED"
+
+
+def test_r4_r5_reject_readiness_that_does_not_reference_frozen_hypothesis(tmp_path: Path) -> None:
+    with FileEvidenceStore(tmp_path) as store:
+        plan = preregister_independent_round(store)
+        dataset, facts = _manifests(store)
+        readiness = audit_independent_data(store, plan, dataset, facts)
+        readiness_payload = store.get(readiness)["payload"]
+        wrong_plan = store.put("independent_research_plan", {
+            **store.get(plan)["payload"], "hypotheses": (),
+        })
+        forged = store.put("independent_data_readiness", {
+            **readiness_payload,
+            "plan_ref": wrong_plan,
+            "plan_hash": store.get(readiness)["payload"]["plan_hash"],
+        }, refs=(wrong_plan, dataset, facts))
+        with pytest.raises(ValueError, match="plan hash differs"):
+            IndependentProfileStudy(
+                store, forged, TimeframeProfile.INTRADAY_15M).run()
