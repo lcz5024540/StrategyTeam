@@ -79,6 +79,52 @@ def test_retest_reclaim_invalidates_before_reclaim() -> None:
     assert traces[0].status == "INVALIDATED"
 
 
+def test_retest_reclaim_invalidates_when_one_bar_also_closes_back_above_boundary() -> None:
+    bars = (_candle(0, "101"), _candle(900, "101", low="94", high="102"))
+    first = _decision(bars[0], _candidate(0))
+    decisions = (replace(first, signal=replace(first.signal, breakout_high=Decimal("100"))),
+                 _decision(bars[1], None))
+    transformed, traces = donchian_retest_reclaim_decisions(bars, decisions)
+    assert transformed[1].candidates == ()
+    assert traces[0].status == "INVALIDATED"
+
+
+def test_retest_reclaim_expires_after_third_following_bar() -> None:
+    bars = tuple(_candle(index*900, "103", low="102", high="104") for index in range(5))
+    first = _decision(bars[0], _candidate(0))
+    decisions = (replace(first, signal=replace(first.signal, breakout_high=Decimal("100"))),
+                 *(_decision(item, None) for item in bars[1:]))
+    transformed, traces = donchian_retest_reclaim_decisions(bars, decisions)
+    assert all(not item.candidates for item in transformed if item is not None)
+    assert [item.status for item in traces] == ["WAITING", "WAITING", "WAITING", "EXPIRED"]
+
+
+def test_retest_reclaim_tracks_repeated_breakouts_independently() -> None:
+    bars = (_candle(0, "101", low="100.5", high="102"),
+            _candle(900, "102", low="101.5", high="103"),
+            _candle(1800, "101.5", low="99.5", high="103"))
+    first = _decision(bars[0], _candidate(0))
+    second = _decision(bars[1], _candidate(900))
+    decisions = (replace(first, signal=replace(first.signal, breakout_high=Decimal("100"))),
+                 replace(second, signal=replace(second.signal, breakout_high=Decimal("101"))),
+                 _decision(bars[2], None))
+    transformed, traces = donchian_retest_reclaim_decisions(bars, decisions)
+    assert len(transformed[2].candidates) == 2
+    assert sum(item.status == "PASS" for item in traces) == 2
+
+
+def test_short_retest_reclaim_uses_mirrored_boundary_rules() -> None:
+    bars = (_candle(0, "99", low="98", high="99.5"),
+            _candle(900, "99.5", low="98", high="100.2"))
+    first = _decision(bars[0], _candidate(0, TrendSide.SHORT))
+    decisions = (replace(first, signal=replace(first.signal, breakout_low=Decimal("100"))),
+                 _decision(bars[1], None))
+    transformed, traces = donchian_retest_reclaim_decisions(bars, decisions)
+    assert transformed[1].candidates[0].side is TrendSide.SHORT
+    assert transformed[1].candidates[0].entry_price == Decimal("99.5")
+    assert traces[0].status == "PASS"
+
+
 def test_daily_persistence_ignores_future_bars_and_requires_three_prefixes() -> None:
     daily = tuple(_candle(index*86_400, str(100+index), low=str(99+index), high=str(101+index))
                   for index in range(130))
@@ -96,6 +142,16 @@ def test_daily_persistence_is_unknown_without_indicator_warmup() -> None:
     daily = tuple(_candle(index*86_400, str(100+index)) for index in range(122))
     assert daily_trend_persistence_status(
         daily, signal_close=10**9, side=TrendSide.LONG) == ("UNKNOWN", ())
+
+
+def test_daily_persistence_supports_short_trend() -> None:
+    daily = tuple(_candle(index*86_400, str(300-index),
+                          low=str(299-index), high=str(301-index))
+                  for index in range(130))
+    status, evidence = daily_trend_persistence_status(
+        daily, signal_close=daily[-1].open_time+86_400, side=TrendSide.SHORT)
+    assert status == "PASS"
+    assert all(item["result"] == "PASS" for item in evidence)
 
 
 def test_daily_persistence_decisions_store_unknown_trace_and_filter_candidate() -> None:

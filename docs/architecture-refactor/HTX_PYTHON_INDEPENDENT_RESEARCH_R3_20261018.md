@@ -103,7 +103,7 @@ cd htx-trend-python
 
 ## 6. 验证
 
-- Python 全量测试：252 passed；
+- Python 全量测试：264 passed；
 - `compileall`、CLI help 和 wheel 构建通过；
 - readiness evidence 闭包 50 对象 `VERIFIED`；
 - draw.io XML 与 `git diff --check` 通过；
@@ -146,3 +146,8 @@ profile 时间覆盖、开发段基线完整交易≥30，之后才运行单条�
 两个结果都明确记录 `strategy_outcomes_read=false`、TEST=`NOT_READ`、
 `reason=DATA_TIME_GATE_NOT_READY` 和 `p7_nominee=null`。这表示 R4/R5 已启动并完成工程接线，
 实际生命周期实验尚未达到允许运行的外部时间条件。
+
+R4/R5 的合成数据全链路工程验收已经通过，覆盖时间门禁、基线样本门禁、四成本开发
+矩阵、账本/诊断/trace 一致性、Long/Short、重复突破、失效与过期、多周期无前视、统计
+可重复和 nominee 正反分支。该验收不读取真实早期收益，也不构成策略有效性证据。详见
+[`HTX_PYTHON_R4_R5_ENGINEERING_ACCEPTANCE_20261018.md`](HTX_PYTHON_R4_R5_ENGINEERING_ACCEPTANCE_20261018.md)。

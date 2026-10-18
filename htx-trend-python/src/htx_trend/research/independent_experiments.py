@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from ..models import ModelCode
 from ..timeframes import TimeframeProfile
@@ -43,9 +43,11 @@ class IndependentProfileStudy:
     """Execute one frozen R3 hypothesis without ever reading the TEST segment."""
 
     def __init__(self, store: FileEvidenceStore, readiness_ref: str,
-                 profile: TimeframeProfile) -> None:
+                 profile: TimeframeProfile, *,
+                 runner_factory: Callable[..., ProfileLifecycleResearch] = ProfileLifecycleResearch) -> None:
         self.store, self.readiness_ref, self.profile = store, readiness_ref, profile
         self.study = PROFILE_STUDIES[profile]
+        self.runner_factory = runner_factory
 
     def run(self, symbols: Sequence[str] = ("BTC-USDT", "ETH-USDT")) -> str:
         readiness = self._readiness()
@@ -78,12 +80,13 @@ class IndependentProfileStudy:
         if not profile_gate["coverage_ready"]:
             return self._blocked(plan_ref, readiness, "DATA_TIME_GATE_NOT_READY")
 
-        runner = ProfileLifecycleResearch(
+        runner = self.runner_factory(
             self.store, manifest_ref, market_ref, self.profile,
             window=200 if self.profile is TimeframeProfile.SWING_4H else 160)
         baseline_ref = runner.run(symbols=symbols, variants=(self.study["baseline"],),
                                   include_test=False, seed=R3_SEED)
-        baseline_payload = self.store.get(baseline_ref)["payload"]
+        baseline_payload = self._lifecycle_payload(
+            baseline_ref, manifest_ref, market_ref, (self.study["baseline"],))
         development_trades = sum(
             int(row["metrics"]["trades"])
             for row in baseline_payload["results"]
@@ -100,7 +103,9 @@ class IndependentProfileStudy:
             variants=(self.study["baseline"], self.study["condition"]),
             include_test=False,
             seed=R3_SEED)
-        lifecycle = self.store.get(lifecycle_ref)["payload"]
+        lifecycle = self._lifecycle_payload(
+            lifecycle_ref, manifest_ref, market_ref,
+            (self.study["baseline"], self.study["condition"]))
         analysis = self._analyze(lifecycle, symbols)
         eligible = analysis["conclusion"] == "ELIGIBLE_FOR_P7"
         return self.store.put("independent_profile_study_result", {
@@ -144,6 +149,56 @@ class IndependentProfileStudy:
             raise ValueError("requested R4/R5 condition is absent from the frozen R3 plan")
         if hypothesis.get("mutable_parameters"):
             raise ValueError("R3 profile study cannot execute a parameter search grid")
+        return payload
+
+    def _lifecycle_payload(self, ref: str, manifest_ref: str, market_ref: str,
+                           variants: Sequence[ResearchVariant]) -> dict[str, Any]:
+        self.store.verify(ref)
+        envelope = self.store.get(ref)
+        if envelope["kind"] != "profile_lifecycle_research":
+            raise ValueError("R4/R5 runner returned the wrong lifecycle artifact kind")
+        payload = envelope["payload"]
+        if payload.get("result_kind") != "STRATEGY_SIMULATION":
+            raise ValueError("R4/R5 requires a strategy simulation result")
+        if payload.get("profile") != self.profile.value:
+            raise ValueError("R4/R5 lifecycle result profile differs from its plan")
+        if payload.get("manifest_hash") != manifest_ref or payload.get("market_facts_manifest_hash") != market_ref:
+            raise ValueError("R4/R5 lifecycle result evidence differs from its plan")
+        if payload.get("test_segment") != "NOT_READ":
+            raise ValueError("R4/R5 lifecycle result must keep TEST unread")
+        if digest(payload.get("variants")) != digest([asdict(item) for item in variants]):
+            raise ValueError("R4/R5 lifecycle result variants differ from the frozen plan")
+        expected = {(variant.variant_id, cost, split)
+                    for variant in variants
+                    for cost in ("ZERO", "OPTIMISTIC", "BASE", "CONSERVATIVE")
+                    for split in ("TRAIN", "VALIDATION")}
+        actual = {(row.get("variant_id"), row.get("cost"), row.get("split"))
+                  for row in payload.get("results", ())}
+        if actual != expected or len(payload.get("results", ())) != len(expected):
+            raise ValueError("R4/R5 lifecycle result does not contain the frozen four-cost development matrix")
+        for row in payload["results"]:
+            metrics = row.get("metrics", {})
+            ledger = row.get("trade_ledger", ())
+            if int(metrics.get("trades", -1)) != len(ledger):
+                raise ValueError("R4/R5 lifecycle trade ledger differs from its metrics")
+            diagnostics = row.get("candidate_diagnostics", {})
+            available = int(diagnostics.get("available", -1))
+            passed = int(diagnostics.get("passed", -1))
+            rejected = int(diagnostics.get("rejected", -1))
+            unknown = int(diagnostics.get("unknown", -1))
+            failed = int(diagnostics.get("failed", -1))
+            if available < 0 or available != passed+rejected or rejected != unknown+failed:
+                raise ValueError("R4/R5 candidate diagnostics are internally inconsistent")
+        structural = tuple(item for item in variants if item.structural_condition)
+        if structural:
+            traces = payload.get("structural_condition_traces", {})
+            for variant in structural:
+                if not any(key.endswith(f":{variant.variant_id}") for key in traces):
+                    raise ValueError("R4/R5 lifecycle result lacks structural condition traces")
+            allowed = {"PASS", "FAIL", "UNKNOWN", "WAITING", "INVALIDATED", "EXPIRED"}
+            if any(str(row.get("status")) not in allowed
+                   for rows in traces.values() for row in rows):
+                raise ValueError("R4/R5 lifecycle result contains an invalid condition status")
         return payload
 
     def _blocked(self, plan_ref: str, readiness: dict[str, Any], reason: str, *,

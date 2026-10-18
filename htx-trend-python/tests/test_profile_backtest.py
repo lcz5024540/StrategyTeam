@@ -4,6 +4,7 @@ from dataclasses import replace
 import pytest
 
 from htx_trend.market_data import Candle
+from htx_trend.models import ModelCode
 from htx_trend.research.profile_backtest import (DEFAULT_VARIANTS, REDUNDANT_RECORD_ONLY_VARIANTS,
                                                  ProfileLifecycleResearch, ResearchVariant,
                                                  provisional_backtest_admission)
@@ -28,7 +29,7 @@ def _candles(step: int, count: int, *, offset: int = 0):
 def _manifest(store: FileEvidenceStore, count: int = 180):
     pages = []
     for symbol in ("BTC-USDT", "ETH-USDT"):
-        for period, step in (("15min", 900), ("4hour", 14400)):
+        for period, step in (("15min", 900), ("4hour", 14400), ("1day", 86400)):
             values = _candles(step, count)
             page = store.put("kline_page", {"symbol": symbol, "period": period,
                 "integrity": "COMPLETE", "candles": [{"open_time": x.open_time, "bar": x} for x in values]})
@@ -124,3 +125,25 @@ def test_parameter_override_research_keeps_entry_and_execution_configs_separate(
         assert payload["variants"][0]["entry_parameters"] == [["breakout_lookback", 16]]
         assert all(row["candidate_diagnostics"]["available"] >=
                    row["candidate_diagnostics"]["passed"] for row in payload["results"])
+
+
+@pytest.mark.parametrize(("profile", "variant"), (
+    (TimeframeProfile.INTRADAY_15M, ResearchVariant(
+        "R3_15M_DONCHIAN_RETEST_RECLAIM", (ModelCode.DONCHIAN_BREAKOUT,),
+        structural_condition="R3_15M_DONCHIAN_RETEST_RECLAIM")),
+    (TimeframeProfile.SWING_4H, ResearchVariant(
+        "R3_4H_1D_TREND_PERSISTENCE_3", (ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,),
+        structural_condition="R3_4H_1D_TREND_PERSISTENCE_3")),
+))
+def test_shared_lifecycle_runner_applies_r3_structural_condition(
+        tmp_path, profile: TimeframeProfile, variant: ResearchVariant) -> None:
+    with FileEvidenceStore(tmp_path) as store:
+        manifest = _manifest(store, 180)
+        facts = _market_facts(store, 180)
+        result = ProfileLifecycleResearch(
+            store, manifest, facts, profile).run(variants=(variant,), include_test=False)
+        payload = store.get(result)["payload"]
+        trace_key = f"BTC-USDT:{variant.variant_id}"
+        assert trace_key in payload["structural_condition_traces"]
+        assert payload["test_segment"] == "NOT_READ"
+        assert len(payload["results"]) == 8
