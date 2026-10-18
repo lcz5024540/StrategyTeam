@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
 from dataclasses import replace
@@ -27,7 +28,7 @@ from .strategy_decision import LEGACY_STRATEGY_VERSION
 from .strategy_profiles import profile_for_version, profile_strategy
 from .strategy_profiles import profile_entry_config
 from .timeframes import TimeframeProfile
-from .live_approval import LegacyLiveWaiver, LiveApproval, LiveRiskPolicy
+from .live_approval import LegacyLiveWaiver, LiveRiskPolicy
 from .research.store import FileEvidenceStore
 
 
@@ -56,7 +57,12 @@ def _load_admission(strategy_version: str) -> StrategyAdmissionArtifact | None:
     raw = os.environ.get("HTX_TREND_STRATEGY_ADMISSION_PATH", "").strip()
     if not raw:
         raise SystemExit(f"new strategy {strategy_version} requires HTX_TREND_STRATEGY_ADMISSION_PATH")
-    artifact = StrategyAdmissionArtifact.load(Path(raw))
+    from .admission import validate_admission
+    path = Path(raw)
+    if json.loads(path.read_text()).get("schema") == "htx-admission-g2":
+        artifact = validate_admission(path, "OBSERVE")[1]
+    else:
+        artifact = StrategyAdmissionArtifact.load(path)
     if artifact.strategy_version != strategy_version:
         raise SystemExit("strategy runtime and admission artifact versions differ")
     return artifact
@@ -80,6 +86,11 @@ def _validate_live_approval(instance, account, admission, scan_configs) -> None:
     source_commit = os.environ.get("HTX_PYTHON_SOURCE_COMMIT", "").strip()
     config_fingerprint = (instance.config_fingerprint or "").strip()
     profiles = tuple(item.timeframe_profile.value for item in scan_configs if item.entry_enabled)
+    from .admission import runtime_guard
+    approvals = [runtime_guard(instance, account, enabled_profile)[1]
+                 for enabled_profile in profiles]
+    if not profiles:
+        raise ValueError("LIVE requires an enabled profile")
     if instance.strategy_name == LEGACY_STRATEGY_VERSION:
         path = os.environ.get("HTX_TREND_LEGACY_LIVE_WAIVER_PATH", "").strip()
         if not path:
@@ -100,7 +111,7 @@ def _validate_live_approval(instance, account, admission, scan_configs) -> None:
     path = os.environ.get("HTX_TREND_LIVE_APPROVAL_PATH", "").strip()
     if not path or admission is None:
         raise SystemExit("new strategy LIVE requires approval and sealed admission")
-    approval = LiveApproval.load(Path(path))
+    approval = approvals[0]
     profile = profile_for_version(instance.strategy_name)
     if profile is None or len(profiles) != 1 or profiles[0] != profile.value:
         raise SystemExit("new strategy LIVE instance must own exactly its versioned profile")

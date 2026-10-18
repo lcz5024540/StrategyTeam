@@ -1,3 +1,13 @@
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def authorized_boundary(monkeypatch):
+    # Downstream gate unit tests assume authorization has already succeeded.
+    # G2 integration tests call the real guard without this module fixture.
+    monkeypatch.setattr("htx_trend.admission.runtime_guard", lambda *args: None)
+
+
 from decimal import Decimal
 
 from htx_trend.account_facts import AccountSnapshot

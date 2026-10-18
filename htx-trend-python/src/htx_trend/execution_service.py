@@ -154,6 +154,13 @@ class HtxTrendEntryExecutor:
                 and not self._config.allow_legacy_swing_live):
             gate = GateResult(False, "LEGACY_4H_DISABLED", "legacy 4h LIVE requires explicit opt-in")
             return EntrySubmission(False, gate, None, None, None, gate.reason)
+        if self._instance.execution_mode == "LIVE":
+            from .admission import runtime_guard
+            try:
+                runtime_guard(self._instance, self._account, timeframe_profile)
+            except (ValueError, KeyError, TypeError, OSError) as error:
+                gate = GateResult(False, "LIVE_APPROVAL", str(error))
+                return EntrySubmission(False, gate, None, None, None, gate.reason)
         # Java loads the latest completed trade before its cooldown gate.  Live
         # Python used to leave this as None, which silently disabled cooldown.
         if prior_trade is None:

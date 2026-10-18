@@ -61,6 +61,13 @@ def main() -> None:
     dataset.add_argument("--admission", type=Path)
     admission = commands.add_parser("validate-admission", help="validate a sealed strategy admission artifact")
     admission.add_argument("--artifact", required=True, type=Path)
+    admission.add_argument("--surface", required=True)
+    approval = commands.add_parser("validate-approval", help="cross-validate G2 approval and admission")
+    approval.add_argument("--artifact", required=True, type=Path)
+    approval.add_argument("--admission", required=True, type=Path)
+    approval.add_argument("--context", required=True, type=Path)
+    approval.add_argument("--surface", default="LIVE")
+    commands.add_parser("self-test", help="run offline synthetic artifact checks")
     waiver = commands.add_parser("validate-live-waiver", help="validate a sealed legacy LIVE waiver")
     waiver.add_argument("--artifact", required=True, type=Path)
     live_approval = commands.add_parser("validate-live-approval", help="validate a sealed V2 LIVE approval")
@@ -149,8 +156,16 @@ def main() -> None:
         report = replay_report(load_snapshots(args.evidence), strategy_version=args.strategy_version, admission=admitted)
         save_report(args.output, report)
         print(json.dumps({"status": "written", "output": str(args.output), "snapshots": report.snapshots})); return
+    if args.command == "self-test":
+        from .admission_self_test import run
+        print(json.dumps(run())); return
+    if args.command == "validate-approval":
+        from .admission import validate_approval
+        value, artifact = validate_approval(args.artifact, args.admission, json.loads(args.context.read_text()), args.surface)
+        print(json.dumps({"status": "valid", "seal_hash": value["seal_hash"]})); return
     if args.command == "validate-admission":
-        artifact = StrategyAdmissionArtifact.load(args.artifact)
+        from .admission import validate_admission
+        _, artifact = validate_admission(args.artifact, args.surface)
         print(json.dumps({"status": "valid", "strategy_version": artifact.strategy_version,
                           "artifact_hash": artifact.artifact_hash,
                           "allowed_surfaces": [item.value for item in artifact.allowed_surfaces]})); return
