@@ -30,10 +30,10 @@ PROFILE_STUDIES = {
     TimeframeProfile.SWING_4H: {
         "stage": "R5",
         "baseline": ResearchVariant(
-            "R3_4H_EMA_BASE", (ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,)),
+            "R3_4H_EMA_BASE", (ModelCode.EMA_MOMENTUM_CONTINUATION,)),
         "condition": ResearchVariant(
             "R3_4H_1D_TREND_PERSISTENCE_3",
-            (ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,),
+            (ModelCode.EMA_MOMENTUM_CONTINUATION,),
             structural_condition="R3_4H_1D_TREND_PERSISTENCE_3"),
     },
 }

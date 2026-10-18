@@ -32,6 +32,9 @@ from .strategy_profiles import profile_entry_config, profile_for_version, profil
 from .research.regime import RegimeStatus, profile_regime
 
 
+DEFAULT_LIVE_CONTRACTS = ("BTC-USDT", "ETH-USDT")
+
+# Broad observation universe, never the implicit LIVE pool.
 DEFAULT_TREND_CONTRACTS = (
     "BTC-USDT", "ETH-USDT", "SOL-USDT", "XRP-USDT", "BNB-USDT", "DOGE-USDT", "ADA-USDT",
     "TRX-USDT", "LINK-USDT", "AVAX-USDT", "SUI-USDT", "HYPE-USDT", "HBAR-USDT", "PONS-USDT",
@@ -113,7 +116,7 @@ class LiveTrendWorkerConfig:
 
         defaults = cls(())
         config = cls(
-            contracts=values("HTX_TREND_CONTRACTS", DEFAULT_TREND_CONTRACTS),
+            contracts=values("HTX_TREND_CONTRACTS", DEFAULT_LIVE_CONTRACTS),
             enabled=flag("HTX_TREND_ENABLED", defaults.enabled),
             observe_only=flag("HTX_TREND_OBSERVE_ONLY", defaults.observe_only),
             entry_enabled=flag("HTX_TREND_ENTRY_ENABLED", defaults.entry_enabled),

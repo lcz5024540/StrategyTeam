@@ -79,6 +79,8 @@ class ExecutionConfig:
     # boundaries.
     hard_risk_limits_enabled: bool = False
     account_equity_usdt: Decimal = Decimal("300")
+    # Configured capital, margin basis: 300U * 10% = 30U (300U notional at 10x).
+    max_total_margin_rate: Decimal = Decimal("0.10")
     max_risk_per_trade_usdt: Decimal = Decimal("6")
     max_risk_per_trade_rate: Decimal = Decimal("0.005")
     max_total_open_risk_rate: Decimal = Decimal("0.015")
@@ -213,6 +215,8 @@ class ExecutionFacts:
     same_direction_position_count: int | None = None
     reserved_notional_usdt: Decimal = ZERO
     reserved_risk_usdt: Decimal = ZERO
+    reserved_margin_usdt: Decimal | None = None
+    used_margin_usdt: Decimal | None = None
     risk_capacity_usdt: Decimal | None = None
 
 
@@ -328,9 +332,9 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
     emit("gate.funding_available", True, funding.rate, "required")
     side_cost = funding.rate if candidate.side is TrendSide.LONG else -funding.rate
     if side_cost > config.max_adverse_funding_rate:
-        emit("gate.funding_cost", False, side_cost, config.max_adverse_funding_rate, "adverse funding")
-        return GateResult(False, "FUNDING", f"funding cost blocked side={candidate.side.value} funding={funding.rate}")
-    emit("gate.funding_cost", True, side_cost, config.max_adverse_funding_rate)
+        emit("gate.funding_rate", False, side_cost, config.max_adverse_funding_rate, "adverse funding")
+        return GateResult(False, "FUNDING", f"current funding rate blocked side={candidate.side.value} funding={funding.rate}")
+    emit("gate.funding_rate", True, side_cost, config.max_adverse_funding_rate)
     close_epoch = candidate.bar_time + period_seconds(period)
     age = now_epoch - close_epoch
     if age < 0:
@@ -433,6 +437,17 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
         return GateResult(False, "SIZING", planned_size.reason, planned_price, planned_size)
     emit("sizing.valid_contracts", True, planned_size.contracts, ">0", planned_size.reason)
     if config.hard_risk_limits_enabled:
+        from .live_approval import validate_margin_config, projected_margin
+        try:
+            cap = validate_margin_config(config)
+            margin = projected_margin(facts.used_margin_usdt, facts.reserved_margin_usdt,
+                                      planned_size.notional, facts.leverage)
+            if margin > cap:
+                raise ValueError("total margin exposure exceeds 10% capital")
+        except ValueError as error:
+            emit("risk.total_margin", False, None, "margin <= 10% configured capital", str(error))
+            return GateResult(False, "RISK_LIMIT", str(error), planned_price, planned_size)
+        emit("risk.total_margin", True, margin, cap)
         account_equity = facts.account_equity_usdt
         if account_equity is None or account_equity <= ZERO:
             emit("risk.account_equity", False, account_equity, ">0")
@@ -453,7 +468,7 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
                               planned_price, planned_size)
         emit("risk.max_total_open", True, projected_total_risk, max_total_risk)
         emit("risk.total_notional", True, facts.reserved_notional_usdt, None,
-             "account-wide notional gate disabled; position count and exchange margin remain enforced",
+             "notional is audit-only; total margin is capped separately",
              status="SKIPPED")
         direction_count = facts.same_direction_position_count
         if direction_count is None:

@@ -42,6 +42,12 @@ def decrypt_if_encrypted(value: str, *, private_key_path: str | None = None) -> 
 
 def materialize(record: AccountCredentialRecord, *, private_key_path: str | None = None,
                 require_encrypted: bool = False) -> HtxCredentials:
+    # LIVE secrets come exclusively from encrypted DB records. Reject even
+    # unused plaintext env credentials so a deployment cannot rely on them.
+    if require_encrypted and any(environ.get(name) for name in (
+        "HTX_API_KEY", "HTX_SECRET_KEY", "HTX_ACCESS_KEY", "HTX_API_SECRET",
+        "HUOBI_API_KEY", "HUOBI_SECRET_KEY")):
+        raise RuntimeError("LIVE forbids plaintext credential environment variables")
     if require_encrypted and not all(
         value.startswith("ENC(") and value.endswith(")")
         for value in (record.api_key_cipher, record.secret_key_cipher)

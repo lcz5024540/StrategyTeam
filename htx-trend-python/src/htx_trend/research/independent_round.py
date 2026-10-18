@@ -45,11 +45,11 @@ HYPOTHESES = (
     PreregisteredHypothesis(
         "R3_4H_1D_TREND_PERSISTENCE_3",
         TimeframeProfile.SWING_4H.value,
-        "EMA_VWAP_MOMENTUM_CONTINUATION",
+        "EMA_MOMENTUM_CONTINUATION",
         "r3-v1",
         "the latest three fully closed 1d bars must each have side-aligned EMA20/60/120 stack, "
         "OLS close slope20, ROC12 and ADX14>=16",
-        "R2 4h EMA/VWAP was profitable in one validation segment but unstable across windows; "
+        "R2 4h EMA momentum was profitable in one validation segment but unstable across windows; "
         "persistence targets regime transitions without changing the entry or exit thresholds",
     ),
 )

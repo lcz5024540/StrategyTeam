@@ -100,6 +100,11 @@ class StrategySpec:
 
 @dataclass(frozen=True, slots=True)
 class DecisionContext:
+    """Decision identity and profile hashes; rate gates never represent settled funding PnL.
+
+    holding.funding_rate_exit is an action trigger;
+    attribution.cumulative_funding_pnl records settled funding events only.
+    """
     decision_id: str
     strategy_version: str
     surface: str

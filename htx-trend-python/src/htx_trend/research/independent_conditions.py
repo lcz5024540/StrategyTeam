@@ -106,7 +106,7 @@ def daily_trend_persistence_decisions(
     decisions: Sequence[StrategyDecision | None],
     daily_candles: Sequence[Candle],
 ) -> tuple[tuple[StrategyDecision | None, ...], tuple[DailyPersistenceTrace, ...]]:
-    """Filter 4h EMA/VWAP candidates and retain every condition evaluation."""
+    """Filter 4h EMA momentum candidates and retain every condition evaluation."""
     if len(candles) != len(decisions):
         raise ValueError("candles and decisions must have identical lengths")
     output: list[StrategyDecision | None] = list(decisions)
@@ -117,7 +117,7 @@ def daily_trend_persistence_decisions(
         passed: list[ModelCandidate] = []
         signal_close = candle.open_time+period_seconds(decision.period)
         for candidate in decision.candidates:
-            if candidate.model is not ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION:
+            if candidate.model is not ModelCode.EMA_MOMENTUM_CONTINUATION:
                 continue
             status, evidence = daily_trend_persistence_status(
                 daily_candles, signal_close=signal_close, side=candidate.side)

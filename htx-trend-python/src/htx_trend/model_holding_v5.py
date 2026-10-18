@@ -9,7 +9,7 @@ from .exit_contract_v5 import EntryThesisV5, ModelState, Side
 SUPPORTED_MODELS = frozenset({
     "FIB_PULLBACK_CONTINUATION",
     "DONCHIAN_BREAKOUT",
-    "EMA_VWAP_MOMENTUM_CONTINUATION",
+    "EMA_MOMENTUM_CONTINUATION",
 })
 
 

@@ -290,14 +290,14 @@ def test_diagnosis_ddl_has_bar_identity_and_mock_sql_mogrifies():
 
 
 @pytest.mark.parametrize('bars,period,expected', [
-    (_uptrend(), '15min', 'fed1590ca7b3379e424a523389ac3062ef928e3f25ab7213c97e49847331ed17'),
-    (_uptrend(), '4hour', '5519ac83dd9b768ce92f3eef8aa4724dc23d4b548f24cd71afc62d94398dc562'),
-    (_downtrend(), '15min', '88304c1a263add58d1fea0cc2c5d908d03b9641014a39facd23962a19fd2b9d8'),
-    (_downtrend(), '4hour', '3698bd06bb389e2572b107b8f6863b42a4b99461ddb655da4523cdd151927cad'),
+    (_uptrend(), '15min', '6d623a346904d2296e29c6f65ddc2c892aac0134bc6ac98c0b28d081edbf16cc'),
+    (_uptrend(), '4hour', '173b37055137169c3ba3edb437f84a2ee9ba801afd86bd6b20cb0935c6e04ce8'),
+    (_downtrend(), '15min', 'ca885fbcbef8c5a78779227cd82e78e671c41514874725da4a114f61809942ae'),
+    (_downtrend(), '4hour', '268c546ca1359edc84236455f9dd01181f82c3f67e8e6481511a388981a343c9'),
     (_flat(), '15min', 'a822042e11fdb784beb8cfeece7af81f7cfd465abd24737d4b8493040adbf02d'),
     (_flat(), '4hour', '2a6537f9207c4cd07554332aee7263445f37c178961b9a3f33597634e1eea465'),
 ])
-def test_decision_hash_goldens_from_70d0a0e1(bars, period, expected):
+def test_decision_hash_goldens_after_g1_model_rename(bars, period, expected):
     decision = HtxStrategyDecisionEngine().decide(contract_code='BTC-USDT', period=period, candles=bars, surface='RANKING')
     assert decision.decision_hash == expected
 

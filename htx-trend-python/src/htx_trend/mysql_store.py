@@ -116,6 +116,7 @@ class RiskReservationTotals:
     notional_usdt: Decimal
     position_count: int
     risk_usdt: Decimal = Decimal("0")
+    margin_usdt: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -348,21 +349,23 @@ class HtxTrendMySqlRepository:
 
     def active_risk_reservation_totals(self, account_id: int) -> RiskReservationTotals:
         row = self._one("""SELECT COALESCE(SUM(notional_usdt),0) AS notional_usdt,COALESCE(SUM(position_count),0) AS position_count,
-            COALESCE(SUM(risk_usdt),0) AS risk_usdt
+            COALESCE(SUM(risk_usdt),0) AS risk_usdt,
+            COALESCE(SUM(COALESCE(margin_usdt,notional_usdt)),0) AS margin_usdt
             FROM strategy_risk_reservation WHERE account_id=%s AND status='RESERVED'""", (account_id,))
         return (RiskReservationTotals(Decimal(str(row["notional_usdt"])), int(row["position_count"]),
-                                      Decimal(str(row["risk_usdt"])))
-                if row else RiskReservationTotals(Decimal("0"), 0, Decimal("0")))
+                                      Decimal(str(row["risk_usdt"])), Decimal(str(row["margin_usdt"])))
+                if row else RiskReservationTotals(Decimal("0"), 0, Decimal("0"), Decimal("0")))
 
     def reserve_risk(self, *, reservation_key: str, instance: RuntimeInstance, position_key: str | None,
                      notional_usdt: Decimal, risk_usdt: Decimal, max_total_risk_usdt: Decimal,
-                     max_active_positions: int, reason: str) -> None:
+                     max_active_positions: int, reason: str, margin_usdt: Decimal | None = None,
+                     used_margin_usdt: Decimal | None = None, max_total_margin_usdt: Decimal | None = None) -> None:
         """Atomically reserve an account-level position slot before an exchange mutation.
 
         The account limit row is locked first, serializing reservations made by
         trend and arbitrage workers for the same account. The historical
         ``max_notional_usdt`` column remains stored for audit and future
-        portfolio policy, but it is not a hard trend-entry capacity gate.
+        portfolio policy. LIVE capacity uses margin_usdt under the same lock.
         """
         if instance.account_id is None or instance.account_label is None:
             raise ValueError("cannot reserve risk without an account-bound instance")
@@ -377,19 +380,26 @@ class HtxTrendMySqlRepository:
                     self._connection.commit()
                     return
                 cursor.execute("""SELECT COALESCE(SUM(notional_usdt),0) AS notional_usdt,COALESCE(SUM(position_count),0) AS position_count,
-                  COALESCE(SUM(risk_usdt),0) AS risk_usdt
+                  COALESCE(SUM(risk_usdt),0) AS risk_usdt,
+            COALESCE(SUM(COALESCE(margin_usdt,notional_usdt)),0) AS margin_usdt
                   FROM strategy_risk_reservation WHERE account_id=%s AND status='RESERVED'""", (instance.account_id,))
                 used = cursor.fetchone() or {"notional_usdt": 0, "position_count": 0, "risk_usdt": 0}
+                if instance.execution_mode == "LIVE":
+                    from .live_approval import projected_margin
+                    total = projected_margin(used_margin_usdt, Decimal(str(used["margin_usdt"])),
+                                             margin_usdt, Decimal("1"))
+                    if max_total_margin_usdt is None or not max_total_margin_usdt.is_finite() or max_total_margin_usdt <= 0 or total > max_total_margin_usdt:
+                        raise ValueError("account total margin exposure exceeded or unavailable")
                 effective_positions = min(int(limit["max_active_positions"]), max_active_positions)
                 if int(used["position_count"]) + 1 > effective_positions:
                     raise ValueError("account risk position limit exceeded")
                 if Decimal(str(used["risk_usdt"])) + risk_usdt > max_total_risk_usdt:
                     raise ValueError("account total open stop risk exceeded")
                 cursor.execute("""INSERT IGNORE INTO strategy_risk_reservation(reservation_key,account_id,account_label,strategy_family,
-                  strategy_name,instance_key,position_key,notional_usdt,risk_usdt,position_count,status,reason)
-                  VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,1,'RESERVED',%s)""",
+                  strategy_name,instance_key,position_key,notional_usdt,risk_usdt,margin_usdt,position_count,status,reason)
+                  VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1,'RESERVED',%s)""",
                   (reservation_key,instance.account_id,instance.account_label,instance.strategy_family,instance.strategy_name,
-                   instance.instance_key,position_key,notional_usdt,risk_usdt,_clip(reason,512)))
+                   instance.instance_key,position_key,notional_usdt,risk_usdt,margin_usdt,_clip(reason,512)))
             self._connection.commit()
         except Exception:
             self._connection.rollback()

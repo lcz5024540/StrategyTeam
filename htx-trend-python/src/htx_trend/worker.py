@@ -7,7 +7,7 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
-from .account_facts import HtxAccountFactsAdapter
+from .account_facts import HtxAccountFactsAdapter, AccountFactConfig
 from .credentials import materialize
 from .execution import ExecutionConfig
 from .execution_service import EntryExecutionConfig, HtxTrendEntryExecutor
@@ -63,6 +63,8 @@ def _load_admission(strategy_version: str) -> StrategyAdmissionArtifact | None:
 
 
 def _validate_live_approval(instance, account, admission, scan_configs) -> None:
+    from .live_approval import validate_margin_config
+    validate_margin_config(ExecutionConfig.from_env())
     approved_risk = LiveRiskPolicy()
     execution_risk = ExecutionConfig.from_env()
     entry_risk = EntryExecutionConfig.from_env()
@@ -185,12 +187,11 @@ def main() -> None:
             # A LIVE worker cannot opt out of the account-level guardrails.
             # Research/PAPER callers may keep the Java-compatible relaxed
             # sizing path, while real execution enforces per-trade risk and
-            # position-count boundaries. Java's account-wide notional cap is
-            # deliberately not part of the trend entry contract.
+            # position-count boundaries, plus the formal 10% margin cap.
             entry_execution = replace(ExecutionConfig.from_env(), hard_risk_limits_enabled=True)
             entry_config = EntryExecutionConfig.from_env()
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
-                facts=HtxAccountFactsAdapter(private_client), executor=live, execution=entry_execution,
+                facts=HtxAccountFactsAdapter(private_client, AccountFactConfig(leverage=entry_config.leverage)), executor=live, execution=entry_execution,
                 config=entry_config, admission=admission, evidence_store=evidence_store)
             profile_workers = []
             for scan_config in scan_configs:

@@ -157,7 +157,7 @@ def test_daily_persistence_supports_short_trend() -> None:
 def test_daily_persistence_decisions_store_unknown_trace_and_filter_candidate() -> None:
     bar = _candle(200*86_400, "200")
     base = _decision(bar, replace(
-        _candidate(bar.open_time), model=ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION))
+        _candidate(bar.open_time), model=ModelCode.EMA_MOMENTUM_CONTINUATION))
     daily = tuple(_candle(index*86_400, str(100+index)) for index in range(10))
     transformed, traces = daily_trend_persistence_decisions((bar,), (base,), daily)
     assert transformed[0].candidates == ()

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from htx_trend.exits import ExitAction, ExitInput, ExitPhase, decide, decide_v4
+from htx_trend.exits import ExitAction, ExitInput, ExitPhase, decide, decide_v4, decide_legacy
 from htx_trend.models import ModelCode, TrendSide
 
 
@@ -50,14 +50,14 @@ def test_v4_flat_loss_control_needs_an_independent_failure() -> None:
 def test_legacy_models_keep_their_own_atr_exit_path() -> None:
     input_ = base(primary_model=ModelCode.DONCHIAN_BREAKOUT, reference_price=Decimal("102"), highest_price=Decimal("110"),
                   protection_price=Decimal("107"), trailing_armed_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
-    decision = decide(input_)
+    decision = decide_legacy(input_, trailing_atr_multiplier=Decimal("2"), trailing_activation_r=Decimal("1"))
     assert decision.action is ExitAction.FULL_CLOSE
     assert decision.reason == "legacy-atr-trailing-stop"
 
 
 def test_legacy_short_trail_stays_above_best_low() -> None:
-    decision = decide(base(primary_model=ModelCode.DONCHIAN_BREAKOUT, side=TrendSide.SHORT, entry_price=Decimal("100"),
+    decision = decide_legacy(base(primary_model=ModelCode.DONCHIAN_BREAKOUT, side=TrendSide.SHORT, entry_price=Decimal("100"),
                             initial_stop_price=Decimal("105"), invalidation_price=Decimal("106"), reference_price=Decimal("94"),
                             highest_price=Decimal("101"), lowest_price=Decimal("90"), signal_side=TrendSide.SHORT,
-                            ema_fast=Decimal("95"), ema_slow=Decimal("98")))
+                            ema_fast=Decimal("95"), ema_slow=Decimal("98")), trailing_atr_multiplier=Decimal("2"), trailing_activation_r=Decimal("1"))
     assert decision.protection_price == Decimal("94")
