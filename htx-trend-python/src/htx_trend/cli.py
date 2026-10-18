@@ -22,6 +22,7 @@ from .research.condition_audit import run_condition_audit
 from .research.model_optimization import run_intraday_model_optimization
 from .research.swing_model_optimization import run_swing_model_optimization
 from .research.exit_optimization import run_exit_optimization
+from .research.combination_study import run_combination_study
 from .timeframes import TimeframeProfile
 from .live_approval import LegacyLiveWaiver, LiveApproval
 
@@ -114,6 +115,12 @@ def main() -> None:
     exit_optimize.add_argument("--lifecycle-result-hash", required=True)
     exit_optimize.add_argument("--profile", required=True,
                                choices=[item.value for item in TimeframeProfile])
+    combination = commands.add_parser(
+        "combination-study", help="execute the P7 eligibility gate before nested walk-forward")
+    combination.add_argument("--evidence", required=True, type=Path)
+    combination.add_argument("--profile", required=True,
+                             choices=[item.value for item in TimeframeProfile])
+    combination.add_argument("--upstream-result-hashes", required=True, nargs="+")
     args = parser.parse_args()
     if args.command == "init-ledger":
         TrendLedger.initialize(args.database, args.schema); print(json.dumps({"status": "initialized", "database": str(args.database)})); return
@@ -166,6 +173,10 @@ def main() -> None:
         print(json.dumps({"status": "COMPLETE", **run_exit_optimization(
             args.evidence, args.manifest_hash, args.market_facts_manifest_hash,
             args.lifecycle_result_hash, TimeframeProfile(args.profile))}, ensure_ascii=False)); return
+    if args.command == "combination-study":
+        print(json.dumps({"status": "COMPLETE", **run_combination_study(
+            args.evidence, TimeframeProfile(args.profile),
+            tuple(args.upstream_result_hashes))}, ensure_ascii=False)); return
     if args.command == "collect-market-facts":
         with FileEvidenceStore(args.evidence) as store, HtxV5Client() as client:
             manifest = MarketFactsCollector(client, store).collect(
