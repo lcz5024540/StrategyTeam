@@ -73,6 +73,21 @@ OHLCV 中不存在的盘口和账户事实会作为模拟假设列出。资金�
 逐合约历史结算事件计入，合约面值和价格 tick 来自同一个事实 manifest；缺少
 完整事实包时研究入口直接失败，不再按 K 线频率虚构资金费。
 
+R2 的模型独立研究入口为：
+
+```bash
+htx-trend intraday-optimize --evidence /path/to/evidence \
+  --manifest-hash <six-month-kline-manifest> \
+  --market-facts-manifest-hash <six-month-market-facts-manifest>
+htx-trend swing-optimize --evidence /path/to/expanded-evidence \
+  --manifest-hash <complete-4hour-1day-manifest> \
+  --market-facts-manifest-hash <matching-market-facts-manifest>
+```
+
+两个入口只使用 TRAIN 选择、VALIDATION 评价，末尾 TEST 保持未读取。4h 研究要求
+完整 1d 上下文；缺少已闭合高周期 K 线会记录为 `UNKNOWN` 并拒绝新增风险。当前
+P4/P5 均未产生可进入 PAPER/LIVE 的候选。
+
 ```bash
 python -m htx_trend.worker --strategy-instance <instance-key>
 ```

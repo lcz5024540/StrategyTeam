@@ -268,11 +268,11 @@ def _rank(row: dict) -> tuple[Decimal, Decimal, Decimal, int]:
 
 
 def _temporal_windows(baseline: Sequence[dict], selected: Sequence[dict],
-                      times: Sequence[int]) -> list[dict[str, Any]]:
+                      times: Sequence[int], *, step_seconds: int = 900) -> list[dict[str, Any]]:
     output = []
     for number in range(5):
         values = times[len(times)*number//5:len(times)*(number+1)//5]
-        start, end = (values[0], values[-1]+900) if values else (0, 0)
+        start, end = (values[0], values[-1]+step_seconds) if values else (0, 0)
         base_net = sum((Decimal(str(item["net_pnl"])) for item in baseline
                         if start <= int(item["entry_time"]) < end), ZERO)
         selected_net = sum((Decimal(str(item["net_pnl"])) for item in selected

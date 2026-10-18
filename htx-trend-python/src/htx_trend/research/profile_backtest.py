@@ -27,7 +27,7 @@ from .experiments import (DEFAULT_COST_SCENARIOS, ResearchConclusion, block_boot
 from .features import performance
 from .market_facts import FrozenMarketFacts
 from .conditions import research_confirmation_passes
-from .model_conditions import model_condition_passes, required_periods
+from .model_conditions import model_condition_passes, model_condition_status, required_periods
 from .replay import load_manifest_candles
 from .store import FileEvidenceStore, digest
 
@@ -146,6 +146,8 @@ class ProfileLifecycleResearch:
             self.store, self.manifest_hash, symbol=symbol, period=period)
             for period in context_periods} for symbol in symbols}
         configs = {variant.variant_id: self._variant_config(variant) for variant in variants}
+        for variant_id, config in configs.items():
+            self._validate_config_window(variant_id, config)
         config_keys = {variant.variant_id: digest(configs[variant.variant_id]) for variant in variants}
         decision_cache = {(symbol, config_key): self._decisions(symbol, candles, config)
                           for symbol, candles in series.items()
@@ -227,13 +229,21 @@ class ProfileLifecycleResearch:
             raise ValueError(f"unknown entry parameters: {','.join(sorted(unknown))}")
         return replace(self.spec.entry_config, **values)
 
+    def _validate_config_window(self, variant_id: str, config) -> None:
+        required = max(config.slow_ema_period, config.breakout_lookback,
+                       config.momentum_lookback, config.atr_period,
+                       config.adx_period, config.volume_lookback) + 5
+        if required > self.window:
+            raise ValueError(
+                f"variant {variant_id} requires {required} bars but decision window is {self.window}")
+
     def _candidate_diagnostics(self, series: dict[str, Sequence[Candle]],
                                decisions: dict[str, Sequence[StrategyDecision | None]],
                                variant: ResearchVariant, start_percent: int, end_percent: int,
                                contexts: dict[str, dict[str, Sequence[Candle]]]) -> dict[str, int]:
         unfiltered = replace(variant, confirmation=None, minimum_score=None, condition_version=None,
                              model_condition=None, model_condition_version=None)
-        available = passed = 0
+        available = passed = unknown = 0
         for symbol, candles in series.items():
             start = max(self.window, len(candles)*start_percent//100)
             end = len(candles)*end_percent//100
@@ -245,10 +255,21 @@ class ProfileLifecycleResearch:
                                 context=contexts.get(symbol, {})) is None:
                     continue
                 available += 1
+                if variant.model_condition:
+                    selected = self._select(decision, candles, index, unfiltered,
+                                            context=contexts.get(symbol, {}))
+                    if selected is not None and model_condition_status(
+                            variant.model_condition,
+                            condition_version=variant.model_condition_version,
+                            candidate=selected, decision=decision,
+                            entry_candles=candles[max(0, index-159):index+1],
+                            context=contexts.get(symbol, {})) == "UNKNOWN":
+                        unknown += 1
                 if self._select(decision, candles, index, variant,
                                 context=contexts.get(symbol, {})) is not None:
                     passed += 1
-        return {"available": available, "passed": passed, "rejected": available-passed}
+        return {"available": available, "passed": passed, "rejected": available-passed,
+                "unknown": unknown, "failed": available-passed-unknown}
 
     def _decisions(self, symbol: str, candles: Sequence[Candle], config=None) -> tuple[StrategyDecision | None, ...]:
         selected_config = config or self.spec.entry_config

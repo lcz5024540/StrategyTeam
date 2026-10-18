@@ -5,9 +5,13 @@ import pytest
 
 from htx_trend.market_data import Candle
 from htx_trend.models import ModelCode
-from htx_trend.research.model_conditions import model_condition_passes
+from htx_trend.research.model_conditions import model_condition_passes, model_condition_status
 from htx_trend.research.model_optimization import MODEL_BASELINES, P4_VARIANTS
-from htx_trend.research.profile_backtest import ProfileLifecycleResearch, ResearchVariant
+from htx_trend.research.profile_backtest import (ProfileLifecycleResearch, ResearchVariant,
+                                                 provisional_backtest_admission)
+from htx_trend.research.swing_model_optimization import (P5_LEGACY_BASELINES,
+                                                         P5_DECISION_WINDOW,
+                                                         P5_MODEL_BASELINES, P5_VARIANTS)
 from htx_trend.strategy_admission import DecisionSurface
 from htx_trend.strategy_decision import HtxStrategyDecisionEngine
 from htx_trend.strategy_profiles import profile_strategy
@@ -74,3 +78,61 @@ def test_p4_condition_versions_and_parameter_names_fail_closed(tmp_path) -> None
         model_condition_passes(
             "DONCHIAN_BODY_RATIO_055", condition_version="wrong", candidate=candidate,
             decision=decision, entry_candles=candles, context={})
+
+
+def test_p5_search_is_model_isolated_and_only_uses_qualified_confirmations() -> None:
+    assert len(P5_VARIANTS) == 18
+    assert all(len(item.models) == 1 for item in P5_VARIANTS)
+    assert {item.models[0].value for item in P5_VARIANTS} == set(P5_MODEL_BASELINES)
+    selectable = [item for item in P5_VARIANTS
+                  if item.variant_id not in {*P5_MODEL_BASELINES.values(),
+                                             *P5_LEGACY_BASELINES.values()}]
+    for item in selectable:
+        assert item.model_condition in {
+            "DONCHIAN_1D_TREND", "FIB_1D_TREND", "EMA_1D_TREND"}
+        assert bool(item.confirmation)+len(item.entry_parameters) == 1
+    confirmations = {(item.models[0].value, item.confirmation)
+                     for item in selectable if item.confirmation}
+    assert confirmations == {
+        (ModelCode.FIB_PULLBACK_CONTINUATION.value, "MACD"),
+        (ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION.value, "PRICE_SLOPE"),
+    }
+    assert max(dict(item.entry_parameters).get("breakout_lookback", 0)
+               for item in P5_VARIANTS)+5 <= P5_DECISION_WINDOW
+
+
+def test_research_rejects_parameter_that_exceeds_decision_window(tmp_path) -> None:
+    spec = profile_strategy(TimeframeProfile.SWING_4H, read_env=False)
+    runner = object.__new__(ProfileLifecycleResearch)
+    runner.spec, runner.window = spec, 160
+    config = runner._variant_config(ResearchVariant(
+        "TOO_LONG", entry_parameters=(("breakout_lookback", 168),)))
+    with pytest.raises(ValueError, match="requires 173 bars"):
+        runner._validate_config_window("TOO_LONG", config)
+
+
+def test_p5_daily_context_is_closed_bar_only_and_missing_is_unknown() -> None:
+    candles = _trend(14400, 160)
+    spec = profile_strategy(TimeframeProfile.SWING_4H, read_env=False)
+    decision = HtxStrategyDecisionEngine(
+        strategy_version=spec.strategy.version, config=spec.entry_config,
+        admission=provisional_backtest_admission(spec, "0"*64)).decide(
+        contract_code="BTC-USDT", period="4hour", candles=candles,
+        surface=DecisionSurface.BACKTEST)
+    candidate = next(item for item in decision.candidates
+                     if item.model is ModelCode.DONCHIAN_BREAKOUT)
+    signal_close = candles[-1].open_time+14400
+    context = _trend(86400, 140, start=signal_close-140*86400)
+    status = model_condition_status(
+        "DONCHIAN_1D_TREND", condition_version="r2-p5-v1", candidate=candidate,
+        decision=decision, entry_candles=candles, context={"1day": context})
+    future = Candle(signal_close, Decimal("1"), Decimal("2"), Decimal("0.5"),
+                    Decimal("0.6"), amount=Decimal("999999"))
+    extended = model_condition_status(
+        "DONCHIAN_1D_TREND", condition_version="r2-p5-v1", candidate=candidate,
+        decision=decision, entry_candles=candles, context={"1day": context+(future,)})
+    missing = model_condition_status(
+        "DONCHIAN_1D_TREND", condition_version="r2-p5-v1", candidate=candidate,
+        decision=decision, entry_candles=candles, context={})
+    assert status == "PASS" and extended == status
+    assert missing == "UNKNOWN"

@@ -50,6 +50,15 @@ MODEL_CONDITION_SPECS = (
                        "close is on trend side of VWAP20 and within 0.5 ATR"),
     ModelConditionSpec("EMA_TARGET_SPACE_120", "r2-p4-v1", "EMA_VWAP_MOMENTUM_CONTINUATION",
                        "candidate expected reward/risk>=1.20"),
+    ModelConditionSpec("DONCHIAN_1D_TREND", "r2-p5-v1", "DONCHIAN_BREAKOUT",
+                       "closed 1d EMA20/60/120 stack, OLS price slope and ROC12 follow side; ADX14>=16",
+                       ("1day",), "RESEARCH_GATE"),
+    ModelConditionSpec("FIB_1D_TREND", "r2-p5-v1", "FIB_PULLBACK_CONTINUATION",
+                       "closed 1d EMA20/60/120 stack, OLS price slope and ROC12 follow side; ADX14>=16",
+                       ("1day",), "RESEARCH_GATE"),
+    ModelConditionSpec("EMA_1D_TREND", "r2-p5-v1", "EMA_VWAP_MOMENTUM_CONTINUATION",
+                       "closed 1d EMA20/60/120 stack, OLS price slope and ROC12 follow side; ADX14>=16",
+                       ("1day",), "RESEARCH_GATE"),
 )
 
 _SPECS = {item.condition_id: item for item in MODEL_CONDITION_SPECS}
@@ -61,7 +70,7 @@ def required_periods(condition_id: str | None) -> tuple[str, ...]:
     try:
         return _SPECS[condition_id].required_periods
     except KeyError as error:
-        raise ValueError(f"unknown P4 model condition: {condition_id}") from error
+        raise ValueError(f"unknown research model condition: {condition_id}") from error
 
 
 def model_condition_passes(
@@ -74,71 +83,108 @@ def model_condition_passes(
     context: Mapping[str, Sequence[Candle]],
 ) -> bool:
     """Evaluate a condition using only bars closed by the signal close."""
+    return model_condition_status(
+        condition_id, condition_version=condition_version, candidate=candidate,
+        decision=decision, entry_candles=entry_candles, context=context) == "PASS"
+
+
+def model_condition_status(
+    condition_id: str,
+    *,
+    condition_version: str | None,
+    candidate: ModelCandidate,
+    decision: StrategyDecision,
+    entry_candles: Sequence[Candle],
+    context: Mapping[str, Sequence[Candle]],
+) -> str:
+    """Return PASS/FAIL/UNKNOWN without treating missing higher-timeframe data as neutral."""
     try:
         spec = _SPECS[condition_id]
     except KeyError as error:
-        raise ValueError(f"unknown P4 model condition: {condition_id}") from error
+        raise ValueError(f"unknown research model condition: {condition_id}") from error
     if condition_version is not None and condition_version != spec.version:
-        raise ValueError(f"P4 condition version mismatch: {condition_id}:{condition_version}")
+        raise ValueError(f"research condition version mismatch: {condition_id}:{condition_version}")
     if candidate.model.value != spec.model:
         raise ValueError(f"condition {condition_id} cannot filter model {candidate.model.value}")
     if not entry_candles or decision.signal.indicators is None:
-        return False
+        return "UNKNOWN"
 
     candle, factors, side = entry_candles[-1], decision.signal.indicators, candidate.side
     direction = Decimal("1") if side is TrendSide.LONG else Decimal("-1")
     span = candle.high-candle.low
     if condition_id == "DONCHIAN_BODY_RATIO_055":
-        return span > ZERO and abs(candle.close-candle.open)/span >= Decimal("0.55")
+        passed = span > ZERO and abs(candle.close-candle.open)/span >= Decimal("0.55")
+        return "PASS" if passed else "FAIL"
     if condition_id == "DONCHIAN_BREAKOUT_ATR_010":
         boundary = decision.signal.breakout_high if side is TrendSide.LONG else decision.signal.breakout_low
-        return boundary is not None and (candle.close-boundary)*direction >= factors.atr*Decimal("0.10")
+        if boundary is None:
+            return "UNKNOWN"
+        return "PASS" if (candle.close-boundary)*direction >= factors.atr*Decimal("0.10") else "FAIL"
     if condition_id == "DONCHIAN_VOLUME_110":
-        return decision.signal.volume_ratio >= Decimal("1.10")
+        return "PASS" if decision.signal.volume_ratio >= Decimal("1.10") else "FAIL"
     if condition_id in {"DONCHIAN_60M_ALIGN", "FIB_60M_ALIGN"}:
-        return _aligned(_closed_context(context, "60min", candle.open_time+period_seconds(decision.period)),
-                        side, slope="price")
+        values = _closed_context(context, "60min", candle.open_time+period_seconds(decision.period))
+        if len(values) < 121:
+            return "UNKNOWN"
+        return "PASS" if _aligned(values, side, slope="price") else "FAIL"
     if condition_id == "FIB_IMPULSE_ATR_300":
-        return candidate.structure.swing_high-candidate.structure.swing_low >= factors.atr*Decimal("3")
+        passed = candidate.structure.swing_high-candidate.structure.swing_low >= factors.atr*Decimal("3")
+        return "PASS" if passed else "FAIL"
     if condition_id == "FIB_DEPTH_CENTER":
         indexes = [index for index, item in enumerate(entry_candles)
                    if item.open_time == candidate.source_breakout_time]
         if not indexes or indexes[0] >= len(entry_candles)-1:
-            return False
+            return "UNKNOWN"
         impulse = entry_candles[indexes[0]:-1]
         high, low = max(item.high for item in impulse), min(item.low for item in impulse)
         impulse_span = high-low
         if impulse_span <= ZERO:
-            return False
+            return "FAIL"
         if side is TrendSide.LONG:
             lower, upper = high-impulse_span*Decimal("0.618"), high-impulse_span*Decimal("0.382")
         else:
             lower, upper = low+impulse_span*Decimal("0.382"), low+impulse_span*Decimal("0.618")
         quarter = (upper-lower)/Decimal("4")
-        return lower+quarter <= candle.close <= upper-quarter
+        return "PASS" if lower+quarter <= candle.close <= upper-quarter else "FAIL"
     if condition_id == "FIB_VOLUME_100":
-        return decision.signal.volume_ratio >= Decimal("1.00")
+        return "PASS" if decision.signal.volume_ratio >= Decimal("1.00") else "FAIL"
     if condition_id == "EMA_60M_ALIGN":
-        return _aligned(_closed_context(context, "60min", candle.open_time+period_seconds(decision.period)),
-                        side, slope="ema")
+        values = _closed_context(context, "60min", candle.open_time+period_seconds(decision.period))
+        if len(values) < 121:
+            return "UNKNOWN"
+        return "PASS" if _aligned(values, side, slope="ema") else "FAIL"
     if condition_id == "EMA_4H_NOT_REVERSE":
         values = _closed_context(context, "4hour", candle.open_time+period_seconds(decision.period))
         if len(values) < 121:
-            return False
+            return "UNKNOWN"
         vector = feature_vector(values[-160:])
         opposite = ((vector.ema20 < vector.ema60 < vector.ema120) if side is TrendSide.LONG
                     else (vector.ema20 > vector.ema60 > vector.ema120))
-        return not opposite
+        return "FAIL" if opposite else "PASS"
     if condition_id == "EMA_ADX_RISING":
         if len(entry_candles) < 122:
-            return False
-        return factors.adx > feature_vector(entry_candles[:-1]).adx14
+            return "UNKNOWN"
+        return "PASS" if factors.adx > feature_vector(entry_candles[:-1]).adx14 else "FAIL"
     if condition_id == "EMA_VWAP_RECLAIM":
         delta = (candle.close-factors.vwap)*direction
-        return delta >= ZERO and delta <= factors.atr*Decimal("0.5")
+        return "PASS" if delta >= ZERO and delta <= factors.atr*Decimal("0.5") else "FAIL"
     if condition_id == "EMA_TARGET_SPACE_120":
-        return candidate.expected_r >= Decimal("1.20")
-    raise AssertionError(f"unhandled P4 condition: {condition_id}")
+        return "PASS" if candidate.expected_r >= Decimal("1.20") else "FAIL"
+    if condition_id in {"DONCHIAN_1D_TREND", "FIB_1D_TREND", "EMA_1D_TREND"}:
+        values = _closed_context(context, "1day", candle.open_time+period_seconds(decision.period))
+        if len(values) < 121:
+            return "UNKNOWN"
+        vector = feature_vector(values[-160:])
+        if side is TrendSide.LONG:
+            passed = (vector.ema20 > vector.ema60 > vector.ema120
+                      and vector.close_slope20 > ZERO and vector.roc12 > ZERO
+                      and vector.adx14 >= Decimal("16"))
+        else:
+            passed = (vector.ema20 < vector.ema60 < vector.ema120
+                      and vector.close_slope20 < ZERO and vector.roc12 < ZERO
+                      and vector.adx14 >= Decimal("16"))
+        return "PASS" if passed else "FAIL"
+    raise AssertionError(f"unhandled research condition: {condition_id}")
 
 
 def _closed_context(context: Mapping[str, Sequence[Candle]], period: str,
