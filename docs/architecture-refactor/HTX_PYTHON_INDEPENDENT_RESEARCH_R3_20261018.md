@@ -4,7 +4,8 @@
 
 R3 已启动并完成 R0–R1。R2 已以真实 `REJECT` 终态归档；R2 末尾 TEST 保持
 `NOT_READ`。R3 冻结了两个不含参数搜索网格的结构性假设，并从 HTX 公共接口采集
-2026-10-11～2026-10-18 的 BTC/ETH 五周期行情、合约规格和真实资金费事件。
+2026-10-11 00:00～2026-10-18 07:00 UTC 的 BTC/ETH 五周期行情、合约规格和真实
+资金费事件。
 
 首个独立数据区间完整，但只有 7 天。15m 要求至少 60 天，4h 要求至少 180 天，
 所以当前终态是 `ACCRUING / INSUFFICIENT_EVIDENCE`。审计器没有读取候选、收益或
@@ -26,11 +27,11 @@ R3 已启动并完成 R0–R1。R2 已以真实 `REJECT` 终态归档；R2 末�
 | 对象 | 内容 hash / 结果 |
 |---|---|
 | R3 预注册计划 | `2e728a7f73412ed71e6099fe6ef5a4b85f6f70bb95da2c9dc0b960eaa6b065ee` |
-| K 线 manifest | `26bd5dbd50a6e1013d1e43d022cb87ed1fffb9375bafee48fcff13007261dc2e`，COMPLETE |
-| 市场事实 manifest | `522d48bd2745863d7c4104217a44f8c593cbe1a09a77cd62eb9e1a2797323b62`，COMPLETE |
-| 数据就绪审计 | `172e108364251f07aa0a28a3ed57136e9984b2c8dda99d8b9babb93dd8c74832`，50 对象 VERIFIED |
+| K 线 manifest | `4e192231f24420cd8ce7f3c2d47c241670363c2cba9ba47e2453d22fba908d96`，COMPLETE |
+| 市场事实 manifest | `346a3d4ee844cea534a2a9fdea68f55b82b9f95bce0782f2aa8be77d3cfc747c`，COMPLETE |
+| 数据就绪审计 | `8d78eb59dc71b2e9c55b02f964347b89f76e6b407f5cc5667a381dc87505890c`，50 对象 VERIFIED |
 
-每个币种实际冻结：15m 672 根、30m 336 根、60m 168 根、4h 42 根、1d 6 根。
+每个币种实际冻结：15m 700 根、30m 350 根、60m 175 根、4h 43 根、1d 6 根。
 1d 根数按 HTX 的日线锚点计算，不使用简单的区间秒数除以 86,400。
 
 | Profile | 已观察 | 最低时间门槛 | 完整交易样本 | 当前状态 | 最早时间门槛日期 |
@@ -66,12 +67,12 @@ cd htx-trend-python
   --evidence research-data/r3-independent-accrual \
   --symbols BTC-USDT ETH-USDT \
   --periods 15min 30min 60min 4hour 1day \
-  --start 2026-10-11T00:00:00Z --end 2026-10-18T00:00:00Z
+  --start 2026-10-11T00:00:00Z --end 2026-10-18T07:00:00Z
 
 .venv/bin/htx-trend collect-market-facts \
   --evidence research-data/r3-independent-accrual \
   --symbols BTC-USDT ETH-USDT \
-  --start 2026-10-11T00:00:00Z --end 2026-10-18T00:00:00Z
+  --start 2026-10-11T00:00:00Z --end 2026-10-18T07:00:00Z
 
 .venv/bin/htx-trend preregister-independent-round \
   --evidence research-data/r3-independent-accrual
@@ -79,8 +80,8 @@ cd htx-trend-python
 .venv/bin/htx-trend audit-independent-data \
   --evidence research-data/r3-independent-accrual \
   --plan-hash 2e728a7f73412ed71e6099fe6ef5a4b85f6f70bb95da2c9dc0b960eaa6b065ee \
-  --manifest-hash 26bd5dbd50a6e1013d1e43d022cb87ed1fffb9375bafee48fcff13007261dc2e \
-  --market-facts-manifest-hash 522d48bd2745863d7c4104217a44f8c593cbe1a09a77cd62eb9e1a2797323b62
+  --manifest-hash 4e192231f24420cd8ce7f3c2d47c241670363c2cba9ba47e2453d22fba908d96 \
+  --market-facts-manifest-hash 346a3d4ee844cea534a2a9fdea68f55b82b9f95bce0782f2aa8be77d3cfc747c
 ```
 
 ## 5. 当前边界
@@ -96,3 +97,16 @@ SQL、部署、PAPER、LIVE 或 admission。下一项是持续追加未来闭合
 - readiness evidence 闭包 50 对象 `VERIFIED`；
 - draw.io XML 与 `git diff --check` 通过；
 - 真实审计发现并修复日线非零周期锚点的期望根数错误，回归测试覆盖 1day 锚点。
+
+## 7. 持续采集
+
+已创建线程 heartbeat `htx-r3`，每天本地时间 00:20 执行同一采集和审计调用链。
+任务固定使用 2026-10-11 作为起点，并把结束时间推进到运行时最近完整结束的 UTC
+小时。状态保持 `ACCRUING` 且无异常时不发送重复消息；以下情况才通知：
+
+- 采集失败、manifest 不完整或证据闭包校验失败；
+- 15m 达到 60 天或 4h 达到 180 天；
+- 任一 profile 进入 `READY_FOR_BASELINE_SAMPLE_AUDIT`；
+- 需要用户处理外部状态。
+
+自动任务只写 Git 忽略的本地 evidence，不提交、不 push，也不运行策略收益或条件实验。
