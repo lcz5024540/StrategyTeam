@@ -23,6 +23,10 @@ from .research.model_optimization import run_intraday_model_optimization
 from .research.swing_model_optimization import run_swing_model_optimization
 from .research.exit_optimization import run_exit_optimization
 from .research.combination_study import run_combination_study
+from .research.independent_round import (
+    run_independent_data_audit,
+    run_preregister_independent_round,
+)
 from .timeframes import TimeframeProfile
 from .live_approval import LegacyLiveWaiver, LiveApproval
 
@@ -121,6 +125,15 @@ def main() -> None:
     combination.add_argument("--profile", required=True,
                              choices=[item.value for item in TimeframeProfile])
     combination.add_argument("--upstream-result-hashes", required=True, nargs="+")
+    preregister = commands.add_parser(
+        "preregister-independent-round", help="freeze the R3 hypotheses and unseen-data boundary")
+    preregister.add_argument("--evidence", required=True, type=Path)
+    readiness = commands.add_parser(
+        "audit-independent-data", help="check R3 data age and integrity without reading outcomes")
+    readiness.add_argument("--evidence", required=True, type=Path)
+    readiness.add_argument("--plan-hash", required=True)
+    readiness.add_argument("--manifest-hash", required=True)
+    readiness.add_argument("--market-facts-manifest-hash", required=True)
     args = parser.parse_args()
     if args.command == "init-ledger":
         TrendLedger.initialize(args.database, args.schema); print(json.dumps({"status": "initialized", "database": str(args.database)})); return
@@ -177,6 +190,13 @@ def main() -> None:
         print(json.dumps({"status": "COMPLETE", **run_combination_study(
             args.evidence, TimeframeProfile(args.profile),
             tuple(args.upstream_result_hashes))}, ensure_ascii=False)); return
+    if args.command == "preregister-independent-round":
+        print(json.dumps({"status": "COMPLETE", **run_preregister_independent_round(
+            args.evidence)}, ensure_ascii=False)); return
+    if args.command == "audit-independent-data":
+        print(json.dumps({"status": "COMPLETE", **run_independent_data_audit(
+            args.evidence, args.plan_hash, args.manifest_hash,
+            args.market_facts_manifest_hash)}, ensure_ascii=False)); return
     if args.command == "collect-market-facts":
         with FileEvidenceStore(args.evidence) as store, HtxV5Client() as client:
             manifest = MarketFactsCollector(client, store).collect(
