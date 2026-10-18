@@ -56,12 +56,12 @@ def test_live_worker_configuration_reads_java_environment_names(monkeypatch) -> 
     assert config.combination_entry_enabled
 
 
-def test_live_worker_default_universe_has_52_contracts(monkeypatch) -> None:
+def test_live_worker_default_universe_is_btc_eth_only(monkeypatch) -> None:
     monkeypatch.delenv("HTX_TREND_CONTRACTS", raising=False)
     monkeypatch.setenv("HTX_TREND_ENABLED", "true")
     config = LiveTrendWorkerConfig.from_env()
     assert len(DEFAULT_TREND_CONTRACTS) == 52
-    assert config.contracts == DEFAULT_TREND_CONTRACTS
+    assert config.contracts == ("BTC-USDT", "ETH-USDT")
 
 
 def test_stale_higher_timeframe_candidate_is_expired_before_preflight() -> None:

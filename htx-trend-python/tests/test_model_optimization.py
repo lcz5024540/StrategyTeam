@@ -95,7 +95,7 @@ def test_p5_search_is_model_isolated_and_only_uses_qualified_confirmations() -> 
                      for item in selectable if item.confirmation}
     assert confirmations == {
         (ModelCode.FIB_PULLBACK_CONTINUATION.value, "MACD"),
-        (ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION.value, "PRICE_SLOPE"),
+        (ModelCode.EMA_MOMENTUM_CONTINUATION.value, "PRICE_SLOPE"),
     }
     assert max(dict(item.entry_parameters).get("breakout_lookback", 0)
                for item in P5_VARIANTS)+5 <= P5_DECISION_WINDOW

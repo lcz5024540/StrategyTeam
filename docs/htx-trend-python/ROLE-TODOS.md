@@ -70,6 +70,8 @@
 
 ## 【策略开发】
 
+2026-10-18 G1 工程闭环（`feat/g1-engineering-closure`）：G1.1 V2 完整 trace/profile hashes；G1.2 FIB/Donchian/EMA 统一 V4；G1.3 当前 Python API 改名 `EMA_MOMENTUM_CONTINUATION`（policy `EMA_MOMENTUM`，Java 兼容路径仍仅 EMA/ROC/ADX，research helper 原有 VWAP 过滤保留）；G1.4 当前 funding rate 退出与累计 funding PnL 归因分离；G1.5 LIVE 默认 BTC/ETH、ENC-only、配置本金默认 300U × 10% = 30U 保证金上限（10x 约 300U 名义，锁内预留复核，缺失配置/事实拒绝）；G1.6 legacy 4h 默认关闭。保留单笔风险、仓位数和同向限制，2000–3000 仅观察指标，同币净敞口限制延期。旧预留缺少保证金按名义保守计量，交易所已用保证金与预留可能重叠计数；新增 SQL 仅落库文件，未执行。本轮无 LIVE 包、无部署、无服务器变更。全量 pytest：285 passed；仓库无 CODE_GUIDE，不另建文档。
+
 主维护：策略开发bot · 更新 2026-10-12 23:00 CST
 
 ### 合入主线

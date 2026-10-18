@@ -131,7 +131,7 @@ def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True) -> Pro
     result = ProfileStrategySpec(
         strategy, profile, contract.entry_period, contract.trend_period, contract.confirmation_periods, config,
         tuple(item.value for item in (ModelCode.DONCHIAN_BREAKOUT, ModelCode.FIB_PULLBACK_CONTINUATION,
-                                      ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION)),
+                                      ModelCode.EMA_MOMENTUM_CONTINUATION)),
         tuple(item.value for item in ModelCode),
     )
     result.validate()

@@ -34,6 +34,7 @@ from .strategy_decision import LEGACY_STRATEGY_VERSION
 @dataclass(frozen=True, slots=True)
 class EntryExecutionConfig:
     leverage: int = 5
+    allow_legacy_swing_live: bool = False
     entry_order_type: str = "market"
     margin_safety_ratio: Decimal = Decimal("1.20")
     # HtxTrendProperties defaults. These values remain configurable at worker
@@ -55,6 +56,7 @@ class EntryExecutionConfig:
 
         return cls(
             leverage=int(environ.get("HTX_TREND_LEVERAGE", str(defaults.leverage))),
+            allow_legacy_swing_live=environ.get("HTX_TREND_ALLOW_LEGACY_4H_LIVE", "false").strip().lower() in {"1", "true", "yes", "on"},
             entry_order_type="market",
             margin_safety_ratio=dec("HTX_CONTRACT_MARGIN_SAFETY_RATIO", defaults.margin_safety_ratio),
             strong_quality_multiplier=dec("HTX_TREND_STRONG_QUALITY_POSITION_MULTIPLIER", defaults.strong_quality_multiplier),
@@ -147,6 +149,11 @@ class HtxTrendEntryExecutor:
             gate = GateResult(False, "PROFILE_CONTRACT_MUTEX",
                               f"contract already owned by active profile {owner}")
             return EntrySubmission(False, gate, None, None, None, gate.reason)
+        if (self._instance.execution_mode == "LIVE" and not new_strategy
+                and (period == "4hour" or timeframe_profile == "SWING_4H")
+                and not self._config.allow_legacy_swing_live):
+            gate = GateResult(False, "LEGACY_4H_DISABLED", "legacy 4h LIVE requires explicit opt-in")
+            return EntrySubmission(False, gate, None, None, None, gate.reason)
         # Java loads the latest completed trade before its cooldown gate.  Live
         # Python used to leave this as None, which silently disabled cooldown.
         if prior_trade is None:
@@ -195,10 +202,10 @@ class HtxTrendEntryExecutor:
                 contract.contract_code, candidate.side, book,
                 active_position_count=self._repository.active_position_count(account_id=self._account.account_id),
                 max_active_positions=self._config.max_active_positions,
-                # Keep reserved notional as audit evidence, but do not expose
-                # the removed 30U account-wide capacity as an active boundary.
+                # Notional is audit evidence; formal capacity is margin based.
                 reserved_notional_usdt=risk_totals.notional_usdt,
                 reserved_risk_usdt=getattr(risk_totals, "risk_usdt", Decimal("0")),
+                reserved_margin_usdt=getattr(risk_totals, "margin_usdt", None),
                 risk_capacity_usdt=None,
                 same_direction_position_count=same_direction_count)
         except Exception as error:
@@ -216,7 +223,8 @@ class HtxTrendEntryExecutor:
             if equity is None or equity <= 0:
                 risk_gate = GateResult(False, "RISK_LIMIT", "exchange-confirmed account equity unavailable")
                 return EntrySubmission(False, risk_gate, None, None, None, risk_gate.reason)
-            effective = replace(effective, account_equity_usdt=equity)
+            # Preserve configured capital for the formal margin cap; exchange
+            # equity is independently checked by the stop-risk gate.
         # The live account guard is intentionally applied to the effective
         # config used by this submission, after policy sizing and before any
         # database intent or exchange mutation.
@@ -257,8 +265,11 @@ class HtxTrendEntryExecutor:
             try:
                 reserve(reservation_key=reservation_key, instance=self._instance, position_key=position_key,
                         notional_usdt=gate.size_plan.notional,
+                        margin_usdt=gate.size_plan.notional / snapshot.facts.leverage,
+                        used_margin_usdt=snapshot.facts.used_margin_usdt,
+                        max_total_margin_usdt=effective.account_equity_usdt * effective.max_total_margin_rate,
                         risk_usdt=gate.size_plan.risk_at_stop,
-                        max_total_risk_usdt=effective.account_equity_usdt * effective.max_total_open_risk_rate,
+                        max_total_risk_usdt=min(effective.account_equity_usdt, snapshot.facts.account_equity_usdt) * effective.max_total_open_risk_rate,
                         max_active_positions=effective.max_active_positions,
                         reason=f"entry preflight {timeframe_profile} {candidate.side.value}")
                 risk_reserved = True

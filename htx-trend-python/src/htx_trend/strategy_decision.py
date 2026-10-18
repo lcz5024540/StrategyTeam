@@ -1,7 +1,7 @@
 """One HTX entry decision core shared by research, replay and runtimes."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from hashlib import sha256
@@ -77,16 +77,19 @@ class HtxStrategyDecisionEngine:
                             "condition_hash": self.profile_spec.condition_hash})
         decision_hash = sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         trace_ref = None
-        if self.evidence_store is not None and self.strategy_version == LEGACY_STRATEGY_VERSION:
+        if self.evidence_store is not None:
             from .market_data import period_seconds
             from .research.baseline import trace_entry
             from .research.contracts import DecisionContext
             evaluated = datetime.fromtimestamp(
                 (ordered[-1].open_time + period_seconds(period)) if ordered else 0, UTC).isoformat()
             context = DecisionContext(decision_hash, self.strategy_version, DecisionSurface(surface).value,
-                evaluated, {"contract_code": contract_code, "period": period, "input_hash": input_hash},
+                evaluated, dict(payload),
                 {}, {}, evidence_refs)
-            trace = trace_entry(context, ordered, period, signal, output, self.config)
+            trace = trace_entry(context, ordered, period, signal, output, self.config,
+                                strategy=self.profile_spec.strategy if self.profile_spec else None)
+            if self.profile_spec is not None:
+                trace = replace(trace, strategy_spec_hash=self.profile_spec.spec_hash)
             trace_ref = self.evidence_store.put("decision_trace", trace, refs=evidence_refs)
         return StrategyDecision(self.strategy_version, contract_code, period, signal, output,
                                 input_hash, config_hash, decision_hash, trace_ref,

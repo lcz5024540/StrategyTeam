@@ -66,7 +66,7 @@ CONDITIONS = (
     _condition("entry.ema_momentum_candidate", ConditionStage.CANDIDATE, ConditionUsage.RECORD, ("ema20", "ema60", "ema120", "adx14", "roc12")),
     _condition("gate.model_score", ConditionStage.ENTRY_GATE, ConditionUsage.STRATEGY_GATE),
     _condition("gate.funding_available", ConditionStage.ENTRY_GATE, ConditionUsage.RISK_CONSTRAINT),
-    _condition("gate.funding_cost", ConditionStage.ENTRY_GATE, ConditionUsage.STRATEGY_GATE),
+    _condition("gate.funding_rate", ConditionStage.ENTRY_GATE, ConditionUsage.STRATEGY_GATE),
     _condition("data.signal_freshness", ConditionStage.DATA, ConditionUsage.STRATEGY_GATE),
     _condition("gate.cooldown", ConditionStage.ENTRY_GATE, ConditionUsage.STRATEGY_GATE),
     _condition("gate.counter_market", ConditionStage.MARKET, ConditionUsage.STRATEGY_GATE),
@@ -85,10 +85,13 @@ CONDITIONS = (
     _condition("gate.executable_depth", ConditionStage.ENTRY_GATE, ConditionUsage.RISK_CONSTRAINT),
     _condition("gate.fee_protection", ConditionStage.ENTRY_GATE, ConditionUsage.STRATEGY_GATE),
     _condition("gate.margin", ConditionStage.SIZING, ConditionUsage.RISK_CONSTRAINT, safety=True),
+    _condition("risk.total_margin", ConditionStage.SIZING, ConditionUsage.RISK_CONSTRAINT, safety=True),
     _condition("holding.management_data_complete", ConditionStage.HOLDING, ConditionUsage.RISK_CONSTRAINT),
     _condition("holding.signal_freshness", ConditionStage.HOLDING, ConditionUsage.RISK_CONSTRAINT),
     _condition("holding.higher_timeframe_opposition", ConditionStage.HOLDING, ConditionUsage.RECORD),
-    _condition("holding.funding_cost", ConditionStage.HOLDING, ConditionUsage.ACTION_TRIGGER),
+    # Current adverse rate triggers an exit; settled funding PnL is attribution only.
+    _condition("attribution.cumulative_funding_pnl", ConditionStage.HOLDING, ConditionUsage.RECORD),
+    _condition("holding.funding_rate_exit", ConditionStage.HOLDING, ConditionUsage.ACTION_TRIGGER),
     _condition("exit.structure_invalidation", ConditionStage.EXIT, ConditionUsage.ACTION_TRIGGER),
     _condition("exit.profit_protection", ConditionStage.EXIT, ConditionUsage.ACTION_TRIGGER),
     _condition("exit.target", ConditionStage.EXIT, ConditionUsage.ACTION_TRIGGER),
@@ -120,9 +123,9 @@ def baseline_strategy(config: JavaEntryConfig = JavaEntryConfig()) -> StrategySp
 
 
 def trace_entry(context: DecisionContext, candles: Sequence[Candle], period: str,
-                signal: JavaTrendSignal, candidates: Sequence, config: JavaEntryConfig = JavaEntryConfig()):
-    strategy = baseline_strategy(config)
-    builder = TraceBuilder(REGISTRY, strategy, context)
+                signal: JavaTrendSignal, candidates: Sequence, config: JavaEntryConfig = JavaEntryConfig(), *, strategy: StrategySpec | None = None):
+    strategy = strategy or baseline_strategy(config)
+    builder = TraceBuilder(REGISTRY, strategy, context, state_before={"stage": "SCAN"})
     required = max(config.slow_ema_period, config.breakout_lookback, config.momentum_lookback,
                    config.atr_period, config.adx_period, config.volume_lookback) + 5
     enough = len(candles) >= required
@@ -157,12 +160,18 @@ def trace_entry(context: DecisionContext, candles: Sequence[Candle], period: str
                    actual=signal.score, threshold=config.entry_score_threshold)
     builder.record("signal.score_gap", ConditionStatus.PASS if signal.score_gap >= config.min_score_gap else ConditionStatus.FAIL,
                    actual=signal.score_gap, threshold=config.min_score_gap)
-    builder.record("entry.period_15m", ConditionStatus.PASS if period == "15min" else ConditionStatus.FAIL, actual=period)
+    if "entry.period_15m" in strategy.condition_versions:
+        builder.record("entry.period_15m", ConditionStatus.PASS if period == "15min" else ConditionStatus.FAIL, actual=period)
+    else:
+        builder.record("entry.profile_contract", ConditionStatus.PASS,
+                       actual={"period": period, "profile": context.market.get("timeframe_profile")})
     trending = not config.combination_require_trending_regime or signal.regime in {"TRENDING_UP", "TRENDING_DOWN"}
     builder.record("entry.trending_regime", ConditionStatus.PASS if trending else ConditionStatus.FAIL, actual=signal.regime)
     models = {x.model for x in candidates}
     builder.record("entry.donchian_candidate", ConditionStatus.PASS if ModelCode.DONCHIAN_BREAKOUT in models else ConditionStatus.FAIL)
     builder.record("entry.fib_candidate", ConditionStatus.PASS if ModelCode.FIB_PULLBACK_CONTINUATION in models else ConditionStatus.FAIL)
-    builder.record("entry.ema_momentum_candidate", ConditionStatus.PASS if ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION in models else ConditionStatus.FAIL,
+    builder.record("entry.ema_momentum_candidate", ConditionStatus.PASS if ModelCode.EMA_MOMENTUM_CONTINUATION in models else ConditionStatus.FAIL,
                    threshold={"adx": Decimal("20"), "ema": "20/60/120 full stack", "roc": "directional"})
-    return builder.finish(action="CANDIDATES" if candidates else "NO_CANDIDATE", reason=signal.reason)
+    return builder.finish(action="CANDIDATES" if candidates else "NO_CANDIDATE", reason=signal.reason,
+                          state_after={"signal": signal.side.value, "regime": signal.regime,
+                                       "candidate_models": [item.model.value for item in candidates]})

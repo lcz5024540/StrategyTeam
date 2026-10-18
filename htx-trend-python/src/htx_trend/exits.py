@@ -1,4 +1,4 @@
-"""Python implementation of the existing Fibonacci exit engine v4.
+"""Python implementation of the trend exit engine v4.
 
 This module is pure: it returns a decision and the durable state that must be
 saved by a ledger.  It never sends an HTX order.  The v4 name is intentional:
@@ -31,7 +31,7 @@ class ExitPhase(StrEnum):
     REVERSAL_CONFIRMED = "REVERSAL_CONFIRMED"
     INVALIDATED = "INVALIDATED"
     THESIS_EXPIRED = "THESIS_EXPIRED"
-    FUNDING_COST = "FUNDING_COST"
+    FUNDING_RATE = "FUNDING_RATE"
 
 
 class HoldingState(StrEnum):
@@ -82,7 +82,8 @@ class ExitInput:
     flat_loss_budget: Decimal = ZERO
     policy: ProfitProtectionPolicy = ProfitProtectionPolicy()
     protection_breach_bars: int = 0
-    funding_cost_exit_reason: str | None = None
+    # Current adverse funding rate gate; never cumulative settled funding PnL.
+    funding_rate_exit_reason: str | None = None
     observed_mfe_net_pnl: Decimal | None = None
     assessed_state: HoldingState | None = None
 
@@ -113,8 +114,8 @@ def evaluate_holding(input_: ExitInput) -> HoldingState:
 
 
 def decide_v4(input_: ExitInput) -> ExitDecision:
-    """Return the sole executable decision policy for Fibonacci positions."""
-    if input_.primary_model is not ModelCode.FIB_PULLBACK_CONTINUATION or not _valid(input_):
+    """Return the V4 decision policy for all primary models."""
+    if input_.primary_model not in tuple(ModelCode) or not _valid(input_):
         return _decision(input_, ExitPhase.THESIS_INTACT, ExitAction.HOLD, None, input_.protection_price,
                          ZERO if input_.max_favorable_r is None else input_.max_favorable_r,
                          input_.trailing_armed_at, input_.trailing_arm_reason, "unsupported-or-incomplete")
@@ -153,7 +154,7 @@ def decide_v4(input_: ExitInput) -> ExitDecision:
     independent_failure = _opposite(input_) or _ema_against(input_) or input_.major_timeframe_opposition > 0 or input_.market_context_opposes
     if armed_at is None and input_.signal_side is TrendSide.FLAT and input_.flat_streak >= input_.required_flat_streak and input_.current_net_pnl < ZERO and input_.flat_loss_budget > ZERO and -input_.current_net_pnl >= input_.flat_loss_budget and independent_failure:
         return _decision(input_, ExitPhase.THESIS_EXPIRED, ExitAction.FULL_CLOSE, 0, protection, max_r, None, None,
-                         "unarmed-fib-flat-loss-budget-with-independent-failure", current_state, favorable, adverse, mfe_net)
+                         "unarmed-flat-loss-budget-with-independent-failure", current_state, favorable, adverse, mfe_net)
 
     dynamic_pullback = input_.atr > ZERO and adverse >= input_.atr
     early_pullback = input_.atr > ZERO and adverse >= input_.atr * policy.pullback_atr_multiplier
@@ -164,9 +165,9 @@ def decide_v4(input_: ExitInput) -> ExitDecision:
     reference_breach = armed_at is not None and (not newly_armed or arm_reason == "NET_POSITIVE_MFE_COST_FLOOR") and _crossed(input_.side, input_.reference_price, protection)
     confirmed_breach = armed_at is not None and not newly_armed and input_.protection_breach_bars >= policy.protection_breach_confirmation_bars
 
-    if input_.funding_cost_exit_reason and not reference_breach:
-        return _decision(input_, ExitPhase.FUNDING_COST, ExitAction.FULL_CLOSE, 0, protection, max_r, armed_at, arm_reason,
-                         f"funding-cost-exit: {input_.funding_cost_exit_reason}", current_state, favorable, adverse, mfe_net)
+    if input_.funding_rate_exit_reason and not reference_breach:
+        return _decision(input_, ExitPhase.FUNDING_RATE, ExitAction.FULL_CLOSE, 0, protection, max_r, armed_at, arm_reason,
+                         f"funding-rate-exit: {input_.funding_rate_exit_reason}", current_state, favorable, adverse, mfe_net)
     if reference_breach and current_state is HoldingState.WEAKENING:
         if profitable and expected_reward > protected_risk:
             remaining = _target_remaining(input_.remaining_contracts, expected_reward, protected_risk, adverse, favorable)
@@ -236,20 +237,12 @@ def _target_remaining(remaining: int, reward: Decimal, risk: Decimal, adverse: D
 
 def decide(input_: ExitInput, *, legacy_trailing_atr_multiplier: Decimal = Decimal("2"),
            legacy_trailing_activation_r: Decimal = Decimal("1")) -> ExitDecision:
-    """Route the established FIB v4 engine or Java-compatible legacy model exits."""
-    if input_.primary_model is ModelCode.FIB_PULLBACK_CONTINUATION:
-        return decide_v4(input_)
-    return decide_legacy(input_, trailing_atr_multiplier=legacy_trailing_atr_multiplier,
-                         trailing_activation_r=legacy_trailing_activation_r)
+    """Route every supported primary model through V4."""
+    return decide_v4(input_)
 
 
 def decide_legacy(input_: ExitInput, *, trailing_atr_multiplier: Decimal, trailing_activation_r: Decimal) -> ExitDecision:
-    """Compatibility policy for Donchian/EMA positions while only FIB owns v4.
-
-    This keeps each non-Fibonacci position protectable without pretending its
-    exit provenance is FIB v4. It has the same hard-priority ordering used by
-    Java: model invalidation/initial stop, opposite trend, then armed ATR trail.
-    """
+    """Explicit historical Java exit policy for replay and compatibility tests."""
     if not _valid(input_):
         return _decision(input_, ExitPhase.THESIS_INTACT, ExitAction.HOLD, None, input_.protection_price, ZERO,
                          input_.trailing_armed_at, input_.trailing_arm_reason, "legacy-unsupported-or-incomplete")

@@ -26,7 +26,7 @@ class TrendSide(StrEnum):
 class ModelCode(StrEnum):
     DONCHIAN_BREAKOUT = "DONCHIAN_BREAKOUT"
     FIB_PULLBACK_CONTINUATION = "FIB_PULLBACK_CONTINUATION"
-    EMA_VWAP_MOMENTUM_CONTINUATION = "EMA_VWAP_MOMENTUM_CONTINUATION"
+    EMA_MOMENTUM_CONTINUATION = "EMA_MOMENTUM_CONTINUATION"
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,7 +208,7 @@ def candidates(candles: Sequence[Candle], signal: TrendSignal, config: TrendConf
     if factor.adx >= Decimal("20") and ((signal.side is TrendSide.LONG and long_aligned) or (signal.side is TrendSide.SHORT and short_aligned)):
         target = structure.swing_high if signal.side is TrendSide.LONG else structure.swing_low
         invalidation = min(factor.ema_slow, entry - factor.atr * Decimal("1.25")) if signal.side is TrendSide.LONG else max(factor.ema_slow, entry + factor.atr * Decimal("1.25"))
-        result.append(ModelCandidate(ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION, signal.side, signal.bar_time or candles[-1].open_time,
+        result.append(ModelCandidate(ModelCode.EMA_MOMENTUM_CONTINUATION, signal.side, signal.bar_time or candles[-1].open_time,
                                      min(Decimal("100"), base_score + Decimal("12")), entry, invalidation, target, target,
                                      _expected_r(signal.side, entry, invalidation, target), structure,
                                      ("ema_stack", "roc", "vwap")))
@@ -220,7 +220,7 @@ def model_candidates(entry: Sequence[Candle], trend: Sequence[Candle], config: T
 
     ``evaluate_signal`` remains available for Java-compatible legacy telemetry.
     Entry selection must call this function so a missing Donchian breakout does
-    not prevent a valid EMA/VWAP continuation from being evaluated.
+    not prevent a valid EMA momentum continuation (research VWAP filter) from being evaluated.
     """
     required = max(config.slow_ema_period, config.breakout_lookback) + max(config.atr_period, config.adx_period) + 3
     if len(entry) < required or len(trend) < max(config.trend_fast_ema_period, config.trend_slow_ema_period) + 3:
@@ -271,7 +271,7 @@ def model_candidates(entry: Sequence[Candle], trend: Sequence[Candle], config: T
             target = structure.swing_high if side is TrendSide.LONG else structure.swing_low
             atr_boundary = latest.close - factor.atr * Decimal("1.25") if side is TrendSide.LONG else latest.close + factor.atr * Decimal("1.25")
             invalidation = min(factor.ema_slow, atr_boundary) if side is TrendSide.LONG else max(factor.ema_slow, atr_boundary)
-            result.append(ModelCandidate(ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION, side, latest.open_time,
+            result.append(ModelCandidate(ModelCode.EMA_MOMENTUM_CONTINUATION, side, latest.open_time,
                 min(Decimal("100"), base_score + Decimal("12")), latest.close, invalidation, target, target,
                 _expected_r(side, latest.close, invalidation, target), structure,
                 ("ema_stack", "roc", "vwap", "higher_timeframe_aligned")))

@@ -54,27 +54,27 @@ P4_VARIANTS = (
     ResearchVariant("P4_FIB_SOURCE_12", (ModelCode.FIB_PULLBACK_CONTINUATION,),
                     entry_parameters=(("fib_source_lookback_bars", 12),)),
 
-    ResearchVariant("P4_EMA_BASE", (ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,)),
-    _condition_variant("P4_EMA_60M_ALIGN", ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,
+    ResearchVariant("P4_EMA_BASE", (ModelCode.EMA_MOMENTUM_CONTINUATION,)),
+    _condition_variant("P4_EMA_60M_ALIGN", ModelCode.EMA_MOMENTUM_CONTINUATION,
                        "EMA_60M_ALIGN"),
-    _condition_variant("P4_EMA_4H_NOT_REVERSE", ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,
+    _condition_variant("P4_EMA_4H_NOT_REVERSE", ModelCode.EMA_MOMENTUM_CONTINUATION,
                        "EMA_4H_NOT_REVERSE"),
-    _condition_variant("P4_EMA_ADX_RISING", ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,
+    _condition_variant("P4_EMA_ADX_RISING", ModelCode.EMA_MOMENTUM_CONTINUATION,
                        "EMA_ADX_RISING"),
-    _condition_variant("P4_EMA_VWAP_RECLAIM", ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,
-                       "EMA_VWAP_RECLAIM"),
-    _condition_variant("P4_EMA_TARGET_SPACE_120", ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,
+    _condition_variant("P4_EMA_MOMENTUM_RECLAIM", ModelCode.EMA_MOMENTUM_CONTINUATION,
+                       "EMA_MOMENTUM_RECLAIM"),
+    _condition_variant("P4_EMA_TARGET_SPACE_120", ModelCode.EMA_MOMENTUM_CONTINUATION,
                        "EMA_TARGET_SPACE_120"),
-    ResearchVariant("P4_EMA_FAST_16", (ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,),
+    ResearchVariant("P4_EMA_FAST_16", (ModelCode.EMA_MOMENTUM_CONTINUATION,),
                     entry_parameters=(("fast_ema_period", 16),)),
-    ResearchVariant("P4_EMA_FAST_24", (ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,),
+    ResearchVariant("P4_EMA_FAST_24", (ModelCode.EMA_MOMENTUM_CONTINUATION,),
                     entry_parameters=(("fast_ema_period", 24),)),
 )
 
 MODEL_BASELINES = {
     ModelCode.DONCHIAN_BREAKOUT.value: "P4_DONCHIAN_BASE",
     ModelCode.FIB_PULLBACK_CONTINUATION.value: "P4_FIB_BASE",
-    ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION.value: "P4_EMA_BASE",
+    ModelCode.EMA_MOMENTUM_CONTINUATION.value: "P4_EMA_BASE",
 }
 
 
@@ -102,7 +102,7 @@ class IntradayModelOptimization:
             "split": {"TRAIN": (0, 60), "VALIDATION": (60, 80), "TEST": "NOT_CONSUMED"},
             "seed": P4_SEED,
             "search_budget": {"DONCHIAN_BREAKOUT": 7, "FIB_PULLBACK_CONTINUATION": 7,
-                              "EMA_VWAP_MOMENTUM_CONTINUATION": 8},
+                              "EMA_MOMENTUM_CONTINUATION": 8},
             "mutation_rule": "each non-baseline variant changes exactly one condition or parameter",
             "selection_rule": (
                 "TRAIN BASE and CONSERVATIVE net>0, BASE PF>=1.30, >=30 trades and >=30% baseline coverage; "

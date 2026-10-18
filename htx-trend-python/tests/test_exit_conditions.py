@@ -58,7 +58,7 @@ def test_structure_condition_is_model_specific() -> None:
     donchian = evaluate_exit_condition("exit.structure_invalidated", _context(close=Decimal("99")))
     ema = evaluate_exit_condition(
         "exit.structure_invalidated",
-        _context(candidate=_candidate(ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION),
+        _context(candidate=_candidate(ModelCode.EMA_MOMENTUM_CONTINUATION),
                  close=Decimal("100"), ema_slow=Decimal("101")))
     assert donchian.status is ConditionStatus.PASS
     assert ema.status is ConditionStatus.PASS
