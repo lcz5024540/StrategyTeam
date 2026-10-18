@@ -1,0 +1,12 @@
+collector:
+  symbols:
+    - BTC-USDT
+    - ETH-USDT
+  intervals:
+    - 4hour
+    - 1day
+  poll_interval_seconds: 300
+  storage:
+    base_path: /opt/coinstrategy/htx-trend-py-state/data/klines
+  state:
+    file_path: /opt/coinstrategy/htx-trend-py-state/run/collector_state.json

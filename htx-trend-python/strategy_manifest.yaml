@@ -1,0 +1,90 @@
+package_version: 0.1.0
+git_commit: f365076558500f84dc6cf76cd1107d4322812ff4
+timeframe: 4hour
+symbols:
+- BTC-USDT
+- ETH-USDT
+initial_equity: 300
+risk_per_trade: 0.02
+max_total_risk: 0.1
+max_positions: 5
+leverage_target: 5.0
+cost_scenario: base
+dataset_id: TODO_FREEZE_DATASET_ID
+manifest_hash: TODO_FREEZE_MANIFEST_HASH
+conditions:
+- id: C01
+  name: Donchian Ensemble
+  implemented: true
+  enabled: true
+  params:
+    periods:
+    - 42
+    - 84
+    - 126
+    - 168
+    threshold: 0.25
+  code_path: src/htx_trend/research/conditions/c01_donchian.py
+  code_sha256: 1f47f5d905ff508e360d915d52bbfe937a67961534590767cdf07c0693776319
+- id: C02
+  name: ATR Stop
+  implemented: true
+  enabled: true
+  params:
+    atr_period: 14
+    atr_multiplier: 2.0
+    tick_size: 0.1
+    stop_slippage_ticks: 1
+  code_path: src/htx_trend/research/conditions/c02_atr_stop.py
+  code_sha256: a4a3057f3bdc73b31ce1a80245222d6973cf6eeef6a4d8cf9b194659857ec369
+- id: C03
+  name: Trailing stop / reverse-channel exit
+  implemented: false
+  enabled: false
+  params: {}
+  code_path: null
+  code_sha256: null
+- id: C04
+  name: EMA 20/60/120 alignment filter
+  implemented: false
+  enabled: false
+  params: {}
+  code_path: null
+  code_sha256: null
+- id: C05
+  name: Volatility-target sizing
+  implemented: false
+  enabled: false
+  params: {}
+  code_path: null
+  code_sha256: null
+- id: C06
+  name: Regime gate
+  implemented: false
+  enabled: false
+  params: {}
+  code_path: null
+  code_sha256: null
+- id: C07
+  name: Time exit
+  implemented: false
+  enabled: false
+  params: {}
+  code_path: null
+  code_sha256: null
+- id: C08
+  name: Funding/OI crowding de-risk
+  implemented: false
+  enabled: false
+  params: {}
+  code_path: null
+  code_sha256: null
+- id: C09
+  name: Event-window filter
+  implemented: false
+  enabled: false
+  params: {}
+  code_path: null
+  code_sha256: null
+split: train
+manifest_sha256: 306a17eb4e2b4e86d9be2a2380f3f11a7840c9fd4ad681c0e68384496815c45c

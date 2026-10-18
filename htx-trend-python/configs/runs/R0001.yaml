@@ -1,0 +1,67 @@
+# R0001 - 基线运行配置
+# dataset_id / manifest_hash 在数据冻结前为 TODO 占位；runner 会硬拒绝，必须先 freeze。
+run_id: R0001
+parent_run_id: null
+
+# 账户配置（生产环境必需）
+account:
+  account_id: "MAIN"  # HTX MAIN 账户 ID（生产环境填写实际 ID）
+  account_type: "MAIN"  # 只允许 MAIN
+  margin_mode: "cross"  # 只允许 cross
+  # 注：子账户下单将被拒绝
+
+# 实验登记（prereg-batch1：只验证流程，不要求盈利）
+registration:
+  change: "batch1 唯一改动"
+  hypothesis: "时间序列动量：Donchian ensemble（4h 42/84/126/168）结合 ATR14x2 止损可捕捉 BTC/ETH 中期趋势"
+  expected_effect: "只验证流程可复现，不要求盈利"
+  keep_rule: "只验证流程：记录完整且两次运行结果一致，不要求盈利"
+  drop_rule: "记录不全或两次运行结果不一致"
+  evidence_ref: "基础报告 TSMOM 文献；参数依据文档"
+
+# 数据集：冻结前占位，registration gate / runner 会拒绝 TODO/PLACEHOLDER
+dataset_id: "TODO_FREEZE_DATASET_ID"
+manifest_hash: "TODO_FREEZE_MANIFEST_HASH"
+strategy_manifest_sha256: "306a17eb4e2b4e86d9be2a2380f3f11a7840c9fd4ad681c0e68384496815c45c"
+symbols:
+  - BTC-USDT
+  - ETH-USDT
+split: train  # train / validation / test
+timeframe: 4hour
+
+# 回测参数
+initial_equity: 300  # 初始资金 300 USDT；单笔 2% 最大亏损 6U
+cost_scenario: base  # zero / optimistic / base / conservative
+
+# 费率配置（可选）
+fees:
+  use_authenticated: false  # true 需要 API key
+  # maker_rate: 0.0002  # 如不指定，按 cost_scenario 默认
+  # taker_rate: 0.0006
+  # 注：base scenario 默认为 maker 0.02% / taker 0.06%
+  # 市价开盘入场（market-on-open）一律按 taker 计费；限价/止损成交按 maker
+  # 真实费率来源将在报告中标注
+  # Sharpe 年化：4hour = 6*365=2190，1day = 365（periods_per_year）
+
+# 风险管理
+# 无 force-1-contract：1 张也超单笔风险预算则拒绝，skip_reason=min_contract_exceeds_risk_budget
+risk_per_trade: 0.02  # 2%（300U 账户单笔最大亏损 6U）
+max_total_risk: 0.10  # 10%
+max_positions: 5  # 最多 5 仓；品种仍仅 BTC+ETH 4h
+
+# 条件配置
+conditions:
+  C01:
+    enabled: true
+    periods: [42, 84, 126, 168]
+    threshold: 0.25
+  
+  C02:
+    enabled: true
+    atr_period: 14
+    atr_multiplier: 2.0
+    tick_size: 0.1
+    stop_slippage_ticks: 1
+
+# 其他
+leverage_target: 5.0

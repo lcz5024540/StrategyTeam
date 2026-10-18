@@ -36,8 +36,9 @@ class Connection:
 def store():
     db = Connection()
     # Use actual production position/order column names, not a second model.
-    schema = (Path(__file__).parents[2] / 'coin-strategy-htx/src/main/resources/db/schema.sql').read_text()
-    schema += (Path(__file__).parents[2] / 'sql/htx/2026-10-07b__htx_trend_structure_lifecycle_and_final_pnl.sql').read_text()
+    fixtures = Path(__file__).resolve().parent / 'fixtures' / 'java'
+    schema = (fixtures / 'schema.sql').read_text()
+    schema += (fixtures / '2026-10-07b__htx_trend_structure_lifecycle_and_final_pnl.sql').read_text()
     for table in ('htx_trend_position', 'htx_trend_order', 'htx_trend_structure_lifecycle'):
         block = schema.split(f'CREATE TABLE IF NOT EXISTS {table} (',1)[1].split('\n)',1)[0]
         columns = []
