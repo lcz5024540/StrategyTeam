@@ -70,6 +70,35 @@
 
 ## 【策略开发】
 
+### 2026-10-19 G2 准入制品（仅工程验收，未授权 LIVE）
+
+- 复用 `StrategyAdmissionArtifact` / `ResearchStage` / `LiveApproval`，严格磁盘封装实现位于 `src/htx_trend/admission.py`。制品、JSON schema、当前绑定上下文示例集中在 `htx-trend-python/tests/fixtures/g2/`，全部标注 SYNTHETIC；不得作为真实授权。真实制品目录由运维另行配置，本轮不创建、不签发。
+- admission 外层字段：`schema=htx-admission-g2`、`synthetic`、`label`、`issued_at`、`expires_at`、`artifact`、`stage_records`、`seal_hash`。内层保留现有策略身份、source/config/policy/dataset hashes、作用面与阶段证据。12 份 stage record 均包含 `stage`（按 ResearchStage 1–12）、`input_ref/input_sha256`、`status`、`conclusion`、`recorded_at`、`signer`；证据路径/hash 使用内层 `StageEvidence`。路径必须落在制品目录内，逐文件校验原始字节。
+- 整体 seal：将 `seal_hash` 置空，以 UTF-8、sort_keys、无额外空白的规范 JSON 求 SHA256；落盘必须与规范字节完全一致（包括末尾不可额外换行）。seal 是完整性校验，不是签名认证；真实证据与签发者可信性仍需外部审核，不能通过重算 hash 制造研究通过。
+- OBSERVE=1–5，BACKTEST=1–7，SHADOW/PAPER=1–10，LIVE/RANKING/GATE/SIZING/EXIT=1–12；未知面拒绝。正式面拒绝 SYNTHETIC，阶段 11 的已哈希 JSON 证据须声明 `kind=REAL_PAPER`、`synthetic=false`、有时区的 `started_at/ended_at`，完整窗口至少 14 天，结束不晚于阶段签署及制品签发。此格式不替代 R4/R5 的真实统计审核。
+- approval 外层 `schema=htx-live-approval-g2`，绑定内层 LiveApproval（单 profile、策略版本、package SHA256、source commit、config fingerprint、spec hash、admission artifact hash、account id、risk、V4、有效期），并增加 `admission_seal_hash`、`account_equity_usdt=300`、`max_total_margin_rate<=0.10`、`exit_policy_hash`、`approved_by`、`rollback_point`、有效期和整体 seal。`context.json` 为待校验的当前绑定快照，必须独立取自待运行配置和签发记录，不能从待验证 approval 自动复制。
+- LIVE 启动与每次 entry 均重读制品；路径为 `HTX_TREND_STRATEGY_ADMISSION_PATH`、`HTX_TREND_LIVE_APPROVAL_PATH`、`HTX_TREND_APPROVAL_CONTEXT_PATH`。运行时覆盖 context 中的实际 account/profile/spec/config/source/package/本金/保证金绑定，原有风控与启动门禁继续生效；旧 waiver 不能绕过 G2，legacy 默认仍关闭。退出保护路径不追加制品门禁。OBSERVE/PAPER 原有路径不增加 LIVE 授权要求。
+- 执行器单测仅为下游 gate 提供显式 mocked authorization 前置条件，原断言全部保留；`test_g2_artifacts.py` 使用真实校验器覆盖拒绝路径。无 LIVE 包、无 tar、无装包、无热更、无 SQL 执行、无 push/PR；P0-A 86529039 未操作，同币净敞口未实现。
+
+在 `htx-trend-python/` 中运行（示例仅验证合成研究作用面）：
+
+```sh
+PYTHONPATH=src /private/tmp/r0-entry-venv/bin/python -m htx_trend.cli validate-admission --artifact tests/fixtures/g2/admission.json --surface PAPER
+PYTHONPATH=src /private/tmp/r0-entry-venv/bin/python -m htx_trend.cli validate-approval --artifact tests/fixtures/g2/approval.json --admission tests/fixtures/g2/admission.json --context tests/fixtures/g2/context.json --surface PAPER
+PYTHONPATH=src /private/tmp/r0-entry-venv/bin/python -m htx_trend.cli self-test
+```
+
+验收结果：全量 pytest **373 passed**（原 285 + 新增 88），self-test **2 checks PASS**。测试映射：G2.1 `test_g2_1_*`；G2.2 `test_g2_2_*`；G2.3 `test_g2_3_*`；G2.4 `test_g2_4_*`；G2.5 `test_g2_5_*`；G2.6 `test_g2_6_*`，均位于 `tests/test_g2_artifacts.py`。
+
+以上命令的 LIVE 验证必须失败。`validate-live-approval` 保留为旧对象结构检查，不能替代 G2 `validate-approval` 或授予 LIVE 权限。
+
+本机指定 Python 的默认 sys.path 未包含完整依赖，因此全量测试临时复用已有环境路径（无安装）：
+
+```sh
+PYTHONPATH=/private/tmp/htx-r1-clean-cert-11126/lib/python3.11/site-packages /private/tmp/r0-entry-venv/bin/python -m pytest tests/ -q --tb=short
+```
+
+
 2026-10-18 G1 工程闭环（`feat/g1-engineering-closure`）：G1.1 V2 完整 trace/profile hashes；G1.2 FIB/Donchian/EMA 统一 V4；G1.3 当前 Python API 改名 `EMA_MOMENTUM_CONTINUATION`（policy `EMA_MOMENTUM`，Java 兼容路径仍仅 EMA/ROC/ADX，research helper 原有 VWAP 过滤保留）；G1.4 当前 funding rate 退出与累计 funding PnL 归因分离；G1.5 LIVE 默认 BTC/ETH、ENC-only、配置本金默认 300U × 10% = 30U 保证金上限（10x 约 300U 名义，锁内预留复核，缺失配置/事实拒绝）；G1.6 legacy 4h 默认关闭。保留单笔风险、仓位数和同向限制，2000–3000 仅观察指标，同币净敞口限制延期。旧预留缺少保证金按名义保守计量，交易所已用保证金与预留可能重叠计数；新增 SQL 仅落库文件，未执行。本轮无 LIVE 包、无部署、无服务器变更。全量 pytest：285 passed；仓库无 CODE_GUIDE，不另建文档。
 
 主维护：策略开发bot · 更新 2026-10-12 23:00 CST

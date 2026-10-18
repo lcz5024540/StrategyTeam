@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema",
+    "synthetic",
+    "label",
+    "issued_at",
+    "expires_at",
+    "artifact",
+    "stage_records",
+    "seal_hash"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "type": "string"
+    },
+    "synthetic": {
+      "type": "boolean"
+    },
+    "label": {
+      "type": "string"
+    },
+    "issued_at": {
+      "type": "string"
+    },
+    "expires_at": {
+      "type": "string"
+    },
+    "artifact": {
+      "type": "object",
+      "required": [
+        "allowed_surfaces",
+        "artifact_hash",
+        "config_hash",
+        "dataset_manifest_hash",
+        "exchange",
+        "experiment_id",
+        "failure_conditions",
+        "pause_conditions",
+        "policy_hash",
+        "source_commit",
+        "stages",
+        "strategy_id",
+        "strategy_version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "allowed_surfaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "artifact_hash": {
+          "type": "string"
+        },
+        "config_hash": {
+          "type": "string"
+        },
+        "dataset_manifest_hash": {
+          "type": "string"
+        },
+        "exchange": {
+          "type": "string"
+        },
+        "experiment_id": {
+          "type": "string"
+        },
+        "failure_conditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pause_conditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "policy_hash": {
+          "type": "string"
+        },
+        "source_commit": {
+          "type": "string"
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "conclusion",
+              "evidence_ref",
+              "evidence_sha256",
+              "stage",
+              "status"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "conclusion": {
+                "type": "string"
+              },
+              "evidence_ref": {
+                "type": "string"
+              },
+              "evidence_sha256": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "strategy_id": {
+          "type": "string"
+        },
+        "strategy_version": {
+          "type": "string"
+        }
+      }
+    },
+    "stage_records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "stage",
+          "input_ref",
+          "input_sha256",
+          "status",
+          "conclusion",
+          "recorded_at",
+          "signer"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "stage": {
+            "type": "integer"
+          },
+          "input_ref": {
+            "type": "string"
+          },
+          "input_sha256": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "conclusion": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "signer": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "seal_hash": {
+      "type": "string"
+    }
+  }
+}

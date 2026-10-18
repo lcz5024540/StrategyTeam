@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema",
+    "synthetic",
+    "label",
+    "approval",
+    "admission_seal_hash",
+    "issued_at",
+    "expires_at",
+    "account_equity_usdt",
+    "max_total_margin_rate",
+    "exit_policy_hash",
+    "approved_by",
+    "rollback_point",
+    "seal_hash"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "type": "string"
+    },
+    "synthetic": {
+      "type": "boolean"
+    },
+    "label": {
+      "type": "string"
+    },
+    "approval": {
+      "type": "object",
+      "required": [
+        "strategy_version",
+        "timeframe_profile",
+        "source_commit",
+        "package_sha256",
+        "config_fingerprint",
+        "strategy_spec_hash",
+        "admission_hash",
+        "account_id",
+        "risk",
+        "exit_version",
+        "issued_at",
+        "expires_at",
+        "approval_hash"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "strategy_version": {
+          "type": "string"
+        },
+        "timeframe_profile": {
+          "type": "string"
+        },
+        "source_commit": {
+          "type": "string"
+        },
+        "package_sha256": {
+          "type": "string"
+        },
+        "config_fingerprint": {
+          "type": "string"
+        },
+        "strategy_spec_hash": {
+          "type": "string"
+        },
+        "admission_hash": {
+          "type": "string"
+        },
+        "account_id": {
+          "type": "integer"
+        },
+        "risk": {
+          "type": "object",
+          "required": [
+            "per_trade_equity_rate",
+            "total_open_equity_rate",
+            "max_active_positions"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "per_trade_equity_rate": {
+              "type": "string"
+            },
+            "total_open_equity_rate": {
+              "type": "string"
+            },
+            "max_active_positions": {
+              "type": "integer"
+            }
+          }
+        },
+        "exit_version": {
+          "type": "string"
+        },
+        "issued_at": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "approval_hash": {
+          "type": "string"
+        }
+      }
+    },
+    "admission_seal_hash": {
+      "type": "string"
+    },
+    "issued_at": {
+      "type": "string"
+    },
+    "expires_at": {
+      "type": "string"
+    },
+    "account_equity_usdt": {
+      "type": "string"
+    },
+    "max_total_margin_rate": {
+      "type": "string"
+    },
+    "exit_policy_hash": {
+      "type": "string"
+    },
+    "approved_by": {
+      "type": "string"
+    },
+    "rollback_point": {
+      "type": "string"
+    },
+    "seal_hash": {
+      "type": "string"
+    }
+  }
+}
