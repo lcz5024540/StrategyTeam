@@ -103,6 +103,8 @@ class HtxStrategyDecisionEngine:
         self._authorize(DecisionSurface(surface))
 
     def _authorize(self, surface: DecisionSurface) -> None:
+        if surface is DecisionSurface.PAPER and (self.profile_spec is not None or self.strategy_version == LEGACY_STRATEGY_VERSION):
+            return  # PAPER simulation does not confer LIVE admission.
         if self.strategy_version == LEGACY_STRATEGY_VERSION:
             return
         if self.admission is None:

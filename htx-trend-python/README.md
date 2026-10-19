@@ -95,3 +95,40 @@ python -m htx_trend.worker --strategy-instance <instance-key>
 双周期 V2 的代码边界、迁移、验证命令和当前未完成的真实时间证据见 [`../docs/architecture-refactor/HTX_PYTHON_DUAL_PROFILE_V2_IMPLEMENTATION_V1.md`](../docs/architecture-refactor/HTX_PYTHON_DUAL_PROFILE_V2_IMPLEMENTATION_V1.md)。新增 worker 启动前还需显式执行 Python 专用迁移 [`sql/2026-10-17__strategy_risk_reservation_stop_risk.sql`](sql/2026-10-17__strategy_risk_reservation_stop_risk.sql) 与 [`sql/2026-10-17__candidate_strategy_identity.sql`](sql/2026-10-17__candidate_strategy_identity.sql)。
 
 本仓库尚未部署 Python、未执行生产 SQL，也未切换真实执行权。首次切换必须先停旧 writer 并确认锁释放，再启动 Python；锁丢失后进程永久禁止新变更，必须重启恢复。上线与回滚流程见 [`../docs/architecture-refactor/HTX_TREND_PYTHON_LIVE_SAFETY_V1.md`](../docs/architecture-refactor/HTX_TREND_PYTHON_LIVE_SAFETY_V1.md)。
+
+## PAPER 常驻 worker 候选（P1–P5）
+
+`worker --strategy-instance <独立 instance_key>` 读取已有 runtime instance 注册记录。
+TREND/PAPER 使用无凭据的公共 HTX 客户端，复用 PaperTrendRuntime、PaperExchange
+和 V4 模拟退出；不构造账户客户端、LIVE executor、LIVE writer lock，不签发或要求
+LIVE admission/LiveApproval。OBSERVE 和 LIVE 保留原启动路径及授权要求。
+受支持的既有策略版本可在 PAPER 面运行，未知版本仍拒绝；此例外不授予 LIVE 权限。
+
+配置示例见 `tests/fixtures/paper_worker.env`：`HTX_PAPER_MAX_ACTIVE_POSITIONS=5`、
+`HTX_PAPER_EQUITY_USDT=300`、`HTX_PAPER_MAX_MARGIN_RATE=0.10`、
+`HTX_PAPER_CONTRACTS=BTC-USDT,ETH-USDT`，模拟杠杆默认 10。
+这些参数通过进程 env 注入，instance_key/strategy_name/execution_mode 由现有 DB 注册记录提供。
+容量可下调至 1–5，保证金率必须在 (0,10%]，资金必须为 300U；非法值拒启。
+配置仅启动时读取，不提供热更新。无需新增或执行 SQL；本交付不创建注册记录。
+
+`HTX_PAPER_STATE_DIR/<instance_key>.json` 保存独立模拟订单、成交、仓位、决策与已处理 bar。
+同一 instance 文件以进程锁保护；完整扫描周期原子落盘，错误周期回滚，重启跳过已完成 bar。
+应由运维为每个实例提供持久、私有的状态目录；禁止将不同实例映射成同一 key。
+JSON 保存初始化身份/资金配置，变更这些配置须使用新实例。健康状态由现有 supervisor
+写回该 instance 的 heartbeat；行情缺失、陈旧或状态落盘失败不能报告 HEALTHY。
+
+每根新收盘 bar 串行管理仓位并检查入场，复用原策略判定和硬风险门。
+市价模拟使用当次公共盘口 bid/ask，限价仅在当次盘口范围命中时模拟成交，否则过期；
+手续费按合约面值计量。仓位上限、累计保证金和止损风险使用模拟账本事实，
+同一合约有仓时不新增，当次平仓不立即重开，已使用结构不可重复开仓。
+模拟没有真实撮合排队/部分成交保证；不是 OBSERVE，也不是交易所确认成交。
+公共 K 线证据写入现有 evidence store，模拟账本保留独立记录。
+这次单测/候选包不能作为 REAL_PAPER≥14d 或 R4/R5 已通过的证明。
+
+离线打包：`python release/package.py build --paper --out-root /tmp/paper-codex/frozen`。
+版本为 `0.1.3-paper-candidate-<HEAD前8位>`。`BUILD.json` 给出完整 frozen/归档路径
+及 SHA256，`MANIFEST.json` 逐文件绑定实际工作区内容。由于禁止 commit，source_commit
+是基线 HEAD，working_tree_dirty 明确为 true，不代表实现已提交。
+工作区未 commit，tip8 基于 HEAD；执行器 commit 后可能重跑 package 对齐。
+`approval-template` 仅输出未签封的 SYNTHETIC 非真授权模板。
+候选包不代表可以装包、热更或启动 PAPER；须另行产品交审及运维开工短令。
