@@ -114,7 +114,7 @@ def test_paper_db_candidate_version_and_template(tmp_path):
     import re
     archive = package.build(tmp_path / 'paper-frozen', paper=True)
     receipt = package.verify(archive)
-    assert re.fullmatch(r'0\.1\.5-paper-db-[0-9a-f]{8}', receipt['version'])
+    assert re.fullmatch(r'0\.1\.6-paper-db-[0-9a-f]{8}', receipt['version'])
     assert package.approval_template(archive)['label'] == 'SYNTHETIC'
     with tarfile.open(archive) as tar:
         assert 'src/htx_trend/paper_db_persist.py' in tar.getnames()

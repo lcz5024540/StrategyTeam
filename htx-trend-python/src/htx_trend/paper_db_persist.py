@@ -13,12 +13,21 @@ from .mysql_store import (HtxTrendMySqlRepository, LedgerEvent, MySqlSettings,
 STRATEGY = 'HTX_TREND_15M_V2'
 ACCOUNT = 'paper:htx-trend-paper-primary'
 FEE_RATE = D('.0004')
+CLIENT_ORDER_ID_MAX_LEN = 128
 LIVE_POSITION_SUMMARY_SQL = """SELECT COUNT(*) AS position_count,
  SUM(final_net_profit) AS net_profit FROM htx_trend_position
  WHERE account_label <> 'paper'"""
 PAPER_ACCOUNT_SQL = """INSERT IGNORE INTO htx_trade_account
  (account_label,account_role,enabled,trend_enabled,mirror_enabled,sync_leverage,note)
  VALUES ('paper','PAPER',0,0,0,0,'paper:htx-trend-paper-primary; simulated only')"""
+
+
+def _validate_client_order_id(client_order_id):
+    if not isinstance(client_order_id, str) or not client_order_id:
+        raise ValueError('client_order_id must be a non-empty str')
+    if len(client_order_id) > CLIENT_ORDER_ID_MAX_LEN:
+        raise ValueError(f'client_order_id length {len(client_order_id)} exceeds maximum '
+                         f'{CLIENT_ORDER_ID_MAX_LEN}')
 
 
 def ensure_paper_account(repo):
@@ -50,6 +59,9 @@ def backfill_paper_state_to_mysql(state_json, repo):
     if state['identity']['instance'] != ACCOUNT.split(':', 1)[1] or state['identity']['strategy'] != STRATEGY:
         raise ValueError('unsupported paper state identity')
     orders, positions = state['orders'], state['positions']
+    # Preflight before any writes; preserve authoritative IDs without truncation.
+    for order in orders.values():
+        _validate_client_order_id(order.get('client_order_id'))
     fills_by_order = {}
     seen = set()
     for fill in state['fills']:
