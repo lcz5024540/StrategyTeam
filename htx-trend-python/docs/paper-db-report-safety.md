@@ -49,24 +49,80 @@ new live research admission or deployment authority.
 that actual query on mixed primary/paper rows. The same filter must be applied
 to default LIVE order and ledger summaries. Explicit PAPER reports select paper.
 
-The following existing consumers still need review/migration before enabling a
-shared-table mirror in any deployment; this delivery intentionally leaves their
-business logic unchanged as allowed by P4:
+The F1–F5 source migration now applies that scope in `HtxTrendDashboardMapper`
+for positions, orders, accounts and ledger events before aggregation, joins or
+LIMIT. `HtxTrendPositionMapper.trendPerformanceSince` and `latestDoneAt` exclude
+paper; `trendPerformanceForBucket` treats null accountLabel as LIVE, while an
+explicit paper label remains supported. `findActive`, `findByRunId`,
+`findLastDone` and `countOpenLike` already select primary only. Per-position
+order-ledger aggregation is identity-scoped, not a default daily summary.
+The observation runbook now excludes paper from position/order counts.
 
-- `coin-strategy-htx/src/main/java/com/metaverse/coin/strategy/htx/persistence/mapper/HtxTrendPositionMapper.java`:
-  `trendPerformanceSince`, `trendPerformanceForBucket` (null account means all),
-  `latestDoneAt`, and unscoped active/count queries. Add paper exclusions for
-  default LIVE scope, including cooldown/performance consumers.
-- `htx-trend/HTX_TREND_ENSEMBLE_OBSERVATION_RUNBOOK.md`: raw position observation
-  query needs an explicit LIVE filter; do not copy its unfiltered query into a
-  daily report.
-- `htx-trend-python/src/htx_trend/mysql_store.py`: audit unscoped position readers
-  separately from account/strategy-scoped execution queries before reuse in
-  aggregate reports. Do not assume strategy_name alone excludes PAPER.
-- `sql/htx/2026-09-24__htx_trend_execution_identity_ledger.sql`,
-  `sql/htx/2026-09-24b__htx_trend_execution_identity_backfill_correction.sql`,
-  `sql/htx/2026-10-07b__htx_trend_structure_lifecycle_and_final_pnl.sql`:
-  historical data corrections must not be rerun indiscriminately over PAPER.
+## Read-only API and dashboard contract (F1–F3)
 
-These are source findings, not evidence that deployed reports are already safe.
-The account SQL beside this document is review-only and was not executed.
+`GET /strategy-platform/arbitrage-dashboard/htx-trend?mode=PAPER` reads
+`htx_trend_position`, `htx_trend_order` and `coin_strategy_ledger_event` with
+`account_label='paper'`. The existing gateway prefix is `/strategy/api`.
+Missing mode defaults to LIVE; LIVE uses `account_label <> 'paper'`.
+Invalid modes return 400; POST/DELETE are not mapped (405). No trading dependency
+or write endpoint is added. Account identity is authoritative: `paper-*` client
+keys are returned unchanged as strings, not parsed as numeric exchange IDs.
+PAPER ledger strategy is `HTX_TREND_15M_V2`; LIVE retains `HTX_TREND_V1` and
+primary/TradeX account compatibility. A paper row bearing the old LIVE strategy
+name still cannot enter a LIVE report.
+
+PAPER fees reside on OPEN_FILL/CLOSE_FILL events. Its ledger net sums gross minus
+all fill fees, including entry fees; LIVE retains the existing FEE-event basis.
+Positions expose finalGrossProfit, finalTotalFee, finalNetProfit, finalPnlSource
+and finalPnlCalculatedAt. PAPER_SIMULATED labels simulated terminal facts.
+PAPER does not display LIVE-only signal/candidate/runtime telemetry.
+
+React's HTX page uses an explicit `executionMode=PAPER|LIVE` selector (LIVE by
+default); its existing `mode=HTX_TREND` URL parameter selects the strategy tab.
+The query cache includes executionMode. The static dashboard has a dedicated
+HTX panel using its existing PAPER/LIVE toggle. Both show positions, orders and
+fill events read-only; no smart-wallet paper-book logic was changed.
+
+## mysql_store.py bypass audit (F4)
+
+The Java Dashboard controller calls HtxTrendDashboardQueryService and its Java
+mapper directly; neither invokes Python mysql_store.py. Python is an execution
+repository, not an aggregate dashboard API. Strategy name alone is not an
+account boundary, even when current PAPER and LIVE strategy names differ.
+
+- `active_position_count` intentionally preserves Java's primary/non-mirror
+  scope (the account_id parameter does not broaden that scope).
+- `active_direction_position_count`, `active_contract_position`,
+  `latest_done_trade`, `pending_orders`, `mirror_position`, and
+  `managed_positions` have explicit account identity and now also exclude paper.
+  Thus an accidental paper account ID or reused LIVE strategy name cannot return
+  simulated execution rows through these LIVE readers.
+- `record_position_intent` / `record_order_intent` read back by unique
+  position_key/client_order_id; those are write-workflow identity lookups, not
+  report readers. `exit_state` is keyed by position ID in its separate state
+  table. None is reused by F1. Generic `_one`/`_all` are internal SQL helpers,
+  not endpoints; callers must supply their own scope.
+- Mirror persistence remains the dedicated paper_db_persist adapter. This patch
+  does not install or start it and does not enable any executor/reservation.
+
+Tests: `tests/test_mysql_store_platform.py::test_execution_readers_explicitly_exclude_paper_even_with_live_strategy_name`
+checks every listed LIVE reader and confirms no commits. The existing
+`tests/test_paper_db_persist.py::test_default_live_summary_excludes_paper` still
+executes the reference LIVE summary on mixed rows.
+
+## Local evidence and remaining deployment boundary (F5)
+
+`coin-strategy-web/src/test/resources/paper-readonly-fixture.sql` is **H2-only**:
+6 PAPER fills / 6 FILLED orders / 3 DONE positions, plus primary and TradeX
+rows and an adversarial paper ledger row using LIVE's strategy name.
+`HtxTrendPaperReadonlyTest` executes real mapper SQL and the GET controller,
+checks fees/net/terminal source, rejects writes, and proves removing PAPER does
+not change LIVE counts/PnL. `HtxTrendLiveScopeTest` checks actual performance,
+cooldown and open-count SQL. Frontend contracts live in
+`coin-strategy-frontend/tests/paper-readonly.test.mjs`.
+
+Historical correction scripts under `sql/htx/2026-09-24*` and
+`2026-10-07b__htx_trend_structure_lifecycle_and_final_pnl.sql` must not be rerun
+indiscriminately over PAPER. Source tests do not establish deployed safety.
+See [future acceptance checklist](paper-readonly-production-acceptance.md).
+No production SSH, install, deployment, DDL or DML was performed.

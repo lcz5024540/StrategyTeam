@@ -220,6 +220,11 @@ export interface TrendRuntimeSnapshot {
 }
 
 export interface TrendPosition {
+  finalGrossProfit?: number | null
+  finalTotalFee?: number | null
+  finalNetProfit?: number | null
+  finalPnlSource?: string | null
+  finalPnlCalculatedAt?: string | null
   id: number
   contractCode: string
   status: string

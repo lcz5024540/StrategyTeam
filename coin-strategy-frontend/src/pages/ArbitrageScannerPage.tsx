@@ -18,7 +18,7 @@ const REFRESH_MS = 10_000
 const MODES: Array<{ value: ArbitrageMode; label: string; tag: string }> = [
   { value: 'CROSS_PRICE', label: '跨所套利', tag: '观察' },
   { value: 'CROSS_FUNDING', label: '对冲套利', tag: '观察' },
-  { value: 'HTX_TREND', label: 'HTX 趋势交易', tag: '实盘' },
+  { value: 'HTX_TREND', label: 'HTX 趋势交易', tag: '只读' },
   { value: 'HTX_GRID', label: '网格交易', tag: '暂停' },
 ]
 const TREND_VIEWS = [
@@ -64,6 +64,7 @@ function parseTrendView(value: string | null): TrendView { return TREND_VIEWS.so
 export function ArbitrageScannerPage() {
   const [params, setParams] = useSearchParams()
   const mode = parseMode(params.get('mode'))
+  const executionMode = params.get('executionMode') === 'PAPER' ? 'PAPER' : 'LIVE'
   const trendView = parseTrendView(params.get('view'))
   const [symbol, setSymbol] = useState(params.get('symbol') || '')
   const [exchange, setExchange] = useState(params.get('exchange') || 'ALL')
@@ -71,7 +72,7 @@ export function ArbitrageScannerPage() {
   const [minYield, setMinYield] = useState(Number(params.get('minYield') || 0))
   const [qualifiedOnly, setQualifiedOnly] = useState(params.get('qualified') === '1')
   const { data: matrixResponse, isError, refetch, isFetching } = useQuery({ queryKey: ['fundingRateMatrix'], queryFn: arbitrageDashboardApi.getFundingRateMatrix, refetchInterval: REFRESH_MS, retry: false })
-  const { data: trendResponse, isError: trendError, refetch: refetchTrend, isFetching: isFetchingTrend } = useQuery({ queryKey: ['htxTrendDashboard'], queryFn: arbitrageDashboardApi.getHtxTrendDashboard, refetchInterval: REFRESH_MS, retry: false, enabled: mode === 'HTX_TREND' })
+  const { data: trendResponse, isError: trendError, refetch: refetchTrend, isFetching: isFetchingTrend } = useQuery({ queryKey: ['htxTrendDashboard', executionMode], queryFn: () => arbitrageDashboardApi.getHtxTrendDashboard(executionMode), refetchInterval: REFRESH_MS, retry: false, enabled: mode === 'HTX_TREND' })
   const fundingMatrix = matrixResponse?.data || EMPTY_FUNDING_MATRIX
   const isFundingMode = mode === 'CROSS_FUNDING'
   const isTrendMode = mode === 'HTX_TREND'
@@ -148,7 +149,7 @@ export function ArbitrageScannerPage() {
         <button className="arb-text-button" type="button" onClick={resetFilters}>重置</button><button className="arb-text-button" type="button" onClick={() => void refetch()}>{isFetching ? '刷新中' : '刷新'}</button><button className="arb-text-button" type="button" onClick={() => void copyView()}>复制视图</button>
       </div> : null}
       {!isTrendMode ? <div className="arb-meta"><span>{MODES.find((item) => item.value === mode)?.label} · {isFundingMode ? `显示 ${fundingRows.length} 个币对 · 可执行 ${executableFundingRows.length} 个` : '真实读模型未接入'}</span><span>{isFundingMode ? '原始差 = 空头费率 - 多头费率' : '不展示 Demo 数据'}</span></div> : null}
-      {isTrendMode ? <TrendDashboard trend={trend} loading={isFetchingTrend} refresh={() => void refetchTrend()} view={trendView} onViewChange={updateTrendView} /> : isFundingMode ? <div className="arb-table-wrap"><table><thead><tr>{fundingTableHeaders(fundingMatrix.exchanges).map((item) => <th key={item}>{item}</th>)}</tr></thead><tbody>{fundingRows.length ? fundingRows.map((row) => <FundingRateMatrixTableRow key={row.symbol} row={row} exchanges={fundingMatrix.exchanges} />) : <tr><td className="arb-empty" colSpan={fundingMatrix.exchanges.length + 5}>没有满足当前筛选条件的币对</td></tr>}</tbody></table></div> : <UnsupportedModePanel mode={mode as Exclude<ArbitrageMode, 'CROSS_FUNDING' | 'HTX_TREND'>} />}
+      {isTrendMode ? <><label>HTX 数据口径 <select aria-label="HTX 数据口径" value={executionMode} onChange={(event) => { const next = new URLSearchParams(params); next.set('executionMode', event.target.value); setParams(next) }}><option value="LIVE">LIVE 实盘 · 只读</option><option value="PAPER">PAPER 模拟 · 只读</option></select></label><TrendDashboard trend={trend} loading={isFetchingTrend} refresh={() => void refetchTrend()} view={trendView} onViewChange={updateTrendView} /></> : isFundingMode ? <div className="arb-table-wrap"><table><thead><tr>{fundingTableHeaders(fundingMatrix.exchanges).map((item) => <th key={item}>{item}</th>)}</tr></thead><tbody>{fundingRows.length ? fundingRows.map((row) => <FundingRateMatrixTableRow key={row.symbol} row={row} exchanges={fundingMatrix.exchanges} />) : <tr><td className="arb-empty" colSpan={fundingMatrix.exchanges.length + 5}>没有满足当前筛选条件的币对</td></tr>}</tbody></table></div> : <UnsupportedModePanel mode={mode as Exclude<ArbitrageMode, 'CROSS_FUNDING' | 'HTX_TREND'>} />}
     </section>
     {isFundingMode && <section className="arb-bottom-grid"><article className="arb-card arb-health"><header><div><p className="arb-eyebrow">DATA COVERAGE</p><h2>资金费矩阵覆盖</h2></div><span>{matrixResponse?.asOf || '等待接口'}</span></header>{exchangeCoverage.length ? exchangeCoverage.map((item) => <div className="arb-health-row" key={item.name}><strong className={item.count > 0 ? 'good' : 'bad'}>● {item.name}</strong><i><b style={{ width: `${fundingMatrix.items.length ? Math.round(item.count / fundingMatrix.items.length * 100) : 0}%` }} /></i><span>{item.count || '—'}</span><small>{item.count ? '有资金费样本' : '当前矩阵无样本'}</small></div>) : <p className="arb-compact-note">行情读模型尚未返回资金费样本；不会将空数据呈现为可交易机会。</p>}</article>
       <article className="arb-card arb-ranking"><p className="arb-eyebrow">DATA RULES</p><h2>排序口径</h2><ol><li>仅保留具备可执行深度的市场。</li><li>资金费统一折算到共同结算窗口。</li><li>排序前已扣除手续费与 L2 滑点。</li></ol></article></section>}
@@ -576,7 +577,7 @@ function TrendLastTradePanel({ position, onHistory }: { position?: TrendPosition
     <header><div><h2>最近一笔交易</h2></div><button className="arb-text-button" type="button" onClick={onHistory}>完整历史</button></header>
     {position ? <div className="trend-last-trade">
       <div><strong>{position.contractCode}</strong><span><small>{accountName(position.accountLabel)}</small><Status status={position.side} /></span></div>
-      <dl><div><dt>账户</dt><dd>{accountName(position.accountLabel)}</dd></div><div><dt>净盈亏</dt><dd className={valueTone(position.netRealizedProfit ?? position.realizedProfit ?? 0)}>{formatUsdt(position.netRealizedProfit ?? position.realizedProfit)}</dd></div><div><dt>开 / 平仓</dt><dd>{formatDecimal(position.entryAvgPrice)} / {formatDecimal(position.closeAvgPrice)}</dd></div><div><dt>结果</dt><dd>{StatusText(position.status)}</dd></div></dl>
+      <dl><div><dt>账户</dt><dd>{accountName(position.accountLabel)}</dd></div><div><dt>净盈亏</dt><dd className={valueTone(position.finalNetProfit ?? position.netRealizedProfit ?? position.realizedProfit ?? 0)}>{formatUsdt(position.finalNetProfit ?? position.netRealizedProfit ?? position.realizedProfit)}</dd></div><div><dt>开 / 平仓</dt><dd>{formatDecimal(position.entryAvgPrice)} / {formatDecimal(position.closeAvgPrice)}</dd></div><div><dt>结果</dt><dd>{StatusText(position.status)}</dd></div></dl>
     </div> : <div className="trend-empty-state"><strong>暂无交易记录</strong><small>策略账本返回空历史时，页面不会补造收益样例。</small></div>}
   </section>
 }
@@ -711,7 +712,7 @@ function TrendLedgerEventsTable({ rows, total }: { rows: TrendLedgerEvent[]; tot
 function TrendOrdersTable({ rows }: { rows: TrendOrder[] }) {
   return <section className="arb-table-wrap"><header className="trend-table-title"><div><h2>最近订单</h2></div><span>{rows.length} 条</span></header><table><thead><tr><th>账户</th><th>合约 / 腿</th><th>方向</th><th>状态</th><th>数量</th><th>均价</th><th>成交额</th><th>手续费</th><th>已实现</th><th>更新时间</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.id}><td><b>{accountName(row.accountLabel)}</b></td><td><b>{row.contractCode}</b><small>{orderLegText(row.leg)} · #{row.positionId}</small></td><td><small>{directionText(row.trendSide)} / {directionText(row.orderSide)}{row.reduceOnly ? ' · 只减仓' : ''}</small></td><td><Status status={row.status} /></td><td>{row.filledContracts || row.requestVolume}</td><td>{formatDecimal(row.averagePrice)}</td><td>{formatNotional(row.notional)}</td><td>{formatUsdtNoSign(row.fee)}</td><td className={valueTone(row.realizedProfit || 0)}>{formatUsdt(row.realizedProfit)}</td><td><small>{row.updatedAt || row.createdAt || '—'}</small></td></tr>) : <tr><td className="arb-empty" colSpan={10}>暂无订单记录</td></tr>}</tbody></table></section>
 }
-function TrendPositionRow({ position }: { position: TrendPosition }) { return <tr><td><b>{accountName(position.accountLabel)}</b></td><td><b>{position.contractCode}</b><small>{directionText(position.side)}</small></td><td><Status status={position.status} /></td><td>{formatDecimal(position.entryAvgPrice)} / {formatDecimal(position.closeAvgPrice)}</td><td>{position.contractVolume}</td><td>{formatUsdtNoSign((position.entryFee || 0) + (position.closeFee || 0))}</td><td>{formatNotional(position.turnover)}</td><td className={valueTone(position.netRealizedProfit ?? position.realizedProfit ?? 0)}>{formatUsdt(position.netRealizedProfit ?? position.realizedProfit)}</td><td><small>{compactExitSnapshot(position)}</small></td><td><small>{position.updatedAt || '—'}</small></td></tr> }
+function TrendPositionRow({ position }: { position: TrendPosition }) { return <tr><td><b>{accountName(position.accountLabel)}</b></td><td><b>{position.contractCode}</b><small>{directionText(position.side)}</small></td><td><Status status={position.status} /></td><td>{formatDecimal(position.entryAvgPrice)} / {formatDecimal(position.closeAvgPrice)}</td><td>{position.contractVolume}</td><td>{formatUsdtNoSign(position.finalTotalFee ?? ((position.entryFee || 0) + (position.closeFee || 0)))}</td><td>{formatNotional(position.turnover)}</td><td className={valueTone(position.finalNetProfit ?? position.netRealizedProfit ?? position.realizedProfit ?? 0)}>{formatUsdt(position.finalNetProfit ?? position.netRealizedProfit ?? position.realizedProfit)}</td><td><small>{position.finalPnlSource ? `${position.finalPnlSource} · 毛利 ${formatUsdt(position.finalGrossProfit)} · ${position.finalPnlCalculatedAt || ""}` : compactExitSnapshot(position)}</small></td><td><small>{position.updatedAt || '—'}</small></td></tr> }
 function Status({ status }: { status: string }) {
   const upper = (status || '').toUpperCase()
   const label = upper === 'QUALIFIED' ? '可执行' : upper === 'OBSERVING' ? '观察中' : upper === 'REJECTED' ? '已拒绝' : upper === 'WARN' ? '预警' : upper === 'ACTIVE' ? '持仓中' : upper === 'DONE' ? '已完成' : upper === 'LONG' ? '多' : upper === 'SHORT' ? '空' : upper || '未知'
