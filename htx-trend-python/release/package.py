@@ -47,7 +47,7 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False):
     short = git('rev-parse', '--short=8', 'HEAD')
     if not re.fullmatch('[0-9a-f]{8}', short):
         raise ValueError('expected exactly eight hex characters')
-    version = f'0.1.3-paper-candidate-{short}' if paper else f'0.1.2-g3-candidate-{short}'
+    version = f'0.1.5-paper-db-{short}' if paper else f'0.1.2-g3-candidate-{short}'
     card, refs = load_artifacts(ROOT / 'release/artifacts')
     spec = profile_strategy(TimeframeProfile(card['timeframe_profile']), read_env=False)
     if spec.strategy.version != card['strategy_version']:
@@ -135,7 +135,7 @@ def verify(archive: Path):
         if entry != {'sha256': hashed, 'hash_mode': mode}:
             raise ValueError(f'member hash mismatch: {name}')
     if (manifest.get('candidate') is not True or manifest.get('synthetic') is not True
-            or not re.fullmatch(r'0\.1\.(?:2-g3|3-paper)-candidate-[0-9a-f]{8}', manifest['version'])):
+            or not re.fullmatch(r'0\.1\.(?:(?:2-g3|3-paper)-candidate|5-paper-db|4-paper-fixa)-[0-9a-f]{8}', manifest['version'])):
         raise ValueError('not a candidate package')
     if (archive.parent / 'MANIFEST.json').read_bytes() != data['MANIFEST.json']:
         raise ValueError('external manifest mismatch')
