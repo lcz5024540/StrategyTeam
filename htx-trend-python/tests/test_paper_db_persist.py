@@ -9,6 +9,13 @@ from htx_trend.paper_worker import PaperFileLedger, WorkerPaperExchange
 from htx_trend.paper import PaperOrder
 from htx_trend.market_data import Candle
 
+@pytest.fixture(autouse=True)
+def forbid_live_executor(monkeypatch):
+    from htx_trend.live import HtxLiveExecutor
+    monkeypatch.setattr(HtxLiveExecutor, '__init__',
+                        lambda *a, **k: pytest.fail('LIVE executor invoked'))
+
+
 @pytest.fixture
 def paper_store(store):
     db, repo = store
@@ -22,7 +29,7 @@ def paper_store(store):
     db.commit()
     return db, repo
 
-def make_state(tmp_path, count=3):
+def make_state(tmp_path, count=3, client_id_length=None):
     ledger = PaperFileLedger(tmp_path/'paper.json', {'instance': ACCOUNT.split(':')[1], 'strategy': STRATEGY}, mirror=lambda _: None)
     exchange = WorkerPaperExchange(ledger)
     exchange.contract_size = D('.01')
@@ -37,17 +44,30 @@ def make_state(tmp_path, count=3):
     ledger.checkpoint()
     state = json.loads(ledger.path.read_text())
     ledger.close()
+    if client_id_length is not None:
+        # Synthetic fixture only; never rewrite an existing runtime checkpoint.
+        for i, order in enumerate(state['orders'].values()):
+            prefix = 'paper-entry-' if order['position_id'] is None else 'paper-close-'
+            order['client_order_id'] = (prefix + str(i) + '-').ljust(client_id_length, 'a')
     return state
 
-def test_backfill_old_window_six_fills_three_closed_idempotent(tmp_path,paper_store,monkeypatch):
+@pytest.mark.parametrize('client_id_length', [None, 65, 93, 128])
+def test_backfill_old_window_six_fills_three_closed_idempotent(tmp_path,paper_store,monkeypatch,client_id_length):
     db,repo=paper_store
     from htx_trend.live import HtxLiveExecutor
     monkeypatch.setattr(HtxLiveExecutor,'__init__',lambda *a,**k: pytest.fail('LIVE executor invoked'))
-    state=make_state(tmp_path)
+    state=make_state(tmp_path, client_id_length=client_id_length)
+    original = json.dumps(state, sort_keys=True)
+    expected_ids = {o['client_order_id'] for o in state['orders'].values()}
+    if client_id_length is not None:
+        assert all(len(client) == client_id_length for client in expected_ids)
     assert len(state['fills'])==6 and len(state['orders'])==6
     assert all(p['status']=='CLOSED' for p in state['positions'].values())
     assert all(o['status']=='FILLED' for o in state['orders'].values())
     assert backfill_paper_state_to_mysql(json.dumps(state),repo)=={'fills_added':6,'positions':3,'orders':6}
+    for table in ('htx_trend_order', 'coin_strategy_ledger_event'):
+        assert {r[0] for r in db.raw.execute(f'SELECT client_order_id FROM {table}')} == expected_ids
+    assert json.dumps(state, sort_keys=True) == original
     paper_id=db.raw.execute("SELECT id FROM htx_trade_account WHERE account_label='paper'").fetchone()[0]
     for table,count in [('htx_trend_order',6),('htx_trend_position',3),('coin_strategy_ledger_event',6)]:
         rows=list(db.raw.execute(f'SELECT * FROM {table}'))
@@ -130,3 +150,18 @@ def test_mirror_cannot_mutate_authoritative_state(tmp_path, paper_store):
     assert path.read_text() == expected
     assert json.dumps(ledger.data, default=str, sort_keys=True) == expected
     ledger.close()
+
+
+@pytest.mark.parametrize('invalid', ['paper-close-' + 'x' * 117, '', None, 123])
+def test_invalid_client_id_fails_before_any_write(tmp_path, paper_store, monkeypatch, invalid):
+    db, repo = paper_store
+    state = make_state(tmp_path, 1)
+    next(iter(state['orders'].values()))['client_order_id'] = invalid
+    original = json.dumps(state, sort_keys=True)
+    before = list(db.raw.iterdump())
+    monkeypatch.setattr(repo, '_write', lambda *a, **k: pytest.fail('write before validation'))
+    message = 'client_order_id length 129 exceeds maximum 128' if isinstance(invalid, str) and invalid else 'client_order_id must be a non-empty str'
+    with pytest.raises(ValueError, match=message):
+        backfill_paper_state_to_mysql(state, repo)
+    assert json.dumps(state, sort_keys=True) == original
+    assert list(db.raw.iterdump()) == before

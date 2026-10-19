@@ -186,7 +186,7 @@ def test_paper_candidate_package(tmp_path):
     from test_g3_release import package
     archive = package.build(tmp_path, paper=True)
     receipt = package.verify(archive)
-    assert receipt['version'].startswith('0.1.5-paper-db-')
+    assert receipt['version'].startswith('0.1.6-paper-db-')
     assert receipt['frozen_path'] == str(archive.parent.resolve())
     template = package.approval_template(archive)
     assert template['synthetic'] is True and template['seal_hash'] == ''
