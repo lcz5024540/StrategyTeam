@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 import fcntl
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -55,7 +56,9 @@ class PaperWorkerConfig:
 
 class PaperFileLedger:
     """Paper ledger protocol with atomic per-cycle snapshots and exclusive ownership."""
-    def __init__(self, path: Path, identity: dict):
+    def __init__(self, path: Path, identity: dict, *, mirror=None):
+        from .paper_db_persist import mirror_checkpoint
+        self.mirror = mirror if mirror is not None else mirror_checkpoint
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.lock = path.with_suffix('.lock').open('a')
@@ -78,6 +81,10 @@ class PaperFileLedger:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, self.path)
+        try:
+            self.mirror(json.loads(raw))
+        except Exception:
+            logging.getLogger(__name__).exception("PAPER DB mirror failed; JSON remains authoritative; retry next checkpoint")
 
     def close(self):
         self.lock.close()
