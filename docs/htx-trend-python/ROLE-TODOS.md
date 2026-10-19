@@ -70,6 +70,36 @@
 
 ## 【策略开发】
 
+### 2026-10-19 G3.1–G3.4b 候选打包交付
+
+**候选包 ≠ 可以热更 ≠ 可装现网**。本轮仅 Mac 本地工程打包；未执行生产安装/热更、SQL、真实 LIVE admission/approval 签发。G3.5 干净环境验收、G3.6–7 热更/现网安装均不在本轮范围。
+
+- G3.1：`htx-trend-python/release/artifacts/` 固定存放 strategy_card / feature_dict / experiment_ledger 的 schema 与 SYNTHETIC 示例；`src/htx_trend/release_artifacts.py` 校验必填、类型、嵌套字段、候选标志及跨制品引用，暴露 id/version/hash/feature keys/experiment ids。
+- G3.2′：`release/package.py` 以白名单归档完整 Python src、pyproject、文档和制品。`MANIFEST.json` 绑定 source commit、配置示例 hash 和制品引用，文件成员严格 1:1。清单自身 hash 采用 canonical JSON 并清空自身 sha256 字段；其原始字节 SHA 另记在 BUILD 中。最终 tar 字节 SHA 记录在外置 `BUILD.json` 和 `.tar.gz.sha256`，包内通过 ref 指向它，避免循环自引用。
+- G3.3′：`approval-template` 从已验证包读取 package/source/config/spec/strategy/profile，输出 G2 外层+LiveApproval 内层字段，固定 `synthetic:true`，不填写真实账户/admission/有效期/seal。不得用于 LIVE，也不得从模板复制 context 冒充独立运行事实。G2 admission 的 config_hash 对应 approval 的 config_fingerprint；完整交叉绑定说明见 `htx-trend-python/release/README.md`。
+- G3.4：默认输出 `/tmp/g3-codex/frozen/0.1.2-g3-candidate-<8位HEAD>/`，已存在目录拒绝覆盖。未提交工作树构建明确标记 dirty，source_commit 仅指 HEAD，实际 payload 由逐文件 hash 锁定。执行器提交后须按新 HEAD 重新构建。
+- G3.4b 验证结果：完整 `tests/` **386 passed**（原 G2 测试不删、不跳过、不降低断言）；包含新增 G3 制品/打包/篡改/模板测试及 `tests/test_g2_artifacts.py` 的 SYNTHETIC LIVE 拒绝回归。包 verify + 独立 SHA 重算 PASS；G2 CLI self-test **2 checks PASS**。工程测试不替代 G3.5。
+
+可复制执行（在本机已有环境；不安装任何依赖）：
+
+```sh
+cd /Users/jenniferni/jenifer/build/CoinStrategy/htx-trend-python
+export http_proxy=http://127.0.0.1:7897 https_proxy=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 ALL_PROXY=socks5h://127.0.0.1:7897
+export PYTHONPATH=src:/private/tmp/htx-r1-clean-cert-11126/lib/python3.11/site-packages
+PY=/private/tmp/r0-entry-venv/bin/python
+VER="0.1.2-g3-candidate-$(git rev-parse --short=8 HEAD)"
+OUT="/tmp/g3-codex/frozen/$VER"
+TAR="$OUT/htx-trend-python-$VER.tar.gz"
+"$PY" release/package.py build
+"$PY" release/package.py verify "$TAR"
+(cd "$OUT" && LC_ALL=C shasum -a 256 -c "$(basename "$TAR").sha256")
+"$PY" release/package.py approval-template "$TAR" --output "$OUT/approval.template.json"
+"$PY" -m pytest tests/ -q --tb=short
+"$PY" -m htx_trend.cli self-test
+```
+
+本次版本 `0.1.2-g3-candidate-88bdbf37`；已有冻结包直接执行 verify，不重复 build；新复核构建可用 `build --out-root /tmp/g3-codex/review-build`。模板输出也拒绝覆盖。交测试携带 tar、sha256、MANIFEST、BUILD 和模板；等待另行 G3.5 测试令，禁止据此安装现网。详细哈希口径和权限边界见 `htx-trend-python/release/README.md`。
+
 ### 2026-10-19 G2 准入制品（仅工程验收，未授权 LIVE）
 
 - 复用 `StrategyAdmissionArtifact` / `ResearchStage` / `LiveApproval`，严格磁盘封装实现位于 `src/htx_trend/admission.py`。制品、JSON schema、当前绑定上下文示例集中在 `htx-trend-python/tests/fixtures/g2/`，全部标注 SYNTHETIC；不得作为真实授权。真实制品目录由运维另行配置，本轮不创建、不签发。

@@ -1,0 +1,17 @@
+{
+  "id": "SYNTHETIC-experiment_ledger",
+  "version": "1",
+  "synthetic": true,
+  "candidate": true,
+  "experiments": [
+    {
+      "experiment_id": "SYNTHETIC-G3-001",
+      "hypothesis": "Validate packaging references only",
+      "feature_keys": [
+        "close_slope_20"
+      ],
+      "status": "SYNTHETIC_ONLY",
+      "conclusion": "No research or LIVE admission conclusion"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "SYNTHETIC-feature_dict",
+  "version": "1",
+  "synthetic": true,
+  "candidate": true,
+  "features": [
+    {
+      "key": "close_slope_20",
+      "version": "1",
+      "formula": "linear regression slope / latest close",
+      "inputs": [
+        "closed candle close"
+      ],
+      "window": 20,
+      "unit": "ratio per bar"
+    }
+  ]
+}
