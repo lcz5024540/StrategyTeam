@@ -42,12 +42,12 @@ def git(*args):
     return subprocess.check_output(['git', '-C', str(ROOT), *args], text=True).strip()
 
 
-def build(out_root=Path('/tmp/g3-codex/frozen')):
+def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False):
     source = git('rev-parse', 'HEAD')
     short = git('rev-parse', '--short=8', 'HEAD')
     if not re.fullmatch('[0-9a-f]{8}', short):
         raise ValueError('expected exactly eight hex characters')
-    version = f'0.1.2-g3-candidate-{short}'
+    version = f'0.1.3-paper-candidate-{short}' if paper else f'0.1.2-g3-candidate-{short}'
     card, refs = load_artifacts(ROOT / 'release/artifacts')
     spec = profile_strategy(TimeframeProfile(card['timeframe_profile']), read_env=False)
     if spec.strategy.version != card['strategy_version']:
@@ -62,9 +62,13 @@ def build(out_root=Path('/tmp/g3-codex/frozen')):
         if path.is_symlink() or any(p.is_symlink() for p in path.parents):
             raise ValueError(f'symlink payload forbidden: {path}')
         payload[path.relative_to(ROOT).as_posix()] = path.read_bytes()
-    config = {'synthetic': True, 'candidate': True, 'mode': 'OBSERVE',
+    config = {'synthetic': True, 'candidate': True, 'mode': 'PAPER' if paper else 'OBSERVE',
               'strategy_version': card['strategy_version'], 'timeframe_profile': card['timeframe_profile'],
               'note': 'Packaging example only; not a runtime configuration or account binding'}
+    if paper:
+        config.update(instance_key='htx-trend-paper-primary', max_active_positions=5,
+                      account_equity_usdt='300', max_total_margin_rate='0.10',
+                      contracts=['BTC-USDT', 'ETH-USDT'])
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
                 'config_hash': digest(encoded(config)), 'config_path': 'release/config.example.json',
@@ -93,9 +97,14 @@ def build(out_root=Path('/tmp/g3-codex/frozen')):
                     tar.addfile(entry, io.BytesIO(data))
     package_sha = digest(archive.read_bytes())
     receipt = {'schema': 'htx-candidate-build-g3', 'candidate': True, 'synthetic': True,
-               'disclaimer': DISCLAIMER, 'archive': archive.name, 'package_sha256': package_sha,
+               'disclaimer': DISCLAIMER, 'frozen_path': str(out.resolve()), 'archive_path': str(archive.resolve()),
+               'archive': archive.name, 'package_sha256': package_sha,
                'manifest_sha256': digest(payload['MANIFEST.json']), 'version': version,
                'bindings': {**bindings, 'package_sha256': package_sha}}
+    if paper:
+        receipt['build'] = {**manifest['build'],
+                            'version_note': 'tip8 is based on HEAD; for an uncommitted working tree, '
+                                            'the executor may rebuild after commit to align tip8'}
     (out / 'MANIFEST.json').write_bytes(payload['MANIFEST.json'])
     (out / 'BUILD.json').write_bytes(encoded(receipt))
     archive.with_name(archive.name + '.sha256').write_text(f'{package_sha}  {archive.name}\n')
@@ -126,7 +135,7 @@ def verify(archive: Path):
         if entry != {'sha256': hashed, 'hash_mode': mode}:
             raise ValueError(f'member hash mismatch: {name}')
     if (manifest.get('candidate') is not True or manifest.get('synthetic') is not True
-            or not re.fullmatch(r'0\.1\.2-g3-candidate-[0-9a-f]{8}', manifest['version'])):
+            or not re.fullmatch(r'0\.1\.(?:2-g3|3-paper)-candidate-[0-9a-f]{8}', manifest['version'])):
         raise ValueError('not a candidate package')
     if (archive.parent / 'MANIFEST.json').read_bytes() != data['MANIFEST.json']:
         raise ValueError('external manifest mismatch')
@@ -155,7 +164,7 @@ def approval_template(archive: Path):
     inner.update(admission_hash='', account_id=0,
                  risk={'per_trade_equity_rate': '0.005', 'total_open_equity_rate': '0.015', 'max_active_positions': 3},
                  exit_version='HTX_TREND_EXIT_V4', issued_at='', expires_at='', approval_hash='')
-    value = {'schema': 'htx-live-approval-g2', 'synthetic': True, 'label': 'SYNTHETIC',
+    value = {'schema': 'htx-live-approval-g2', 'synthetic': True, 'label': 'SYNTHETIC', 'note': '非真授权; template cannot authorize LIVE or deployment',
              'approval': inner, 'admission_seal_hash': '', 'account_equity_usdt': '300',
              'max_total_margin_rate': '0.10', 'exit_policy_hash': '', 'approved_by': 'SYNTHETIC',
              'rollback_point': 'SYNTHETIC-NO-DEPLOY', 'issued_at': '', 'expires_at': '', 'seal_hash': ''}
@@ -166,14 +175,16 @@ def approval_template(archive: Path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
-    commands.add_parser('build').add_argument('--out-root', type=Path, default=Path('/tmp/g3-codex/frozen'))
+    builder = commands.add_parser('build')
+    builder.add_argument('--out-root', type=Path, default=Path('/tmp/g3-codex/frozen'))
+    builder.add_argument('--paper', action='store_true')
     commands.add_parser('verify').add_argument('archive', type=Path)
     template = commands.add_parser('approval-template')
     template.add_argument('archive', type=Path)
     template.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.command == 'build':
-        print(build(args.out_root))
+        print(build(args.out_root, paper=args.paper))
     elif args.command == 'verify':
         print(json.dumps({'status': 'PASS', **verify(args.archive)}, ensure_ascii=False))
     else:

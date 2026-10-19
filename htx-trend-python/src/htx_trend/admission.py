@@ -129,6 +129,8 @@ def validate_approval(path, admission_path, current, surface='LIVE', *, now=None
 
 def runtime_guard(instance, account, profile):
     """Reload disk evidence on each entry; no cached approval or waiver bypass."""
+    if getattr(instance, "execution_mode", None) == "PAPER":
+        return None, None  # Simulation is not LIVE authorization.
     import os
     from .execution import ExecutionConfig
     from .strategy_profiles import profile_strategy

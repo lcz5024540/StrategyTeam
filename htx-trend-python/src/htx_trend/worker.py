@@ -142,6 +142,8 @@ def main() -> None:
     writer_lock = None
     evidence_store = None
     started = False
+    paper_worker = None
+    paper_client = None
     try:
         repository.validate_runtime_schema()
         instance = repository.runtime_instance(args.strategy_instance)
@@ -150,7 +152,7 @@ def main() -> None:
         if not instance.enabled:
             raise SystemExit(f"strategy instance is disabled: {args.strategy_instance}")
         family = instance.strategy_family.upper()
-        admission = _load_admission(instance.strategy_name) if family == "TREND" else None
+        admission = _load_admission(instance.strategy_name) if family == "TREND" and instance.execution_mode != ExecutionMode.PAPER else None
         if family == "TREND":
             evidence_store = FileEvidenceStore(Path(os.environ.get(
                 "HTX_PYTHON_EVIDENCE_DIR", "./research-data/evidence")))
@@ -177,6 +179,12 @@ def main() -> None:
                 for config in observer_configs)
             worker = (observer_workers[0] if len(observer_workers) == 1
                       else MultiTimeframeObservationWorker(observer_workers))
+        elif family == "TREND" and instance.execution_mode == ExecutionMode.PAPER:
+            from .paper_worker import PaperTrendWorker, PaperWorkerConfig
+            paper_client = HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com"))
+            worker = paper_worker = PaperTrendWorker(instance,
+                HtxMarketData(paper_client, evidence_store=evidence_store),
+                Path(os.environ.get("HTX_PAPER_STATE_DIR", "./paper-state")), PaperWorkerConfig.from_env())
         elif family == "TREND" and instance.execution_mode == ExecutionMode.LIVE:
             if instance.account_id is None:
                 raise SystemExit("LIVE trend instance requires an account-bound runtime instance")
@@ -230,6 +238,10 @@ def main() -> None:
             if started:
                 repository.mark_runtime_stopped(instance.instance_key)
         finally:
+            if paper_worker is not None:
+                paper_worker.stop()
+            if paper_client is not None:
+                paper_client.close()
             repository.close()
             if evidence_store is not None:
                 evidence_store.close()
