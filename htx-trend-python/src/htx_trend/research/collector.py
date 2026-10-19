@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Callable
+from ..runtime_kline_business import BUSINESS_KLINE_SYMBOLS, BUSINESS_KLINE_PERIODS
 from ..market_data import Candle, period_anchor_seconds, period_seconds
 from .quality import audit
 from .store import FileEvidenceStore
@@ -12,12 +13,14 @@ PERIODS = ('15min', '30min', '60min', '4hour', '1day')
 
 class ContinuousCollector:
     def __init__(self, client, store: FileEvidenceStore, *, page_bars: int = 500,
-                 clock: Callable[[], float] | None = None):
+                 clock: Callable[[], float] | None = None, business_sink=None):
         import time
         if not 1 <= page_bars <= 2000:
             raise ValueError('page_bars outside HTX page bound')
         self.client, self.store, self.page_bars = client, store, page_bars
         self.clock = clock or time.time
+        self.business_sink = business_sink
+        self.business_counts = dict(attempted=0, inserted=0, ignored=0)
 
     def page(self, symbol: str, period: str, start: int, end: int, *, source: str) -> str:
         step = period_seconds(period)
@@ -59,7 +62,23 @@ class ContinuousCollector:
         # Progress advances only after all objects and refs are durably indexed.
         if quality['integrity'] == 'COMPLETE':
             self.store.checkpoint(f'coverage:{symbol}:{period}:{start}:{end}', {'hash': window})
+        self._deliver_business(window)
         return window
+
+    def _deliver_business(self, key: str) -> None:
+        if self.business_sink is None:
+            return
+        payload = self.store.get(key)['payload']
+        if (payload['integrity'] != 'COMPLETE' or payload['symbol'] not in BUSINESS_KLINE_SYMBOLS
+                or payload['period'] not in BUSINESS_KLINE_PERIODS):
+            return
+        names = ('id', 'open', 'high', 'low', 'close', 'amount', 'vol', 'trade_turnover', 'count')
+        candles = [Candle.from_htx(dict(zip(names, (v or None for v in item['canonical'].split('|')))))
+                   for item in payload['candles']]
+        counts = self.business_sink.write(candles, contract_code=payload['symbol'],
+            period=payload['period'], captured_at=datetime.fromtimestamp(payload['observed_at'], timezone.utc))
+        for name, count in counts.items():
+            self.business_counts[name] += count
 
     def collect(self, symbols: tuple[str, ...], *, start: int, end: int,
                 periods: tuple[str, ...] = PERIODS) -> str:
@@ -82,6 +101,7 @@ class ContinuousCollector:
                         if cached:
                             key = cached['hash']
                             self.store.verify(key)
+                            self._deliver_business(key)
                         else:
                             key = self.page(symbol, period, page_start, page_end, source='HISTORICAL_BACKFILL')
                         refs.append(key)
