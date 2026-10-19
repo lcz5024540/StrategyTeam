@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import httpx
+import pytest
 
 from htx_trend.htx_v5 import HtxV5Client
 from htx_trend.market_data import (Candle, HtxMarketData, KlineWindow, completed_candles,
@@ -24,10 +25,11 @@ def test_window_requires_contiguous_completed_bars() -> None:
     assert not KlineWindow("BTC-USDT", "15min", (candle(0), candle(1800)), 2).is_complete
 
 
-def test_market_data_requests_one_extra_bar_and_removes_open_bar() -> None:
+def test_market_data_requests_two_extra_bars_and_removes_open_bar() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["size"] == "3"
+        assert request.url.params["size"] == "4"
         return httpx.Response(200, json={"status": "ok", "data": [
+            {"id": 2700, "open": "1", "high": "2", "low": "0.5", "close": "1.5"},
             {"id": 1800, "open": "1", "high": "2", "low": "0.5", "close": "1.5"},
             {"id": 900, "open": "1", "high": "2", "low": "0.5", "close": "1.5"},
             {"id": 0, "open": "1", "high": "2", "low": "0.5", "close": "1.5"},
@@ -35,6 +37,48 @@ def test_market_data_requests_one_extra_bar_and_removes_open_bar() -> None:
     client = HtxV5Client(client=httpx.Client(transport=httpx.MockTransport(handler)))
     result = HtxMarketData(client, close_grace_seconds=3).kline_window("BTC-USDT", "15min", 2, now_epoch=2702)
     assert [item.open_time for item in result.candles] == [0, 900]
+    assert result.is_complete
+
+
+@pytest.mark.parametrize("offset", [0, 3, 9, 10])
+def test_market_data_window_stays_complete_at_close_grace_boundary(offset: int) -> None:
+    boundary, period, size = 1_800_000_000, 900, 3
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["size"] == str(size + 2)
+        return httpx.Response(200, json={"status": "ok", "data": [
+            {"id": boundary - index * period, "open": "100", "high": "102", "low": "99", "close": "101"}
+            for index in range(size + 2)
+        ]})
+
+    client = HtxV5Client(client=httpx.Client(transport=httpx.MockTransport(handler)))
+    result = HtxMarketData(client, close_grace_seconds=10).kline_window(
+        "BTC-USDT", "15min", size, now_epoch=boundary + offset,
+    )
+    assert result.is_complete
+    assert len(result.candles) == size
+    newest = boundary - (period if offset == 10 else 2 * period)
+    assert [item.open_time for item in result.candles] == [
+        newest - index * period for index in reversed(range(size))
+    ]
+
+
+def test_market_data_window_is_incomplete_when_api_returns_too_few_bars() -> None:
+    boundary, period, size = 1_800_000_000, 900, 3
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["size"] == str(size + 2)
+        return httpx.Response(200, json={"status": "ok", "data": [
+            {"id": boundary - index * period, "open": "100", "high": "102", "low": "99", "close": "101"}
+            for index in range(size + 1)
+        ]})
+
+    client = HtxV5Client(client=httpx.Client(transport=httpx.MockTransport(handler)))
+    result = HtxMarketData(client, close_grace_seconds=10).kline_window(
+        "BTC-USDT", "15min", size, now_epoch=boundary + 3,
+    )
+    assert len(result.candles) == size - 1
+    assert not result.is_complete
 
 
 def test_market_data_freezes_raw_response_and_normalized_window(tmp_path) -> None:

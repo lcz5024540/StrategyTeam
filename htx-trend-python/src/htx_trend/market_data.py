@@ -178,7 +178,7 @@ class HtxMarketData:
         if size < 1:
             raise ValueError("K-line size must be positive")
         observed_at = int(datetime.now(UTC).timestamp())
-        envelope = self._client.history_kline_envelope(contract_code, period, size + 1)
+        envelope = self._client.history_kline_envelope(contract_code, period, size + 2)
         raw = envelope.get("data")
         if not isinstance(raw, list):
             raise ValueError(f"HTX K-line response has no data list for {contract_code}")
@@ -191,7 +191,7 @@ class HtxMarketData:
             try:
                 raw_ref = self._evidence_store.put("runtime_raw_kline", {
                     "exchange": "HTX", "contract_code": contract_code, "period": period,
-                    "requested_size": size + 1, "observed_at": observed_at,
+                    "requested_size": size + 2, "observed_at": observed_at,
                     "decision_as_of": now_epoch, "response": envelope,
                 })
                 window_ref = self._evidence_store.put("runtime_kline_window", {
