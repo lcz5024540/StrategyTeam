@@ -25,26 +25,33 @@ public class HtxTrendDashboardQueryService {
         this.mapper = mapper;
     }
 
-    public HtxTrendDashboardViews.Dashboard dashboard() {
+    public HtxTrendDashboardViews.Dashboard dashboard() { return dashboard("LIVE"); }
+
+    public HtxTrendDashboardViews.Dashboard dashboard(String requestedMode) {
+        String mode = requestedMode == null ? "LIVE" : requestedMode.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!mode.equals("LIVE") && !mode.equals("PAPER")) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "mode must be PAPER or LIVE");
+        }
         try {
-            Map<String, Map<String, Object>> ledgerAccounts = ledgerAccountSummaries();
-            return new HtxTrendDashboardViews.Dashboard(TIME.format(Instant.now()), "HTX_TREND_EXECUTION_LEDGER",
-                    summary(mapper.summary()), ledgerSummary(), performanceSummary(), runtime(mapper.runtime()),
-                    mapper.accountSummaries().stream().map(row -> accountSummary(row, ledgerAccounts)).toList(),
-                    mapper.activePositions().stream().map(this::position).toList(),
-                    mapper.recentPositions().stream().map(this::position).toList(),
-                    mapper.dailyPnl().stream().map(this::daily).toList(),
-                    mapper.sidePnl().stream().map(this::dimensionPnl).toList(),
-                    mapper.todaySidePnl().stream().map(this::dimensionPnl).toList(),
-                    mapper.exitReasonPnl().stream().map(this::dimensionPnl).toList(),
-                    mapper.entryModelPnl().stream().map(this::dimensionPnl).toList(),
-                    mapper.marketRegimePnl().stream().map(this::dimensionPnl).toList(),
-                    mapper.symbolPnl().stream().map(this::dimensionPnl).toList(),
-                    mapper.recentOrders().stream().map(this::order).toList(),
-                    recentLedgerEvents(),
-                    mapper.recentSignals().stream().map(this::signal).toList(),
-                    mapper.signalRollup().stream().map(this::signalRollup).toList(),
-                    mapper.recentCandidateSignals().stream().map(this::candidateSignal).toList());
+            Map<String, Map<String, Object>> ledgerAccounts = ledgerAccountSummaries(mode);
+            return new HtxTrendDashboardViews.Dashboard(TIME.format(Instant.now()), mode.equals("PAPER") ? "HTX_TREND_PAPER_SIMULATED_READONLY" : "HTX_TREND_EXECUTION_LEDGER",
+                    summary(mapper.summary(mode)), ledgerSummary(mode), performanceSummary(mode), runtime(mode.equals("PAPER") ? Map.of() : mapper.runtime(mode)),
+                    mapper.accountSummaries(mode).stream().map(row -> accountSummary(row, ledgerAccounts)).toList(),
+                    mapper.activePositions(mode).stream().map(this::position).toList(),
+                    mapper.recentPositions(mode).stream().map(this::position).toList(),
+                    mapper.dailyPnl(mode).stream().map(this::daily).toList(),
+                    mapper.sidePnl(mode).stream().map(this::dimensionPnl).toList(),
+                    mapper.todaySidePnl(mode).stream().map(this::dimensionPnl).toList(),
+                    mapper.exitReasonPnl(mode).stream().map(this::dimensionPnl).toList(),
+                    mapper.entryModelPnl(mode).stream().map(this::dimensionPnl).toList(),
+                    mapper.marketRegimePnl(mode).stream().map(this::dimensionPnl).toList(),
+                    mapper.symbolPnl(mode).stream().map(this::dimensionPnl).toList(),
+                    mapper.recentOrders(mode).stream().map(this::order).toList(),
+                    recentLedgerEvents(mode),
+                    (mode.equals("PAPER") ? List.<Map<String, Object>>of() : mapper.recentSignals(mode)).stream().map(this::signal).toList(),
+                    (mode.equals("PAPER") ? List.<Map<String, Object>>of() : mapper.signalRollup(mode)).stream().map(this::signalRollup).toList(),
+                    (mode.equals("PAPER") ? List.<Map<String, Object>>of() : mapper.recentCandidateSignals(mode)).stream().map(this::candidateSignal).toList());
         } catch (DataAccessException exception) {
             return unavailableDashboard();
         }
@@ -72,22 +79,24 @@ public class HtxTrendDashboardQueryService {
     }
 
 
-    private HtxTrendDashboardViews.LedgerSummary ledgerSummary() {
+    private HtxTrendDashboardViews.LedgerSummary ledgerSummary(String mode) {
         try {
-            return ledgerSummary(mapper.ledgerSummary());
+            return ledgerSummary(mapper.ledgerSummary(mode));
         } catch (DataAccessException exception) {
+            if ("PAPER".equals(mode)) throw exception;
             return emptyLedgerSummary();
         }
     }
 
-    private Map<String, Map<String, Object>> ledgerAccountSummaries() {
+    private Map<String, Map<String, Object>> ledgerAccountSummaries(String mode) {
         try {
             Map<String, Map<String, Object>> rows = new HashMap<>();
-            for (Map<String, Object> row : mapper.ledgerAccountSummaries()) {
+            for (Map<String, Object> row : mapper.ledgerAccountSummaries(mode)) {
                 rows.put(text(row, "accountLabel"), row);
             }
             return rows;
         } catch (DataAccessException exception) {
+            if ("PAPER".equals(mode)) throw exception;
             return Map.of();
         }
     }
@@ -105,10 +114,11 @@ public class HtxTrendDashboardQueryService {
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null);
     }
 
-    private HtxTrendDashboardViews.PerformanceSummary performanceSummary() {
+    private HtxTrendDashboardViews.PerformanceSummary performanceSummary(String mode) {
         try {
-            return performanceSummary(mapper.performanceSummary());
+            return performanceSummary(mapper.performanceSummary(mode));
         } catch (DataAccessException exception) {
+            if ("PAPER".equals(mode)) throw exception;
             return emptyPerformanceSummary();
         }
     }
@@ -195,7 +205,9 @@ public class HtxTrendDashboardQueryService {
                 nullableDecimal(row, "exitSnapshotNet"), nullableDecimal(row, "exitSnapshotMfe"),
                 nullableDecimal(row, "exitSnapshotMae"), nullableDecimal(row, "exitSnapshotGiveback"),
                 nullableLong(row, "exitSnapshotBars"), text(row, "exitSnapshotCandidates"),
-                text(row, "exitSnapshotUpdatedAt"), text(row, "createdAt"), text(row, "updatedAt"));
+                text(row, "exitSnapshotUpdatedAt"), text(row, "createdAt"), text(row, "updatedAt"),
+                nullableDecimal(row, "finalGrossProfit"), nullableDecimal(row, "finalTotalFee"),
+                nullableDecimal(row, "finalNetProfit"), text(row, "finalPnlSource"), text(row, "finalPnlCalculatedAt"));
     }
 
     private HtxTrendDashboardViews.DailyPnl daily(Map<String, Object> row) {
@@ -232,10 +244,11 @@ public class HtxTrendDashboardQueryService {
     }
 
 
-    private List<HtxTrendDashboardViews.LedgerEvent> recentLedgerEvents() {
+    private List<HtxTrendDashboardViews.LedgerEvent> recentLedgerEvents(String mode) {
         try {
-            return mapper.recentLedgerEvents().stream().map(this::ledgerEvent).toList();
+            return mapper.recentLedgerEvents(mode).stream().map(this::ledgerEvent).toList();
         } catch (DataAccessException exception) {
+            if ("PAPER".equals(mode)) throw exception;
             return List.of();
         }
     }

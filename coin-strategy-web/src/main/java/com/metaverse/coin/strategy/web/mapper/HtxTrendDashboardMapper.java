@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.web.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
@@ -11,17 +12,20 @@ import java.util.Map;
 public interface HtxTrendDashboardMapper {
 
     String TREND_SCHEMA = "htx_trade_strategy.";
-    String POSITION_TABLE = TREND_SCHEMA + "htx_trend_position";
-    String ORDER_TABLE = TREND_SCHEMA + "htx_trend_order";
+    // Account identity is authoritative; paper-* client keys remain opaque strings.
+    String ACCOUNT_SCOPE = "((#{mode} = 'PAPER' AND account_label = 'paper') OR "
+            + "((#{mode} IS NULL OR #{mode} = 'LIVE') AND account_label <> 'paper'))";
+    String POSITION_TABLE = "(SELECT * FROM " + TREND_SCHEMA + "htx_trend_position WHERE " + ACCOUNT_SCOPE + ")";
+    String ORDER_TABLE = "(SELECT * FROM " + TREND_SCHEMA + "htx_trend_order WHERE " + ACCOUNT_SCOPE + ")";
     String SIGNAL_TABLE = TREND_SCHEMA + "htx_trend_signal";
     String CANDIDATE_SIGNAL_TABLE = TREND_SCHEMA + "htx_trend_candidate_signal";
     String FACTOR_SNAPSHOT_TABLE = TREND_SCHEMA + "htx_trend_factor_snapshot";
-    String ACCOUNT_TABLE = TREND_SCHEMA + "htx_trade_account";
-    String LEDGER_TABLE = TREND_SCHEMA + "coin_strategy_ledger_event";
+    String ACCOUNT_TABLE = "(SELECT * FROM " + TREND_SCHEMA + "htx_trade_account WHERE " + ACCOUNT_SCOPE + ")";
+    String LEDGER_TABLE = "(SELECT * FROM " + TREND_SCHEMA + "coin_strategy_ledger_event WHERE " + ACCOUNT_SCOPE + ")";
 
     String LEDGER_TURNOVER = "CASE WHEN event_type IN ('OPEN_FILL','CLOSE_FILL') THEN COALESCE(amount_usdt, 0) ELSE 0 END";
-    String LEDGER_FEE = "CASE WHEN event_type = 'FEE' THEN COALESCE(fee_usdt, 0) ELSE 0 END";
-    String LEDGER_NET = "COALESCE(net_pnl_after_fee, 0)";
+    String LEDGER_FEE = "CASE WHEN event_type = 'FEE' OR (account_label = 'paper' AND event_type IN ('OPEN_FILL','CLOSE_FILL')) THEN COALESCE(fee_usdt, 0) ELSE 0 END";
+    String LEDGER_NET = "CASE WHEN account_label = 'paper' THEN COALESCE(gross_pnl_usdt, 0) - COALESCE(fee_usdt, 0) ELSE COALESCE(net_pnl_after_fee, 0) END";
 
     String CLOSED_NET_PROFIT = "COALESCE(realized_profit, 0) - COALESCE(entry_fee, 0) - COALESCE(close_fee, 0)";
     String CLOSED_TURNOVER = "COALESCE(entry_filled_contracts, 0) * COALESCE(contract_size, 0) * COALESCE(entry_avg_price, 0) "
@@ -50,7 +54,9 @@ public interface HtxTrendDashboardMapper {
             + "WHEN entry_signal IS NULL OR entry_signal = '' THEN 'unknown' "
             + "ELSE 'unclassified' END";
 
-    String POSITION_EXIT_SNAPSHOT_COLUMNS = "exit_snapshot_state AS exitSnapshotState, "
+    String POSITION_EXIT_SNAPSHOT_COLUMNS = "final_gross_profit AS finalGrossProfit, final_total_fee AS finalTotalFee, "
+            + "final_net_profit AS finalNetProfit, final_pnl_source AS finalPnlSource, final_pnl_calculated_at AS finalPnlCalculatedAt, "
+            + "exit_snapshot_state AS exitSnapshotState, "
             + "exit_snapshot_net AS exitSnapshotNet, exit_snapshot_mfe AS exitSnapshotMfe, "
             + "exit_snapshot_mae AS exitSnapshotMae, exit_snapshot_giveback AS exitSnapshotGiveback, "
             + "exit_snapshot_bars AS exitSnapshotBars, exit_snapshot_candidates AS exitSnapshotCandidates, "
@@ -70,8 +76,8 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() THEN realized_profit ELSE 0 END), 0) AS todayRealizedProfit, "
             + "COALESCE(SUM(CASE WHEN status = 'DONE' THEN realized_profit - entry_fee - close_fee ELSE 0 END), 0) AS netRealizedProfit, "
             + "COALESCE(SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() THEN realized_profit - entry_fee - close_fee ELSE 0 END), 0) AS todayNetRealizedProfit "
-            + "FROM " + POSITION_TABLE + "")
-    Map<String, Object> summary();
+            + "FROM " + POSITION_TABLE + " scoped_position")
+    Map<String, Object> summary(@Param("mode") String mode);
 
     @Select("SELECT COUNT(*) AS ledgerEventCount, "
             + "COALESCE(SUM(" + LEDGER_TURNOVER + "), 0) AS ledgerTotalTurnover, "
@@ -81,8 +87,8 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(" + LEDGER_NET + "), 0) AS ledgerNetRealizedProfit, "
             + "COALESCE(SUM(CASE WHEN occurred_at >= CURDATE() THEN " + LEDGER_NET + " ELSE 0 END), 0) AS ledgerTodayNetRealizedProfit, "
             + "MAX(occurred_at) AS latestLedgerAt FROM " + LEDGER_TABLE
-            + " WHERE strategy_family = 'TREND' AND strategy_name = 'HTX_TREND_V1'")
-    Map<String, Object> ledgerSummary();
+            + " scoped_ledger WHERE strategy_family = 'TREND' AND ((#{mode} = 'PAPER' AND strategy_name = 'HTX_TREND_15M_V2') OR ((#{mode} IS NULL OR #{mode} = 'LIVE') AND strategy_name = 'HTX_TREND_V1'))")
+    Map<String, Object> ledgerSummary(@Param("mode") String mode);
 
     @Select("SELECT account_label AS accountLabel, COUNT(*) AS ledgerEventCount, "
             + "COALESCE(SUM(" + LEDGER_TURNOVER + "), 0) AS ledgerTotalTurnover, "
@@ -92,8 +98,8 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(" + LEDGER_NET + "), 0) AS ledgerNetRealizedProfit, "
             + "COALESCE(SUM(CASE WHEN occurred_at >= CURDATE() THEN " + LEDGER_NET + " ELSE 0 END), 0) AS ledgerTodayNetRealizedProfit, "
             + "MAX(occurred_at) AS latestLedgerAt FROM " + LEDGER_TABLE
-            + " WHERE strategy_family = 'TREND' AND strategy_name = 'HTX_TREND_V1' GROUP BY account_label")
-    List<Map<String, Object>> ledgerAccountSummaries();
+            + " scoped_ledger WHERE strategy_family = 'TREND' AND ((#{mode} = 'PAPER' AND strategy_name = 'HTX_TREND_15M_V2') OR ((#{mode} IS NULL OR #{mode} = 'LIVE') AND strategy_name = 'HTX_TREND_V1')) GROUP BY account_label")
+    List<Map<String, Object>> ledgerAccountSummaries(@Param("mode") String mode);
 
 
 
@@ -111,8 +117,8 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(CASE WHEN closed.updated_at >= CURDATE() AND closed.net_profit < 0 THEN -closed.net_profit ELSE 0 END), 0) AS todayGrossLoss, "
             + "COALESCE(SUM(CASE WHEN closed.updated_at >= CURDATE() THEN closed.net_profit ELSE 0 END), 0) AS todayNetRealizedProfit "
             + "FROM (SELECT updated_at, COALESCE(realized_profit, 0) - COALESCE(entry_fee, 0) - COALESCE(close_fee, 0) AS net_profit "
-            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE') closed")
-    Map<String, Object> performanceSummary();
+            + "FROM " + POSITION_TABLE + " scoped_position WHERE status = 'DONE') closed")
+    Map<String, Object> performanceSummary(@Param("mode") String mode);
 
     @Select("SELECT accountLabels.accountLabel AS accountLabel, COALESCE(accounts.account_role, 'LEDGER') AS accountRole, "
             + "COALESCE(accounts.enabled, 1) AS accountEnabled, COALESCE(accounts.trend_enabled, 1) AS trendEnabled, "
@@ -146,9 +152,9 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(ord.todayOrderRealizedProfit, 0) AS todayOrderRealizedProfit, "
             + "ord.latestOrderAt AS latestOrderAt, pos.latestPositionAt AS latestPositionAt "
             + "FROM ("
-            + "SELECT account_label AS accountLabel FROM " + ACCOUNT_TABLE + " WHERE trend_enabled = 1 "
-            + "UNION SELECT account_label AS accountLabel FROM " + POSITION_TABLE + " GROUP BY account_label "
-            + "UNION SELECT account_label AS accountLabel FROM " + ORDER_TABLE + " GROUP BY account_label"
+            + "SELECT account_label AS accountLabel FROM " + ACCOUNT_TABLE + " scoped_account WHERE trend_enabled = 1 "
+            + "UNION SELECT account_label AS accountLabel FROM " + POSITION_TABLE + " scoped_position GROUP BY account_label "
+            + "UNION SELECT account_label AS accountLabel FROM " + ORDER_TABLE + " scoped_order GROUP BY account_label"
             + ") accountLabels "
             + "LEFT JOIN " + ACCOUNT_TABLE + " accounts ON accounts.account_label = accountLabels.accountLabel "
             + "LEFT JOIN (SELECT account_label AS accountLabel, COUNT(*) AS totalPositions, "
@@ -165,7 +171,7 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() THEN realized_profit ELSE 0 END), 0) AS todayRealizedProfit, "
             + "COALESCE(SUM(CASE WHEN status = 'DONE' THEN realized_profit - entry_fee - close_fee ELSE 0 END), 0) AS netRealizedProfit, "
             + "COALESCE(SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() THEN realized_profit - entry_fee - close_fee ELSE 0 END), 0) AS todayNetRealizedProfit, "
-            + "MAX(updated_at) AS latestPositionAt FROM " + POSITION_TABLE + " GROUP BY account_label) pos "
+            + "MAX(updated_at) AS latestPositionAt FROM " + POSITION_TABLE + " scoped_position GROUP BY account_label) pos "
             + "ON pos.accountLabel = accountLabels.accountLabel "
             + "LEFT JOIN (SELECT o.account_label AS accountLabel, COUNT(*) AS totalOrders, "
             + "SUM(CASE WHEN o.created_at >= CURDATE() THEN 1 ELSE 0 END) AS todayOrders, "
@@ -184,12 +190,12 @@ public interface HtxTrendDashboardMapper {
             + "GROUP BY o.account_label) ord ON ord.accountLabel = accountLabels.accountLabel "
             + "ORDER BY COALESCE(pos.activePositions, 0) DESC, COALESCE(pos.todayNetRealizedProfit, ord.todayOrderRealizedProfit, 0) DESC, "
             + "COALESCE(accounts.sort_order, 999), accountLabels.accountLabel")
-    List<Map<String, Object>> accountSummaries();
+    List<Map<String, Object>> accountSummaries(@Param("mode") String mode);
 
     @Select("SELECT "
             + "(SELECT MAX(created_at) FROM " + SIGNAL_TABLE + ") AS latestSignalAt, "
-            + "(SELECT MAX(updated_at) FROM " + ORDER_TABLE + ") AS latestOrderAt, "
-            + "(SELECT MAX(updated_at) FROM " + POSITION_TABLE + ") AS latestPositionAt, "
+            + "(SELECT MAX(updated_at) FROM " + ORDER_TABLE + " scoped_order) AS latestOrderAt, "
+            + "(SELECT MAX(updated_at) FROM " + POSITION_TABLE + " scoped_position) AS latestPositionAt, "
             + "(SELECT MAX(created_at) FROM " + CANDIDATE_SIGNAL_TABLE + ") AS latestCandidateAt, "
             + "(SELECT COUNT(*) FROM " + SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE) AS signalsLast30m, "
             + "(SELECT COUNT(DISTINCT contract_code) FROM " + SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE) AS scannedContractsLast30m, "
@@ -200,7 +206,7 @@ public interface HtxTrendDashboardMapper {
             + "(SELECT COUNT(*) FROM " + CANDIDATE_SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND direction = 'LONG') AS candidateLongLast30m, "
             + "(SELECT COUNT(*) FROM " + CANDIDATE_SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND direction = 'SHORT') AS candidateShortLast30m, "
             + "(SELECT COUNT(*) FROM " + CANDIDATE_SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND direction = 'FLAT') AS candidateFlatLast30m")
-    Map<String, Object> runtime();
+    Map<String, Object> runtime(@Param("mode") String mode);
 
     @Select("SELECT id, contract_code AS contractCode, status, side, contract_volume AS contractVolume, "
             + "entry_filled_contracts AS entryFilledContracts, close_filled_contracts AS closeFilledContracts, "
@@ -212,9 +218,9 @@ public interface HtxTrendDashboardMapper {
             + "estimated_close_fee AS estimatedCloseFee, expected_net_after_fees AS expectedNetAfterFees, "
             + "sizing_multiplier AS sizingMultiplier, sizing_reason AS sizingReason, entry_gate_reason AS entryGateReason, "
             + POSITION_EXIT_SNAPSHOT_COLUMNS + ", created_at AS createdAt, updated_at AS updatedAt "
-            + "FROM " + POSITION_TABLE + " WHERE status IN ('INTENT','ENTRY_SENT','ACTIVE','CLOSE_SENT','UNKNOWN') "
+            + "FROM " + POSITION_TABLE + " scoped_position WHERE status IN ('INTENT','ENTRY_SENT','ACTIVE','CLOSE_SENT','UNKNOWN') "
             + "ORDER BY updated_at DESC, id DESC LIMIT 50")
-    List<Map<String, Object>> activePositions();
+    List<Map<String, Object>> activePositions(@Param("mode") String mode);
 
     @Select("SELECT id, contract_code AS contractCode, status, side, contract_volume AS contractVolume, "
             + "entry_filled_contracts AS entryFilledContracts, close_filled_contracts AS closeFilledContracts, "
@@ -226,41 +232,41 @@ public interface HtxTrendDashboardMapper {
             + "estimated_close_fee AS estimatedCloseFee, expected_net_after_fees AS expectedNetAfterFees, "
             + "sizing_multiplier AS sizingMultiplier, sizing_reason AS sizingReason, entry_gate_reason AS entryGateReason, "
             + POSITION_EXIT_SNAPSHOT_COLUMNS + ", created_at AS createdAt, updated_at AS updatedAt "
-            + "FROM " + POSITION_TABLE + " ORDER BY updated_at DESC, id DESC LIMIT 100")
-    List<Map<String, Object>> recentPositions();
+            + "FROM " + POSITION_TABLE + " scoped_position ORDER BY updated_at DESC, id DESC LIMIT 100")
+    List<Map<String, Object>> recentPositions(@Param("mode") String mode);
 
     @Select("SELECT DATE(updated_at) AS tradeDate, COUNT(*) AS closedPositions, "
             + "COALESCE(SUM(realized_profit), 0) AS realizedProfit, "
             + "COALESCE(SUM(entry_fee + close_fee), 0) AS fees, "
             + "COALESCE(SUM(realized_profit - entry_fee - close_fee), 0) AS netProfit, "
             + "COALESCE(SUM(" + CLOSED_TURNOVER + "), 0) AS turnover "
-            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' GROUP BY DATE(updated_at) "
+            + "FROM " + POSITION_TABLE + " scoped_position WHERE status = 'DONE' GROUP BY DATE(updated_at) "
             + "ORDER BY tradeDate DESC LIMIT 30")
-    List<Map<String, Object>> dailyPnl();
+    List<Map<String, Object>> dailyPnl(@Param("mode") String mode);
 
     @Select("SELECT side AS bucket, side, " + DIMENSION_PNL_METRICS
-            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' GROUP BY side ORDER BY netProfit DESC")
-    List<Map<String, Object>> sidePnl();
+            + "FROM " + POSITION_TABLE + " scoped_position WHERE status = 'DONE' GROUP BY side ORDER BY netProfit DESC")
+    List<Map<String, Object>> sidePnl(@Param("mode") String mode);
 
     @Select("SELECT side AS bucket, side, " + DIMENSION_PNL_METRICS
-            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' AND updated_at >= CURDATE() "
+            + "FROM " + POSITION_TABLE + " scoped_position WHERE status = 'DONE' AND updated_at >= CURDATE() "
             + "GROUP BY side ORDER BY netProfit DESC")
-    List<Map<String, Object>> todaySidePnl();
+    List<Map<String, Object>> todaySidePnl(@Param("mode") String mode);
 
     @Select("SELECT " + ENTRY_MODEL_BUCKET + " AS bucket, side, " + DIMENSION_PNL_METRICS
-            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' "
+            + "FROM " + POSITION_TABLE + " scoped_position WHERE status = 'DONE' "
             + "GROUP BY bucket, side ORDER BY netProfit DESC LIMIT 30")
-    List<Map<String, Object>> entryModelPnl();
+    List<Map<String, Object>> entryModelPnl(@Param("mode") String mode);
 
     @Select("SELECT " + MARKET_REGIME_BUCKET + " AS bucket, side, " + DIMENSION_PNL_METRICS
-            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' "
+            + "FROM " + POSITION_TABLE + " scoped_position WHERE status = 'DONE' "
             + "GROUP BY bucket, side ORDER BY netProfit DESC LIMIT 30")
-    List<Map<String, Object>> marketRegimePnl();
+    List<Map<String, Object>> marketRegimePnl(@Param("mode") String mode);
 
     @Select("SELECT contract_code AS bucket, side, " + DIMENSION_PNL_METRICS
-            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' "
+            + "FROM " + POSITION_TABLE + " scoped_position WHERE status = 'DONE' "
             + "GROUP BY contract_code, side ORDER BY netProfit ASC LIMIT 30")
-    List<Map<String, Object>> symbolPnl();
+    List<Map<String, Object>> symbolPnl(@Param("mode") String mode);
 
     @Select("SELECT CASE "
             + "WHEN exit_reason LIKE '%loss control%' THEN 'flat loss control' "
@@ -269,9 +275,9 @@ public interface HtxTrendDashboardMapper {
             + "WHEN exit_reason LIKE '%take profit%' THEN 'take profit' "
             + "WHEN exit_reason IS NULL OR exit_reason = '' THEN 'unknown' "
             + "ELSE LEFT(exit_reason, 96) END AS bucket, side, " + DIMENSION_PNL_METRICS
-            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' AND updated_at >= CURDATE() "
+            + "FROM " + POSITION_TABLE + " scoped_position WHERE status = 'DONE' AND updated_at >= CURDATE() "
             + "GROUP BY bucket, side ORDER BY netProfit ASC LIMIT 20")
-    List<Map<String, Object>> exitReasonPnl();
+    List<Map<String, Object>> exitReasonPnl(@Param("mode") String mode);
 
     @Select("SELECT o.id, o.position_id AS positionId, o.contract_code AS contractCode, o.leg, o.trend_side AS trendSide, "
             + "o.order_side AS orderSide, o.position_side AS positionSide, o.reduce_only AS reduceOnly, "
@@ -284,14 +290,14 @@ public interface HtxTrendDashboardMapper {
             + "o.status, o.reason, o.message, o.created_at AS createdAt, o.updated_at AS updatedAt "
             + "FROM " + ORDER_TABLE + " o LEFT JOIN " + POSITION_TABLE + " p ON p.id = o.position_id "
             + "ORDER BY o.updated_at DESC, o.id DESC LIMIT 100")
-    List<Map<String, Object>> recentOrders();
+    List<Map<String, Object>> recentOrders(@Param("mode") String mode);
 
     @Select("SELECT id, contract_code AS contractCode, period, bar_time AS barTime, trend_signal AS trendSignal, "
             + "close_price AS closePrice, ema_fast AS emaFast, ema_slow AS emaSlow, breakout_high AS breakoutHigh, "
             + "breakout_low AS breakoutLow, atr, atr_pct AS atrPct, adx, spread_rate AS spreadRate, "
             + "funding_rate AS fundingRate, reason, created_at AS createdAt "
             + "FROM " + SIGNAL_TABLE + " ORDER BY created_at DESC, id DESC LIMIT 120")
-    List<Map<String, Object>> recentSignals();
+    List<Map<String, Object>> recentSignals(@Param("mode") String mode);
 
     @Select("SELECT trend_signal AS trendSignal, CASE "
             + "WHEN reason LIKE 'ADX below threshold%' THEN 'ADX below threshold' "
@@ -304,7 +310,7 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(AVG(atr_pct), 0) AS avgAtrPct, MAX(created_at) AS latestAt "
             + "FROM " + SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 24 HOUR "
             + "GROUP BY trendSignal, reasonBucket ORDER BY signals DESC LIMIT 20")
-    List<Map<String, Object>> signalRollup();
+    List<Map<String, Object>> signalRollup(@Param("mode") String mode);
 
     @Select("SELECT id, event_key AS eventKey, event_type AS eventType, account_label AS accountLabel, "
             + "contract_code AS contractCode, position_id AS positionId, order_id AS orderId, "
@@ -313,9 +319,9 @@ public interface HtxTrendDashboardMapper {
             + "filled_contracts AS filledContracts, contract_size AS contractSize, amount_usdt AS amountUsdt, "
             + "fee_usdt AS feeUsdt, gross_pnl_usdt AS grossPnlUsdt, net_pnl_after_fee AS netPnlAfterFee, "
             + "reason, occurred_at AS occurredAt FROM " + LEDGER_TABLE
-            + " WHERE strategy_family = 'TREND' AND strategy_name = 'HTX_TREND_V1' "
+            + " scoped_ledger WHERE strategy_family = 'TREND' AND ((#{mode} = 'PAPER' AND strategy_name = 'HTX_TREND_15M_V2') OR ((#{mode} IS NULL OR #{mode} = 'LIVE') AND strategy_name = 'HTX_TREND_V1')) "
             + "ORDER BY occurred_at DESC, id DESC LIMIT 120")
-    List<Map<String, Object>> recentLedgerEvents();
+    List<Map<String, Object>> recentLedgerEvents(@Param("mode") String mode);
 
     @Select("SELECT s.id, s.contract_code AS contractCode, s.period, s.bar_time AS barTime, s.direction, s.regime, "
             + "s.signal_score AS signalScore, s.long_score AS longScore, s.short_score AS shortScore, s.score_gap AS scoreGap, "
@@ -330,5 +336,5 @@ public interface HtxTrendDashboardMapper {
             + "(SELECT c.factors_json FROM " + FACTOR_SNAPSHOT_TABLE + " c WHERE c.snapshot_key = CONCAT(s.contract_code, ':', "
             + "s.period, ':', s.bar_time, ':', s.policy_version, ':entry-cost-v1') LIMIT 1) AS costFactorsJson, "
             + "s.created_at AS createdAt FROM " + CANDIDATE_SIGNAL_TABLE + " s ORDER BY s.created_at DESC, s.id DESC LIMIT 80")
-    List<Map<String, Object>> recentCandidateSignals();
+    List<Map<String, Object>> recentCandidateSignals(@Param("mode") String mode);
 }

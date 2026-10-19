@@ -410,7 +410,7 @@ class HtxTrendMySqlRepository:
           updated_at=CURRENT_TIMESTAMP(3) WHERE reservation_key=%s AND status='RESERVED'""", (_clip(reason,512), reservation_key))
 
     def active_position_count(self, *, account_id: int) -> int:
-        """Literal Java ``HtxTrendPositionMapper.countOpenLike`` scope.
+        """LIVE-only Java ``HtxTrendPositionMapper.countOpenLike`` scope; not a report API.
 
         Java counts only primary, non-mirrored positions and includes UNKNOWN
         reconciliation rows.  A missing UNKNOWN here creates a false free slot
@@ -429,7 +429,7 @@ class HtxTrendMySqlRepository:
         counted until reconciliation reaches a terminal state.
         """
         row = self._one("""SELECT COUNT(*) AS count FROM htx_trend_position
-            WHERE account_id=%s AND source_position_id IS NULL AND side=%s
+            WHERE account_id=%s AND account_label <> 'paper' AND source_position_id IS NULL AND side=%s
             AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT','UNKNOWN')""",
                         (account_id, side))
         return int(row["count"]) if row else 0
@@ -437,7 +437,7 @@ class HtxTrendMySqlRepository:
     def active_contract_position(self, *, account_id: int, contract_code: str) -> dict[str, Any] | None:
         """Account-level mutex: an exchange contract belongs to one profile until terminal."""
         return self._one("""SELECT id,contract_code,timeframe_profile,status FROM htx_trend_position
-          WHERE account_id=%s AND contract_code=%s AND source_position_id IS NULL
+          WHERE account_id=%s AND account_label <> 'paper' AND contract_code=%s AND source_position_id IS NULL
           AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT','UNKNOWN')
           ORDER BY id LIMIT 1""", (account_id, contract_code))
 
@@ -446,7 +446,7 @@ class HtxTrendMySqlRepository:
         """Profile-local cooldown; a 15m close cannot cool down a 4h lifecycle."""
         return self._one("""SELECT id,contract_code,updated_at,realized_profit,entry_fee,close_fee,message
           FROM htx_trend_position WHERE contract_code=%s AND source_position_id IS NULL
-          AND account_id=%s AND timeframe_profile=%s AND status='DONE'
+          AND account_id=%s AND account_label <> 'paper' AND timeframe_profile=%s AND status='DONE'
           ORDER BY updated_at DESC,id DESC LIMIT 1""", (contract_code, account_id, timeframe_profile))
 
     def claim_entry_cycle(self, *, structure_key: str, contract_code: str, timeframe: str,
@@ -571,13 +571,13 @@ class HtxTrendMySqlRepository:
           o.position_side,o.reduce_only,o.client_order_id,o.exchange_order_id,o.request_volume,o.status,o.account_id,
           o.account_label,o.strategy_family,o.strategy_name,o.model_name,o.factor_snapshot_id,o.timeframe_profile
           ,p.contract_size FROM htx_trend_order o JOIN htx_trend_position p ON p.id=o.position_id
-          WHERE o.account_id=%s AND o.strategy_family=%s AND o.strategy_name=%s
+          WHERE o.account_id=%s AND o.account_label <> 'paper' AND o.strategy_family=%s AND o.strategy_name=%s
           AND o.status IN ('INTENT','ACCEPTED','PARTIALLY_FILLED','UNKNOWN')
           ORDER BY o.created_at""", (account_id,strategy_family,strategy_name))
 
     def mirror_position(self, *, source_position_id: int, account_id: int) -> dict[str, Any] | None:
         return self._one("""SELECT id,position_key,contract_code,side,remaining_contract_volume,contract_size,status
-          FROM htx_trend_position WHERE source_position_id=%s AND account_id=%s
+          FROM htx_trend_position WHERE source_position_id=%s AND account_id=%s AND account_label <> 'paper'
           AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT') ORDER BY id DESC LIMIT 1""",
                          (source_position_id,account_id))
 
@@ -667,7 +667,7 @@ class HtxTrendMySqlRepository:
            protection_price,current_net_pnl,max_favorable_r,target_remaining,json.dumps(evidence,default=str,sort_keys=True)))
 
     def managed_positions(self, instance: RuntimeInstance) -> list[dict[str, Any]]:
-        return self._all("""SELECT * FROM htx_trend_position WHERE account_id=%s AND strategy_family=%s
+        return self._all("""SELECT * FROM htx_trend_position WHERE account_id=%s AND account_label <> 'paper' AND strategy_family=%s
           AND strategy_name=%s AND source_position_id IS NULL
           AND status IN ('ACTIVE','ENTRY_SENT','CLOSE_SENT','PARTIAL_CLOSE_SENT','UNKNOWN') ORDER BY id""",
           (instance.account_id,instance.strategy_family,instance.strategy_name))

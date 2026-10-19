@@ -12,5 +12,8 @@ public class HtxTrendDashboardController {
     private final HtxTrendDashboardQueryService queryService;
     public HtxTrendDashboardController(HtxTrendDashboardQueryService queryService) { this.queryService = queryService; }
     @GetMapping("/htx-trend")
-    public HtxTrendDashboardViews.Dashboard dashboard() { return queryService.dashboard(); }
+    public HtxTrendDashboardViews.Dashboard dashboard(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "LIVE") String mode) {
+        return queryService.dashboard(mode);
+    }
 }

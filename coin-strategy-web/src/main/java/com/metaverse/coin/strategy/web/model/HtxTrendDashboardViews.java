@@ -77,7 +77,8 @@ public final class HtxTrendDashboardViews {
                            String entryGateReason, String exitSnapshotState, BigDecimal exitSnapshotNet,
                            BigDecimal exitSnapshotMfe, BigDecimal exitSnapshotMae, BigDecimal exitSnapshotGiveback,
                            Long exitSnapshotBars, String exitSnapshotCandidates, String exitSnapshotUpdatedAt,
-                           String createdAt, String updatedAt) {
+                           String createdAt, String updatedAt, BigDecimal finalGrossProfit, BigDecimal finalTotalFee,
+                           BigDecimal finalNetProfit, String finalPnlSource, String finalPnlCalculatedAt) {
     }
 
     public record DailyPnl(String tradeDate, long closedPositions, BigDecimal realizedProfit,
