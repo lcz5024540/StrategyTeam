@@ -179,3 +179,20 @@ def test_observer_profiles_from_env_map_to_independent_period_contracts(monkeypa
     monkeypatch.setenv("HTX_TREND_PROFILES", "INTRADAY_15M,SWING_4H")
     profiles = TrendObserverConfig.profiles_from_env(("BTC-USDT", "ETH-USDT"))
     assert [(item.entry_period, item.trend_period) for item in profiles] == [("15min", "60min"), ("4hour", "1day")]
+
+
+def test_execution_readers_explicitly_exclude_paper_even_with_live_strategy_name():
+    connection = Connection()
+    repository = HtxTrendMySqlRepository(connection)
+    repository.active_position_count(account_id=7)
+    repository.active_direction_position_count(account_id=7, side="LONG")
+    repository.active_contract_position(account_id=7, contract_code="BTC-USDT")
+    repository.latest_done_trade(account_id=7, contract_code="BTC-USDT")
+    repository.pending_orders(account_id=7)
+    repository.mirror_position(source_position_id=1, account_id=7)
+    from types import SimpleNamespace
+    repository.managed_positions(SimpleNamespace(account_id=7, strategy_family="TREND", strategy_name="HTX_TREND_V1"))
+    assert len(connection.queries) == 7
+    for query, _ in connection.queries:
+        assert "account_label <> 'paper'" in query or "account_label='primary'" in query
+    assert connection.commits == 0

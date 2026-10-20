@@ -45,6 +45,7 @@ class HtxAccountFactsAdapter:
     def snapshot(self, contract_code: str, side: TrendSide, book: OrderBook, *, active_position_count: int,
                  max_active_positions: int, reserved_notional_usdt: Decimal, risk_capacity_usdt: Decimal | None,
                  reserved_risk_usdt: Decimal = ZERO,
+                 reserved_margin_usdt: Decimal | None = None,
                  known_strategy_side: TrendSide | None = None,
                  same_direction_position_count: int | None = None) -> AccountSnapshot:
         # Java's HtxSwapFeeRateResolver preserves execution continuity with a
@@ -73,6 +74,9 @@ class HtxAccountFactsAdapter:
             external_position_side=external, exchange_position_consistent=True,
             executable_depth_contracts=book.executable_contracts(side.value, self._config.depth_levels),
             available_margin_usdt=margin, account_equity_usdt=equity,
+            # Equity minus withdrawable margin includes used/frozen margin.
+            used_margin_usdt=max(ZERO, equity - margin) if equity is not None else None,
+            reserved_margin_usdt=reserved_margin_usdt,
             leverage=Decimal(max(1, self._config.leverage)),
             active_position_count=active_position_count, max_active_positions=max_active_positions,
             same_direction_position_count=same_direction_position_count,

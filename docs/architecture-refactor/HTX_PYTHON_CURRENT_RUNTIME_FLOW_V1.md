@@ -17,7 +17,7 @@ scope: htx-trend-python current OBSERVE and LIVE runtime
 
 还有两个容易被名称误导的事实：
 
-1. `EMA_VWAP_MOMENTUM_CONTINUATION` 当前触发条件实际使用 EMA 排列、ROC 和 ADX，**没有使用 VWAP 条件**。
+1. `EMA_MOMENTUM_CONTINUATION` 当前触发条件实际使用 EMA 排列、ROC 和 ADX，**没有使用 VWAP 条件**。
 2. RSI 与 MACD 会在 `snapshot()` 中计算；OBSERVE 会保存它们，但当前 ensemble 评分、三类候选、LIVE Gate 和退出决策均不读取它们。
 
 本说明描述本地代码基线 `965bf718`。环境变量和数据库 policy 可以覆盖部分默认参数；本文没有把本地默认值当成服务器当前配置。
@@ -123,7 +123,7 @@ java_entry_contract.candidates(candles, signal)
 | ATR14 | TR 为 `max(H-L, abs(H-prevClose), abs(L-prevClose))`；最近 14 个 TR 简单平均 | `ATR/close >= 0.0010` 给当前 bias +10；用于追价、波动上限、止损距离和退出。不是 Wilder 平滑 ATR |
 | ADX14 | 由滚动 DM/TR 得到 DI、DX，再对生成的尾部 DX 取平均 | `ADX>=16` 给 bias +10；regime 要求 `>=16`；EMA 候选要求 `>=20`。不是 Wilder 递推 ADX |
 | Volume ratio20 | 当前有效量 / 前 20 根正有效量均值；单根取值顺序为 `amount → volume → turnover` | `>=1.10` 给 bias +10；Fib Gate 另算最近 K 线质量量比 |
-| VWAP20 | `Σ(((H+L+C)/3)×量) / Σ量`，量优先 `volume`，否则 `amount` | 会计算并保存，但当前评分、`EMA_VWAP` 候选和 Gate 均不使用 |
+| VWAP20 | `Σ(((H+L+C)/3)×量) / Σ量`，量优先 `volume`，否则 `amount` | 会计算并保存，但当前评分、`EMA_MOMENTUM` 候选和 Gate 均不使用 |
 | RSI14 | 最近 14 个 close change 的简单平均 gain/loss，`100-100/(1+RS)` | 会计算；OBSERVE 保存；当前入场、Gate、LIVE 退出不使用 |
 | MACD12/26/9 | 快慢 EMA 差、signal EMA、histogram | 会计算；OBSERVE 保存；当前入场、Gate、LIVE 退出不使用 |
 

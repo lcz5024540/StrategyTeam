@@ -144,13 +144,14 @@ JOIN (
 ) latest ON latest.max_id = t.id
 ORDER BY t.contract_code, FIELD(t.period, '15min', '30min', '60min', '4hour'), t.period;
 
+-- LIVE-only operational observation; unfiltered SQL is not a daily report.
 SELECT COUNT(*) AS active_positions
 FROM htx_trend_position
-WHERE status IN ('INTENT', 'ENTRY_SENT', 'ACTIVE', 'CLOSE_SENT');
+WHERE account_label <> 'paper' AND status IN ('INTENT', 'ENTRY_SENT', 'ACTIVE', 'CLOSE_SENT');
 
 SELECT COUNT(*) AS open_trend_orders
 FROM htx_trend_order
-WHERE status IN ('INTENT', 'ACCEPTED');
+WHERE account_label <> 'paper' AND status IN ('INTENT', 'ACCEPTED');
 
 SELECT contract_code, trend_signal, reason, created_at
 FROM htx_trend_signal

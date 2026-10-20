@@ -25,7 +25,7 @@ def _condition(model: ModelCode) -> str:
     return {
         ModelCode.DONCHIAN_BREAKOUT: "DONCHIAN_1D_TREND",
         ModelCode.FIB_PULLBACK_CONTINUATION: "FIB_1D_TREND",
-        ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION: "EMA_1D_TREND",
+        ModelCode.EMA_MOMENTUM_CONTINUATION: "EMA_1D_TREND",
     }[model]
 
 
@@ -60,30 +60,30 @@ P5_VARIANTS = (
     _daily_variant("P5_FIB_SOURCE_12", ModelCode.FIB_PULLBACK_CONTINUATION,
                    entry_parameters=(("fib_source_lookback_bars", 12),)),
 
-    ResearchVariant("P5_EMA_LEGACY", (ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,)),
-    _daily_variant("P5_EMA_BASE", ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION),
-    _daily_variant("P5_EMA_PRICE_SLOPE", ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,
+    ResearchVariant("P5_EMA_LEGACY", (ModelCode.EMA_MOMENTUM_CONTINUATION,)),
+    _daily_variant("P5_EMA_BASE", ModelCode.EMA_MOMENTUM_CONTINUATION),
+    _daily_variant("P5_EMA_PRICE_SLOPE", ModelCode.EMA_MOMENTUM_CONTINUATION,
                    confirmation="PRICE_SLOPE", condition_version="r2-p3-v2"),
-    _daily_variant("P5_EMA_FAST_16", ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,
+    _daily_variant("P5_EMA_FAST_16", ModelCode.EMA_MOMENTUM_CONTINUATION,
                    entry_parameters=(("fast_ema_period", 16),)),
-    _daily_variant("P5_EMA_FAST_24", ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,
+    _daily_variant("P5_EMA_FAST_24", ModelCode.EMA_MOMENTUM_CONTINUATION,
                    entry_parameters=(("fast_ema_period", 24),)),
-    _daily_variant("P5_EMA_MOMENTUM_9", ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,
+    _daily_variant("P5_EMA_MOMENTUM_9", ModelCode.EMA_MOMENTUM_CONTINUATION,
                    entry_parameters=(("momentum_lookback", 9),)),
-    _daily_variant("P5_EMA_MOMENTUM_18", ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,
+    _daily_variant("P5_EMA_MOMENTUM_18", ModelCode.EMA_MOMENTUM_CONTINUATION,
                    entry_parameters=(("momentum_lookback", 18),)),
 )
 
 P5_MODEL_BASELINES = {
     ModelCode.DONCHIAN_BREAKOUT.value: "P5_DONCHIAN_BASE",
     ModelCode.FIB_PULLBACK_CONTINUATION.value: "P5_FIB_BASE",
-    ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION.value: "P5_EMA_BASE",
+    ModelCode.EMA_MOMENTUM_CONTINUATION.value: "P5_EMA_BASE",
 }
 
 P5_LEGACY_BASELINES = {
     ModelCode.DONCHIAN_BREAKOUT.value: "P5_DONCHIAN_LEGACY",
     ModelCode.FIB_PULLBACK_CONTINUATION.value: "P5_FIB_LEGACY",
-    ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION.value: "P5_EMA_LEGACY",
+    ModelCode.EMA_MOMENTUM_CONTINUATION.value: "P5_EMA_LEGACY",
 }
 
 
@@ -114,11 +114,11 @@ class SwingModelOptimization:
             "seed": P5_SEED,
             "decision_window": P5_DECISION_WINDOW,
             "search_budget": {"DONCHIAN_BREAKOUT": 5, "FIB_PULLBACK_CONTINUATION": 4,
-                              "EMA_VWAP_MOMENTUM_CONTINUATION": 6},
+                              "EMA_MOMENTUM_CONTINUATION": 6},
             "fixed_context": (
                 "each selectable variant requires closed 1d EMA20/60/120 stack, "
                 "OLS close slope20, ADX14>=16 and side-aligned ROC12; missing context is UNKNOWN"),
-            "eligible_p3_hypotheses": ("FIB+MACD", "EMA_VWAP+PRICE_SLOPE"),
+            "eligible_p3_hypotheses": ("FIB+MACD", "EMA_MOMENTUM+PRICE_SLOPE"),
             "mutation_rule": (
                 "relative to each model's 1d-context baseline, each candidate changes exactly one "
                 "P3-qualified confirmation or one pre-registered entry parameter"),

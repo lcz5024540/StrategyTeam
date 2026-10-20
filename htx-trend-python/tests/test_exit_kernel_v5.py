@@ -131,7 +131,7 @@ def test_unknown_owner_takes_priority_over_apparent_hard_stop():
 
 
 def test_each_supported_model_uses_its_frozen_failure_zone_and_not_flat():
-    for model in ('FIB_PULLBACK_CONTINUATION','DONCHIAN_BREAKOUT','EMA_VWAP_MOMENTUM_CONTINUATION'):
+    for model in ('FIB_PULLBACK_CONTINUATION','DONCHIAN_BREAKOUT','EMA_MOMENTUM_CONTINUATION'):
         valid=evaluate_model_holding_v5(thesis(model_id=model),D('98'))
         failed=evaluate_model_holding_v5(thesis(model_id=model),D('97'))
         assert valid.state is ModelState.VALID and valid.evidence_groups==()

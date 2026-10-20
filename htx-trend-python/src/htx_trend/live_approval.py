@@ -170,3 +170,28 @@ def _time(value: str) -> datetime:
     if parsed.tzinfo is None:
         raise ValueError("LIVE approval timestamps require a timezone")
     return parsed.astimezone(UTC)
+
+
+def validate_margin_config(config) -> Decimal:
+    """Fail closed on absent/nonfinite capital or an unsafe margin constant."""
+    equity = getattr(config, "account_equity_usdt", None)
+    rate = getattr(config, "max_total_margin_rate", None)
+    if not isinstance(equity, Decimal) or not equity.is_finite() or equity <= 0:
+        raise ValueError("LIVE configured account equity must be finite and positive")
+    if not isinstance(rate, Decimal) or not rate.is_finite() or not 0 < rate <= Decimal("0.10"):
+        raise ValueError("LIVE total margin rate must be present and <= 10%")
+    return equity * rate
+
+
+def projected_margin(used, reserved, notional, leverage) -> Decimal:
+    """Conservative account margin plus reservations (no netting across coins).
+
+    Reservations remain counted until terminal reconciliation. Confirmed margin
+    may overlap reservations; double counting is intentional and fail-safe.
+    """
+    for value in (used, reserved, notional, leverage):
+        if not isinstance(value, Decimal) or not value.is_finite() or value < 0:
+            raise ValueError("LIVE margin exposure facts unavailable or invalid")
+    if leverage <= 0:
+        raise ValueError("LIVE leverage must be positive")
+    return used + reserved + notional / leverage

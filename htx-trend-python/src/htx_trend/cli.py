@@ -4,6 +4,8 @@ import argparse
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+from .runtime_kline_business import business_sink
+from .runtime_kline_backfill import backfill, DEFAULT_START, require_backfill_confirmation
 
 from .ledger import TrendLedger
 from .datasets import replay_frozen_contract
@@ -61,6 +63,13 @@ def main() -> None:
     dataset.add_argument("--admission", type=Path)
     admission = commands.add_parser("validate-admission", help="validate a sealed strategy admission artifact")
     admission.add_argument("--artifact", required=True, type=Path)
+    admission.add_argument("--surface", required=True)
+    approval = commands.add_parser("validate-approval", help="cross-validate G2 approval and admission")
+    approval.add_argument("--artifact", required=True, type=Path)
+    approval.add_argument("--admission", required=True, type=Path)
+    approval.add_argument("--context", required=True, type=Path)
+    approval.add_argument("--surface", default="LIVE")
+    commands.add_parser("self-test", help="run offline synthetic artifact checks")
     waiver = commands.add_parser("validate-live-waiver", help="validate a sealed legacy LIVE waiver")
     waiver.add_argument("--artifact", required=True, type=Path)
     live_approval = commands.add_parser("validate-live-approval", help="validate a sealed V2 LIVE approval")
@@ -80,6 +89,13 @@ def main() -> None:
     tick.add_argument("--evidence", required=True, type=Path)
     tick.add_argument("--symbols", required=True, nargs="+")
     tick.add_argument("--periods", nargs="+", default=list(PERIODS), choices=PERIODS)
+    tick.add_argument("--business-db", action="store_true", help="opt in to locked business candle writes")
+    backfill_cli = commands.add_parser("backfill-runtime-kline-business", help="R1 business candle replay")
+    backfill_cli.add_argument("--evidence", required=True, type=Path)
+    backfill_cli.add_argument("--start", type=_epoch, default=DEFAULT_START)
+    backfill_cli.add_argument("--end", type=_epoch)
+    backfill_cli.add_argument("--page-bars", type=int, default=500)
+    backfill_cli.add_argument("--dry-run", action="store_true")
     verify = commands.add_parser("verify-evidence", help="verify an evidence reference closure")
     verify.add_argument("--evidence", required=True, type=Path); verify.add_argument("--hash", required=True)
     entry_replay = commands.add_parser("evidence-entry-replay", help="replay a frozen CAS dataset through the shared entry core")
@@ -149,8 +165,16 @@ def main() -> None:
         report = replay_report(load_snapshots(args.evidence), strategy_version=args.strategy_version, admission=admitted)
         save_report(args.output, report)
         print(json.dumps({"status": "written", "output": str(args.output), "snapshots": report.snapshots})); return
+    if args.command == "self-test":
+        from .admission_self_test import run
+        print(json.dumps(run())); return
+    if args.command == "validate-approval":
+        from .admission import validate_approval
+        value, artifact = validate_approval(args.artifact, args.admission, json.loads(args.context.read_text()), args.surface)
+        print(json.dumps({"status": "valid", "seal_hash": value["seal_hash"]})); return
     if args.command == "validate-admission":
-        artifact = StrategyAdmissionArtifact.load(args.artifact)
+        from .admission import validate_admission
+        _, artifact = validate_admission(args.artifact, args.surface)
         print(json.dumps({"status": "valid", "strategy_version": artifact.strategy_version,
                           "artifact_hash": artifact.artifact_hash,
                           "allowed_surfaces": [item.value for item in artifact.allowed_surfaces]})); return
@@ -218,17 +242,35 @@ def main() -> None:
             if payload["integrity"] != "COMPLETE":
                 raise SystemExit(1)
             return
+    if args.command == "backfill-runtime-kline-business":
+        if args.dry_run:
+            result = backfill(None, None, start=args.start, end=args.end,
+                              page_bars=args.page_bars, dry_run=True)
+        else:
+            require_backfill_confirmation()  # Before any connection or evidence write.
+            with business_sink(True) as sink, FileEvidenceStore(args.evidence) as store, HtxV5Client() as client:
+                result = backfill(client, store, sink=sink, start=args.start, end=args.end,
+                                  page_bars=args.page_bars)
+        print(json.dumps(result, ensure_ascii=False))
+        if result['status'] not in {'COMPLETE', 'DRY_RUN'}:
+            raise SystemExit(1)
+        return
     if args.command in {"collect-history", "collect-tick"}:
-        with FileEvidenceStore(args.evidence) as store, HtxV5Client() as client:
-            collector = ContinuousCollector(client, store)
+        with business_sink(getattr(args, "business_db", False)) as sink, \
+                FileEvidenceStore(args.evidence) as store, HtxV5Client() as client:
+            collector = ContinuousCollector(client, store, business_sink=sink)
             if args.command == "collect-history":
                 manifest = collector.collect(tuple(args.symbols), start=args.start, end=args.end,
                                              periods=tuple(args.periods))
                 print(json.dumps({"status": store.get(manifest)["payload"]["integrity"],
                                   "manifest_hash": manifest}, ensure_ascii=False))
             else:
-                print(json.dumps(collector.tick(tuple(args.symbols), periods=tuple(args.periods)),
-                                 ensure_ascii=False))
+                result = collector.tick(tuple(args.symbols), periods=tuple(args.periods))
+                if sink is not None:
+                    result['business_counts'] = collector.business_counts
+                print(json.dumps(result, ensure_ascii=False))
+                if sink is not None and result['status'] != 'HEALTHY':
+                    raise SystemExit(1)
             return
     if args.command == "dataset-replay":
         admitted = StrategyAdmissionArtifact.load(args.admission) if args.admission else None

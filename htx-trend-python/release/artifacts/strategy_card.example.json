@@ -1,0 +1,18 @@
+{
+  "id": "SYNTHETIC-strategy_card",
+  "version": "1",
+  "synthetic": true,
+  "candidate": true,
+  "strategy_version": "HTX_TREND_15M_V2",
+  "timeframe_profile": "INTRADAY_15M",
+  "hypothesis": "SYNTHETIC packaging contract example only",
+  "limitations": [
+    "No performance evidence; no LIVE authority"
+  ],
+  "feature_keys": [
+    "close_slope_20"
+  ],
+  "experiment_ids": [
+    "SYNTHETIC-G3-001"
+  ]
+}

@@ -249,7 +249,7 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
                              @Param("exitReason") String exitReason,
                              @Param("message") String message);
 
-    @Select("SELECT MAX(updated_at) FROM htx_trend_position WHERE contract_code = #{contractCode} AND status = 'DONE'")
+    @Select("SELECT MAX(updated_at) FROM htx_trend_position WHERE contract_code = #{contractCode} AND account_label <> 'paper' AND status = 'DONE'")
     LocalDateTime latestDoneAt(@Param("contractCode") String contractCode);
 
     @Select("SELECT COUNT(*) AS closedCount, "
@@ -266,7 +266,7 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "FROM ("
             + "SELECT COALESCE(final_net_profit, COALESCE(realized_profit, 0) - COALESCE(entry_fee, 0) - COALESCE(close_fee, 0)) AS net_profit "
             + "FROM htx_trend_position "
-            + "WHERE status = 'DONE' AND updated_at >= #{since} "
+            + "WHERE status = 'DONE' AND updated_at >= #{since} AND account_label <> 'paper' "
             + "ORDER BY updated_at DESC LIMIT #{limit}"
             + ") recent")
     HtxTrendPerformanceStats trendPerformanceSince(@Param("since") LocalDateTime since,
@@ -275,7 +275,7 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
     /**
      * Returns closed-position performance for one direction/model/regime bucket.
      * Fees are deducted before classifying wins and losses, so this query never treats fee-only gains as profit.
-     * An absent account label intentionally means all recorded accounts; callers must choose that scope explicitly.
+     * An absent account label means LIVE accounts only; PAPER requires an explicit account label.
      */
     @Select("SELECT COUNT(*) AS closedCount, "
             + "COALESCE(SUM(CASE WHEN recent.net_profit > 0 THEN 1 ELSE 0 END), 0) AS winCount, "
@@ -293,7 +293,7 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "FROM htx_trend_position "
             + "WHERE status = 'DONE' AND updated_at >= #{since} "
             + "AND side = #{side} AND primary_model = #{primaryModel} AND market_regime = #{marketRegime} "
-            + "AND (#{accountLabel} IS NULL OR account_label = #{accountLabel}) "
+            + "AND ((#{accountLabel} IS NULL AND account_label <> 'paper') OR account_label = #{accountLabel}) "
             + "ORDER BY updated_at DESC LIMIT #{limit}"
             + ") recent")
     HtxTrendPerformanceStats trendPerformanceForBucket(@Param("since") LocalDateTime since,

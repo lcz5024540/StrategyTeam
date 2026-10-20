@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
 from dataclasses import replace
 from pathlib import Path
 
-from .account_facts import HtxAccountFactsAdapter
+from .account_facts import HtxAccountFactsAdapter, AccountFactConfig
 from .credentials import materialize
 from .execution import ExecutionConfig
 from .execution_service import EntryExecutionConfig, HtxTrendEntryExecutor
@@ -27,7 +28,7 @@ from .strategy_decision import LEGACY_STRATEGY_VERSION
 from .strategy_profiles import profile_for_version, profile_strategy
 from .strategy_profiles import profile_entry_config
 from .timeframes import TimeframeProfile
-from .live_approval import LegacyLiveWaiver, LiveApproval, LiveRiskPolicy
+from .live_approval import LegacyLiveWaiver, LiveRiskPolicy
 from .research.store import FileEvidenceStore
 
 
@@ -56,13 +57,20 @@ def _load_admission(strategy_version: str) -> StrategyAdmissionArtifact | None:
     raw = os.environ.get("HTX_TREND_STRATEGY_ADMISSION_PATH", "").strip()
     if not raw:
         raise SystemExit(f"new strategy {strategy_version} requires HTX_TREND_STRATEGY_ADMISSION_PATH")
-    artifact = StrategyAdmissionArtifact.load(Path(raw))
+    from .admission import validate_admission
+    path = Path(raw)
+    if json.loads(path.read_text()).get("schema") == "htx-admission-g2":
+        artifact = validate_admission(path, "OBSERVE")[1]
+    else:
+        artifact = StrategyAdmissionArtifact.load(path)
     if artifact.strategy_version != strategy_version:
         raise SystemExit("strategy runtime and admission artifact versions differ")
     return artifact
 
 
 def _validate_live_approval(instance, account, admission, scan_configs) -> None:
+    from .live_approval import validate_margin_config
+    validate_margin_config(ExecutionConfig.from_env())
     approved_risk = LiveRiskPolicy()
     execution_risk = ExecutionConfig.from_env()
     entry_risk = EntryExecutionConfig.from_env()
@@ -78,6 +86,11 @@ def _validate_live_approval(instance, account, admission, scan_configs) -> None:
     source_commit = os.environ.get("HTX_PYTHON_SOURCE_COMMIT", "").strip()
     config_fingerprint = (instance.config_fingerprint or "").strip()
     profiles = tuple(item.timeframe_profile.value for item in scan_configs if item.entry_enabled)
+    from .admission import runtime_guard
+    approvals = [runtime_guard(instance, account, enabled_profile)[1]
+                 for enabled_profile in profiles]
+    if not profiles:
+        raise ValueError("LIVE requires an enabled profile")
     if instance.strategy_name == LEGACY_STRATEGY_VERSION:
         path = os.environ.get("HTX_TREND_LEGACY_LIVE_WAIVER_PATH", "").strip()
         if not path:
@@ -98,7 +111,7 @@ def _validate_live_approval(instance, account, admission, scan_configs) -> None:
     path = os.environ.get("HTX_TREND_LIVE_APPROVAL_PATH", "").strip()
     if not path or admission is None:
         raise SystemExit("new strategy LIVE requires approval and sealed admission")
-    approval = LiveApproval.load(Path(path))
+    approval = approvals[0]
     profile = profile_for_version(instance.strategy_name)
     if profile is None or len(profiles) != 1 or profiles[0] != profile.value:
         raise SystemExit("new strategy LIVE instance must own exactly its versioned profile")
@@ -129,6 +142,8 @@ def main() -> None:
     writer_lock = None
     evidence_store = None
     started = False
+    paper_worker = None
+    paper_client = None
     try:
         repository.validate_runtime_schema()
         instance = repository.runtime_instance(args.strategy_instance)
@@ -137,7 +152,7 @@ def main() -> None:
         if not instance.enabled:
             raise SystemExit(f"strategy instance is disabled: {args.strategy_instance}")
         family = instance.strategy_family.upper()
-        admission = _load_admission(instance.strategy_name) if family == "TREND" else None
+        admission = _load_admission(instance.strategy_name) if family == "TREND" and instance.execution_mode != ExecutionMode.PAPER else None
         if family == "TREND":
             evidence_store = FileEvidenceStore(Path(os.environ.get(
                 "HTX_PYTHON_EVIDENCE_DIR", "./research-data/evidence")))
@@ -164,6 +179,12 @@ def main() -> None:
                 for config in observer_configs)
             worker = (observer_workers[0] if len(observer_workers) == 1
                       else MultiTimeframeObservationWorker(observer_workers))
+        elif family == "TREND" and instance.execution_mode == ExecutionMode.PAPER:
+            from .paper_worker import PaperTrendWorker, PaperWorkerConfig
+            paper_client = HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com"))
+            worker = paper_worker = PaperTrendWorker(instance,
+                HtxMarketData(paper_client, evidence_store=evidence_store),
+                Path(os.environ.get("HTX_PAPER_STATE_DIR", "./paper-state")), PaperWorkerConfig.from_env())
         elif family == "TREND" and instance.execution_mode == ExecutionMode.LIVE:
             if instance.account_id is None:
                 raise SystemExit("LIVE trend instance requires an account-bound runtime instance")
@@ -185,12 +206,11 @@ def main() -> None:
             # A LIVE worker cannot opt out of the account-level guardrails.
             # Research/PAPER callers may keep the Java-compatible relaxed
             # sizing path, while real execution enforces per-trade risk and
-            # position-count boundaries. Java's account-wide notional cap is
-            # deliberately not part of the trend entry contract.
+            # position-count boundaries, plus the formal 10% margin cap.
             entry_execution = replace(ExecutionConfig.from_env(), hard_risk_limits_enabled=True)
             entry_config = EntryExecutionConfig.from_env()
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
-                facts=HtxAccountFactsAdapter(private_client), executor=live, execution=entry_execution,
+                facts=HtxAccountFactsAdapter(private_client, AccountFactConfig(leverage=entry_config.leverage)), executor=live, execution=entry_execution,
                 config=entry_config, admission=admission, evidence_store=evidence_store)
             profile_workers = []
             for scan_config in scan_configs:
@@ -218,6 +238,10 @@ def main() -> None:
             if started:
                 repository.mark_runtime_stopped(instance.instance_key)
         finally:
+            if paper_worker is not None:
+                paper_worker.stop()
+            if paper_client is not None:
+                paper_client.close()
             repository.close()
             if evidence_store is not None:
                 evidence_store.close()

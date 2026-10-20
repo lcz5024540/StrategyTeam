@@ -41,7 +41,7 @@ def test_donchian_and_momentum_candidates_can_coexist_on_same_window() -> None:
     assert signal.side is TrendSide.LONG
     output = candidates(entry, signal, config)
     assert ModelCode.DONCHIAN_BREAKOUT in {item.model for item in output}
-    assert ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION in {item.model for item in output}
+    assert ModelCode.EMA_MOMENTUM_CONTINUATION in {item.model for item in output}
 
 
 def test_market_breadth_only_declares_direction_above_threshold() -> None:
@@ -57,7 +57,7 @@ def test_market_breadth_only_declares_direction_above_threshold() -> None:
 def test_ema_model_is_generated_without_a_donchian_primary_signal() -> None:
     entry = [bar(index, 100 + index) for index in range(90)]
     # The final close stays inside the preceding Donchian channel but preserves
-    # an EMA/VWAP trend continuation.
+    # an EMA momentum trend continuation.
     entry[-1] = bar(89, 187)
     trend = [bar(index, 100 + index) for index in range(90)]
     config = TrendConfig(medium_ema_period=16, slow_ema_period=20, breakout_lookback=10,
@@ -65,7 +65,7 @@ def test_ema_model_is_generated_without_a_donchian_primary_signal() -> None:
     legacy = evaluate_signal(entry, trend, config)
     output = model_candidates(entry, trend, config)
     assert legacy.side in (TrendSide.FLAT, TrendSide.LONG)
-    assert ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION in {item.model for item in output}
+    assert ModelCode.EMA_MOMENTUM_CONTINUATION in {item.model for item in output}
 
 
 def test_router_selects_primary_without_hiding_peer_models() -> None:

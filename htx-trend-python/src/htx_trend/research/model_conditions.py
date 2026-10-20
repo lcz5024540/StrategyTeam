@@ -40,15 +40,15 @@ MODEL_CONDITION_SPECS = (
                        "close lies in central half of 0.382-0.618 retracement zone"),
     ModelConditionSpec("FIB_VOLUME_100", "r2-p4-v1", "FIB_PULLBACK_CONTINUATION",
                        "amount ratio20>=1.00"),
-    ModelConditionSpec("EMA_60M_ALIGN", "r2-p4-v1", "EMA_VWAP_MOMENTUM_CONTINUATION",
+    ModelConditionSpec("EMA_60M_ALIGN", "r2-p4-v1", "EMA_MOMENTUM_CONTINUATION",
                        "60m EMA20/60/120 stack and EMA20 slope follow side", ("60min",)),
-    ModelConditionSpec("EMA_4H_NOT_REVERSE", "r2-p4-v1", "EMA_VWAP_MOMENTUM_CONTINUATION",
+    ModelConditionSpec("EMA_4H_NOT_REVERSE", "r2-p4-v1", "EMA_MOMENTUM_CONTINUATION",
                        "4h EMA stack is aligned or mixed, never opposite", ("4hour",)),
-    ModelConditionSpec("EMA_ADX_RISING", "r2-p4-v1", "EMA_VWAP_MOMENTUM_CONTINUATION",
+    ModelConditionSpec("EMA_ADX_RISING", "r2-p4-v1", "EMA_MOMENTUM_CONTINUATION",
                        "ADX14 is greater than prior closed-bar ADX14"),
-    ModelConditionSpec("EMA_VWAP_RECLAIM", "r2-p4-v1", "EMA_VWAP_MOMENTUM_CONTINUATION",
+    ModelConditionSpec("EMA_MOMENTUM_RECLAIM", "r2-p4-v1", "EMA_MOMENTUM_CONTINUATION",
                        "close is on trend side of VWAP20 and within 0.5 ATR"),
-    ModelConditionSpec("EMA_TARGET_SPACE_120", "r2-p4-v1", "EMA_VWAP_MOMENTUM_CONTINUATION",
+    ModelConditionSpec("EMA_TARGET_SPACE_120", "r2-p4-v1", "EMA_MOMENTUM_CONTINUATION",
                        "candidate expected reward/risk>=1.20"),
     ModelConditionSpec("DONCHIAN_1D_TREND", "r2-p5-v1", "DONCHIAN_BREAKOUT",
                        "closed 1d EMA20/60/120 stack, OLS price slope and ROC12 follow side; ADX14>=16",
@@ -56,7 +56,7 @@ MODEL_CONDITION_SPECS = (
     ModelConditionSpec("FIB_1D_TREND", "r2-p5-v1", "FIB_PULLBACK_CONTINUATION",
                        "closed 1d EMA20/60/120 stack, OLS price slope and ROC12 follow side; ADX14>=16",
                        ("1day",), "RESEARCH_GATE"),
-    ModelConditionSpec("EMA_1D_TREND", "r2-p5-v1", "EMA_VWAP_MOMENTUM_CONTINUATION",
+    ModelConditionSpec("EMA_1D_TREND", "r2-p5-v1", "EMA_MOMENTUM_CONTINUATION",
                        "closed 1d EMA20/60/120 stack, OLS price slope and ROC12 follow side; ADX14>=16",
                        ("1day",), "RESEARCH_GATE"),
 )
@@ -165,7 +165,7 @@ def model_condition_status(
         if len(entry_candles) < 122:
             return "UNKNOWN"
         return "PASS" if factors.adx > feature_vector(entry_candles[:-1]).adx14 else "FAIL"
-    if condition_id == "EMA_VWAP_RECLAIM":
+    if condition_id == "EMA_MOMENTUM_RECLAIM":
         delta = (candle.close-factors.vwap)*direction
         return "PASS" if delta >= ZERO and delta <= factors.atr*Decimal("0.5") else "FAIL"
     if condition_id == "EMA_TARGET_SPACE_120":

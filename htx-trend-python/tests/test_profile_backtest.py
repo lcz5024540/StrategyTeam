@@ -132,7 +132,7 @@ def test_parameter_override_research_keeps_entry_and_execution_configs_separate(
         "R3_15M_DONCHIAN_RETEST_RECLAIM", (ModelCode.DONCHIAN_BREAKOUT,),
         structural_condition="R3_15M_DONCHIAN_RETEST_RECLAIM")),
     (TimeframeProfile.SWING_4H, ResearchVariant(
-        "R3_4H_1D_TREND_PERSISTENCE_3", (ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,),
+        "R3_4H_1D_TREND_PERSISTENCE_3", (ModelCode.EMA_MOMENTUM_CONTINUATION,),
         structural_condition="R3_4H_1D_TREND_PERSISTENCE_3")),
 ))
 def test_shared_lifecycle_runner_applies_r3_structural_condition(

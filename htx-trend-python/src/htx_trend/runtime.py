@@ -13,7 +13,7 @@ from typing import Sequence
 from .execution import ExecutionConfig, ExecutionFacts, GateResult, PriorTrade, evaluate_gate
 from .exits import ExitInput, ExitAction, decide
 from .ledger import TrendLedger
-from .market_data import ContractSpec, FundingRate, KlineWindow, TopOfBook
+from .market_data import Candle, ContractSpec, FundingRate, KlineWindow, TopOfBook
 from .java_entry_contract import JavaEntryConfig
 from .models import ModelCandidate, ModelCode, TrendSide, route_candidates
 from .strategy_context import FibonacciQuality, MarketContext
@@ -46,7 +46,8 @@ class PaperTrendRuntime:
              at: datetime, book: TopOfBook, contract: ContractSpec, funding: FundingRate | None,
              prior_trade: PriorTrade | None = None, market_context: MarketContext | None = None,
              execution_facts: ExecutionFacts | None = None,
-             claimed_structure_keys: frozenset[str] = frozenset()) -> ScanOutcome:
+             claimed_structure_keys: frozenset[str] = frozenset(),
+             execution_candle: Candle | None = None) -> ScanOutcome:
         decision = self._decision.decide(contract_code=entry_window.contract_code, period=entry_window.period,
                                          candles=entry_window.candles, surface=DecisionSurface.PAPER)
         signal = decision.signal
@@ -78,11 +79,12 @@ class PaperTrendRuntime:
                              "BUY" if selected.side.value == "LONG" else "SELL", gate.size_plan.contracts,
                              order_type, at, f"paper-{run_id}-{selected.model.value}",
                              gate.price_plan.desired_entry if order_type == "LIMIT" else None, strategy_run_id=run_id)
-        order = self._exchange.submit(request, entry_window.candles[-1])
+        fill_candle = execution_candle or entry_window.candles[-1]
+        order = self._exchange.submit(request, fill_candle)
         self._ledger.decision(self._account_id, run_id, "ENTRY_ORDER", {"candidate": selected.model.value,
                               "order_id": order.order_id, "status": order.status, "gate": gate.reason})
         if order.status == "FILLED":
-            entry_price = order.limit_price or entry_window.candles[-1].close
+            entry_price = order.limit_price or fill_candle.close
             position = self._exchange.open_position(self._account_id, entry_window.contract_code, selected.side.value,
                                                     gate.size_plan.contracts, entry_price, at, run_id)
             self._ledger.save_position_context(position.position_id, {"model": selected.model.value,
@@ -94,7 +96,7 @@ class PaperTrendRuntime:
                 "trailing_armed_at": None, "trailing_arm_reason": None, "max_favorable_r": "0"})
             if self._mirror_account_id:
                 self._mirror(position.position_id, order.order_id, entry_window.contract_code, selected.side.value,
-                             gate.size_plan.contracts, at, run_id, entry_window.candles[-1], contract.contract_size)
+                             gate.size_plan.contracts, at, run_id, fill_candle, contract.contract_size)
         return ScanOutcome(run_id, output, gates, selected, order.order_id)
 
     def _mirror(self, parent_position_id: str, parent_order_id: str, contract_code: str, side: str, quantity: int,

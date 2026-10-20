@@ -246,10 +246,43 @@ async function init() {
     const params = new URLSearchParams(window.location.search);
     state.selected = params.get("strategy") || state.selected;
     state.positionMode = selectedMode();
+    await loadHtxTrend();
     await loadOverview();
     await loadDetail(state.selected);
   } catch (error) {
     document.body.innerHTML = `<div class="page"><section class="panel"><h1>页面加载失败</h1><p>${error.message}</p></section></div>`;
+  }
+}
+
+// Dedicated HTX read model; never route simulated data through smart-wallet writes.
+function htxTrendUrl(mode) {
+  return `/strategy/api/strategy-platform/arbitrage-dashboard/htx-trend?mode=${normalizeMode(mode)}`;
+}
+
+function escapeHtxText(value) {
+  return String(value ?? "—").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[char]));
+}
+
+async function loadHtxTrend() {
+  const panel = document.createElement("section");
+  panel.className = "panel";
+  document.querySelector(".page").prepend(panel);
+  const heading = `HTX 趋势 · ${state.positionMode === "PAPER" ? "PAPER 模拟" : "LIVE 实盘"} · 只读`;
+  try {
+    const response = await getJson(htxTrendUrl(state.positionMode));
+    const data = response.data || response;
+    const rows = data.recentPositions || [];
+    const orders = data.recentOrders || [];
+    const fills = data.recentLedgerEvents || [];
+    panel.innerHTML = `<h2>${heading}</h2><p>${escapeHtxText(data.source)} · DONE ${data.summary.closedPositions} · 订单 ${orders.length} · 成交事件 ${fills.length}</p>
+      <table><thead><tr><th>账户</th><th>合约</th><th>状态</th><th>终态毛利</th><th>费用</th><th>净收益</th><th>来源 / 时间</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${escapeHtxText(row.accountLabel)}</td><td>${escapeHtxText(row.contractCode)}</td><td>${escapeHtxText(row.status)}</td><td>${formatMoney(row.finalGrossProfit ?? row.realizedProfit)}</td><td>${formatMoney(row.finalTotalFee ?? (row.entryFee + row.closeFee))}</td><td>${formatMoney(row.finalNetProfit ?? row.netRealizedProfit)}</td><td>${escapeHtxText(row.finalPnlSource)} / ${escapeHtxText(row.finalPnlCalculatedAt)}</td></tr>`).join("")}</tbody></table>
+      <details><summary>模拟 / 实盘订单（只读）</summary><pre>${escapeHtxText(JSON.stringify(orders, null, 2))}</pre></details>
+      <details><summary>成交账本（只读）</summary><pre>${escapeHtxText(JSON.stringify(fills, null, 2))}</pre></details>`;
+  } catch (error) {
+    panel.textContent = `${heading} · 数据不可用`;
   }
 }
 

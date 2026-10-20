@@ -184,7 +184,7 @@ def model_candidate_evaluations(candles: Sequence[Candle], signal: JavaTrendSign
     stack = ((factor.ema_fast > factor.ema_medium > factor.ema_slow and factor.roc > ZERO)
              if signal.side is TrendSide.LONG else (factor.ema_fast < factor.ema_medium < factor.ema_slow and factor.roc < ZERO))
     ema_candidates = (() if factor.adx < Decimal("20") or not stack else
-                      (_candidate(ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION, "EMA_STACK,MOMENTUM", signal,
+                      (_candidate(ModelCode.EMA_MOMENTUM_CONTINUATION, "EMA_STACK,MOMENTUM", signal,
                                   structure, latest, prior, signal.score + Decimal("12"),
                                   "EMA stack and momentum continuation"),))
     fib_rejects = (() if fib_candidates else
@@ -198,7 +198,7 @@ def model_candidate_evaluations(candles: Sequence[Candle], signal: JavaTrendSign
         ModelCandidateEvaluation(ModelCode.DONCHIAN_BREAKOUT, tuple(donchian_candidates),
                                  () if donchian_candidates else (RejectCode.NO_DONCHIAN_BREAKOUT.value,)),
         ModelCandidateEvaluation(ModelCode.FIB_PULLBACK_CONTINUATION, tuple(fib_candidates), fib_rejects),
-        ModelCandidateEvaluation(ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION, tuple(ema_candidates), ema_rejects),
+        ModelCandidateEvaluation(ModelCode.EMA_MOMENTUM_CONTINUATION, tuple(ema_candidates), ema_rejects),
     )
 
 

@@ -37,6 +37,8 @@ class StageStatus(StrEnum):
 
 
 class DecisionSurface(StrEnum):
+    LIVE = "LIVE"
+    SHADOW = "SHADOW"
     OBSERVE = "OBSERVE"
     BACKTEST = "BACKTEST"
     PAPER = "PAPER"
@@ -47,6 +49,8 @@ class DecisionSurface(StrEnum):
 
 
 REQUIRED_STAGE = {
+    DecisionSurface.LIVE: ResearchStage.RESEARCH_REPORT,
+    DecisionSurface.SHADOW: ResearchStage.OUT_OF_SAMPLE,
     DecisionSurface.OBSERVE: ResearchStage.SIGNAL_STATE_MACHINE,
     DecisionSurface.BACKTEST: ResearchStage.COST_EXECUTION,
     DecisionSurface.PAPER: ResearchStage.OUT_OF_SAMPLE,

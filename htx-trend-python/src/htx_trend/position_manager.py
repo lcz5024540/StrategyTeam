@@ -32,7 +32,7 @@ class ExitConfig:
     swing_trailing_atr: D = D('3')
     trailing_activation_r: D = D('1')
     fee_rate: D = D('.0004')
-    max_funding_cost: D = D('.0012')
+    max_adverse_funding_rate: D = D('.0012')
     flat_bars: int = 3
     flat_budget: D = D('.25')
     flat_budget_rate: D = D('.003')
@@ -49,7 +49,7 @@ class ExitConfig:
             swing_trailing_atr=dec('HTX_TREND_SWING_TRAILING_ATR_MULTIPLIER',default.swing_trailing_atr),
             trailing_activation_r=dec('HTX_TREND_TRAILING_ACTIVATION_R',default.trailing_activation_r),
             fee_rate=dec('HTX_TREND_ESTIMATED_TAKER_FEE_RATE',default.fee_rate),
-            max_funding_cost=dec('HTX_TREND_MAX_HOLD_FUNDING_COST_RATE',default.max_funding_cost),
+            max_adverse_funding_rate=dec('HTX_TREND_MAX_HOLD_FUNDING_COST_RATE',default.max_adverse_funding_rate),
             flat_bars=int(environ.get('HTX_TREND_FLAT_LOSS_EXIT_CONFIRMATION_BARS','3')),
             policy=ProfitProtectionPolicy(
                 dec('HTX_TREND_INTRADAY_PROFIT_ARM_ATR_MULTIPLIER',D('.50')),
@@ -183,7 +183,7 @@ class LivePositionManager:
         best=highest if side is TrendSide.LONG else lowest
         mfe=(best-entry)*size*quantity*(1 if side is TrendSide.LONG else -1)-entry_fee-best*size*quantity*rate
         funding=self.market.funding_rate(code).rate
-        funding_reason='adverse funding cost' if (funding if side is TrendSide.LONG else -funding)>self.config.max_funding_cost else None
+        funding_reason='adverse current funding rate' if (funding if side is TrendSide.LONG else -funding)>self.config.max_adverse_funding_rate else None
         input_=ExitInput(ModelCode(row['primary_model']),side,quantity,size,entry,
             decimal(row,'stop_price',decimal(row,'invalidation_price')),decimal(row,'invalidation_price'),
             decimal(row,'target_zone_low' if side is TrendSide.LONG else 'target_zone_high') or None,
@@ -193,12 +193,12 @@ class LivePositionManager:
             decimal(state,'max_r',decimal(row,'max_favorable_r')),datetime.fromtimestamp(now_epoch,UTC),
             flat_streak=flat,required_flat_streak=self.config.flat_bars,
             flat_loss_budget=max(self.config.flat_budget,entry*size*entry_quantity*self.config.flat_budget_rate),
-            policy=self.config.policy,protection_breach_bars=breach,funding_cost_exit_reason=funding_reason,observed_mfe_net_pnl=mfe)
-        use_v4=self.config.engine_enabled and input_.primary_model is ModelCode.FIB_PULLBACK_CONTINUATION
+            policy=self.config.policy,protection_breach_bars=breach,funding_rate_exit_reason=funding_reason,observed_mfe_net_pnl=mfe)
+        use_v4=self.config.engine_enabled
         decision=decide_v4(input_) if use_v4 else decide_legacy(input_,trailing_atr_multiplier=(self.config.swing_trailing_atr
             if row.get('timeframe_profile') in {'SWING_4H','TREND_1D'} else self.config.trailing_atr),trailing_activation_r=self.config.trailing_activation_r)
         self._evidence('exit_decision_trace', {'position_id': row['id'], 'strategy_version': self.instance.strategy_name,
-            'engine_version': 'fib-exit-engine-v4' if use_v4 else 'legacy', 'input': input_, 'decision': decision,
+            'engine_version': 'exit-engine-v4' if use_v4 else 'legacy', 'input': input_, 'decision': decision,
             'conditions': {'hard_stop': False, 'management_data_complete': True,
                            'higher_timeframe_opposition': opposition, 'funding_reason': funding_reason}}, evidence_refs)
         state.update(highest=highest,lowest=lowest,protection=decision.protection_price,
@@ -210,7 +210,7 @@ class LivePositionManager:
         # recording the decision. It must not fall back to executable legacy.
         blocked='exit engine live disabled' if use_v4 and not self.config.engine_live else None
         self.repo.record_exit_decision(decision_key=decision_key(row['id'],run_id,decision.action.value),position_id=row['id'],run_id=run_id,
-            account=self.account,contract_code=code,side=side.value,primary_model=row['primary_model'],engine_version='fib-exit-engine-v4' if use_v4 else 'legacy',
+            account=self.account,contract_code=code,side=side.value,primary_model=row['primary_model'],engine_version='exit-engine-v4' if use_v4 else 'legacy',
             exit_phase=decision.phase.value,suggested_action=decision.action.value,executed_action='NONE',reference_price=reference,
             protection_price=decision.protection_price,current_net_pnl=input_.current_net_pnl,max_favorable_r=decision.max_favorable_r,
             target_remaining=decision.target_remaining_contracts,evidence={**decision.evidence,'fee_source':fee_source},block_reason=blocked)

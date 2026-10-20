@@ -8,6 +8,6 @@ import type { FundingRateMatrixResponse, HtxTrendDashboardResponse } from '@/typ
 export const arbitrageDashboardApi = {
   getFundingRateMatrix: (): Promise<FundingRateMatrixResponse> =>
     apiClient.get('/strategy/api/strategy-platform/arbitrage-dashboard/funding-rate-matrix'),
-  getHtxTrendDashboard: (): Promise<HtxTrendDashboardResponse> =>
-    apiClient.get('/strategy/api/strategy-platform/arbitrage-dashboard/htx-trend'),
+  getHtxTrendDashboard: (mode: 'PAPER' | 'LIVE' = 'LIVE'): Promise<HtxTrendDashboardResponse> =>
+    apiClient.get('/strategy/api/strategy-platform/arbitrage-dashboard/htx-trend', { params: { mode } }),
 }

@@ -32,7 +32,7 @@ def test_policy_selection_uses_raw_score_for_threshold_and_does_not_admit_on_mar
 
 
 def test_ema_policy_uses_same_confirmation_labels_as_java_policy_row() -> None:
-    item = candidate(ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION, "90")
+    item = candidate(ModelCode.EMA_MOMENTUM_CONTINUATION, "90")
     assert confirmation_models(item) == "EMA_STACK,MOMENTUM"
     selected = select_policy((item,), (policy(item.model.value, "EMA_STACK,MOMENTUM", "88"),), MarketContext())
     assert len(selected) == 1

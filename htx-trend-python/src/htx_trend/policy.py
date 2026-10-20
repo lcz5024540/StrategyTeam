@@ -63,7 +63,7 @@ def confirmation_models(candidate: ModelCandidate) -> str:
         labels = ["BOX_BREAKOUT"]
         if ModelCode.DONCHIAN_BREAKOUT in candidate.confirmation_models:
             labels.append("DONCHIAN_BREAKOUT")
-    elif candidate.model is ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION:
+    elif candidate.model is ModelCode.EMA_MOMENTUM_CONTINUATION:
         labels = ["EMA_STACK", "MOMENTUM"]
     else:  # Defensive: unknown models must never gain live policy access.
         labels = []
@@ -75,7 +75,7 @@ def market_adjustment(candidate: ModelCandidate, context: MarketContext) -> Deci
     # HtxTrendFollowingService constructs MarketEntryRank(8, 12, 2).  The
     # model weight is part of the Java score contract, including MIXED.
     weight = (Decimal("1.20") if candidate.model is ModelCode.DONCHIAN_BREAKOUT
-              else Decimal("1") if candidate.model is ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION
+              else Decimal("1") if candidate.model is ModelCode.EMA_MOMENTUM_CONTINUATION
               else Decimal("0.80"))
     # Java creates an aligned side only when breadth and the separately
     # calculated BTC/ETH multi-timeframe anchor classify the same direction.

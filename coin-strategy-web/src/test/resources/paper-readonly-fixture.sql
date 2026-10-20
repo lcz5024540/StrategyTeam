@@ -1,0 +1,213 @@
+-- Local H2-only fixture; never run against a production database.
+CREATE SCHEMA IF NOT EXISTS htx_trade_strategy;
+SET SCHEMA htx_trade_strategy;
+CREATE TABLE htx_trend_position (
+  id BIGINT,
+  source_position_id BIGINT,
+  position_key VARCHAR(4096),
+  run_id VARCHAR(4096),
+  contract_code VARCHAR(4096),
+  status VARCHAR(4096),
+  side VARCHAR(4096),
+  contract_size DECIMAL(28,8),
+  contract_volume BIGINT,
+  remaining_contract_volume BIGINT,
+  partial_exit_stage INT,
+  partial_close_client_order_id VARCHAR(4096),
+  partial_close_order_id BIGINT,
+  leverage INT,
+  entry_client_order_id VARCHAR(4096),
+  entry_order_id BIGINT,
+  entry_filled_contracts DECIMAL(28,8),
+  entry_avg_price DECIMAL(28,8),
+  entry_fee DECIMAL(28,8),
+  close_client_order_id VARCHAR(4096),
+  close_order_id BIGINT,
+  close_filled_contracts DECIMAL(28,8),
+  close_avg_price DECIMAL(28,8),
+  close_fee DECIMAL(28,8),
+  realized_profit DECIMAL(28,8),
+  final_gross_profit DECIMAL(28,8),
+  final_total_fee DECIMAL(28,8),
+  final_net_profit DECIMAL(28,8),
+  final_pnl_source VARCHAR(4096),
+  final_pnl_calculated_at TIMESTAMP,
+  stop_price DECIMAL(28,8),
+  trailing_stop_price DECIMAL(28,8),
+  take_profit_price DECIMAL(28,8),
+  highest_price DECIMAL(28,8),
+  lowest_price DECIMAL(28,8),
+  entry_signal VARCHAR(4096),
+  exit_reason VARCHAR(4096),
+  message VARCHAR(4096),
+  account_id BIGINT,
+  account_label VARCHAR(4096),
+  strategy_family VARCHAR(4096),
+  strategy_name VARCHAR(4096),
+  model_name VARCHAR(4096),
+  entry_fee_rate DECIMAL(28,8),
+  entry_fee_profile_id BIGINT,
+  estimated_entry_fee DECIMAL(28,8),
+  estimated_close_fee DECIMAL(28,8),
+  expected_net_after_fees DECIMAL(28,8),
+  sizing_multiplier DECIMAL(28,8),
+  sizing_reason VARCHAR(4096),
+  entry_gate_reason VARCHAR(4096),
+  primary_model VARCHAR(4096),
+  confirmation_models VARCHAR(4096),
+  policy_version VARCHAR(4096),
+  timeframe_profile VARCHAR(4096),
+  market_regime VARCHAR(4096),
+  factor_snapshot_id BIGINT,
+  entry_hypothesis VARCHAR(4096),
+  invalidation_price DECIMAL(28,8),
+  target_zone_low DECIMAL(28,8),
+  target_zone_high DECIMAL(28,8),
+  expected_r_multiple DECIMAL(28,8),
+  momentum_quality_score DECIMAL(28,8),
+  exit_snapshot_state VARCHAR(4096),
+  exit_snapshot_net DECIMAL(28,8),
+  exit_snapshot_mfe DECIMAL(28,8),
+  exit_snapshot_mae DECIMAL(28,8),
+  exit_snapshot_giveback DECIMAL(28,8),
+  exit_snapshot_bars BIGINT,
+  exit_snapshot_candidates VARCHAR(4096),
+  exit_snapshot_updated_at TIMESTAMP,
+  exit_phase VARCHAR(4096),
+  trailing_armed_at TIMESTAMP,
+  trailing_arm_reason VARCHAR(4096),
+  max_favorable_r DECIMAL(28,8),
+  profit_lock_price DECIMAL(28,8),
+  profit_protection_mfe_price DECIMAL(28,8),
+  profit_protection_mfe_net_pnl DECIMAL(28,8),
+  profit_protection_price DECIMAL(28,8),
+  profit_protection_projected_net_pnl DECIMAL(28,8),
+  profit_protection_capture_ratio DECIMAL(28,8),
+  profit_protection_mode VARCHAR(4096),
+  profit_protection_updated_at TIMESTAMP,
+  exit_engine_version VARCHAR(4096),
+  exit_attribution_snapshot_id BIGINT,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+CREATE TABLE htx_trend_order (
+  id BIGINT,
+  position_id BIGINT,
+  position_key VARCHAR(4096),
+  run_id VARCHAR(4096),
+  contract_code VARCHAR(4096),
+  leg VARCHAR(4096),
+  trend_side VARCHAR(4096),
+  order_side VARCHAR(4096),
+  position_side VARCHAR(4096),
+  reduce_only BOOLEAN,
+  client_order_id VARCHAR(4096),
+  exchange_order_id BIGINT,
+  exchange_client_order_id BIGINT,
+  request_volume BIGINT,
+  filled_contracts DECIMAL(28,8),
+  average_price DECIMAL(28,8),
+  fee DECIMAL(28,8),
+  fee_currency VARCHAR(4096),
+  realized_profit DECIMAL(28,8),
+  exchange_state VARCHAR(4096),
+  status VARCHAR(4096),
+  reason VARCHAR(4096),
+  message VARCHAR(4096),
+  account_id BIGINT,
+  account_label VARCHAR(4096),
+  strategy_family VARCHAR(4096),
+  strategy_name VARCHAR(4096),
+  model_name VARCHAR(4096),
+  factor_snapshot_id BIGINT,
+  timeframe_profile VARCHAR(4096),
+  fee_rate_used DECIMAL(28,8),
+  fee_profile_id BIGINT,
+  estimated_fee DECIMAL(28,8),
+  estimated_open_fee DECIMAL(28,8),
+  estimated_close_fee DECIMAL(28,8),
+  sizing_multiplier DECIMAL(28,8),
+  sizing_reason VARCHAR(4096),
+  entry_gate_reason VARCHAR(4096),
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+CREATE TABLE htx_trade_account (
+  id BIGINT,
+  account_label VARCHAR(4096),
+  exchange VARCHAR(4096),
+  market_type VARCHAR(4096),
+  account_role VARCHAR(4096),
+  enabled BOOLEAN,
+  trend_enabled BOOLEAN,
+  mirror_enabled BOOLEAN,
+  api_key_cipher VARCHAR(4096),
+  secret_key_cipher VARCHAR(4096),
+  base_url VARCHAR(4096),
+  sync_leverage BOOLEAN,
+  block_entry_on_leverage_sync_failure BOOLEAN,
+  block_primary_close_until_synced BOOLEAN,
+  sort_order INT,
+  note VARCHAR(4096),
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+CREATE TABLE coin_strategy_ledger_event (
+  id BIGINT,
+  event_key VARCHAR(4096),
+  event_type VARCHAR(4096),
+  account_id BIGINT,
+  account_label VARCHAR(4096),
+  exchange VARCHAR(4096),
+  market_type VARCHAR(4096),
+  strategy_family VARCHAR(4096),
+  strategy_name VARCHAR(4096),
+  model_name VARCHAR(4096),
+  run_id VARCHAR(4096),
+  factor_snapshot_id BIGINT,
+  symbol VARCHAR(4096),
+  contract_code VARCHAR(4096),
+  position_id BIGINT,
+  order_id BIGINT,
+  client_order_id VARCHAR(4096),
+  side VARCHAR(4096),
+  execution_price_usdt DECIMAL(28,8),
+  entry_price_usdt DECIMAL(28,8),
+  close_price_usdt DECIMAL(28,8),
+  filled_contracts DECIMAL(28,8),
+  contract_size DECIMAL(28,8),
+  amount_usdt DECIMAL(28,8),
+  fee_usdt DECIMAL(28,8),
+  funding_fee_usdt DECIMAL(28,8),
+  gross_pnl_usdt DECIMAL(28,8),
+  net_pnl_after_fee DECIMAL(28,8),
+  reason VARCHAR(4096),
+  occurred_at TIMESTAMP,
+  created_at TIMESTAMP
+);
+INSERT INTO htx_trend_position (id,account_label,contract_code,status,side,primary_model,market_regime,realized_profit,entry_fee,close_fee,final_gross_profit,final_total_fee,final_net_profit,final_pnl_source,created_at,updated_at) VALUES (1,'primary','BTC-USDT','DONE','LONG','MODEL','UP',10,1,1,10,2,8,'ORDER_LEDGER',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_order (id,position_id,account_label,client_order_id,leg,status,fee,created_at,updated_at) VALUES (10,1,'primary','live-10','ENTRY','FILLED',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO coin_strategy_ledger_event (id,account_label,strategy_family,strategy_name,event_type,client_order_id,fee_usdt,gross_pnl_usdt,net_pnl_after_fee,occurred_at) VALUES (10,'primary','TREND','HTX_TREND_V1','OPEN_FILL','live-10',1,0,0,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_order (id,position_id,account_label,client_order_id,leg,status,fee,created_at,updated_at) VALUES (11,1,'primary','live-11','CLOSE','FILLED',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO coin_strategy_ledger_event (id,account_label,strategy_family,strategy_name,event_type,client_order_id,fee_usdt,gross_pnl_usdt,net_pnl_after_fee,occurred_at) VALUES (11,'primary','TREND','HTX_TREND_V1','CLOSE_FILL','live-11',1,10,8,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_position (id,account_label,contract_code,status,side,primary_model,market_regime,realized_profit,entry_fee,close_fee,final_gross_profit,final_total_fee,final_net_profit,final_pnl_source,created_at,updated_at) VALUES (2,'TradeX','BTC-USDT','DONE','LONG','MODEL','UP',10,1,1,10,2,8,'ORDER_LEDGER',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_order (id,position_id,account_label,client_order_id,leg,status,fee,created_at,updated_at) VALUES (20,2,'TradeX','live-20','ENTRY','FILLED',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO coin_strategy_ledger_event (id,account_label,strategy_family,strategy_name,event_type,client_order_id,fee_usdt,gross_pnl_usdt,net_pnl_after_fee,occurred_at) VALUES (20,'TradeX','TREND','HTX_TREND_V1','OPEN_FILL','live-20',1,0,0,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_order (id,position_id,account_label,client_order_id,leg,status,fee,created_at,updated_at) VALUES (21,2,'TradeX','live-21','CLOSE','FILLED',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO coin_strategy_ledger_event (id,account_label,strategy_family,strategy_name,event_type,client_order_id,fee_usdt,gross_pnl_usdt,net_pnl_after_fee,occurred_at) VALUES (21,'TradeX','TREND','HTX_TREND_V1','CLOSE_FILL','live-21',1,10,8,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_position (id,account_label,contract_code,status,side,primary_model,market_regime,realized_profit,entry_fee,close_fee,final_gross_profit,final_total_fee,final_net_profit,final_pnl_source,created_at,updated_at) VALUES (11,'paper','BTC-USDT','DONE','LONG','MODEL','UP',20,1,1,20,2,18,'PAPER_SIMULATED',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_order (id,position_id,account_label,client_order_id,leg,status,fee,created_at,updated_at) VALUES (110,11,'paper','paper-110','ENTRY','FILLED',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO coin_strategy_ledger_event (id,account_label,strategy_family,strategy_name,event_type,client_order_id,fee_usdt,gross_pnl_usdt,net_pnl_after_fee,occurred_at) VALUES (110,'paper','TREND','HTX_TREND_15M_V2','OPEN_FILL','paper-110',1,0,0,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_order (id,position_id,account_label,client_order_id,leg,status,fee,created_at,updated_at) VALUES (111,11,'paper','paper-111','CLOSE','FILLED',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO coin_strategy_ledger_event (id,account_label,strategy_family,strategy_name,event_type,client_order_id,fee_usdt,gross_pnl_usdt,net_pnl_after_fee,occurred_at) VALUES (111,'paper','TREND','HTX_TREND_15M_V2','CLOSE_FILL','paper-111',1,20,18,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_position (id,account_label,contract_code,status,side,primary_model,market_regime,realized_profit,entry_fee,close_fee,final_gross_profit,final_total_fee,final_net_profit,final_pnl_source,created_at,updated_at) VALUES (12,'paper','BTC-USDT','DONE','LONG','MODEL','UP',20,1,1,20,2,18,'PAPER_SIMULATED',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_order (id,position_id,account_label,client_order_id,leg,status,fee,created_at,updated_at) VALUES (120,12,'paper','paper-120','ENTRY','FILLED',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO coin_strategy_ledger_event (id,account_label,strategy_family,strategy_name,event_type,client_order_id,fee_usdt,gross_pnl_usdt,net_pnl_after_fee,occurred_at) VALUES (120,'paper','TREND','HTX_TREND_15M_V2','OPEN_FILL','paper-120',1,0,0,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_order (id,position_id,account_label,client_order_id,leg,status,fee,created_at,updated_at) VALUES (121,12,'paper','paper-121','CLOSE','FILLED',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO coin_strategy_ledger_event (id,account_label,strategy_family,strategy_name,event_type,client_order_id,fee_usdt,gross_pnl_usdt,net_pnl_after_fee,occurred_at) VALUES (121,'paper','TREND','HTX_TREND_15M_V2','CLOSE_FILL','paper-121',1,20,18,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_position (id,account_label,contract_code,status,side,primary_model,market_regime,realized_profit,entry_fee,close_fee,final_gross_profit,final_total_fee,final_net_profit,final_pnl_source,created_at,updated_at) VALUES (13,'paper','BTC-USDT','DONE','LONG','MODEL','UP',20,1,1,20,2,18,'PAPER_SIMULATED',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_order (id,position_id,account_label,client_order_id,leg,status,fee,created_at,updated_at) VALUES (130,13,'paper','paper-130','ENTRY','FILLED',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO coin_strategy_ledger_event (id,account_label,strategy_family,strategy_name,event_type,client_order_id,fee_usdt,gross_pnl_usdt,net_pnl_after_fee,occurred_at) VALUES (130,'paper','TREND','HTX_TREND_15M_V2','OPEN_FILL','paper-130',1,0,0,CURRENT_TIMESTAMP);
+INSERT INTO htx_trend_order (id,position_id,account_label,client_order_id,leg,status,fee,created_at,updated_at) VALUES (131,13,'paper','paper-131','CLOSE','FILLED',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO coin_strategy_ledger_event (id,account_label,strategy_family,strategy_name,event_type,client_order_id,fee_usdt,gross_pnl_usdt,net_pnl_after_fee,occurred_at) VALUES (131,'paper','TREND','HTX_TREND_15M_V2','CLOSE_FILL','paper-131',1,20,18,CURRENT_TIMESTAMP);
+INSERT INTO coin_strategy_ledger_event (id,account_label,strategy_family,strategy_name,event_type,net_pnl_after_fee) VALUES (999,'paper','TREND','HTX_TREND_V1','FEE',999);

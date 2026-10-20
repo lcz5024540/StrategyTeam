@@ -56,7 +56,7 @@ DEFAULT_VARIANTS = (
     ResearchVariant("BASELINE"),
     ResearchVariant("MODEL_DONCHIAN", (ModelCode.DONCHIAN_BREAKOUT,)),
     ResearchVariant("MODEL_FIB", (ModelCode.FIB_PULLBACK_CONTINUATION,)),
-    ResearchVariant("MODEL_EMA_VWAP", (ModelCode.EMA_VWAP_MOMENTUM_CONTINUATION,)),
+    ResearchVariant("MODEL_EMA_MOMENTUM", (ModelCode.EMA_MOMENTUM_CONTINUATION,)),
     ResearchVariant("ADD_RSI", confirmation="RSI", condition_version="r2-p3-v1"),
     ResearchVariant("ADD_MACD", confirmation="MACD", condition_version="r2-p3-v1"),
     ResearchVariant("ADD_PRICE_SLOPE", confirmation="PRICE_SLOPE", condition_version="r2-p3-v2"),
