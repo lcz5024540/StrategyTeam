@@ -203,3 +203,23 @@ def test_partial_checkpoint_then_final_close_allocates_entry_fee_once(tmp_path, 
     nets=[D(r[0]) for r in db.raw.execute("SELECT net_pnl_after_fee FROM coin_strategy_ledger_event WHERE event_type='CLOSE_FILL'")]
     assert sum(nets)==D('.9916')
     assert D(db.raw.execute('SELECT final_net_profit FROM htx_trend_position').fetchone()[0])==sum(nets)
+
+
+def test_close_fill_net_includes_entry_fee_accumulated_before_close(tmp_path, paper_store):
+    db, repo = paper_store
+    state = make_state(tmp_path, 1)
+    # 故意将平仓订单放在开仓订单之前，确保开仓费仍先累计。
+    state['orders'] = dict(sorted(state['orders'].items(), key=lambda item: item[1]['position_id'] is None))
+    assert next(iter(state['orders'].values()))['position_id'] is not None
+    backfill_paper_state_to_mysql(state, repo)
+    opened = db.raw.execute("SELECT * FROM coin_strategy_ledger_event WHERE event_type='OPEN_FILL'").fetchone()
+    assert opened is not None
+    assert D(opened['fee_usdt']) == D('.004')
+    events = list(db.raw.execute("SELECT * FROM coin_strategy_ledger_event WHERE event_type='CLOSE_FILL'"))
+    assert len(events) == 1
+    for event in events:
+        allocated_entry_fee = D(opened['fee_usdt'])*D(event['filled_contracts'])/D(opened['filled_contracts'])
+        assert D(event['net_pnl_after_fee']) == D(event['gross_pnl_usdt'])-D(event['fee_usdt'])-allocated_entry_fee
+    nets = sum(D(e['net_pnl_after_fee']) for e in events)
+    assert nets == D('.9916')
+    assert D(db.raw.execute('SELECT final_net_profit FROM htx_trend_position').fetchone()[0]) == nets
