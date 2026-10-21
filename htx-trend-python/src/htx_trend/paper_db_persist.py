@@ -146,7 +146,8 @@ def backfill_paper_state_to_mysql(state_json, repo):
                         p['side'], 'PAPER_SIMULATED', execution_price_usdt=price, entry_price_usdt=entry,
                         close_price_usdt=price if leg != 'ENTRY' else None, filled_contracts=q, contract_size=size,
                         amount_usdt=amount, fee_usdt=cost, gross_pnl_usdt=pnl if leg != 'ENTRY' else None,
-                        net_pnl_after_fee=pnl-cost if leg != 'ENTRY' else None))
+                        # 开仓费随实际平仓数量分摊，手续费列仍仅记录本次成交费用。
+                        net_pnl_after_fee=pnl-cost-entry_fee*q/entered if leg != 'ENTRY' else None))
                     added += 1; new_fill = True
                 if quantity > D(str(order['quantity'])):
                     raise ValueError('fill quantity exceeds order')
