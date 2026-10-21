@@ -1,0 +1,103 @@
+{
+  "datasets": [
+    {
+      "first_entry": "2024-10-12T23:00:00+00:00",
+      "input_sha256": "e984fe94114762759f79361ffdfde4a1a215377df581fa311e777da23c1fe499",
+      "last_exit": "2025-06-02T23:45:00+00:00",
+      "scenarios": [
+        {
+          "extra_cost_usdt": "0.00000",
+          "extra_one_way_bp": 0,
+          "net_usdt": "-70.72448882285667365530",
+          "trades": 1634,
+          "win_rate": "0.3078335373317013463892288861689106487148",
+          "wins": 503
+        },
+        {
+          "extra_cost_usdt": "20.04245792",
+          "extra_one_way_bp": 1,
+          "net_usdt": "-90.76694674285667365530",
+          "trades": 1634,
+          "win_rate": "0.2992656058751529987760097919216646266830",
+          "wins": 489
+        },
+        {
+          "extra_cost_usdt": "40.08491584",
+          "extra_one_way_bp": 2,
+          "net_usdt": "-110.80940466285667365530",
+          "trades": 1634,
+          "win_rate": "0.2925336597307221542227662178702570379437",
+          "wins": 478
+        },
+        {
+          "extra_cost_usdt": "60.12737376",
+          "extra_one_way_bp": 3,
+          "net_usdt": "-130.85186258285667365530",
+          "trades": 1634,
+          "win_rate": "0.2864137086903304773561811505507955936353",
+          "wins": 468
+        },
+        {
+          "extra_cost_usdt": "100.2122896",
+          "extra_one_way_bp": 5,
+          "net_usdt": "-170.93677842285667365530",
+          "trades": 1634,
+          "win_rate": "0.2766217870257037943696450428396572827417",
+          "wins": 452
+        }
+      ],
+      "source": "phase1"
+    },
+    {
+      "first_entry": "2026-10-20 03:15:40",
+      "input_sha256": "7345678fb736835e6b96b34cbe721a329687e26cb4878c28e44b2283e16a55f3",
+      "last_exit": "2026-10-21 10:30:19",
+      "scenarios": [
+        {
+          "extra_cost_usdt": "0.0000",
+          "extra_one_way_bp": 0,
+          "net_usdt": "-4.78387488000000000000000001",
+          "trades": 11,
+          "win_rate": "0.2727272727272727272727272727272727272727",
+          "wins": 3
+        },
+        {
+          "extra_cost_usdt": "0.32013162",
+          "extra_one_way_bp": 1,
+          "net_usdt": "-5.10400650000000000000000001",
+          "trades": 11,
+          "win_rate": "0.09090909090909090909090909090909090909091",
+          "wins": 1
+        },
+        {
+          "extra_cost_usdt": "0.64026324",
+          "extra_one_way_bp": 2,
+          "net_usdt": "-5.42413812000000000000000001",
+          "trades": 11,
+          "win_rate": "0.09090909090909090909090909090909090909091",
+          "wins": 1
+        },
+        {
+          "extra_cost_usdt": "0.96039486",
+          "extra_one_way_bp": 3,
+          "net_usdt": "-5.74426974000000000000000001",
+          "trades": 11,
+          "win_rate": "0.09090909090909090909090909090909090909091",
+          "wins": 1
+        },
+        {
+          "extra_cost_usdt": "1.6006581",
+          "extra_one_way_bp": 5,
+          "net_usdt": "-6.38453298000000000000000001",
+          "trades": 11,
+          "win_rate": "0.09090909090909090909090909090909090909091",
+          "wins": 1
+        }
+      ],
+      "source": "paper"
+    }
+  ],
+  "method": "net(bp)=baseline_net-2*bp*entry_price*qty*contract_size/10000; fees and funding unchanged",
+  "phase1_window": "记忆窗口 2024-01-25..2025-06-03；CSV 可得段 2024-10-12..2025-06-02",
+  "status": "非登记试验、非 PRD 参数来源"
+}

@@ -1,6 +1,6 @@
 # D1 + D2 离线研究工具链
 
-本目录为独立 Python 包 `coinresearch`。只读调用者指定的 CSV/JSON，只写指定输出目录；依赖标准库、numpy、pandas，测试依赖 pytest。没有交易执行、数据库、网络或现网 runtime 依赖。真实数据及输出放在仓库外，测试数据在临时目录中合成，没有入库的数据 fixture。
+本目录为独立 Python 包 `coinresearch`。只读调用者指定的 CSV/JSON，只写指定输出目录；依赖标准库、numpy、pandas，测试依赖 pytest。没有交易执行、数据库、网络或现网 runtime 依赖。真实输入放在仓库外，测试数据在临时目录中合成；P6 小型上界与滑点报告保存在 outputs/p6，不提交原始 close CSV。
 
 ## 模块与命令
 
@@ -112,3 +112,7 @@ $PY -m coinresearch.cli regress --out-dir /external/d2-regression --target-bps 2
 ```
 
 这些模块仅产生研究文件和诊断字段，不连接现网执行。
+
+## P6 独立离线扩展
+
+[成本上界与滑点口径](docs/P6_COST_CEILING_ZH.md)、[CAC 中文模板](docs/CAC_TEMPLATE_HTX_ZH.md)。独立命令 `python -m coinresearch.cost_ceiling_cli` 与 `python -m coinresearch.slippage_sensitivity`；不连接现网或修改 D1/D2 闸门。
