@@ -1,85 +1,54 @@
-# T2：完整 PAPER runtime.scan 离线重放
+# T2 离线 runtime.scan 重放与 A+B 复核
 
-工具直接运行现有 `PaperTrendWorker.tick()`，由它调用 `PaperTrendRuntime.scan()` 和 `manage()`，不复制策略、路由、风险判单或退出规则。没有修改生产模块，也没有增加生产注入点。
+## 运行与边界
 
-## 运行
-
-在 `htx-trend-python/` 下，使用已经安装项目依赖的 Python 3.11 或更新版本：
-
-```sh
-PYTHONPATH=src python3.11 -m htx_trend.scan_replay \
-  --inputs replay_inputs/20261021 \
-  --out replay_inputs/20261021/output
-python3.11 -m pytest -q
+```bash
+PYTHONPATH=src python -m htx_trend.scan_replay --inputs replay_inputs/20261021 --out replay_inputs/20261021/output
+PYTHONPATH=src /Users/jenniferni/jenifer/venv-research/bin/pytest -q
 ```
 
-本次验证使用本机已有 `/Users/jenniferni/jenifer/venv-research/bin/python`，全套 **433 passed**。系统 `python3` 为 3.9，不能运行该项目；Homebrew Python 3.11 缺少部分测试依赖。没有联网安装依赖。
+仅使用内存 ledger、fake 市场与时钟，调用原 `PaperTrendWorker.tick → runtime.scan/manage → evaluate_gate/exits.decide`；不初始化生产 worker，不访问网络、数据库或凭据。进程内临时观察补丁不支持并发运行生产 worker。输出过滤随机 ID，保留源码哈希、完整配置和门/退出输入输出。
 
-`klines.csv` 和 `trades_closed_window.csv` 按原始字节固定。`MANIFEST.json` 列出 SHA256，模块内另外锁定两个哈希，改 CSV 后连同修改 MANIFEST 也会拒绝运行。`--inputs` 可指向固定输入的另一份副本；新数据集需要单独审核并更新锁定值。输入路径只读，只有 `--out` 下的 `report.json` 和 `report.md` 会写入/覆盖。
+输入 CSV 同时受源码 `LOCKED_HASHES` 与 MANIFEST 双重锁定；内容或 MANIFEST 哈希不符拒绝运行。此次仅扩充交易参考 CSV，K 线哈希不变。参考集不参与信号、持仓和退出决策，只用于运行完成后的比较。
 
-## 复用边界
+## A：forming-bar-open 盘口假设修复
 
-- 用内存 ledger 继承 `PaperFileLedger` 的持仓、订单、成交和上下文状态转换；跳过文件构造函数，checkpoint 不执行文件/数据库写入。
-- 用原 `WorkerPaperExchange` 执行盘口成交、合约面值手续费和部分平仓。
-- 用无客户端的 `OfflineMarket` 提供 K 线、合约、盘口和 funding；没有 HTTP、数据库、私钥或生产连接配置访问。
-- 用固定时钟驱动原 worker，每个收盘时点按 BTC、ETH 顺序执行。假对象替换与环境隔离使用作用域内的 patch，退出时还原。不能在同一进程并发运行此工具或生产 worker。
-- 只观察原 `evaluate_gate(condition_trace=...)` 和 `exits.decide()` 的输入输出；前者仍只执行一次，结果原样返回。额外的纯策略诊断不参与下单。
-- 包版本取自 `pyproject.toml`，输出所有包源码 SHA256、完整 entry/execution 参数和输入哈希。当前包 `0.1.0` 与输入描述的现网构建 `0.1.6-paper-db-c79afbaa` 分别记录，未证明二者代码/环境完全一致。
+原 worker 按 BTC、ETH 顺序遍历，每币先 manage，再由该币 `had_position` 决定是否 scan。不是全市场统一先 scan 或统一先 exit。BTC 空仓、ETH 有仓时，BTC scan 先于 ETH manage，因此 BTC 的 used_margin 包含尚未平掉的 ETH。
 
-## 时间、路由和持仓语义
+重放继续调用原 worker，不改编排。新增 scan 时的持仓快照和保证金一致性断言：逐仓 entry_price × quantity × contract_size / leverage 的合计必须等于 execution_facts.used_margin_usdt。
 
-K 线 `bar_time` 是 Unix 秒的开盘时间。15m/60m 窗口均为最近 160 根完整已收盘线，采用现有 10 秒收盘宽限，并检查连续性；不会使用正在形成的小时线。先前数据只用于指标预热，默认从 2026-10-19 21:35:46 CST 之后开始驱动交易，至 2026-10-21 10:30:59 CST。缺少窗口数据时原 worker 拒绝执行，不跳过缺口。
+回归测试构造 ETH 7 张、入场 2400.74、面值 .01、10x，验证 BTC 09:00 的真实 2 张 EMA 候选被 `RISK_LIMIT / risk.total_margin FAIL` 拒绝（ETH 占用 16.80518U；加 BTC 16.34256U 超过30U），随后同 tick ETH 才退出。
 
-默认在 15m 收盘后 30 秒调用。参考 CSV 的 `signal_bar_cst` 与成交桶一致，例如 03:15:40 成交对应 CSV 03:15；本工具同时输出成交桶 03:15 与实际候选 K 线开盘 03:00。该时间解释是明确假设，不能把参考文件中的 `offline_match_side` 当作本工具判定。
+根因是旧重放盘口采用上一根已收盘15m close：ETH 08:15仓在08:45评估时用2398.32，触发保护价突破而提前退出，随后BTC 09:00扫描时保证金已释放。现网该次参考价约2396，不能用旧盘口假设复现。
 
-三个独立模型候选及确认模型由原策略生成，按原 `route_candidates` 排名，再选排名中第一个通过门的候选。`trend_window` 虽通过完整性检查，当前 scan 并不使用它判趋势。`market_context` 保持原 worker 的中性默认。
+修复仅限 `OfflineMarket.top_of_book`：存在包含 now 的形成中15m bar时取其open作mid，否则沿用上一根已收盘close，spread计算不变。不读取形成中bar的high/low/close，信号窗口仍只含满足10秒宽限的已收盘线；不改worker顺序，不按参考退出时间强制持仓。
 
-原 worker 在 tick 开始已有同币持仓时只执行持仓管理，哪怕当次完全平仓也不开新仓；历史所有 position context 的 `structure_key` 持续去重。原 worker 没有给 scan 传 `prior_trade`，因此 cooldown 函数接收 None，不能凭空添加“一小时禁止开仓”。同币间隔是上述实际门和持仓路径的结果。
+修复后ETH 08:15仓在 **09:00:30** 平仓，原因仍为 `armed-protection-breach-atr-impulse`。BTC 09:00先扫描时ETH仍占用16.80819U（新盘口下入场价2401.17；上述独立回归fixture仍用2400.74），候选被 `RISK_LIMIT / risk.total_margin FAIL` 拒绝，随后ETH正常退出；BTC 09:15入场匹配。该结果是明确盘口假设下的重放一致性，不代表恢复了真实盘口。
 
-账户权益和占用保证金、手续费、总止损风险均按原 worker 动态计算。`hard_risk_limits_enabled=True`，包括总保证金不超过配置本金 10% 等门。另一个 `require_execution_facts` 开关保持默认 False：其控制的独立可用保证金、深度、逆市、FIB 质量等检查不会启用。报告保留原始 trace（有些未启用检查原函数也会 emit PASS），因此务必结合完整配置和 `not_evaluated_or_disabled` 阅读，不能把原始 PASS 理解为缺失真实数据已验证。
+## B：12个position与逐腿参考
 
-管理和部分/全量退出直接复用 `manage → exits.decide`，跟踪最高/最低、保护价、盈利保护和剩余仓数；原 worker 的 opposition=0、flat_streak=0、protection_breach_bars=0 保持不变。最后未平仓不强行平仓。
+参考集为窗口内开仓、截至2026-10-21 15:01导出已平仓的12个position。新增 ETH `93cef710`：10-20 23:00:32 LONG DONCHIAN，10-21 13:45:33退出，来源 positions/ENTRY_ORDER及归因报告。未知成交明细和费用留空，不反推为权威成交。
 
-## 缺失输入和可配置假设
+每个position只占一个入场匹配名额；使用币种+入场15m桶定位，方向和主模型独立核验。JSON `trades[].exit_legs` 从实际 reduction fills 提取逐腿数量、时间、价格和退出原因。参考 `exit_legs_json` 给出已知腿；按次序比较每腿数量、退出15m桶和原因，缺腿、多腿均不通过。
 
-通过 `--assumptions path/to/assumptions.json` 传入字段覆盖；不能用这个文件改判单阈值。示例：
+BTC 02:15参考两腿来自归因报告§3：09:00:21平1张 profit-at-risk，09:15:54平1张 trend-weakened。实际重放是05:00平1张 profit-at-risk、09:00再平1张 profit-at-risk，属于真实差异，不能因第一腿原因相同便标完整对齐。
 
-```json
-{
-  "scan_delay_seconds": 46,
-  "spread_rate": "0.0002",
-  "funding_rate": "0.0001",
-  "btc_contract_size": "0.001",
-  "eth_contract_size": "0.01",
-  "price_tick": "0.01",
-  "equity": "300",
-  "leverage": "10",
-  "margin_rate": "0.10",
-  "max_active_positions": 5
-}
-```
+其余position只有聚合参考，明确标 `EXIT_REFERENCE_INCOMPLETE`；不把聚合行伪装成逐腿订单。因此完整逐腿通过数为0；这不等于12笔入场全部错误。现有本地 BTC bundle 只含开仓订单/成交，并不含两笔退出订单 ID。
 
-默认假设如下，均写入输出：
+## 当前验收结果
 
-- 固定收盘后 30 秒，实际现网观察为 12–46 秒；不会用参考成交时刻作为预测输入。
-- bid=ask=最后已收盘 15m close；spread 默认 0，覆盖时以 close 为中价。没有深度、真实盘中成交路径和滑点。
-- funding=0；BTC 面值 .001、ETH .01，tick=.01，合约状态正常。
-- 初始空仓、无历史订单、历史结构键或历史损益；本金 300U、10倍、总保证金上限10%、最多5仓。后续按原 worker 更新，不强制保证金永远充足。
-- turnover 与盘口深度缺失；平均成交额门默认关闭，费率与其他阈值采用当前源码默认值；原 PAPER 成交费率 .0004。
-- 环境变量隔离，不继承主机的 HTX 参数覆盖，不读取参考 `state.json` 的最终状态来回填过去。初始状态未知及现网环境差异可能导致路径分歧。
-- 参考集只有 11 笔窗口内已平仓交易，并非完整现网开仓/订单集合；“多发”只能表示参考集中未观察到，不能证明现网未开仓。缺失真实盘口时，归因仅说明重放实际阻断门/退出分支，不虚构现网原因。
+入场 **12/12**，多发 **0**，漏发 **0**；ETH 23:00入场已匹配。同一输入两次独立运行的 `report.json`、`report.md` 逐字节一致。完整逐腿对齐仍为0，原因和证据缺口保留在B及报告中。全量 pytest：**458 passed**，含形成中bar边界、无形成中bar回退、spread保持及保证金拒绝回归。
 
-## 结果和阅读方式
+默认重放至10-21 10:30:59。固定15m行情最后一根开盘12:00、60m最后11:00，无法延长到ETH 13:45退出而仍满足worker完整性/新鲜度检查；不外推行情、不强平。完整报告写入 output/report.md、report.json。
 
-默认结果：完整对齐 **9/11**，方向/模型入场对齐 **10/11**；相对参考集多发 **3**、漏发 **1**。完整对齐要求同币同成交桶、方向、模型、最终退出原因一致；不要求成交价格、数量和退出时刻一致。部分退出路径仍完整保存在 JSON。
+## 保持的假设
 
-两笔不符：
+- 盘口取证不可得 → 假设：scan_delay 时刻用形成中 15m bar 的 open 作 mid（优于上一根 close）；无形成中 bar 时回退上一根 close；spread=0。无真实滑点或tick路径。
+- funding：**取证不可得 → 假设** 0。
+- contract_spec：**取证不可得 → 假设** BTC .001、ETH .01（state context佐证），tick .01、可交易。
+- 初始空仓、300U、10倍、保证金上限10%、最多5仓；动态权益/费用/占用按原worker计算。
+- 固定收盘后30秒调用，10秒收盘宽限，15m/60m均160根完整线；CSV signal_bar_cst是成交桶，候选K线开盘为该时间减15m。
+- 隔离环境变量覆盖；不读取参考最终状态回填历史。prior_trade=None，原worker中性市场context及默认退出输入保持不变。
+- `require_execution_facts=False`，硬保证金及止损风险门仍启用；门短路后的条件不算通过。未证明本地源码与现网构建逐字节等价。
 
-1. 10-20 09:15 BTC SHORT/DONCHIAN：重放 09:00 已开 EMA SHORT，09:15 tick 开始有仓，`HAD_POSITION_AT_TICK_START` 阻止 scan。报告给出阻挡持仓的开仓时刻、方向和模型。
-2. 10-21 02:15 BTC LONG/EMA：入场对齐，重放在 09:00 以 `profit-at-risk-with-deteriorating-continuation` 完全退出；现网在 09:15 以 `trend-weakened-protection-breach` 退出。重放末次退出 reference=82983.6，高点回撤185.4、ATR约125.957、状态WEAKENING、剩余1张；新保护价约82964.706尚未被跌破，进入盈利回撤且延续恶化分支。真实盘口缺失，不能将它断言为现网缺陷。
-
-多发为 10-20 BTC 09:00、BTC 10:00、ETH 23:00。它们的完整门结果、实际值、阈值、账户事实和结构键见 `extras[].bar_evidence`。
-
-JSON 的 `bars` 覆盖逐根两个币种，`alignment` 给出每笔现网对应证据，`missing`/`extras` 提供双向检验，`trades[].exit_decisions` 包含退出函数完整输入输出。没有候选或原 worker 阻止扫描时，候选门未执行；诊断候选若存在，由 `candidate_diagnostics_only` 标明。门的短路后续项不记成通过。
-
-测试涵盖双重哈希锁、两次完整运行确定性、断网/禁数据库/禁生产ledger初始化、真实交易对齐、反向增删及模型不符、15m/60m无未来数据、601秒真实stale门拦截。没有修改现有测试或削弱风险断言。
+未修改现网判单、stops、参数或 runtime/paper_worker/execution/exits；未装机、热更、SSH、改PAPER/LIVE/collector/nginx/前端。

@@ -35,7 +35,7 @@ CST = timezone(timedelta(hours=8))
 STRATEGY = 'HTX_TREND_15M_V2'
 LOCKED_HASHES = {
     'klines.csv': 'c9317a85fcca1b9fce1a88409f2356dd668cc22688a3d173797f1712a8aef923',
-    'trades_closed_window.csv': '7345678fb736835e6b96b34cbe721a329687e26cb4878c28e44b2283e16a55f3',
+    'trades_closed_window.csv': 'f3f21b6eb2d203cc131bf9b5f8473a291a4bad76506537c22e8251dbdf438756',
 }
 
 
@@ -104,9 +104,14 @@ class OfflineMarket:
         return KlineWindow(contract, period, rows, size)
 
     def top_of_book(self, contract):
-        close = self.kline_window(contract, '15min', 1, now_epoch=self.now).candles[-1].close
-        half = close * self.assumptions.spread_rate / 2
-        return TopOfBook(close - half, close + half)
+        # Book evidence is unavailable: only the forming bar's open is used,
+        # never its future high/low/close. Signal windows remain closed-bar only.
+        forming = next((c for c in self.candles[(contract, '15min')]
+                        if c.open_time <= self.now < c.open_time + 900), None)
+        mid = (forming.open if forming is not None else
+               self.kline_window(contract, '15min', 1, now_epoch=self.now).candles[-1].close)
+        half = mid * self.assumptions.spread_rate / 2
+        return TopOfBook(mid - half, mid + half)
 
     def funding_rate(self, contract):
         return FundingRate(contract, self.assumptions.funding_rate)
@@ -139,7 +144,9 @@ def load_inputs(inputs: Path):
 
 
 def compare(live, trades, bars):
-    """Match by contract and execution bucket; side/model/exit are separate tests."""
+    """One row per position; match entry bucket, then each ordered exit leg."""
+    if len({r['position_key'] for r in live}) != len(live):
+        raise ValueError('duplicate reference position: store exit legs within one position row')
     index = {(b['contract'], b['execution_bucket']): b for b in bars}
     used = set()
     alignment, missing = [], []
@@ -164,19 +171,35 @@ def compare(live, trades, bars):
                             'execution_bucket': bucket, 'bar_evidence': bar, 'reasons': reasons})
         else:
             used.add(found)
-            for field, expected in (('side', row['side']), ('model', row['model']), ('exit_reason', row['exit_reason'])):
+            for field, expected in (('side', row['side']), ('model', row['model'])):
                 if replay[field] != expected:
                     reasons.append(f'{field}: live={expected}; replay={replay[field]}')
             if replay['model'] != row['model'] or replay['side'] != row['side']:
                 reasons.append('MODEL_ROUTING: ' + str(bar['route'] if bar else None))
-            if replay['exit_reason'] != row['exit_reason']:
-                reasons.append('EXIT_PATH: exits.decide_v4 进入获利回撤且延续恶化分支，而非弱势保护价突破分支；完整输入/输出见exit_decisions；真实盘口缺失，不能证明现网根因')
+        reference_legs = json.loads(row.get('exit_legs_json') or '[]')
+        replay_legs = replay.get('exit_legs', []) if replay else []
+        leg_alignment = []
+        # One position consumes one entry, regardless of how many reduction orders it has.
+        for i in range(max(len(reference_legs), len(replay_legs)) if reference_legs else 0):
+            expected = reference_legs[i] if i < len(reference_legs) else None
+            actual = replay_legs[i] if i < len(replay_legs) else None
+            matched = expected is not None and actual is not None and (
+                int(expected['quantity']) == int(actual['quantity']) and
+                expected['reason'] == actual['reason'] and
+                epoch(expected['at_cst']) // 900 == epoch(actual['at_cst']) // 900)
+            leg_alignment.append({'live': expected, 'replay': actual, 'match': matched})
+        exit_match = bool(reference_legs) and all(x['match'] for x in leg_alignment)
+        if not reference_legs:
+            reasons.append('EXIT_REFERENCE_INCOMPLETE: only position aggregate available; per-leg orders unavailable')
+        elif not exit_match:
+            reasons.append('EXIT_LEGS_MISMATCH: see exit_leg_alignment for quantity/time/reason differences')
         alignment.append({'live': row, 'signal_bar_open_cst': cst(bucket - 900),
                           'execution_bucket_cst': cst(bucket), 'replay': replay,
                           'entry_match': replay is not None and replay['side'] == row['side'] and replay['model'] == row['model'],
                           'match': replay is not None and not reasons, 'reasons': reasons,
+                          'exit_match': exit_match, 'exit_leg_alignment': leg_alignment,
                           'bar_evidence': bar})
-    # Closed-trade input is not a complete live scan/order ledger: these are unobserved extras.
+    # Reverse comparison counts positions, never exit legs.
     extras = [{**t, 'bar_evidence': index.get((t['contract'], t['execution_bucket']))}
               for i, t in enumerate(trades) if i not in used]
     return alignment, extras, missing
@@ -204,11 +227,19 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
     condition_ids = list(dict.fromkeys(re.findall(r'emit\("([^"\n]+)"', inspect.getsource(original_gate))))
     exit_calls = []
     scan_contract = None
+    scan_positions = []
 
     class ObservedRuntime(PaperTrendRuntime):
         def scan(self, **kwargs):
-            nonlocal scan_contract
+            nonlocal scan_contract, scan_positions
             scan_contract = kwargs['entry_window'].contract_code
+            scan_positions = [dict(contract=p.contract_code, quantity=p.quantity,
+                entry_price=p.entry_price, contract_size=ledger.position_context(p.position_id)['contract_size'])
+                for p in ledger.active_positions(worker.account)]
+            expected_used = sum((p['entry_price'] * p['quantity'] * D(p['contract_size'])
+                                 / worker.config.leverage for p in scan_positions), D('0'))
+            if kwargs['execution_facts'].used_margin_usdt != expected_used:
+                raise ValueError('replay worker margin disagrees with active position ledger')
             return super().scan(**kwargs)
 
     def observed_exit(value):
@@ -221,7 +252,7 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
         result = original_gate(candidate, **kwargs, condition_trace=lambda cid, status, actual, threshold, reason:
             trace.append(dict(condition=cid, status=status, actual=actual, threshold=threshold, reason=reason)))
         reached = {item['condition'] for item in trace}
-        gate_calls.append({'contract': scan_contract, 'candidate': asdict(candidate), **asdict(result),
+        gate_calls.append({'positions_before_scan': scan_positions, 'contract': scan_contract, 'candidate': asdict(candidate), **asdict(result),
             'conditions': trace, 'not_evaluated_or_disabled': [cid for cid in condition_ids if cid not in reached],
             'execution_facts': asdict(kwargs['execution_facts']),
             'claimed_structure_keys': sorted(kwargs['claimed_structure_keys'])})
@@ -245,6 +276,7 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
         for bucket in times:
             market.now = bucket + assumptions.scan_delay_seconds
             prior_bars = dict(ledger.data['bars'])
+            before_fills = len(ledger.data['fills'])
             before_decisions = len(ledger.data['decisions'])
             prior_positions = [{'contract': p.contract_code, 'opened_at_cst': p.opened_at.astimezone(CST).isoformat(),
                                 'side': p.side, 'model': ledger.position_context(p.position_id)['model']}
@@ -283,7 +315,7 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
                         'opened_at_cst': cst(market.now), 'side': raw['side'], 'model': context['model'],
                         'entry_price': raw['entry_price'], 'initial_quantity': raw['quantity'],
                         'structure_key': context['structure_key'], 'exit_reason': None, 'closed_at_cst': None,
-                        'exit_decisions': []})
+                        'exit_legs': [], 'exit_decisions': []})
                 trade = trades[positions[pid]]
                 for decision in decisions:
                     if decision['position_id'] == pid and decision['kind'] == 'EXIT_DECISION':
@@ -291,27 +323,35 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
                         if raw['status'] == 'CLOSED':
                             trade['exit_reason'] = decision['payload']['reason']
                             trade['closed_at_cst'] = cst(market.now)
+                for fill in ledger.data['fills'][before_fills:]:
+                    order = ledger.data['orders'][fill['order_id']]
+                    if order['position_id'] == pid:
+                        decision = next(d for d in decisions if d['position_id'] == pid
+                                        and d['kind'] == 'EXIT_DECISION')
+                        trade['exit_legs'].append(dict(at_cst=cst(market.now),
+                            quantity=fill['quantity'], price=fill['price'],
+                            reason=decision['payload']['reason']))
                 trade['status'] = raw['status']
                 trade['realized_pnl'] = raw['realized_pnl']
     aligned, extras, missing = compare(live, trades, bars)
     source_root = Path(__file__).parent
     report = {
-        'header': {'schema_version': 1, 'package_version': tomllib.loads((source_root.parents[1] / 'pyproject.toml').read_text())['project']['version'], 'reported_live_version': '0.1.6-paper-db-c79afbaa',
+        'header': {'schema_version': 2, 'package_version': tomllib.loads((source_root.parents[1] / 'pyproject.toml').read_text())['project']['version'], 'reported_live_version': '0.1.6-paper-db-c79afbaa',
             'strategy': STRATEGY, 'input_sha256': hashes,
             'source_sha256': {str(p.relative_to(source_root)): hashlib.sha256(p.read_bytes()).hexdigest()
                               for p in sorted(source_root.rglob('*.py'))},
             'entry_config': asdict(worker.entry_config), 'execution_config': asdict(execution_config),
             'assumptions': asdict(assumptions),
             'limitations': [
-                '假设/缺数据：盘口为最后已收盘15m close±配置spread/2；没有真实盘口深度、滑点或tick路径。',
-                '假设/缺数据：funding默认0；contract_size BTC=.001/ETH=.01，tick=.01，合约可交易。',
+                '盘口取证不可得 → 假设：scan_delay 时刻用形成中 15m bar 的 open 作 mid（优于上一根 close）；无形成中 bar 时回退上一根 close；spread=0（默认，仍支持配置 spread）；没有真实盘口深度、滑点或tick路径。',
+                '取证不可得 → 假设：funding / contract_spec：funding默认0；contract_size BTC=.001/ETH=.01，tick=.01，合约可交易。',
                 '假设/缺数据：初始空仓、无历史结构键/订单/手续费；300U、10倍、保证金上限10%、5仓，后续余额/风险按原worker动态计算。',
                 '假设/缺数据：固定收盘后30秒，每15m调用一次；10秒收盘宽限；窗口160根，60m仅完整性检查，scan不使用其趋势。',
                 '假设/缺数据：使用当前源码与默认配置；未证明等同现网构建及环境覆盖。源码哈希用于复跑。',
                 '假设/缺数据：book深度与turnover缺失；require_execution_facts=False，深度、独立可用保证金、FIB质量、逆市/混合市场等受该开关控制的门未启用；min_average_turnover=0、fee_protection_enabled=False。硬保证金上限与止损风险门仍执行。',
                 '原worker语义：prior_trade=None（cooldown无历史输入），市场context中性，退出opposition=0、flat_streak/breach_bars默认0。',
                 '原worker语义：同币tick开始有仓则仅管理，即使本tick平仓也不再开；所有历史结构键持续去重。',
-                '缺数据：CSV只有窗口内已平仓11笔，未包含全部未平仓/窗口外开仓；多发为相对该参考集未观察到，不能断言现网确未开。',
+                '参考集：窗口内开仓且截至导出已平仓12个position；BTC 02:15两腿来自归因报告，其余仅持仓聚合，逐腿证据不足明确标记。ETH 23:00平仓晚于固定K线覆盖，不外推行情。',
                 'CSV signal_bar_cst按成交桶解释；真实候选bar开盘为该值减15m；同时输出两种时间。',
                 '退出使用原runtime.manage/exits.decide，包括部分平仓；数据末尾未平仓不强平。',
                 '门输出为原函数实际短路路径；失败之后未到达的门不能记为通过；没有候选或已有仓时不执行候选门。',
@@ -329,7 +369,7 @@ def markdown(report):
     h, s = report['header'], report['summary']
     lines = ['# 完整 runtime.scan 离线重放', '', f"包版本 `{h['package_version']}`；配置 `{h['strategy']}`；现网版本（输入描述）`{h['reported_live_version']}`。", '',
              f"完整对齐 **{s['full_matches']}/{s['live_count']}**；方向/模型入场对齐 **{s['entry_matches']}/{s['live_count']}**；多发 **{s['extra_count']}**；漏发 **{s['missing_count']}**。", '',
-             '完整对齐=成交桶、币种、方向、模型、最终出场原因相同；不要求价格/数量/退出时刻相同。多发仅相对于11笔已平仓参考集。', '',
+             '完整对齐=position入场与每腿数量、15m退出桶、原因均相同；逐腿参考缺失不能记为完整通过。入场按12个position统计。', '',
              '## 输入哈希', '']
     lines += [f'- `{k}`: `{v}`' for k, v in h['input_sha256'].items()]
     lines += ['', '## 逐笔对齐', '', '|现网开仓 CST|币种|方向/模型|现网出场|重放出场|结果/归因|', '|---|---|---|---|---|---|']
@@ -337,6 +377,15 @@ def markdown(report):
         live, replayed = a['live'], a['replay']
         reason = '一致' if a['match'] else '; '.join(a['reasons'])
         lines.append(f"|{live['opened_at_cst']}|{live['contract']}|{live['side']}/{live['model']}|{live['exit_reason']}|{replayed['exit_reason'] if replayed else '无开仓'}|{reason.replace('|', '/')}|")
+    lines += ['', '## 逐腿出场对齐（时间按15m桶，数量按张）', '',
+              '|position|腿|现网时间 / 数量 / 原因|重放时间 / 数量 / 原因|一致|',
+              '|---|---|---|---|---|']
+    for a in report['alignment']:
+        for i, leg in enumerate(a['exit_leg_alignment'], 1):
+            def describe(value):
+                return (' / '.join(str(value[k]) for k in ('at_cst', 'quantity', 'reason'))
+                        if value else '缺失')
+            lines.append(f"|{a['live']['position_key']}|{i}|{describe(leg['live'])}|{describe(leg['replay'])}|{leg['match']}|")
     for name, title in (('extras', '多发（参考集中未观察到）'), ('missing', '漏发')):
         lines += ['', '## ' + title, '']
         for row in report[name]:
