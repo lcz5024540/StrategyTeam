@@ -165,3 +165,41 @@ def test_invalid_client_id_fails_before_any_write(tmp_path, paper_store, monkeyp
         backfill_paper_state_to_mysql(state, repo)
     assert json.dumps(state, sort_keys=True) == original
     assert list(db.raw.iterdump()) == before
+
+
+def test_close_net_includes_allocated_entry_fee_and_replay_preserves_history(tmp_path, paper_store):
+    db, repo = paper_store
+    state = make_state(tmp_path, 1)
+    close = next(f for f in state['fills'] if state['orders'][f['order_id']]['position_id'])
+    # 同一平仓订单的两次成交；分摊 40% 和 60% 的开仓费。
+    close['quantity'] = 4
+    second = dict(close, fill_id='second-close', quantity=6)
+    state['fills'].append(second)
+    backfill_paper_state_to_mysql(state, repo)
+    events = list(db.raw.execute("SELECT * FROM coin_strategy_ledger_event WHERE event_type='CLOSE_FILL'"))
+    assert len(events) == 2
+    for event in events:
+        q = D(event['filled_contracts'])
+        assert D(event['net_pnl_after_fee']) == D(event['gross_pnl_usdt'])-D(event['fee_usdt'])-D('.004')*q/10
+    assert sum(D(e['net_pnl_after_fee']) for e in events) == D(db.raw.execute('SELECT final_net_profit FROM htx_trend_position').fetchone()[0])
+    db.raw.execute("UPDATE coin_strategy_ledger_event SET net_pnl_after_fee='123' WHERE event_type='CLOSE_FILL'")
+    db.commit()
+    assert backfill_paper_state_to_mysql(state, repo)['fills_added'] == 0
+    assert all(r[0]=='123' for r in db.raw.execute("SELECT net_pnl_after_fee FROM coin_strategy_ledger_event WHERE event_type='CLOSE_FILL'"))
+
+
+def test_partial_checkpoint_then_final_close_allocates_entry_fee_once(tmp_path, paper_store):
+    db, repo = paper_store
+    final = make_state(tmp_path, 1)
+    partial = json.loads(json.dumps(final))
+    close = next(f for f in partial['fills'] if partial['orders'][f['order_id']]['position_id'])
+    close['quantity'] = 4
+    next(iter(partial['positions'].values())).update(quantity=6, status='OPEN', closed_at=None)
+    backfill_paper_state_to_mysql(partial, repo)
+    first = db.raw.execute("SELECT net_pnl_after_fee FROM coin_strategy_ledger_event WHERE event_type='CLOSE_FILL'").fetchone()[0]
+    assert D(first)==D('.4')-D('.00176')-D('.0016')
+    final['fills'] = partial['fills']+[dict(close, fill_id='remaining-six', quantity=6)]
+    backfill_paper_state_to_mysql(final, repo)
+    nets=[D(r[0]) for r in db.raw.execute("SELECT net_pnl_after_fee FROM coin_strategy_ledger_event WHERE event_type='CLOSE_FILL'")]
+    assert sum(nets)==D('.9916')
+    assert D(db.raw.execute('SELECT final_net_profit FROM htx_trend_position').fetchone()[0])==sum(nets)

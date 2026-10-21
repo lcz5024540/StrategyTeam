@@ -1,0 +1,250 @@
+[
+  {
+    "id": "1688",
+    "event_type": "OPEN_FILL",
+    "position_id": "324",
+    "fee_usdt": "0.067172280000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1689",
+    "event_type": "CLOSE_FILL",
+    "position_id": "324",
+    "fee_usdt": "0.067191880000000000",
+    "gross_pnl_usdt": "-0.049000000000000000",
+    "net_pnl_after_fee": "-0.116191880000000000"
+  },
+  {
+    "id": "1690",
+    "event_type": "OPEN_FILL",
+    "position_id": "325",
+    "fee_usdt": "0.048686200000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1691",
+    "event_type": "CLOSE_FILL",
+    "position_id": "325",
+    "fee_usdt": "0.048629600000000000",
+    "gross_pnl_usdt": "-0.141500000000000000",
+    "net_pnl_after_fee": "-0.190129600000000000"
+  },
+  {
+    "id": "1692",
+    "event_type": "OPEN_FILL",
+    "position_id": "326",
+    "fee_usdt": "0.032495040000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1693",
+    "event_type": "OPEN_FILL",
+    "position_id": "327",
+    "fee_usdt": "0.033134840000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1694",
+    "event_type": "CLOSE_FILL",
+    "position_id": "327",
+    "fee_usdt": "0.033080720000000000",
+    "gross_pnl_usdt": "-0.135300000000000000",
+    "net_pnl_after_fee": "-0.168380720000000000"
+  },
+  {
+    "id": "1695",
+    "event_type": "OPEN_FILL",
+    "position_id": "328",
+    "fee_usdt": "0.028537800000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1696",
+    "event_type": "OPEN_FILL",
+    "position_id": "329",
+    "fee_usdt": "0.039050720000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1697",
+    "event_type": "CLOSE_FILL",
+    "position_id": "329",
+    "fee_usdt": "0.038973120000000000",
+    "gross_pnl_usdt": "-0.194000000000000000",
+    "net_pnl_after_fee": "-0.232973120000000000"
+  },
+  {
+    "id": "1698",
+    "event_type": "OPEN_FILL",
+    "position_id": "330",
+    "fee_usdt": "0.067220720000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1699",
+    "event_type": "CLOSE_FILL",
+    "position_id": "330",
+    "fee_usdt": "0.067186560000000000",
+    "gross_pnl_usdt": "0.085400000000000000",
+    "net_pnl_after_fee": "0.018213440000000000"
+  },
+  {
+    "id": "1700",
+    "event_type": "CLOSE_FILL",
+    "position_id": "326",
+    "fee_usdt": "0.032839840000000000",
+    "gross_pnl_usdt": "-0.862000000000000000",
+    "net_pnl_after_fee": "-0.894839840000000000"
+  },
+  {
+    "id": "1701",
+    "event_type": "CLOSE_FILL",
+    "position_id": "328",
+    "fee_usdt": "0.028972560000000000",
+    "gross_pnl_usdt": "-1.086900000000000000",
+    "net_pnl_after_fee": "-1.115872560000000000"
+  },
+  {
+    "id": "1702",
+    "event_type": "OPEN_FILL",
+    "position_id": "2403",
+    "fee_usdt": "0.067313680000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1703",
+    "event_type": "CLOSE_FILL",
+    "position_id": "2403",
+    "fee_usdt": "0.067069520000000000",
+    "gross_pnl_usdt": "-0.610400000000000000",
+    "net_pnl_after_fee": "-0.677469520000000000"
+  },
+  {
+    "id": "1704",
+    "event_type": "OPEN_FILL",
+    "position_id": "2873",
+    "fee_usdt": "0.065298560000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1705",
+    "event_type": "OPEN_FILL",
+    "position_id": "3929",
+    "fee_usdt": "0.047811600000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1706",
+    "event_type": "CLOSE_FILL",
+    "position_id": "3929",
+    "fee_usdt": "0.047768400000000000",
+    "gross_pnl_usdt": "0.108000000000000000",
+    "net_pnl_after_fee": "0.060231600000000000"
+  },
+  {
+    "id": "1707",
+    "event_type": "CLOSE_FILL",
+    "position_id": "2873",
+    "fee_usdt": "0.065253520000000000",
+    "gross_pnl_usdt": "0.112600000000000000",
+    "net_pnl_after_fee": "0.047346480000000000"
+  },
+  {
+    "id": "1708",
+    "event_type": "OPEN_FILL",
+    "position_id": "5800",
+    "fee_usdt": "0.066845800000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1709",
+    "event_type": "CLOSE_FILL",
+    "position_id": "5800",
+    "fee_usdt": "0.047703000000000000",
+    "gross_pnl_usdt": "0.110000000000000000",
+    "net_pnl_after_fee": "0.062297000000000000"
+  },
+  {
+    "id": "1710",
+    "event_type": "CLOSE_FILL",
+    "position_id": "5800",
+    "fee_usdt": "0.019077200000000000",
+    "gross_pnl_usdt": "0.054000000000000000",
+    "net_pnl_after_fee": "0.034922800000000000"
+  },
+  {
+    "id": "1711",
+    "event_type": "OPEN_FILL",
+    "position_id": "8323",
+    "fee_usdt": "0.065126880000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1712",
+    "event_type": "CLOSE_FILL",
+    "position_id": "8323",
+    "fee_usdt": "0.065690400000000000",
+    "gross_pnl_usdt": "-1.408800000000000000",
+    "net_pnl_after_fee": "-1.474490400000000000"
+  },
+  {
+    "id": "1713",
+    "event_type": "OPEN_FILL",
+    "position_id": "9877",
+    "fee_usdt": "0.009878960000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1714",
+    "event_type": "OPEN_FILL",
+    "position_id": "12951",
+    "fee_usdt": "0.066106800000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1715",
+    "event_type": "CLOSE_FILL",
+    "position_id": "12951",
+    "fee_usdt": "0.033193440000000000",
+    "gross_pnl_usdt": "0.350100000000000000",
+    "net_pnl_after_fee": "0.316906560000000000"
+  },
+  {
+    "id": "1716",
+    "event_type": "CLOSE_FILL",
+    "position_id": "12951",
+    "fee_usdt": "0.033105240000000000",
+    "gross_pnl_usdt": "0.129600000000000000",
+    "net_pnl_after_fee": "0.096494760000000000"
+  },
+  {
+    "id": "1717",
+    "event_type": "OPEN_FILL",
+    "position_id": "20186",
+    "fee_usdt": "0.066334080000000000",
+    "gross_pnl_usdt": "NULL",
+    "net_pnl_after_fee": "NULL"
+  },
+  {
+    "id": "1718",
+    "event_type": "CLOSE_FILL",
+    "position_id": "20186",
+    "fee_usdt": "0.066160080000000000",
+    "gross_pnl_usdt": "-0.435000000000000000",
+    "net_pnl_after_fee": "-0.501160080000000000"
+  }
+]
