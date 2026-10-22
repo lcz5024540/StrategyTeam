@@ -12,7 +12,12 @@
       "order_sent_at": "2026-10-01T00:00:00+00:00",
       "cancel_count": 1,
       "amend_count": 2,
-      "contract_size": "1"
+      "contract_size": "1",
+      "order_type": "LIMIT",
+      "order_px_source": "limit",
+      "order_qty": "2",
+      "signal_ts": "2026-09-30T23:59:59+00:00",
+      "next_bar_open": "10000"
     },
     {
       "position_id": "A",
@@ -25,7 +30,12 @@
       "order_sent_at": "2026-10-01T08:00:00+00:00",
       "cancel_count": 0,
       "amend_count": 0,
-      "contract_size": "1"
+      "contract_size": "1",
+      "order_type": "LIMIT",
+      "order_px_source": "limit",
+      "order_qty": "2",
+      "signal_ts": "2026-10-01T07:59:59+00:00",
+      "next_bar_open": "11000"
     },
     {
       "position_id": "B",
@@ -38,7 +48,12 @@
       "order_sent_at": "2026-10-02T00:00:00+00:00",
       "cancel_count": 0,
       "amend_count": 0,
-      "contract_size": "1"
+      "contract_size": "1",
+      "order_type": "LIMIT",
+      "order_px_source": "limit",
+      "order_qty": "1",
+      "signal_ts": "2026-10-01T23:59:59+00:00",
+      "next_bar_open": "10000"
     },
     {
       "position_id": "B",
@@ -51,7 +66,12 @@
       "order_sent_at": "2026-10-02T01:00:00+00:00",
       "cancel_count": 0,
       "amend_count": 0,
-      "contract_size": "1"
+      "contract_size": "1",
+      "order_type": "LIMIT",
+      "order_px_source": "limit",
+      "order_qty": "1",
+      "signal_ts": "2026-10-02T00:59:59+00:00",
+      "next_bar_open": "10020"
     },
     {
       "position_id": "C",
@@ -64,7 +84,12 @@
       "order_sent_at": "2026-10-03T00:00:00+00:00",
       "cancel_count": 0,
       "amend_count": 0,
-      "contract_size": "1"
+      "contract_size": "1",
+      "order_type": "LIMIT",
+      "order_px_source": "limit",
+      "order_qty": "1",
+      "signal_ts": "2026-10-02T23:59:59+00:00",
+      "next_bar_open": "10000"
     },
     {
       "position_id": "D",
@@ -77,7 +102,12 @@
       "order_sent_at": "2026-10-04T00:00:00+00:00",
       "cancel_count": 0,
       "amend_count": 0,
-      "contract_size": "1"
+      "contract_size": "1",
+      "order_type": "LIMIT",
+      "order_px_source": "limit",
+      "order_qty": "1",
+      "signal_ts": "2026-10-03T23:59:59+00:00",
+      "next_bar_open": "50000"
     },
     {
       "position_id": "D",
@@ -90,6 +120,38 @@
       "order_sent_at": "2026-10-04T02:00:00+00:00",
       "cancel_count": 0,
       "amend_count": 0,
+      "contract_size": "1",
+      "order_type": "LIMIT",
+      "order_px_source": "limit",
+      "order_qty": "1",
+      "signal_ts": "2026-10-04T01:59:59+00:00",
+      "next_bar_open": "50000"
+    },
+    {
+      "position_id": "E",
+      "contract_code": "ETH-USDT",
+      "side": "LONG",
+      "leg": "ENTRY",
+      "client_order_id": "E-open",
+      "order_type": "MARKET",
+      "order_px_source": "mid",
+      "signal_price": "10000",
+      "mid": "10005",
+      "order_qty": "2",
+      "signal_ts": "2026-10-05T00:00:00+00:00",
+      "order_sent_at": "2026-10-05T00:00:02+00:00",
+      "next_bar_open": "10000",
+      "cancel_count": 0,
+      "amend_count": 0,
+      "contract_size": "1"
+    },
+    {
+      "position_id": "F",
+      "contract_code": "BTC-USDT",
+      "side": "LONG",
+      "leg": "ENTRY",
+      "client_order_id": "F-open",
+      "signal_price": "100",
       "contract_size": "1"
     }
   ],
@@ -165,6 +227,24 @@
       "price": "50000",
       "fee": "20",
       "filled_at": "2026-10-04T02:00:02+00:00"
+    },
+    {
+      "position_id": "E",
+      "client_order_id": "E-open",
+      "fill_id": "e1",
+      "quantity": "1",
+      "price": "10015",
+      "fee": "0",
+      "filled_at": "2026-10-05T00:00:03+00:00"
+    },
+    {
+      "position_id": "F",
+      "client_order_id": "F-open",
+      "fill_id": "f1",
+      "quantity": "1",
+      "price": "101",
+      "fee": "0",
+      "filled_at": "2026-10-05T01:00:00+00:00"
     }
   ],
   "funding": [

@@ -1,4 +1,5 @@
 contract,side,phase,metric,n,median,p75,p90
+BTC-USDT,LONG,OPEN,fee_bps,1,0,0,0
 BTC-USDT,SHORT,CLOSE,fee_bps,1,4,4,4
 BTC-USDT,SHORT,CLOSE,order_to_first_fill_ms,1,2000,2000,2000
 BTC-USDT,SHORT,CLOSE,slippage_vs_order_bps,1,0,0,0
@@ -8,6 +9,6 @@ BTC-USDT,SHORT,OPEN,slippage_vs_order_bps,1,0,0,0
 ETH-USDT,LONG,CLOSE,fee_bps,2,2,2,2
 ETH-USDT,LONG,CLOSE,order_to_first_fill_ms,2,500,750,900
 ETH-USDT,LONG,CLOSE,slippage_vs_order_bps,2,5,7.5,9
-ETH-USDT,LONG,OPEN,fee_bps,3,2,2,2
-ETH-USDT,LONG,OPEN,order_to_first_fill_ms,3,1000,1250,1400
-ETH-USDT,LONG,OPEN,slippage_vs_order_bps,3,20,30,36
+ETH-USDT,LONG,OPEN,fee_bps,4,2,2,2
+ETH-USDT,LONG,OPEN,order_to_first_fill_ms,4,1000,1125,1350
+ETH-USDT,LONG,OPEN,slippage_vs_order_bps,4,15,25,34
