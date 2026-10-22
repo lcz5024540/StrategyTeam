@@ -104,12 +104,16 @@ def analyze_bundle(bundle):
     legs = [_leg_row(bundle, order, fills_by_order[order['client_order_id']]) for order in orders]
     funding_rows = _funding_rows(bundle, legs)
     round_trips, excluded = _round_trips(legs)
+    from .orderpx import build_orderpx, summarize_orderpx
+    orderpx = build_orderpx(bundle, legs, funding_rows)
     return {
         'legs': legs,
         'distribution': _distribution(legs),
         'comparison': _comparison(round_trips, excluded),
         'funding': funding_rows,
         'round_trips': round_trips,
+        'orderpx': orderpx,
+        'orderpx_summary': summarize_orderpx(orderpx),
         'boundary': BOUNDARY,
         'assumed_rt_bps': ASSUMED_RT_BPS,
     }
@@ -138,8 +142,9 @@ def _leg_row(bundle, order, fills):
         raise ValueError('成交名义必须为正')
     fill_vwap = notional / base
     fee = sum((item[4] for item in parsed), Decimal(0))
+    from .orderpx import resolve_order_px
     signal = _optional_decimal(order.get('signal_price'))
-    order_price = _optional_decimal(order.get('order_price'))
+    order_price, _order_px_source, _order_px_flags = resolve_order_px(order)
     missing = []
     if signal is None:
         missing.append('缺信号价')
@@ -352,7 +357,7 @@ def load_ledger_pnl_export(directory):
             })
         if phase == 'OPEN' and len({item['side'] for item in group}) != 1:
             raise ValueError('同一腿方向不一致')
-    return analyze_bundle({'book': 'PAPER', 'orders': orders, 'fills': normalized, 'funding': []})
+    return analyze_bundle({'book': 'PAPER', 'orders': orders, 'fills': normalized})
 
 
 def _cell(value):
@@ -384,7 +389,11 @@ def render_markdown(report):
         '',
         f"回测往返成本假设 {format(report['assumed_rt_bps'], 'f')} bps（与 research Config.rt_cost 默认值一致）。"
         '对比表只含开仓滑点、平仓滑点、开平手续费，不含资金费。资金费按持仓期单独汇总。',
-        '正滑点表示成交比下单价更差。缺信号价或下单价时滑点留空，不用成交价回填。',
+        '正滑点表示成交比参考价更差。缺信号价或下单价时滑点留空，不用成交价或信号价回填。',
+        '逐笔账把滑点拆成三段：S1 信号价到下单价，S2 下单价到成交均价，S3 成交均价相对下一根 bar 开盘价。',
+        '与 12 bps 假设对比的实际总成本只含 S3 和手续费，不含 S1、S2 和资金费。',
+        '汇总按 LIVE/PAPER 与币种分组。可计算成本的成交腿不少于 200 且至少两个币种簇时，'
+        '才给出按币种聚类的均值和 95% 区间；否则只保留分位数，并标明样本不足不下结论。',
         '',
         '## 与 12 bps 假设对比',
         '',
@@ -423,3 +432,5 @@ def write_report(report, directory):
         'position_id', 'contract', 'side', 'funding_paid_usdt', 'funding_received_usdt',
         'funding_net_usdt', 'event_count', 'position_open', 'window_start', 'window_end'])
     (out / 'cost.md').write_text(render_markdown(report), encoding='utf-8')
+    from .orderpx import write_orderpx_outputs
+    write_orderpx_outputs(report, out)

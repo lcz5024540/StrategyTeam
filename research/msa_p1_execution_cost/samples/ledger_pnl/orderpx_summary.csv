@@ -1,0 +1,5 @@
+book,contract,n,n_total_cost,s1_p50,s1_p75,s1_p90,s2_p50,s2_p75,s2_p90,s3_p50,s3_p75,s3_p90,total_cost_p50,total_cost_p75,total_cost_p90,assumed_rt_bps,total_cost_median_minus_assumed_bps,mean_total_cost_bps,total_cost_se_bps,total_cost_ci_low_bps,total_cost_ci_high_bps,g_clusters,ci_method,conclusion
+PAPER,*,29,0,,,,,,,,,,,,,12,,,,,,0,,样本不足不下结论
+PAPER,,7,0,,,,,,,,,,,,,12,,,,,,0,,样本不足不下结论
+PAPER,BTC-USDT,10,0,,,,,,,,,,,,,12,,,,,,0,,样本不足不下结论
+PAPER,ETH-USDT,12,0,,,,,,,,,,,,,12,,,,,,0,,样本不足不下结论
