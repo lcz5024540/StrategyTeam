@@ -1,0 +1,86 @@
+{
+  "command": "calibrate-c2c5",
+  "input_sha256": {
+    "prereg.json": "0bab70923ae1909c71a5b3aced891dd708769f73bc76436cc3ba0f2cd9b196ad"
+  },
+  "parameters": {
+    "R": 5000,
+    "allow_small_R_for_tests": false,
+    "c2": {
+      "B": 500,
+      "allow_small_B_for_tests": true,
+      "block_length": 30,
+      "bootstrap_seed_base": 10000,
+      "ci_level": 0.9,
+      "circular": true,
+      "coins": 4,
+      "hard_floor": 1000,
+      "n": 1200,
+      "neff": 1200,
+      "neff_threshold": 4400,
+      "nominal_floor": 1000,
+      "power_window": [
+        0.75,
+        0.85
+      ],
+      "rho": 0.5,
+      "volatility_block": 10,
+      "volatility_squared": [
+        0.25,
+        1.75
+      ],
+      "z": 2.486
+    },
+    "c3": {
+      "block_lengths": [
+        30,
+        60
+      ],
+      "circular": true,
+      "coins": 8,
+      "data_seed": 3829,
+      "joint_seed": 53,
+      "n": 2400,
+      "per_coin_seed_base": 100,
+      "rho": 0.5
+    },
+    "c3_B": 2000,
+    "c4": {
+      "block_days": 5,
+      "clusters": 4000,
+      "event_spacing_seconds": 3600,
+      "m": 8,
+      "m2": {
+        "N_nom": 6019,
+        "Z": 2.486,
+        "m": 14.35,
+        "rho": 0.5588,
+        "sd": 530,
+        "tolerance": 0.01
+      },
+      "rho": 0.4,
+      "seed": 472,
+      "tolerance": 0.1
+    },
+    "c5": {
+      "N": 80,
+      "alternative": "greater",
+      "costs": [
+        12,
+        24
+      ],
+      "holding_lengths": [
+        1,
+        2
+      ],
+      "per_stratum_count": 20,
+      "per_stratum_long_count": 10,
+      "seed": 20261019,
+      "signed_gross": 10
+    },
+    "c5_B": 5000,
+    "master_seed": 20261019,
+    "tip_sha": "4b2356917009520e1f2803787070a502127cd722"
+  },
+  "seed": 20261019
+}

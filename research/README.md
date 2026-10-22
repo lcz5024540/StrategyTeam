@@ -9,7 +9,8 @@
 - `guard.py`：D1 封存数据容器、预注册文件完整性校验。
 - `g0.py`：随机分组、随机伪事件、残差离散度、ACF/DEFF、MDE 与成本统计。
 - `g2.py`：全币联合日历块自助法及三态判定。
-- `cli.py`：`d1`、`g0`、`g2`、`regress`。
+- `cli.py`：`d1`、`g0`、`g2`、`regress`、`report`、`calibrate-c2c5`。
+- `calibration.py`：复用 g0/g2/guard，生成 C2–C5 合成密封校准证据。
 
 从仓库的 `research/` 目录运行：
 
@@ -95,7 +96,7 @@ $PY -m coinresearch.cli g2 \
 
 G2 的名义 N 是输入矩阵中标量观测数（期数×固定币数），不是独立样本数；N_eff 仍须按预注册协议估计。门槛通过 `--neff-threshold`、`--hard-floor`、`--nominal-floor` 覆盖；修改 Config 字段后应显式传给 run_g2 对应参数。封存校验先于底线判断。
 
-校准采用每次 1200 期×4 币，共享高低波动使 E(vol²)=1，条件独立创新使收益自身无时间自相关，组合均值方差为 `(0.5+0.5/4)/1200`。MDE=`2.486*sqrt(0.625/1200)`。只在测试入口显式开启 `allow_small_B_for_tests=True` 将 B 降为 500，重复为 5000；校准 hard_floor=1000，以检验统计量而非产品准入。公开 CLI 仍强制 B≥2000。固定种子在测试源码中，测试打印实际假阳性/功效和方差对照。该校准验证此合成过程的名义水平，不代表所有依赖结构都校准。
+校准采用每次 1200 期×4 币，共享高低波动使 E(vol²)=1，条件独立创新使收益自身无时间自相关，组合均值方差为 `(0.5+0.5/4)/1200`。MDE=`2.486*sqrt(0.625/1200)`。只在测试入口显式开启 `allow_small_B_for_tests=True` 将 B 降为 500，重复为 5000；校准 hard_floor=1000，以检验统计量而非产品准入。公开 G2 CLI 仍强制 B≥2000；下述独立合成校准命令内部复用上述 B=500 特例。固定种子在测试源码中，测试打印实际假阳性/功效和方差对照。该校准验证此合成过程的名义水平，不代表所有依赖结构都校准。
 
 置换诊断假设同持仓长度/成本层内方向标签可交换；它不保证时间相关下的主推断正确性，也不作为 G2 主闸。输入为封存的一列未签名价格收益，加外部 side/holding_lengths/costs 元数据。
 
@@ -112,6 +113,31 @@ $PY -m coinresearch.cli regress --out-dir /external/d2-regression --target-bps 2
 ```
 
 这些模块仅产生研究文件和诊断字段，不连接现网执行。
+
+## D2 C2–C5 密封校准（仅 research）
+
+从 `research/` 一次运行 C2–C5，并保存仓内证据：
+
+```sh
+PY=/Users/jenniferni/jenifer/venv-research/bin/python
+$PY -m coinresearch.cli calibrate-c2c5 \
+  --out-dir outputs/d2_c2c5_calibration \
+  --tip-sha 4b2356917009520e1f2803787070a502127cd722
+$PY -m pytest -q -s tests/test_c2c5_calibration.py
+```
+
+证据为 [`outputs/d2_c2c5_calibration/c2c5_calibration.json`](outputs/d2_c2c5_calibration/c2c5_calibration.json)，同目录保存 `prereg.json` 与 `run_record.json`。`tip_sha` 是调用者提供的源基线标识（示例为本分支基线，非产物提交自身 SHA）；不传则读取 `GIT_TIP_SHA`，否则记录 `UNSPECIFIED`。默认 `--master-seed 20261019 --R 5000 --c3-B 2000 --c5-B 5000`。公开路径拒绝 R<5000、C3 B<2000、C5 B<5000；任一验收失败返回退出码 1，参数非法返回非零。
+
+- C2 与 C1 单测共享 `power_calibration`，保持原随机调用顺序：1200 期×4 币、ρ=.5、每 10 期共享高低波动，真实效应为事前 MDE；R≥5000，功效窗 [75%,85%]。内部调用原 `run_g2`，仅此合成校准显式传 B=500、`allow_small_B_for_tests=True`、hard_floor=1000。保留 C1 假阳性与 coverage 供核对；C2 的 pass 仅依据重复数和功效窗，不代表 C1 另一次验收。
+- C3 复用 `block_indices`，30/60 两档各 B≥2000。全币联合块为主比较对象，分币独立块仅作负对照；joint 方差须 >2×分币方差且更接近解析真方差。有限样本不要求 joint 方差数值绝不低于真值。
+- C4 以 4000 个 m=8、ρ=.4 随机效应簇生成观测，调用 `deff_neff` **不传真实 ICC**；记录估计/真 N_eff 和相对误差，要求 ≤10%，单测继续保留更严 ≤6%。M2 原闭式参数 6019/.5588/14.35/530，三个结果误差均 ≤1%。
+- C5 调用原单侧分层 `permutation_test`，B≥5000，校验笔数、多空比、持仓长度/成本分层；实际执行 B=4999、未封存、缺失 SHA、错误 SHA 的拒绝路径。仅 `diagnostic_only` 毛边诊断，证据确认没有准入字段，输出不包含 unlock 字段。
+
+为保留既有实验，C3 数据种子 3829、联合块 53、分币块 100+j；C4 种子 472；C2 数据/C5 使用 master_seed，C2 第 rep 次重抽种子 10000+rep。所有参数和种子写入预注册及运行记录；在生成观测前写入合成协议并计算内容 SHA，再通过既有 seal 校验。这是可复现合成实验协议，不能代替真实收益研究的外部预注册。
+
+JSON 使用 `write_json` 键排序、缩进和换行，不含运行时间戳或绝对输出路径。`prereg_sha256` 是预注册文件原始字节 SHA256；`parameters_sha256` 是参数字典 UTF-8 JSON（sort_keys=True、separators=(',',':')、allow_nan=False、无末尾换行）的 SHA256。同一代码、Python/NumPy 环境、tip 和参数两次运行输出逐字节一致；证据记录 Python/NumPy 版本。快速单测仅通过 Python 显式 `allow_small_R_for_tests=True` 缩短 C2，仍实际运行完整 C3/C4/C5，且小 R 的 C2 pass 和 all_pass 强制为 false；完整 C2 由原 R=5000 单测及 CLI 实跑覆盖。
+
+**本入口不改 G2 门槛、不作准入/unlock、不接现网。** Config、G2 的联合块默认路径和仅 PASS 才解锁的语义保持原样。无包构建、部署或 PAPER/LIVE 动作。
 
 ## P6 独立离线扩展
 
