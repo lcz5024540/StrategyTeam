@@ -1,0 +1,3 @@
+ts_ms,ts_cst,contract,bid,ask,mid,last,source
+,2099-01-01 00:00:00,BTC-USDT,1.00,1.02,1.01,,SYNTHETIC_NOT_LIVE
+,2099-01-01 00:00:00,ETH-USDT,2.00,2.02,2.01,,SYNTHETIC_NOT_LIVE

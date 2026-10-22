@@ -58,3 +58,13 @@ G3-EXIT：全部12仓14腿采用预生成 `replay_inputs/20261021/_evidence_note
 - `require_execution_facts=False`，硬保证金及止损风险门仍启用；门短路后的条件不算通过。未证明本地源码与现网构建逐字节等价。
 
 未修改现网判单、stops、参数或 runtime/paper_worker/execution/exits；未装机、热更、SSH、改PAPER/LIVE/collector/nginx/前端。
+
+## G3-ALIGN：可选 book/tick/mid 夹具
+
+`MANIFEST.optional_book` 为空时，行为与 PR#42 合入后相同：管理时刻只用形成中 15m open（没有形成中 bar 才回退上一根 close），不读取目录里未经声明的 CSV。声明了 `optional_book` 时，按 file/sha256/kind/provenance 加载；`provenance=synthetic` 的行必须在 `source` 中标明 `SYNTHETIC`。取价规则、列定义和本轮缺口时间窗见 `replay_inputs/20261021/schema/BOOK_TICK_MID.md`。样例 `schema/SYNTHETIC_NOT_LIVE_book_mid.example.csv` 使用 2099-01-01 与 1.00/2.00 价格，未挂到 `optional_book`，完整 scan 不读它。
+
+有夹具时，`top_of_book` 用不晚于当前管理秒的最近一条 bid/ask。未来报价不用；该合约尚无报价则拒绝，不回退 forming-open，也不再用 `spread_rate` 改写夹具价。K 线信号窗口不变。
+
+本轮证据包仍然没有 BTC 02:15 / ETH f56 的真实盘口，也没有覆盖 ETH 23:00 平仓点 13:45 的额外 K 线。因此完整逐腿维持 **9/12**，入场 **12/12**，多发 **0**，漏发 **0**。可达上界写在报告「夹具缺口清单」：不能靠虚构盘口或外推 K 线把 BTC `36733c1f`、ETH `f56d3d17` 的 `EXIT_LEGS_MISMATCH` 或 ETH `93cef710` 的 `EXIT_OUTSIDE_KLINE_COVERAGE` 收成通过。
+
+本轮验证：`tests/test_scan_replay.py` **22 passed**；全量 `pytest -q` **503 passed**（77 条既有 sqlite datetime DeprecationWarning，0 failed）。同一输入连续两次 CLI 写出的 `report.json` / `report.md` 逐字节一致。

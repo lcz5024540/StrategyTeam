@@ -60,6 +60,16 @@
 - 默认假设重跑观察：ETH f56d3d17：缺真实管理盘口mid/tick路径及实际评估时间。参考19:30减5张trend-weakened-partial、19:45减2张trend-weakened；重放19:30减3张profit-at-risk、19:45减4张trend-weakened。原因与数量路径不可由固定K线唯一确定。
 - ETH 93cef710（23:00）：缺覆盖13:45退出的15m/60m行情；详见窗外。盘口、funding、contract_spec假设继续保留。
 
+## 夹具缺口清单
+
+- 夹具状态：MANIFEST.optional_book 为空，未加载 book/tick/mid；不虚构盘口。管理时刻继续用形成中 15m bar 的 open 作 mid。
+- schema：CSV 列 ts_ms,ts_cst,contract,bid,ask,mid,last,source。MANIFEST.optional_book 声明 file、sha256、kind(book|tick|mid)、provenance(synthetic|evidence)。kind=book 必须 bid 与 ask，mid 若填写则必须等于 (bid+ask)/2；kind=mid 必须 mid，bid/ask 可同时省略（此时 bid=ask=mid）；kind=tick 可用 last，或 bid 与 ask。取不晚于管理时刻所在秒的最近一条；未来报价不用；该合约尚无报价时拒绝，不回退 forming-open。
+- BTC 36733c1f / 02:15 缺口窗（CST）：2026-10-21 02:00–09:30。参考腿 09:00:21 qty 1 profit-at-risk、09:15:54 qty 1 trend-weakened。需要入场及管理时刻 bid/ask/mid 或 tick。
+- ETH f56d3d17 缺口窗（CST）：2026-10-20 19:00–20:00。参考腿 19:30:46 qty 5 trend-weakened-partial、19:45:32 qty 2 trend-weakened。
+- ETH 93cef710 / 23:00：参考平仓 2026-10-21 13:45:33。现有 K 线重放止于 2026-10-21 10:30:59，15m 最后 open 12:00。无额外 K 线则维持 EXIT_OUTSIDE_KLINE_COVERAGE，不外推、不强平。盘口夹具不能单独补上这段 K 线。
+
+本轮可达上界 9/12：无 book/tick/mid 夹具，窗内两笔 EXIT_LEGS_MISMATCH（BTC 36733c1f、ETH f56d3d17）与一笔 EXIT_OUTSIDE_KLINE_COVERAGE（ETH 93cef710）不能靠虚构盘口或外推 K 线闭合。
+
 未改runtime/paper_worker/execution/exits；未回滚A；未出包、未装机。
 
 ## 多发（参考集中未观察到）
@@ -72,7 +82,7 @@
 
 ## 假设和证据边界
 
-- 盘口取证不可得 → 假设：scan_delay 时刻用形成中 15m bar 的 open 作 mid（优于上一根 close）；无形成中 bar 时回退上一根 close；spread=0（默认，仍支持配置 spread）；没有真实盘口深度、滑点或tick路径。
+- 盘口取证不可得 → 假设：scan_delay 时刻用形成中 15m bar 的 open 作 mid（优于上一根 close）；无形成中 bar 时回退上一根 close；spread=0（默认，仍支持配置 spread）；没有真实盘口深度、滑点或tick路径。optional_book 未声明，不加载、不虚构。
 - 取证不可得 → 假设：funding / contract_spec：funding默认0；contract_size BTC=.001/ETH=.01，tick=.01，合约可交易。
 - 假设/缺数据：初始空仓、无历史结构键/订单/手续费；300U、10倍、保证金上限10%、5仓，后续余额/风险按原worker动态计算。
 - 假设/缺数据：固定收盘后30秒，每15m调用一次；10秒收盘宽限；窗口160根，60m仅完整性检查，scan不使用其趋势。

@@ -233,6 +233,157 @@ def test_complete_state_reference_and_honest_exit_boundaries(report):
     assert any(r.startswith('EXIT_LEGS_MISMATCH') for r in f56['reasons'])
 
 
+def test_absent_optional_book_keeps_forming_open_and_records_gap(report):
+    """无 MANIFEST 夹具时不得虚构盘口，分数与 forming-open 假设保持不变。"""
+    from htx_trend.market_data import TopOfBook
+    from htx_trend.scan_replay import load_optional_book, markdown
+
+    assert load_optional_book(INPUTS) is None
+    fixture = report['header']['book_fixture']
+    assert fixture['loaded'] is False
+    assert fixture['mode'] == 'forming_bar_open'
+    assert report['summary']['full_matches'] == 9
+    assert report['summary']['entry_matches'] == 12
+    assert report['summary']['extra_count'] == 0
+    assert report['summary']['missing_count'] == 0
+    assert report['summary']['exit_mismatch_count'] == 2
+    assert report['summary']['outside_coverage_count'] == 1
+    text = '\n'.join(report['header']['fixture_gap'])
+    assert '36733c1f' in text and '2026-10-21 02:00' in text
+    assert 'f56d3d17' in text and '2026-10-20 19:00' in text
+    assert '93cef710' in text and '13:45' in text
+    assert '9/12' in report['header']['reachable_upper_bound']
+    rendered = markdown(report)
+    assert '夹具缺口' in rendered
+    candles, _, _ = load_inputs(INPUTS)
+    bare = OfflineMarket(candles, Assumptions())
+    bare.now = epoch('2026-10-21 09:00:30')
+    forming = next(c for c in candles[('BTC-USDT', '15min')]
+                   if c.open_time <= bare.now < c.open_time + 900)
+    assert bare.top_of_book('BTC-USDT') == TopOfBook(forming.open, forming.open)
+    assert json.loads((INPUTS / 'MANIFEST.json').read_text()).get('optional_book') is None
+
+
+def _write_book(root: Path, rows, *, kind, provenance='synthetic', sha=None, filename='book_mid.csv'):
+    import csv
+    path = root / filename
+    fields = ['ts_ms', 'ts_cst', 'contract', 'bid', 'ask', 'mid', 'last', 'source']
+    with path.open('w', newline='') as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: row.get(key, '') for key in fields})
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest_path = root / 'MANIFEST.json'
+    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {'sha256': {}}
+    manifest['optional_book'] = {
+        'file': filename, 'sha256': sha or digest, 'kind': kind, 'provenance': provenance,
+    }
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
+    return digest
+
+
+def test_optional_book_drives_quote_and_refuses_gaps_lookahead_and_bad_hash(tmp_path):
+    """有夹具：哈希锁定、as-of 取价、不回退 forming-open、不吃未来报价。"""
+    from decimal import Decimal as D
+    from htx_trend.market_data import Candle, TopOfBook
+    from htx_trend.scan_replay import load_optional_book
+
+    for name in ('klines.csv', 'trades_closed_window.csv', 'MANIFEST.json'):
+        shutil.copyfile(INPUTS / name, tmp_path / name)
+    rows = [
+        {'ts_ms': '1000000', 'contract': 'BTC-USDT', 'bid': '10', 'ask': '12', 'mid': '11',
+         'source': 'SYNTHETIC_NOT_LIVE'},
+        {'ts_ms': '5000000', 'contract': 'BTC-USDT', 'bid': '80', 'ask': '82', 'mid': '81',
+         'source': 'SYNTHETIC_NOT_LIVE'},
+        {'ts_ms': '1000000', 'contract': 'ETH-USDT', 'bid': '', 'ask': '', 'mid': '77',
+         'source': 'SYNTHETIC_NOT_LIVE'},
+    ]
+    _write_book(tmp_path, rows, kind='mid')
+    book = load_optional_book(tmp_path)
+    assert book.provenance == 'synthetic' and book.row_count == 3
+    candles = {('BTC-USDT', '15min'): [
+        Candle(0, D('101'), D('250'), D('50'), D('202')),
+    ]}
+    market = OfflineMarket(candles, Assumptions(spread_rate=D('.02')), book)
+    # ts_ms=1000000 → 第 1000 秒；now=2000 只能看到该条，不能看到 5000000，也不能用 open=101。
+    market.now = 2000
+    assert market.top_of_book('BTC-USDT') == TopOfBook(D('10'), D('12'))
+    market.now = 5000
+    assert market.top_of_book('BTC-USDT') == TopOfBook(D('80'), D('82'))
+    market.now = 999
+    with pytest.raises(ValueError, match='refusing to invent'):
+        market.top_of_book('BTC-USDT')
+    market.now = 2000
+    assert market.top_of_book('ETH-USDT') == TopOfBook(D('77'), D('77'))
+    _write_book(tmp_path, rows, kind='mid', sha='0' * 64)
+    with pytest.raises(ValueError, match='optional book SHA256'):
+        load_optional_book(tmp_path)
+    # 未声明的旁路文件保持缺省路径。
+    manifest = json.loads((tmp_path / 'MANIFEST.json').read_text())
+    manifest['optional_book'] = None
+    (tmp_path / 'MANIFEST.json').write_text(json.dumps(manifest))
+    assert load_optional_book(tmp_path) is None
+    bare = OfflineMarket(candles, Assumptions())
+    bare.now = 100
+    assert bare.top_of_book('BTC-USDT') == TopOfBook(D('101'), D('101'))
+
+
+def test_optional_book_rejects_inconsistent_or_unlabeled_rows(tmp_path):
+    from htx_trend.scan_replay import load_optional_book
+
+    (tmp_path / 'MANIFEST.json').write_text(json.dumps({'sha256': {}, 'optional_book': None}))
+    bad_mid = [{
+        'ts_ms': '1000', 'contract': 'BTC-USDT', 'bid': '10', 'ask': '12', 'mid': '11.5',
+        'source': 'SYNTHETIC_NOT_LIVE',
+    }]
+    _write_book(tmp_path, bad_mid, kind='book')
+    with pytest.raises(ValueError, match='mid must equal'):
+        load_optional_book(tmp_path)
+    unlabeled = [{
+        'ts_ms': '1000', 'contract': 'BTC-USDT', 'bid': '10', 'ask': '12', 'mid': '11',
+        'source': 'live-export',
+    }]
+    _write_book(tmp_path, unlabeled, kind='book', provenance='synthetic')
+    with pytest.raises(ValueError, match='SYNTHETIC'):
+        load_optional_book(tmp_path)
+    tick = [{
+        'ts_ms': '1000', 'contract': 'BTC-USDT', 'last': '66', 'source': 'SYNTHETIC_NOT_LIVE',
+    }]
+    _write_book(tmp_path, tick, kind='tick')
+    book = load_optional_book(tmp_path)
+    market = OfflineMarket({}, Assumptions(), book)
+    market.now = 1
+    from htx_trend.market_data import TopOfBook
+    from decimal import Decimal as D
+    assert market.top_of_book('BTC-USDT') == TopOfBook(D('66'), D('66'))
+
+
+def test_replay_optional_book_changes_fill_without_touching_absent_inputs(tmp_path):
+    """短窗重放确认 worker 管理/成交读的是夹具价，而不是 forming-open。"""
+    from htx_trend.scan_replay import replay as replay_scan
+
+    for name in ('klines.csv', 'trades_closed_window.csv', 'MANIFEST.json'):
+        shutil.copyfile(INPUTS / name, tmp_path / name)
+    window = Assumptions(start_cst='2026-10-20 03:00:00', end_cst='2026-10-20 03:30:59')
+    baseline = replay_scan(tmp_path, window)
+    assert baseline['header']['book_fixture']['loaded'] is False
+    eth = next(t for t in baseline['trades'] if t['contract'] == 'ETH-USDT' and t['side'] == 'SHORT')
+    forming_entry = eth['entry_price']
+    stamped = '2026-10-20 03:00:00'
+    rows = []
+    for contract in ('BTC-USDT', 'ETH-USDT'):
+        rows.append({'ts_cst': stamped, 'contract': contract, 'bid': '2401.01', 'ask': '2401.03',
+                     'mid': '2401.02', 'source': 'SYNTHETIC_NOT_LIVE'})
+    _write_book(tmp_path, rows, kind='book')
+    loaded = replay_scan(tmp_path, window)
+    assert loaded['header']['book_fixture']['loaded'] is True
+    assert loaded['header']['book_fixture']['provenance'] == 'synthetic'
+    eth_book = next(t for t in loaded['trades'] if t['contract'] == 'ETH-USDT' and t['side'] == 'SHORT')
+    assert eth_book['entry_price'] == '2401.01'
+    assert eth_book['entry_price'] != forming_entry
+
+
 def test_exit_buckets_and_coverage_do_not_hide_missing_legs(report):
     from copy import deepcopy
     a = next(a for a in report['alignment'] if '20d87b03' in a['live']['position_key'])
