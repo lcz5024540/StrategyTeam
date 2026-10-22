@@ -1,0 +1,8 @@
+[
+  {"coin": "A", "entry_ts": 1654041600, "exit_ts": 1654041610, "net_bps": "10"},
+  {"coin": "B", "entry_ts": 1654041600, "exit_ts": 1654041610, "net_bps": "10"},
+  {"coin": "A", "entry_ts": 1685577600, "exit_ts": 1685577610, "net_bps": "40"},
+  {"coin": "B", "entry_ts": 1685577600, "exit_ts": 1685577610, "net_bps": "60"},
+  {"coin": "A", "entry_ts": 1717200000, "exit_ts": 1717200010, "net_bps": "10"},
+  {"coin": "B", "entry_ts": 1717200000, "exit_ts": 1717200010, "net_bps": "10"}
+]

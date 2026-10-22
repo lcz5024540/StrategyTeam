@@ -1,4 +1,4 @@
-# D1 + D2 离线研究工具链
+# D1 + D2 + D3/D4 离线研究工具链
 
 本目录为独立 Python 包 `coinresearch`。只读调用者指定的 CSV/JSON，只写指定输出目录；依赖标准库、numpy、pandas，测试依赖 pytest。没有交易执行、数据库、网络或现网 runtime 依赖。真实输入放在仓库外，测试数据在临时目录中合成；P6 小型上界与滑点报告保存在 outputs/p6，不提交原始 close CSV。
 
@@ -55,7 +55,7 @@ MDE=`Z*sigma/sqrt(N_eff)`，默认 Z=2.486。参考的主 MDE 使用 ACF N_eff�
 
 ## 封存与 G2
 
-不提供信号排序、由信号生成多空收益或持仓的接口。外部已准备的期×币观测由 `SealedDataset` 持有，初始未封存；D1 `Dataset.bind_observations()` 可绑定相同维度的外部矩阵，仍然未封存。`directional_observations()` 必须先通过 `require_sealed()`；切分未完成、未封存、缺 SHA、错 SHA 或封存后文件改变均拒绝输出。封存 API 校验 JSON 的非空 `split` 及整个文件 SHA256，不能验证调用者是否事实上遵守了预注册研究过程。返回数组为副本，修改副本不改变容器。
+D1/D2 封存与 G2 模块不提供信号排序、由信号生成多空收益或持仓的接口；D3/D4 的独立离线计划接口见下文。外部已准备的期×币观测由 `SealedDataset` 持有，初始未封存；D1 `Dataset.bind_observations()` 可绑定相同维度的外部矩阵，仍然未封存。`directional_observations()` 必须先通过 `require_sealed()`；切分未完成、未封存、缺 SHA、错 SHA 或封存后文件改变均拒绝输出。封存 API 校验 JSON 的非空 `split` 及整个文件 SHA256，不能验证调用者是否事实上遵守了预注册研究过程。返回数组为副本，修改副本不改变容器。
 
 G2 函数和 CLI 都要求预注册路径与 SHA256。CLI 还要求 `--seal` 明确执行封存；预注册 JSON 至少含非空 `split`，应记录切分、观测构造、N_eff 算法和门槛。G2 的 N_eff 由调用者按预注册协议传入；门槛默认 4400、有效样本硬底线默认 1500、名义样本底线默认 1000，可通过 Config 或 run_g2 参数及 CLI 覆盖。数据须为完整、连续整数期索引及有限矩阵；不自动删除缺失期或填补收益。CLI 示例：
 
@@ -116,3 +116,55 @@ $PY -m coinresearch.cli regress --out-dir /external/d2-regression --target-bps 2
 ## P6 独立离线扩展
 
 [成本上界与滑点口径](docs/P6_COST_CEILING_ZH.md)、[CAC 中文模板](docs/CAC_TEMPLATE_HTX_ZH.md)。独立命令 `python -m coinresearch.cost_ceiling_cli` 与 `python -m coinresearch.slippage_sensitivity`；不连接现网或修改 D1/D2 闸门。
+
+
+## 产品口令 D3/D4：离线 F3–F8
+
+本节为新增离线工具链，不是上文 D2 验收表中的 D3 记录项。没有修改 G2 门槛、C1 R=5000 或现网策略参数；报告不产生准入或执行动作。
+
+| 模块 | 公共 API 与验收 |
+|---|---|
+| F3 `features.py` | `causal_features(bars, window=3, momentum_bars=1, bar_seconds=14400)`、`momentum_events(features, threshold=...)`。`test_future_replacement_preserves_features_and_events` 对每个截点替换未来 OHLCV 并验证历史逐位不变；另验手算均值/总体标准差/动量及 warm-up。 |
+| F4 `signals.py` | `plan_trades(events, bars, coin=..., holding_bars=1, bar_seconds=14400)`。`test_direction_next_open_exit_and_nonoverlap` 验证方向、下一开、固定持有出场及重叠拒绝；`test_programmable_holding_and_incomplete_tail` 验证参数化出场和尾部。 |
+| F5 `ledger.py` | 扩展原 `build_ledger`，保留 side、entry_ts/exit_ts、可选 signal_bar_ts 和 Decimal entry_open/exit_open。`test_f5_hand_calc_table` 打印逐笔零误差；原 `test_exact_ledger_and_no_proxy` 保留。 |
+| F7 `report.py` | `build_report(rows, ...)` 纯计算、`write_report(input_path, out_dir, ...)` 一键写文件及 CLI `report`。`test_one_shot_report_hand_calculation_and_determinism` 验分币/分年/头部贡献/去最好年 CI 和字节复现。 |
+| F8 `halt.py` | `evaluate_halt(..., health=Health(...), thresholds=HaltThresholds(...))` 纯函数返回 `should_halt` 和原因列表。`test_each_halt_rule`、`test_all_reasons_and_parameter_overrides` 验逐项、多项及阈值覆盖。**仅接口，未接现网**。 |
+
+F3/F4 的 `ts` 为 bar 开盘 Unix 秒，单次输入只含一个币并按完整等间隔网格排列，缺 bar/乱序/重复拒绝。调用者负责只提交已完成 bar；特征第 i 行在 `ts[i]+bar_seconds` 才可用。特征采用 trailing mean、总体标准差（ddof=0）、`log(close[i]/close[i-k])`；warm-up 为 NaN，事件为 0，超过正/负阈值才生成 +1/-1。这些 API 不读取 D1 事后持仓完整性矩阵。
+
+F4 输入事件表列为 ts/side（-1、0、+1），与 bars 的 ts/open 逐行对齐。信号 i 入场 open[i+1]，持有 N 根后在 open[i+1+N] 出场。新信号确认时仍处持仓期则记 `OVERLAPPING_POSITION`；恰在原仓出场开盘确认的信号允许在该开盘接续。缺下一开或出场开盘记 `INCOMPLETE_HORIZON`。返回 `{plans: [...], skipped: [...]}`；plans 中价格是历史模拟注记。每币完整历史调用一次，不可把相交分片分别规划后直接拼接。
+
+F4 → F5：为每条 plan 显式添加 `funding_timestamps`，再传给原 `build_ledger`；`test_signals_ledger_report_chain` 覆盖串联到报告。预期结算日历必须独立于实际费率可用性，不能从已有费率键推导而漏掉缺失期；空日历仅表示持仓本无结算。仍按 `(entry_ts,exit_ts]` 计资金费，默认往返 12 bps；缺费率进入 excluded，不填代理。旧 gross_bps 输入兼容且仍视为已签名值；输入有价格时保存价格，未提供 gross_bps 时仍按简单收益公式计算。
+
+F5 合成手算表（资金费原值合计 1.125 bps，费用列按方向签名，所有差值严格为 Decimal 0）：
+
+| id | side | 入场 | 出场 | gross bps | RT bps | funding bps | net bps |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| long | +1 | 100 | 101 | 100 | 12 | 1.125 | 86.875 |
+| short | -1 | 100 | 99 | 100 | 12 | -1.125 | 89.125 |
+| loss | +1 | 100 | 98 | -200 | 12 | 1.125 | -213.125 |
+| flat | -1 | 100 | 100 | 0 | 12 | -1.125 | -10.875 |
+
+### 一键报告
+
+在 `research/` 目录运行（随附输入完全合成）：
+
+```sh
+PY=/Users/jenniferni/jenifer/venv-research/bin/python
+$PY -m coinresearch.cli report --ledger examples/d3d4_ledger.json \
+  --out-dir /tmp/coinresearch-d3d4-report --top-n 2
+$PY -m pytest -q
+$PY -m pytest -q -s tests/test_features.py tests/test_signals.py tests/test_f5_ledger.py tests/test_report.py tests/test_halt.py
+```
+
+输入为 CSV 或 JSON 数组 / `{"ledger": [...]}`，每行至少 coin、整数 Unix 秒 entry_ts/exit_ts、net_bps，且 entry_ts < exit_ts。只输入已完成 ledger 行；excluded 不作为观测。输出 `report.json`、`report.md`、`run_record.json`，键排序、不写运行时间戳；记录输入 SHA256 和所有生效参数。Decimal 汇总序列化为字符串以保留精度，CI 为浮点数。
+
+分年按 **UTC 出场年份**；每币/每年统计笔数和净 bps 合计/简单均值，不解释为资金加权组合收益。头部贡献按净 bps 降序取 top-N（默认 1），除以全部净 bps 的有符号合计；总和 0 时为 null，负总和或亏损抵消时比例可能为负或大于 1。最好年按净 bps 合计最大选择，并列取最早年份。去除后对剩余交易等权求均值，以 IID 逐笔有放回 bootstrap 均值百分位给出 CI（默认 B=2000、90%、seed=20261022）。JSON/MD 明示方法忽略时间/跨币依赖，仅作描述性敏感性，不替代 G2；少于 2 笔返回 null CI 和 INSUFFICIENT_OBSERVATIONS，空输入有明确零计数。
+
+示例共 6 笔，总净 bps=140，A=60、B=80；2022=20、2023=100、2024=20。top-2=100/140；剔除 2023 后 4 笔均值=10，CI=[10,10]。这些数字只用于工程验收。
+
+### F8 仅接口
+
+F8 **未接现网**：不发告警、不写现网、不调用 PAPER/LIVE 停机、不连接真实 PAPER、不回 R0 实操。健康字段是调用者提供的结构化离线输入。
+
+`HaltThresholds` 默认：前向费后 CI 下界 ≤0 bps、回撤绝对幅度/回测参考幅度 >2 倍、实际与回测往返成本的绝对相对偏差 >50%、连续失败心跳 ≥3、成交失败率 ≥0.1、数据延迟 ≥60 秒。所有阈值可传参覆盖，仅为接口示例，不是策略参数或现网准则。回撤和成本必须非负且单位一致；参考值为 0 时当前正值触发、双方 0 不触发。非法/非有限输入报错，不默认为健康；多项失败返回全部稳定顺序原因。

@@ -95,10 +95,24 @@ def main(argv=None):
     sub.add_argument('--seed', type=int, default=20261019)
     sub.add_argument('--moving', action='store_true')
     sub.add_argument('--out-dir', required=True)
+    sub = subs.add_parser('report')
+    sub.add_argument('--ledger', required=True, help='Completed offline ledger CSV or JSON')
+    sub.add_argument('--out-dir', required=True)
+    sub.add_argument('--top-n', type=int, default=1)
+    sub.add_argument('--B', type=int, default=2000)
+    sub.add_argument('--ci-level', type=float, default=.90)
+    sub.add_argument('--seed', type=int, default=20261022)
     args = parser.parse_args(argv)
     try:
         out = Path(args.out_dir)
-        if args.command == 'g2':
+        if args.command == 'report':
+            from .report import write_report
+            result = write_report(args.ledger, out, top_n=args.top_n, B=args.B,
+                                  ci_level=args.ci_level, seed=args.seed)
+            print(json.dumps(dict(output=str(out.resolve()), overall=result['overall'],
+                                  top_trades=result['top_trades'],
+                                  without_best_year=result['without_best_year']), sort_keys=True))
+        elif args.command == 'g2':
             # Verify before reading observations or constructing outputs.
             from .guard import verify_prereg
             verify_prereg(args.prereg_path, args.prereg_sha256)
