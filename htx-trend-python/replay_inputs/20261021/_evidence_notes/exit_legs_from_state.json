@@ -1,0 +1,110 @@
+{
+  "paper-20d87b03-2979-476f-9c97-734690348e96": [
+    {
+      "at_cst": "2026-10-20 04:15:17",
+      "quantity": 7,
+      "price": "2399.71",
+      "reason": "trend-weakened-protection-breach"
+    }
+  ],
+  "paper-a4e8bbbe-b8bd-4152-be36-79a3836fcde6": [
+    {
+      "at_cst": "2026-10-20 09:00:32",
+      "quantity": 7,
+      "price": "2399.52",
+      "reason": "armed-protection-breach-atr-impulse"
+    }
+  ],
+  "paper-67798c74-aef6-4a34-a260-716ebe2bbc4e": [
+    {
+      "at_cst": "2026-10-20 12:00:44",
+      "quantity": 1,
+      "price": "82099.6",
+      "reason": "model-or-initial-stop-invalidated"
+    }
+  ],
+  "paper-8dd5e5fb-e6f4-4ad1-978e-426ad8655f0d": [
+    {
+      "at_cst": "2026-10-20 12:00:44",
+      "quantity": 3,
+      "price": "2414.38",
+      "reason": "model-or-initial-stop-invalidated"
+    }
+  ],
+  "paper-1d723b39-cfd4-45c6-9f84-1361ca528644": [
+    {
+      "at_cst": "2026-10-20 14:00:34",
+      "quantity": 7,
+      "price": "2395.34",
+      "reason": "model-or-initial-stop-invalidated"
+    }
+  ],
+  "paper-d3f16232-710b-4f25-91e9-98ea234179a7": [
+    {
+      "at_cst": "2026-10-20 16:45:32",
+      "quantity": 5,
+      "price": "2388.42",
+      "reason": "armed-protection-breach-atr-impulse"
+    }
+  ],
+  "paper-91cb6914-e5e5-44ea-897d-4413180763de": [
+    {
+      "at_cst": "2026-10-20 18:15:26",
+      "quantity": 2,
+      "price": "81566.9",
+      "reason": "armed-protection-breach-atr-impulse"
+    }
+  ],
+  "paper-f56d3d17-02f9-4a9b-afeb-099487522f30": [
+    {
+      "at_cst": "2026-10-20 19:30:46",
+      "quantity": 5,
+      "price": "2385.15",
+      "reason": "trend-weakened-protection-breach-partial"
+    },
+    {
+      "at_cst": "2026-10-20 19:45:32",
+      "quantity": 2,
+      "price": "2384.65",
+      "reason": "trend-weakened-protection-breach"
+    }
+  ],
+  "paper-5ddbbabb-3671-4e54-ba8a-e9f27fadcedd": [
+    {
+      "at_cst": "2026-10-20 22:00:40",
+      "quantity": 2,
+      "price": "82113",
+      "reason": "model-or-initial-stop-invalidated"
+    }
+  ],
+  "paper-36733c1f-0d27-4186-82aa-789b463dc424": [
+    {
+      "at_cst": "2026-10-21 09:00:21",
+      "quantity": 1,
+      "price": "82983.6",
+      "reason": "profit-at-risk-with-deteriorating-continuation"
+    },
+    {
+      "at_cst": "2026-10-21 09:15:54",
+      "quantity": 1,
+      "price": "82763.1",
+      "reason": "trend-weakened-protection-breach"
+    }
+  ],
+  "paper-eb68a4f6-0ada-41d0-ab34-f83a11bea8ca": [
+    {
+      "at_cst": "2026-10-21 10:30:19",
+      "quantity": 2,
+      "price": "82700.1",
+      "reason": "model-or-initial-stop-invalidated"
+    }
+  ],
+  "paper-93cef710-d3d0-4c85-bb79-4c76080a5ad8": [
+    {
+      "at_cst": "2026-10-21 13:45:33",
+      "quantity": 1,
+      "price": "2441.08",
+      "reason": "model-or-initial-stop-invalidated"
+    }
+  ]
+}
