@@ -51,7 +51,13 @@ def build_ledger(trades, funding, *, rt_cost=RT_COST):
             if min(entry, exit_) <= 0:
                 raise ValueError('open prices must be positive')
             gross = (exit_ / entry - 1) * 10000 * side
-        rows.append(dict(id=trade['id'], coin=coin, gross_bps=gross,
+        metadata = {key: trade[key] for key in ('side', 'entry_ts', 'exit_ts', 'signal_bar_ts') if key in trade}
+        for key in ('entry_open', 'exit_open'):
+            if key in trade:
+                metadata[key] = decimal(trade[key])
+                if metadata[key] <= 0:
+                    raise ValueError('open prices must be positive')
+        rows.append(dict(id=trade['id'], coin=coin, **metadata, gross_bps=gross,
                          rt_cost_bps=cost, funding_cost_bps=drag,
                          net_bps=gross-cost-drag))
     return dict(ledger=rows, excluded=excluded)
