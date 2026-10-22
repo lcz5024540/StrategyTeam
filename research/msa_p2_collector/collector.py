@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from .limiter import RateLimiter
 from .normalize import normalize_depth
-from .retry import call_with_retry
+from .retry import RetryableTransportError, call_with_retry
 
 PATHS = {
     'open_interest': '/linear-swap-api/v1/swap_open_interest',
@@ -77,8 +77,7 @@ class Collector:
                 self.store.add_snapshot(stream, symbol, timestamp, f'{symbol}|{timestamp}', record)
             return
         if stream == 'liquidation':
-            orders = (payload.get('data') or {}).get('orders') or []
-            for row in orders:
+            for row in _liquidation_orders(payload):
                 timestamp = int(row['created_at'])
                 record = {
                     'contract': symbol, 'query_id': row['query_id'], 'direction': row.get('direction'),
@@ -93,6 +92,66 @@ class Collector:
             return
         for row in _trade_rows(payload):
             self.store.add_trade(symbol, row)
+
+    def run_loop(self, should_stop):
+        """按各流间隔调度 run_once，直到 should_stop。传输失败则退避后重连。"""
+        arm_late_sample = False
+        while not should_stop():
+            try:
+                self.run_once()
+            except RetryableTransportError:
+                if not self.checkpoints:
+                    arm_late_sample = True
+                self._pause(min(30.0, 0.5), should_stop)
+                continue
+            if arm_late_sample:
+                arm_late_sample = False
+                if not should_stop():
+                    fastest = min(self.intervals[stream] for stream in self._streams())
+                    # 首次成功前没有检查点，空窗要睡过间隔加宽限，下一轮才会写入 gaps。
+                    self._pause(fastest + self.grace_seconds + 1, should_stop)
+                continue
+            delay = self._delay_until_next()
+            if delay > 0 and not should_stop():
+                self._pause(delay, should_stop)
+
+    def _streams(self):
+        for stream in ('open_interest', 'liquidation', 'depth', 'trades'):
+            if stream == 'trades' and not self.collect_trades:
+                continue
+            yield stream
+
+    def _delay_until_next(self):
+        now = self.clock()
+        waits = []
+        for symbol in self.symbols:
+            for stream in self._streams():
+                last = self.checkpoints.get((symbol, stream))
+                if last is None:
+                    return 0.0
+                waits.append(self.intervals[stream] - (now - last))
+        if not waits:
+            return 0.0
+        return max(0.0, min(waits))
+
+    def _pause(self, seconds, should_stop):
+        remaining = float(seconds)
+        while remaining > 0 and not should_stop():
+            step = min(1.0, remaining)
+            self.sleep(step)
+            remaining -= step
+
+
+def _liquidation_orders(payload):
+    """v3 公开接口 data 是订单列表；录制副本仍是 data.orders。"""
+    data = payload.get('data')
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        orders = data.get('orders')
+        if isinstance(orders, list):
+            return orders
+    return []
 
 
 def _trade_rows(payload):

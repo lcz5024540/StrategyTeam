@@ -1,0 +1,13 @@
+# 示例 unit。本令不授权安装。
+[Unit]
+Description=HTX public market collector sample
+
+[Service]
+Type=simple
+User=msa
+WorkingDirectory=/opt/coinstrategy/research
+ExecStart=/usr/bin/python3 -m msa_p2_collector --live --loop --out /var/lib/msa-p2-collector
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
