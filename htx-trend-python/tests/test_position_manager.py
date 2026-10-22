@@ -141,3 +141,15 @@ def test_v4_observation_mode_records_but_never_executes():
     mgr._manage(position(),144900,MarketContext())
     assert repo.decisions and repo.decisions[-1]['block_reason']=='exit engine live disabled'
     assert not live.sent
+
+
+def test_close_metadata_uses_book_not_entry_or_fill():
+    mgr = manager()
+    mgr._manage(position(), 10000, MarketContext.__new__(MarketContext))
+    intent = mgr.repo.orders[0]
+    assert intent.order_px == D('80.005') and intent.order_px_source == 'mid'
+    assert intent.signal_px is None and intent.signal_ts is None
+    assert intent.cancel_count is None and intent.amend_count is None
+    mgr.submit_close(position(), 4, 'direct', 'test without quote')
+    assert mgr.repo.orders[-1].order_px is None
+    assert mgr.repo.orders[-1].order_px_source is None

@@ -6,6 +6,8 @@ startup.
 """
 from __future__ import annotations
 
+from .order_px_fields import validate_order_px
+
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -56,6 +58,14 @@ class Order:
     strategy_run_id: str | None = None
     filled_at: datetime | None = None
 
+    signal_px: Decimal | None = None
+    signal_ts: datetime | None = None
+    order_px: Decimal | None = None
+    order_px_source: str | None = None
+    order_ts: datetime | None = None
+    cancel_count: int | None = None
+    amend_count: int | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class Fill:
@@ -100,11 +110,20 @@ class TrendLedger:
         self._connection.commit()
 
     def record_order(self, order: Order) -> None:
-        self._connection.execute("INSERT INTO trend_order VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+        validate_order_px(order.order_px, order.order_px_source)
+        self._connection.execute("""INSERT INTO trend_order (
+            order_id,account_id,position_id,contract_code,side,position_side,order_type,quantity,
+            limit_price,status,client_order_id,parent_order_id,strategy_run_id,created_at,filled_at,
+            signal_px,signal_ts,order_px,order_px_source,order_ts,cancel_count,amend_count)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
             order.order_id, order.account_id, order.position_id, order.contract_code, order.side, order.position_side,
             order.order_type, order.quantity, str(order.limit_price) if order.limit_price else None, order.status,
             order.client_order_id, order.parent_order_id, order.strategy_run_id, _time(order.created_at),
-            _time(order.filled_at) if order.filled_at else None))
+            _time(order.filled_at) if order.filled_at else None,
+            str(order.signal_px) if order.signal_px is not None else None,
+            _time(order.signal_ts) if order.signal_ts else None,
+            str(order.order_px) if order.order_px is not None else None, order.order_px_source,
+            _time(order.order_ts) if order.order_ts else None, order.cancel_count, order.amend_count))
         self._connection.commit()
 
     def record_fill(self, fill: Fill, *, order_status: str = "FILLED") -> None:

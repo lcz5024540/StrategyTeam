@@ -315,11 +315,25 @@ def load_ledger_pnl_export(directory):
         trades = list(csv.DictReader(handle))
     contract_by_key = {row['position_key']: row['contract'] for row in trades}
     position_by_id = {str(row['id']): row for row in positions}
-    grouped = defaultdict(list)
+    order_path = root / 'orders.json'
+    exported = json.loads(order_path.read_text(encoding='utf-8')) if order_path.exists() else []
+    def match_order(fill):
+        candidates = [row for row in exported
+                      if str(row.get('position_id')) == str(fill['position_id']) and row.get('leg') == fill['leg']]
+        if fill.get('client_order_id') is not None:
+            candidates = [row for row in candidates if str(row.get('client_order_id')) == str(fill['client_order_id'])]
+        elif fill.get('order_id') is not None:
+            candidates = [row for row in candidates if str(row.get('id', row.get('order_id'))) == str(fill['order_id'])]
+        return candidates[0] if len(candidates) == 1 else {}
+    grouped, metadata = defaultdict(list), {}
     for fill in fills:
-        grouped[(str(fill['position_id']), fill['leg'])].append(fill)
+        row = match_order(fill)
+        identity = str(row.get('client_order_id') or f"{fill['position_id']}:{fill['leg']}")
+        group_key = (str(fill['position_id']), fill['leg'], identity)
+        grouped[group_key].append(fill)
+        metadata[group_key] = row
     orders, normalized = [], []
-    for (position_id, leg), group in sorted(grouped.items()):
+    for (position_id, leg, client_id), group in sorted(grouped.items()):
         position = position_by_id.get(position_id, {})
         key = position.get('position_key') or ''
         if key.startswith('paper-'):
@@ -329,7 +343,7 @@ def load_ledger_pnl_export(directory):
         else:
             book = 'UNKNOWN'
         phase = _phase(leg)
-        client_id = f'{position_id}:{leg}'
+        observed = metadata[(position_id, leg, client_id)]
         orders.append({
             'book': book,
             'position_id': position_id,
@@ -337,11 +351,14 @@ def load_ledger_pnl_export(directory):
             'side': group[0]['side'],
             'leg': leg,
             'client_order_id': client_id,
-            'signal_price': None,
-            'order_price': None,
-            'order_sent_at': None,
-            'cancel_count': None,
-            'amend_count': None,
+            'signal_price': observed.get('signal_px'),
+            'signal_ts': observed.get('signal_ts'),
+            'order_price': observed.get('order_px'),
+            'order_px_source': observed.get('order_px_source'),
+            'order_sent_at': observed.get('order_ts'),
+            'order_qty': observed.get('request_volume', observed.get('quantity')),
+            'cancel_count': observed.get('cancel_count'),
+            'amend_count': observed.get('amend_count'),
             'contract_size': group[0].get('contract_size'),
         })
         for fill in group:

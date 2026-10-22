@@ -16,6 +16,13 @@ CREATE TABLE IF NOT EXISTS trend_order (
   side TEXT NOT NULL, position_side TEXT NOT NULL, order_type TEXT NOT NULL, quantity INTEGER NOT NULL,
   limit_price TEXT, status TEXT NOT NULL, client_order_id TEXT NOT NULL UNIQUE,
   parent_order_id TEXT, strategy_run_id TEXT, created_at TEXT NOT NULL, filled_at TEXT,
+  signal_px TEXT,
+  signal_ts TEXT,
+  order_px TEXT,
+  order_px_source TEXT CHECK (order_px_source IN ('limit','mid','last')),
+  order_ts TEXT,
+  cancel_count INTEGER,
+  amend_count INTEGER,
   FOREIGN KEY(account_id) REFERENCES trend_account(account_id)
 );
 CREATE TABLE IF NOT EXISTS trend_fill (

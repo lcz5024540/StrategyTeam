@@ -104,6 +104,12 @@ def test_entry_writes_intent_reserves_then_submits_java_market_order() -> None:
     assert [name for name, _ in repo.calls[:2]] == ["position", "order"]
     assert live.calls[0][0] == "leverage"
     assert live.calls[1][1].type == "market"
+    intent = next(value for name, value in repo.calls if name == 'order')
+    assert intent.order_px == Decimal('100') and intent.order_px_source == 'mid'
+    assert intent.signal_px == candidate().entry_price
+    assert intent.signal_ts.timestamp() == candidate().bar_time
+    assert intent.order_ts is None and intent.cancel_count is None and intent.amend_count is None
+    assert next(value for name, value in repo.calls if name == 'accepted')['order_ts'] is not None
 
 
 def test_account_preflight_failure_is_a_rejection_and_does_not_escape_worker() -> None:
@@ -165,6 +171,10 @@ def test_mirror_follows_only_a_confirmed_primary_fill() -> None:
         ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1))
     assert result.accepted and result.mirrored_contracts == 2
     assert [name for name, _ in repo.calls[:3]] == ["position", "reserve", "order"]
+    intent = next(value for name, value in repo.calls if name == 'order')
+    assert intent.order_px == Decimal('100') and intent.order_px_source == 'mid'
+    assert intent.signal_px is None and intent.signal_ts is None
+    assert intent.cancel_count is None and intent.amend_count is None
 
 
 def test_entry_refuses_candidate_without_database_authorized_policy() -> None:
