@@ -1,0 +1,5 @@
+open_interest|BTC-USDT|1700000000000
+liquidation|BTC-USDT|9
+depth|BTC-USDT|1700000000000
+trade|BTC-USDT|42
+trade|BTC-USDT|43

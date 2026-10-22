@@ -1,0 +1,5 @@
+schema: msa-p2-universe-v1
+# 仓库内没有单独冻结的 ring-2 四十一币名单。默认采用已入库的三个月研究宇宙
+# （含 BTC-USDT、ETH-USDT）。替换 contracts_file 即可改币池，且必须保留这两个锚。
+contracts_file: ../../htx-trend/research-config/20261004-three-month-research-universe-v1.json
+extra_contracts:

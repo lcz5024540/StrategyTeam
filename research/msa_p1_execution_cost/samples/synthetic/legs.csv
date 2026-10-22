@@ -1,0 +1,8 @@
+book,position_id,contract,side,phase,client_order_id,signal_price,order_price,fill_vwap,slippage_vs_signal_bps,slippage_vs_order_bps,fee_usdt,fee_bps,notional_usdt,partial_fill_count,order_to_first_fill_ms,cancel_count,amend_count,fill_count,coverage
+PAPER,A,ETH-USDT,LONG,OPEN,A-open,10000,10000,10010,10,10,4.004,2,20020,1,1500,1,2,2,
+PAPER,A,ETH-USDT,LONG,CLOSE,A-close,11000,11000,10989,10,10,4.3956,2,21978,0,0,0,0,1,
+PAPER,B,ETH-USDT,LONG,OPEN,B-open,10000,10000,10020,20,20,2.004,2,10020,0,1000,0,0,1,
+PAPER,B,ETH-USDT,LONG,CLOSE,B-close,10020,10020,10020,0,0,2.004,2,10020,0,1000,0,0,1,
+PAPER,C,ETH-USDT,LONG,OPEN,C-open,10000,10000,10040,40,40,2.008,2,10040,0,1000,0,0,1,
+PAPER,D,BTC-USDT,SHORT,OPEN,D-open,50000,50000,50000,0,0,20,4,50000,0,2000,0,0,1,
+PAPER,D,BTC-USDT,SHORT,CLOSE,D-close,50000,50000,50000,0,0,20,4,50000,0,2000,0,0,1,

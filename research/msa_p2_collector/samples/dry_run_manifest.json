@@ -1,0 +1,12 @@
+{
+  "network": false,
+  "streams": [
+    "open_interest",
+    "liquidation",
+    "depth",
+    "trades"
+  ],
+  "symbols": [
+    "BTC-USDT"
+  ]
+}

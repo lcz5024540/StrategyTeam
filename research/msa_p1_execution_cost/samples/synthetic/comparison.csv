@@ -1,0 +1,6 @@
+scope,key,n,median_rt_bps,p75_rt_bps,p90_rt_bps,assumed_rt_bps,median_minus_assumed_bps,excluded_positions
+ALL,*,3,24,24,24,12,12,1
+SIDE,LONG,2,24,24,24,12,12,1
+SIDE,SHORT,1,8,8,8,12,-4,0
+CONTRACT,BTC-USDT,1,8,8,8,12,-4,0
+CONTRACT,ETH-USDT,2,24,24,24,12,12,1
