@@ -9,7 +9,9 @@ import urllib.request
 from .retry import RetryableTransportError
 
 
-class PublicHtxClient:
+class HttpTransport:
+    """公开 GET。429/5xx 与连接失败抛出可重试错误，不签名。"""
+
     def __init__(self, base_url='https://api.hbdm.com', timeout=10):
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
@@ -33,3 +35,7 @@ class PublicHtxClient:
         if payload.get('status') not in (None, 'ok'):
             raise RetryableTransportError(str(payload.get('err_code') or 'status'))
         return payload
+
+
+class PublicHtxClient(HttpTransport):
+    """与 HttpTransport 相同的公开客户端，保留原构造方式。"""

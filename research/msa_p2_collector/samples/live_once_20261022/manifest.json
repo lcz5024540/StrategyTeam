@@ -1,0 +1,6 @@
+{
+  "source": "public HTX api.hbdm.com",
+  "mode": "--live --once",
+  "symbols": ["BTC-USDT", "ETH-USDT"],
+  "note": "One truncated line per stream/symbol from 2026-10-22 local short run; no private keys; research-only."
+}

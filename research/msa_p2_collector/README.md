@@ -1,6 +1,6 @@
 # P2 只读微观结构采集器
 
-独立研究进程。命令不带参数时退出码为 2，**默认不启动**。当前命令只提供 `--dry-run`：使用录制的公开响应写本地样例，不打开网络，不读私钥，不写交易业务表，不安装服务，不修改现网 collector。
+独立研究进程。命令不带参数时退出码为 2，**默认不启动**。`--dry-run` 使用录制的公开响应写本地样例，不打开网络。`--live --once` 向公开接口拉一轮后写盘退出；`--live --loop` 按各流间隔持续采集，直到进程收到 SIGINT 或 SIGTERM。不读私钥，不写交易业务表，不安装服务，不修改现网 collector。币池缺少 BTC-USDT 或 ETH-USDT 时拒绝启动。`msa-p2-collector.service` 只是示例，本令不授权安装。
 
 攒满 3–6 个月之前，这些文件不能当作信号输入，也不重开 G0。
 
@@ -57,6 +57,8 @@ _index/keys.txt
 ```sh
 python -m msa_p2_collector
 python -m msa_p2_collector --dry-run --out msa_p2_collector/samples --symbols BTC-USDT
+python -m msa_p2_collector --live --once --out /tmp/msa-p2-live
+python -m msa_p2_collector --live --loop --out /tmp/msa-p2-live --universe msa_p2_collector/universe.yaml
 ```
 
-第一条应退出码 2。第二条只写样例。
+第一条应退出码 2。第二条只写样例。`--once` 与 `--loop` 只能二选一；只写 `--live` 而不写 `--once` 或 `--loop` 同样退出码 2。`--loop` 在 SIGINT/SIGTERM 后结束本轮等待并退出。
