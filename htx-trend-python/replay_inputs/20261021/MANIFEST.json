@@ -11,9 +11,21 @@
     "export_closed_through": "2026-10-21 15:01 CST",
     "outside_coverage": "ETH 93cef710 opened 2026-10-20 23:00:32, closed 2026-10-21 13:45:33 CST; replay ends 10:30:59, last 15m open 12:00 and last 60m open 11:00. No extrapolation or forced close."
   },
+  "optional_book": null,
   "unavailable_assumptions": {
-    "book": "盘口取证不可得 → 假设：scan_delay 时刻用形成中 15m bar 的 open 作 mid（优于上一根 close）；无形成中 bar 时回退上一根 close；spread=0",
+    "book": "盘口取证不可得，且 optional_book 为空 → 假设：scan_delay 时刻用形成中 15m bar 的 open 作 mid（优于上一根 close）；无形成中 bar 时回退上一根 close；spread=0。不虚构 bid/ask。",
     "funding": "取证不可得 → 假设：0",
     "contract_spec": "取证不可得 → 假设：BTC .001 / ETH .01（state context 佐证），tick .01"
+  },
+  "book_fixture_gap": {
+    "status": "ABSENT_DO_NOT_INVENT",
+    "schema_doc": "schema/BOOK_TICK_MID.md",
+    "synthetic_example_not_loaded": "schema/SYNTHETIC_NOT_LIVE_book_mid.example.csv",
+    "reachable_upper_bound": "9/12",
+    "windows_cst": {
+      "BTC_36733c1f": "2026-10-21 02:00-09:30",
+      "ETH_f56d3d17": "2026-10-20 19:00-20:00",
+      "ETH_93cef710_kline_not_book": "reference close 2026-10-21 13:45:33; klines end 10:30:59; keep EXIT_OUTSIDE_KLINE_COVERAGE"
+    }
   }
 }
