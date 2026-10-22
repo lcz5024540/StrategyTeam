@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from datetime import UTC, datetime
 from hashlib import sha256
 import uuid
 
@@ -12,6 +13,7 @@ from .htx_v5 import SwapOrderRequest
 from .live import HtxLiveExecutor
 from .market_data import ContractSpec, OrderBook
 from .models import TrendSide
+from .order_px_fields import order_px_fields
 from .mysql_store import HtxTrendMySqlRepository, PositionIntent, RuntimeInstance, TradeAccount, TrendOrderIntent
 
 
@@ -89,6 +91,7 @@ class HtxTrendMirrorFollower:
         client_order_id = _numeric_client_order_id()
         reservation_key = sha256(f"{self._instance.instance_key}:{position_key}".encode()).hexdigest()[:160]
         position_id = None
+        order_ts = None
         try:
             self._executor.set_leverage(primary.contract_code, "long" if primary.side is TrendSide.LONG else "short", self._leverage)
             position_id = self._repository.record_position_intent(PositionIntent(position_key, primary.run_id, primary.contract_code,
@@ -107,19 +110,21 @@ class HtxTrendMirrorFollower:
             self._repository.record_order_intent(TrendOrderIntent(position_id, position_key, primary.run_id, primary.contract_code,
                 "ENTRY", primary.side.value, request.side.upper(), request.position_side.upper(), False, client_order_id, delta,
                 self._account, primary.primary_model, primary.factor_snapshot_id, "mirror confirmed primary fill",
-                primary.timeframe_profile, self._instance.strategy_family, self._instance.strategy_name))
+                primary.timeframe_profile, self._instance.strategy_family, self._instance.strategy_name,
+                **order_px_fields(request.type, limit=request.price, mid=book.top.mid)))
+            order_ts = datetime.now(UTC)
             response = self._executor.place(request)
             order_id = _order_id(response)
             if order_id is None:
                 raise RuntimeError("HTX accepted mirror response lacks order id")
             self._repository.mark_order_accepted(position_id=position_id, leg="ENTRY", client_order_id=client_order_id,
-                exchange_order_id=order_id, exchange_client_order_id=_client_id(response), message="mirror entry accepted")
+                exchange_order_id=order_id, exchange_client_order_id=_client_id(response), message="mirror entry accepted", order_ts=order_ts)
             self._repository.mark_position_status(position_id=position_id, status="ENTRY_SENT", message="mirror entry sent")
             return MirrorResult(True, delta, position_id, "mirror entry accepted")
         except Exception as error:
             if position_id is not None:
                 self._repository.mark_order_rejected(position_id=position_id, leg="ENTRY", client_order_id=client_order_id,
-                                                     message=f"mirror entry rejected: {type(error).__name__}")
+                                                     message=f"mirror entry rejected: {type(error).__name__}", order_ts=order_ts)
                 self._repository.mark_position_status(position_id=position_id, status="REJECTED", message="mirror entry rejected")
             self._repository.release_risk(reservation_key, f"mirror entry failure: {type(error).__name__}")
             return MirrorResult(False, 0, position_id, f"mirror entry rejected: {type(error).__name__}")
@@ -140,23 +145,26 @@ class HtxTrendMirrorFollower:
             return MirrorResult(True, 0, int(mirror["id"]), "mirror already flat")
         client_order_id = _numeric_client_order_id()
         leg = "CLOSE" if primary.full_close and close_volume == int(snapshot.same_position_contracts) else "PARTIAL_CLOSE"
+        order_ts = None
         try:
             request = SwapOrderRequest(primary.contract_code, "long" if primary.side is TrendSide.LONG else "short",
                 "sell" if primary.side is TrendSide.LONG else "buy", "market", client_order_id, str(close_volume), reduce_only=True)
             self._repository.record_order_intent(TrendOrderIntent(int(mirror["id"]), str(mirror["position_key"]), primary.run_id,
                 primary.contract_code, leg, primary.side.value, request.side.upper(), request.position_side.upper(), True,
                 client_order_id, close_volume, self._account, primary.primary_model, primary.factor_snapshot_id,
-                "mirror confirmed primary reduction", primary.timeframe_profile, self._instance.strategy_family, self._instance.strategy_name))
+                "mirror confirmed primary reduction", primary.timeframe_profile, self._instance.strategy_family, self._instance.strategy_name,
+                **order_px_fields(request.type, limit=request.price, mid=book.top.mid)))
+            order_ts = datetime.now(UTC)
             response = self._executor.place(request)
             order_id = _order_id(response)
             if order_id is None:
                 raise RuntimeError("HTX accepted mirror close response lacks order id")
             self._repository.mark_order_accepted(position_id=int(mirror["id"]), leg=leg, client_order_id=client_order_id,
-                exchange_order_id=order_id, exchange_client_order_id=_client_id(response), message="mirror reduction accepted")
+                exchange_order_id=order_id, exchange_client_order_id=_client_id(response), message="mirror reduction accepted", order_ts=order_ts)
             self._repository.mark_position_status(position_id=int(mirror["id"]),
                 status="CLOSE_SENT" if leg == "CLOSE" else "PARTIAL_CLOSE_SENT", message="mirror reduction sent")
             return MirrorResult(True, close_volume, int(mirror["id"]), "mirror reduction accepted")
         except Exception as error:
             self._repository.mark_order_rejected(position_id=int(mirror["id"]), leg=leg, client_order_id=client_order_id,
-                                                 message=f"mirror reduction rejected: {type(error).__name__}")
+                                                 message=f"mirror reduction rejected: {type(error).__name__}", order_ts=order_ts)
             return MirrorResult(False, 0, int(mirror["id"]), f"mirror reduction rejected: {type(error).__name__}")

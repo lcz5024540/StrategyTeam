@@ -6,7 +6,7 @@ paper/shadow runtime used to compare Python decisions with Java before P6.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Sequence
 
@@ -78,7 +78,8 @@ class PaperTrendRuntime:
         request = PaperOrder(self._account_id, entry_window.contract_code, selected.side.value,
                              "BUY" if selected.side.value == "LONG" else "SELL", gate.size_plan.contracts,
                              order_type, at, f"paper-{run_id}-{selected.model.value}",
-                             gate.price_plan.desired_entry if order_type == "LIMIT" else None, strategy_run_id=run_id)
+                             gate.price_plan.desired_entry if order_type == "LIMIT" else None, strategy_run_id=run_id,
+                             signal_px=selected.entry_price, signal_ts=datetime.fromtimestamp(selected.bar_time, UTC), mid=book.mid)
         fill_candle = execution_candle or entry_window.candles[-1]
         order = self._exchange.submit(request, fill_candle)
         self._ledger.decision(self._account_id, run_id, "ENTRY_ORDER", {"candidate": selected.model.value,
@@ -96,13 +97,13 @@ class PaperTrendRuntime:
                 "trailing_armed_at": None, "trailing_arm_reason": None, "max_favorable_r": "0"})
             if self._mirror_account_id:
                 self._mirror(position.position_id, order.order_id, entry_window.contract_code, selected.side.value,
-                             gate.size_plan.contracts, at, run_id, fill_candle, contract.contract_size)
+                             gate.size_plan.contracts, at, run_id, fill_candle, contract.contract_size, mid=book.mid)
         return ScanOutcome(run_id, output, gates, selected, order.order_id)
 
     def _mirror(self, parent_position_id: str, parent_order_id: str, contract_code: str, side: str, quantity: int,
-                at: datetime, run_id: str, candle, contract_size: Decimal) -> None:
+                at: datetime, run_id: str, candle, contract_size: Decimal, *, mid: Decimal | None = None) -> None:
         request = PaperOrder(self._mirror_account_id, contract_code, side, "BUY" if side == "LONG" else "SELL", quantity,
-                             "MARKET", at, f"paper-mirror-{run_id}", parent_order_id=parent_order_id, strategy_run_id=run_id)
+                             "MARKET", at, f"paper-mirror-{run_id}", parent_order_id=parent_order_id, strategy_run_id=run_id, mid=mid)
         order = self._exchange.submit(request, candle)
         self._ledger.decision(self._mirror_account_id, run_id, "MIRROR_ENTRY", {"parent_order_id": parent_order_id,
                               "order_id": order.order_id, "status": order.status})

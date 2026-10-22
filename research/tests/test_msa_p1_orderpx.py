@@ -336,3 +336,32 @@ def test_real_ledger_pnl_orderpx_stays_missing_and_read_only(tmp_path):
     assert matched['order_px'] is None
     assert 'missing_order_px' in matched['missing_flags']
     assert '样本不足不下结论' in (tmp_path / 'orderpx_summary.csv').read_text(encoding='utf-8')
+
+
+def test_optional_exported_order_metadata_and_historical_nulls(tmp_path):
+    import shutil
+    for name in ('positions.json', 'fills.json', 'trades_closed_window.csv'):
+        shutil.copyfile(LEDGER_PNL / name, tmp_path / name)
+    fills = json.loads((tmp_path / 'fills.json').read_text())
+    first = fills[0]
+    row = dict(position_id=first['position_id'], leg=first['leg'], client_order_id='actual-order',
+               signal_px='2400', signal_ts='2026-10-19T19:15:00+00:00', order_px='2401',
+               order_px_source='mid', order_ts='2026-10-19T19:15:01+00:00', request_volume=7,
+               cancel_count=None, amend_count=None)
+    (tmp_path / 'orders.json').write_text(json.dumps([row]))
+    report = load_ledger_pnl_export(tmp_path)
+    observed = next(r for r in report['orderpx'] if r['client_order_id'] == 'actual-order')
+    assert observed['order_px'] == Decimal('2401')
+    assert observed['signal_px'] == Decimal('2400')
+    assert observed['order_px_source'] == 'mid'
+    assert observed['order_qty'] == 7
+    assert observed['cancel_count'] is None and observed['amend_count'] is None
+    assert 'missing_cancel_count' in observed['missing_flags']
+    row.update(order_px=None, order_px_source=None, average_price='999', signal_px='999')
+    (tmp_path / 'orders.json').write_text(json.dumps([row]))
+    observed = next(r for r in load_ledger_pnl_export(tmp_path)['orderpx'] if r['client_order_id'] == 'actual-order')
+    assert observed['order_px'] is None
+    assert 'missing_order_px' in observed['missing_flags']
+    # Multiple orders on a historical leg cannot be attributed without order identity.
+    (tmp_path / 'orders.json').write_text(json.dumps([row, dict(row, client_order_id='second')]))
+    assert all(r['order_px'] is None for r in load_ledger_pnl_export(tmp_path)['orderpx'])

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, ROUND_DOWN
 import uuid
 
+from .order_px_fields import order_px_fields
 from .ledger import Account, Fill, Order, Position, TrendLedger
 from .market_data import Candle
 from .research.lifecycle import ExecutionAssumptions
@@ -26,6 +27,11 @@ class PaperOrder:
     parent_order_id: str | None = None
     strategy_run_id: str | None = None
 
+    signal_px: Decimal | None = None
+    signal_ts: datetime | None = None
+    mid: Decimal | None = None
+    last: Decimal | None = None
+
 
 class PaperExchange:
     def __init__(self, ledger: TrendLedger, *, fee_rate: Decimal = Decimal("0.0004")) -> None:
@@ -34,7 +40,9 @@ class PaperExchange:
     def submit(self, request: PaperOrder, candle: Candle) -> Order:
         order = Order(str(uuid.uuid4()), request.account_id, request.position_id, request.contract_code, request.side,
                       request.position_side, request.order_type, request.quantity, request.client_order_id, "OPEN",
-                      request.created_at, request.limit_price, request.parent_order_id, request.strategy_run_id)
+                      request.created_at, request.limit_price, request.parent_order_id, request.strategy_run_id,
+                      signal_px=request.signal_px, signal_ts=request.signal_ts, order_ts=datetime.now(UTC),
+                      **order_px_fields(request.order_type, limit=request.limit_price, mid=request.mid, last=request.last))
         self._ledger.record_order(order)
         fill_price = self._fill_price(request, candle)
         if fill_price is None:
@@ -49,7 +57,9 @@ class PaperExchange:
         """Use the same next-event, cost and participation rules as lifecycle research."""
         order = Order(str(uuid.uuid4()), request.account_id, request.position_id, request.contract_code, request.side,
                       request.position_side, request.order_type, request.quantity, request.client_order_id, "OPEN",
-                      request.created_at, request.limit_price, request.parent_order_id, request.strategy_run_id)
+                      request.created_at, request.limit_price, request.parent_order_id, request.strategy_run_id,
+                      signal_px=request.signal_px, signal_ts=request.signal_ts, order_ts=datetime.now(UTC),
+                      **order_px_fields(request.order_type, limit=request.limit_price, mid=request.mid, last=request.last))
         self._ledger.record_order(order)
         fill_price = self._next_event_fill_price(request, next_candle, assumptions)
         if fill_price is None:

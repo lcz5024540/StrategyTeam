@@ -6,6 +6,8 @@ be live writers for the same account/strategy instance simultaneously.
 """
 from __future__ import annotations
 
+from .order_px_fields import validate_order_px, mysql_time
+
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -202,6 +204,14 @@ class TrendOrderIntent:
     fee_rate_used: Decimal | None = None
     estimated_open_fee: Decimal | None = None
     estimated_close_fee: Decimal | None = None
+
+    signal_px: Decimal | None = None
+    signal_ts: datetime | None = None
+    order_px: Decimal | None = None
+    order_px_source: str | None = None
+    order_ts: datetime | None = None
+    cancel_count: int | None = None
+    amend_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -525,37 +535,40 @@ class HtxTrendMySqlRepository:
         return int(row["id"])
 
     def record_order_intent(self, intent: TrendOrderIntent) -> int:
-        values = ",".join(["%s"] * 11 + ["'INTENT'"] + ["%s"] * 14)
+        validate_order_px(intent.order_px, intent.order_px_source)
+        values = ",".join(["%s"] * 11 + ["'INTENT'"] + ["%s"] * 21)
         self._write(f"""INSERT IGNORE INTO htx_trend_order(position_id,position_key,run_id,contract_code,leg,trend_side,order_side,
           position_side,reduce_only,client_order_id,request_volume,status,reason,account_id,account_label,strategy_family,
           strategy_name,model_name,factor_snapshot_id,timeframe_profile,fee_rate_used,estimated_open_fee,estimated_close_fee,
-          sizing_multiplier,sizing_reason,entry_gate_reason)
+          sizing_multiplier,sizing_reason,entry_gate_reason,signal_px,signal_ts,order_px,order_px_source,order_ts,cancel_count,amend_count)
           VALUES({values})""",
           (intent.position_id,intent.position_key,intent.run_id,intent.contract_code,intent.leg,intent.trend_side,intent.order_side,
            intent.position_side,intent.reduce_only,intent.client_order_id,intent.request_volume,_clip(intent.reason,512),
            intent.account.account_id,intent.account.account_label,intent.strategy_family,intent.strategy_name,intent.primary_model,
            intent.factor_snapshot_id,intent.timeframe_profile,intent.fee_rate_used,intent.estimated_open_fee,intent.estimated_close_fee,
            intent.sizing_multiplier,_clip(intent.sizing_reason,512) if intent.sizing_reason else None,
-           _clip(intent.entry_gate_reason,1024) if intent.entry_gate_reason else None))
+           _clip(intent.entry_gate_reason,1024) if intent.entry_gate_reason else None,
+           intent.signal_px,mysql_time(intent.signal_ts),intent.order_px,intent.order_px_source,
+           mysql_time(intent.order_ts),intent.cancel_count,intent.amend_count))
         row = self._one("SELECT id FROM htx_trend_order WHERE client_order_id=%s", (intent.client_order_id,))
         if row is None:
             raise RuntimeError("order intent was not persisted")
         return int(row["id"])
 
     def mark_order_accepted(self, *, position_id: int, leg: str, client_order_id: str, exchange_order_id: int | None,
-                            exchange_client_order_id: int | None, message: str) -> None:
-        self._write("""UPDATE htx_trend_order SET status='ACCEPTED',exchange_order_id=%s,exchange_client_order_id=%s,message=%s,
+                            exchange_client_order_id: int | None, message: str, order_ts: datetime | None = None) -> None:
+        self._write("""UPDATE htx_trend_order SET order_ts=COALESCE(%s,order_ts),status='ACCEPTED',exchange_order_id=%s,exchange_client_order_id=%s,message=%s,
           updated_at=CURRENT_TIMESTAMP(3) WHERE position_id=%s AND leg=%s AND client_order_id=%s""",
-          (exchange_order_id,exchange_client_order_id,_clip(message,512),position_id,leg,client_order_id))
+          (mysql_time(order_ts),exchange_order_id,exchange_client_order_id,_clip(message,512),position_id,leg,client_order_id))
 
-    def mark_order_rejected(self, *, position_id: int, leg: str, client_order_id: str, message: str) -> None:
-        self._write("""UPDATE htx_trend_order SET status='REJECTED',message=%s,updated_at=CURRENT_TIMESTAMP(3)
-          WHERE position_id=%s AND leg=%s AND client_order_id=%s""", (_clip(message,512),position_id,leg,client_order_id))
+    def mark_order_rejected(self, *, position_id: int, leg: str, client_order_id: str, message: str, order_ts: datetime | None = None) -> None:
+        self._write("""UPDATE htx_trend_order SET order_ts=COALESCE(%s,order_ts),status='REJECTED',message=%s,updated_at=CURRENT_TIMESTAMP(3)
+          WHERE position_id=%s AND leg=%s AND client_order_id=%s""", (mysql_time(order_ts),_clip(message,512),position_id,leg,client_order_id))
 
-    def mark_order_unknown(self, *, position_id: int, leg: str, client_order_id: str, message: str) -> None:
-        self._write("UPDATE htx_trend_order SET status='UNKNOWN',message=%s,updated_at=CURRENT_TIMESTAMP(3) "
+    def mark_order_unknown(self, *, position_id: int, leg: str, client_order_id: str, message: str, order_ts: datetime | None = None) -> None:
+        self._write("UPDATE htx_trend_order SET order_ts=COALESCE(%s,order_ts),status='UNKNOWN',message=%s,updated_at=CURRENT_TIMESTAMP(3) "
                     "WHERE position_id=%s AND leg=%s AND client_order_id=%s",
-                    (_clip(message,512),position_id,leg,client_order_id))
+                    (mysql_time(order_ts),_clip(message,512),position_id,leg,client_order_id))
 
     def apply_exchange_order(self, **values: Any) -> None:
         from .order_accounting import apply_exchange_order

@@ -127,7 +127,11 @@ def backfill_paper_state_to_mysql(state_json, repo):
                     raise ValueError('order key belongs to another writer')
                 order_id = repo.record_order_intent(TrendOrderIntent(pid, pk, order['strategy_run_id'], p['contract_code'],
                     leg, p['side'], order['side'], p['side'], leg != 'ENTRY', client, order['quantity'],
-                    account, model, None, 'PAPER simulated', strategy_name=STRATEGY))
+                    account, model, None, 'PAPER simulated', strategy_name=STRATEGY,
+                    signal_px=order.get('signal_px'), signal_ts=order.get('signal_ts'),
+                    order_px=order.get('order_px'), order_px_source=order.get('order_px_source'),
+                    order_ts=order.get('order_ts'), cancel_count=order.get('cancel_count'),
+                    amend_count=order.get('amend_count')))
                 quantity = value = fee = profit = D(0)
                 new_fill = False
                 for f in fs:

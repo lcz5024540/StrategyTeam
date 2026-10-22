@@ -18,6 +18,7 @@ from .indicators import ema
 from .java_entry_contract import JavaEntryConfig, evaluate
 from .market_data import period_seconds
 from .models import ModelCode, TrendSide
+from .order_px_fields import order_px_fields
 from .mysql_store import TrendOrderIntent, decision_key
 from .timeframes import TimeframeProfile
 
@@ -148,7 +149,7 @@ class LivePositionManager:
                         raise ValueError('entry has no confirmed exchange id')
                     self.executor.cancel(code,str(order['exchange_order_id']))
                 return
-            self.submit_close(row,quantity,run_id,'initial/model stop invalidated')
+            self.submit_close(row,quantity,run_id,'initial/model stop invalidated',mid=book.top.mid)
             return
         window=self.market.kline_window(code,self.period,160,now_epoch=now_epoch)
         if not window.is_complete: raise ValueError('incomplete management candles')
@@ -223,24 +224,26 @@ class LivePositionManager:
             return
         volume=quantity if decision.action is ExitAction.FULL_CLOSE else quantity-int(decision.target_remaining_contracts)
         if not 0<volume<=quantity: raise ValueError('invalid reduction quantity')
-        self.submit_close(row,volume,run_id,decision.reason)
+        self.submit_close(row,volume,run_id,decision.reason,mid=book.top.mid)
 
-    def submit_close(self,row,volume,run_id,reason):
+    def submit_close(self,row,volume,run_id,reason,*,mid=None,last=None):
         client_id=_numeric_client_order_id(); leg='CLOSE' if volume==int(decimal(row,'remaining_contract_volume')) else 'PARTIAL_CLOSE'
         request=SwapOrderRequest(row['contract_code'],row['side'].lower(),'sell' if row['side']=='LONG' else 'buy',
             'market',client_id,str(volume),reduce_only=True)
         self.repo.record_order_intent(TrendOrderIntent(row['id'],row['position_key'],run_id,row['contract_code'],leg,
             row['side'],request.side.upper(),request.position_side.upper(),True,client_id,volume,self.account,
             row['primary_model'],row.get('factor_snapshot_id'),reason,row.get('timeframe_profile') or 'INTRADAY_15M',
-            self.instance.strategy_family,self.instance.strategy_name))
+            self.instance.strategy_family,self.instance.strategy_name,
+            **order_px_fields(request.type, limit=request.price, mid=mid, last=last)))
         self.repo._write('UPDATE htx_trend_position SET exit_reason=%s WHERE id=%s',(reason,row['id']))
+        order_ts = datetime.now(UTC)
         try:
             response=self.executor.place(request); order_id=_order_id(response)
             if order_id is None: raise RuntimeError('close response lacks exchange id')
             self.repo.mark_order_accepted(position_id=row['id'],leg=leg,client_order_id=client_id,
-                exchange_order_id=order_id,exchange_client_order_id=_client_id(response),message='reduce-only close accepted')
+                exchange_order_id=order_id,exchange_client_order_id=_client_id(response),message='reduce-only close accepted',order_ts=order_ts)
             self.repo.mark_position_status(position_id=row['id'],status='CLOSE_SENT',message=reason)
         except Exception as error:
-            self.repo.mark_order_unknown(position_id=row['id'],leg=leg,client_order_id=client_id,message=f'close unknown:{type(error).__name__}')
+            self.repo.mark_order_unknown(position_id=row['id'],leg=leg,client_order_id=client_id,message=f'close unknown:{type(error).__name__}',order_ts=order_ts)
             self.repo.mark_position_status(position_id=row['id'],status='UNKNOWN',message='close outcome requires reconciliation')
             raise

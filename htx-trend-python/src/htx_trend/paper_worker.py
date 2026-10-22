@@ -144,6 +144,7 @@ class WorkerPaperExchange(PaperExchange):
     def submit(self, request, candle):
         self._fee_rate = Decimal('.0004') * self.contract_size
         if getattr(self, "book", None) is not None and request.order_type == "MARKET":
+            request = replace(request, mid=self.book.mid)
             price = self.book.ask if request.side == "BUY" else self.book.bid
             candle = Candle(candle.open_time, price, price, price, price)
         order = super().submit(request, candle)

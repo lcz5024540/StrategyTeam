@@ -23,6 +23,7 @@ from .live import HtxLiveExecutor
 from .market_data import ContractSpec, FundingRate, OrderBook
 from .models import ModelCandidate, TrendSide
 from .policy import PolicySelection, StrategyPolicy, select_policy
+from .order_px_fields import order_px_fields
 from .mysql_store import (HtxTrendMySqlRepository, LedgerEvent, PositionIntent,
                           RuntimeInstance, TradeAccount, TrendOrderIntent)
 from .strategy_context import (CandidateTrendState, EntryStateConfig, FibonacciQuality, MarketContext,
@@ -310,6 +311,7 @@ class HtxTrendEntryExecutor:
             structure_claimed = True
         position_id: int | None = None
         submission_started = False
+        order_ts = None
         try:
             fee_rate = snapshot.facts.actual_taker_fee_rate
             estimated_entry_fee = gate.size_plan.notional * fee_rate if fee_rate is not None else None
@@ -337,16 +339,19 @@ class HtxTrendEntryExecutor:
                 "ENTRY", candidate.side.value, request.side.upper(), request.position_side.upper(), False, client_order_id,
                 gate.size_plan.contracts, self._account, candidate.model.value, factor_snapshot_id,
                 f"entry: {gate.reason}", timeframe_profile, self._instance.strategy_family, self._instance.strategy_name,
-                total_multiplier, sizing_reason, gate.reason, fee_rate, estimated_entry_fee, estimated_close_fee))
+                total_multiplier, sizing_reason, gate.reason, fee_rate, estimated_entry_fee, estimated_close_fee,
+                signal_px=candidate.entry_price, signal_ts=datetime.fromtimestamp(candidate.bar_time, UTC),
+                **order_px_fields(request.type, limit=request.price, mid=book.top.mid)))
             # V5 returns ids under slightly different keys depending on API version.
             submission_started = True
+            order_ts = datetime.now(UTC)
             response = self._executor.place(request)
             exchange_id = _order_id(response)
             if exchange_id is None:
                 raise RuntimeError("HTX accepted response lacks order id")
             self._repository.mark_order_accepted(position_id=position_id, leg="ENTRY", client_order_id=client_order_id,
                                                  exchange_order_id=exchange_id, exchange_client_order_id=_client_id(response),
-                                                 message="entry accepted by exchange")
+                                                 message="entry accepted by exchange", order_ts=order_ts)
             self._repository.mark_position_status(position_id=position_id, status="ENTRY_SENT", message="entry sent")
             return EntrySubmission(True, gate, position_id, client_order_id, exchange_id, "entry accepted", gate_ref)
         except Exception as error:
@@ -356,7 +361,7 @@ class HtxTrendEntryExecutor:
             if position_id is not None:
                 if submission_started:
                     self._repository.mark_order_unknown(position_id=position_id, leg="ENTRY", client_order_id=client_order_id,
-                                                        message=f"entry outcome unknown: {type(error).__name__}")
+                                                        message=f"entry outcome unknown: {type(error).__name__}", order_ts=order_ts)
                 else:
                     self._repository.mark_order_rejected(position_id=position_id, leg="ENTRY", client_order_id=client_order_id,
                                                          message=f"entry not sent: {type(error).__name__}")

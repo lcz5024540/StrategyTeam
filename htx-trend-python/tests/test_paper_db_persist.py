@@ -68,6 +68,12 @@ def test_backfill_old_window_six_fills_three_closed_idempotent(tmp_path,paper_st
     for table in ('htx_trend_order', 'coin_strategy_ledger_event'):
         assert {r[0] for r in db.raw.execute(f'SELECT client_order_id FROM {table}')} == expected_ids
     assert json.dumps(state, sort_keys=True) == original
+    for saved in db.raw.execute('SELECT * FROM htx_trend_order'):
+        original_order = next(o for o in state['orders'].values() if o['client_order_id'] == saved['client_order_id'])
+        assert saved['order_px'] == original_order.get('order_px')
+        assert saved['order_px_source'] == original_order.get('order_px_source')
+        assert saved['cancel_count'] is None and saved['amend_count'] is None
+
     paper_id=db.raw.execute("SELECT id FROM htx_trade_account WHERE account_label='paper'").fetchone()[0]
     for table,count in [('htx_trend_order',6),('htx_trend_position',3),('coin_strategy_ledger_event',6)]:
         rows=list(db.raw.execute(f'SELECT * FROM {table}'))
@@ -164,6 +170,12 @@ def test_invalid_client_id_fails_before_any_write(tmp_path, paper_store, monkeyp
     with pytest.raises(ValueError, match=message):
         backfill_paper_state_to_mysql(state, repo)
     assert json.dumps(state, sort_keys=True) == original
+    for saved in db.raw.execute('SELECT * FROM htx_trend_order'):
+        original_order = next(o for o in state['orders'].values() if o['client_order_id'] == saved['client_order_id'])
+        assert saved['order_px'] == original_order.get('order_px')
+        assert saved['order_px_source'] == original_order.get('order_px_source')
+        assert saved['cancel_count'] is None and saved['amend_count'] is None
+
     assert list(db.raw.iterdump()) == before
 
 
@@ -223,3 +235,20 @@ def test_close_fill_net_includes_entry_fee_accumulated_before_close(tmp_path, pa
     nets = sum(D(e['net_pnl_after_fee']) for e in events)
     assert nets == D('.9916')
     assert D(db.raw.execute('SELECT final_net_profit FROM htx_trend_position').fetchone()[0]) == nets
+
+
+def test_new_paper_metadata_projects_once_without_history_rewrite(paper_store, tmp_path):
+    db, repo = paper_store
+    state = make_state(tmp_path, count=1)
+    order = next(iter(state['orders'].values()))
+    order.update(signal_px='98', signal_ts='2026-10-22T00:00:00+00:00', order_px='99',
+                 order_px_source='mid', order_ts='2026-10-22T00:00:01+00:00')
+    backfill_paper_state_to_mysql(json.dumps(state), repo)
+    query = 'SELECT * FROM htx_trend_order WHERE client_order_id=?'
+    saved = dict(db.raw.execute(query, (order['client_order_id'],)).fetchone())
+    assert saved['order_px'] == '99' and saved['order_px_source'] == 'mid'
+    assert saved['signal_px'] == '98' and saved['order_ts'] == '2026-10-22 00:00:01'
+    order.update(order_px='777', signal_px='888')
+    backfill_paper_state_to_mysql(json.dumps(state), repo)
+    again = dict(db.raw.execute(query, (order['client_order_id'],)).fetchone())
+    assert again['order_px'] == '99' and again['signal_px'] == '98'

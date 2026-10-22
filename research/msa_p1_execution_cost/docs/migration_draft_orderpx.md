@@ -1,6 +1,13 @@
 # 下单价字段迁移草案
 
-> 状态：未执行 | 日期：2026-10-22 | 口令：MS-A-P1-ORDERPX v1.1
+> **状态：脚本已合仓、生产未执行** | 日期：2026-10-22 | 口令：ORDERPX-PERSIST
+> **未执行；执行须另批装机口令 / DO NOT RUN ON PROD**
+
+可审脚本：
+- [MySQL](../../../htx-trend-python/sql/2026-10-22__orderpx_nullable_columns.sql)
+- [SQLite](../../../htx-trend-python/sql/2026-10-22__sqlite_orderpx_nullable_columns.sql)
+
+本状态表示脚本随本分支代码提交；不表示已 merge 或已部署。新写路径要求先有列，旧库不可直接上线新代码。
 
 这份草案给以后的执行账本补可空列。本次没有改交易库，没有跑下面的 SQL，也没有回写任何历史行。研究脚本继续只读现有导出；缺字段就标 `missing_<field>`。
 
@@ -16,7 +23,7 @@ MySQL 订单表 `htx_trend_order` 有 `request_volume`，没有委托价。SQLit
 
 非目标：
 
-- 不在本次执行迁移，不改 `htx-trend-python` 的写路径。
+- 不在本次执行迁移；仅编码新订单可空字段写路径，不改变任何策略决策。
 - 不把 `next_bar_open` 放进订单表。它是研究侧下一根 bar 的开盘价，分析时另接，缺失就标 `missing_next_bar_open`。
 - 不从信号价、成交价或 `average_price` 回填 `order_px`。
 - 撤单次数、改单次数不用 0 当默认值。未知必须是 NULL。
@@ -42,7 +49,7 @@ flowchart LR
   first --> full["full_fill_ts"]
 ```
 
-来源只允许三种：`limit` 用委托价；`mid` 用下单时盘口中间价；`last` 用下单时最新价。应用层还没改，所以这些列即使以后执行，在写路径接上之前也会一直是 NULL。
+来源只允许三种：`limit` 用委托价；`mid` 用下单时盘口中间价；`last` 用下单时最新价。应用层已编码新单写入；缺观测仍为 NULL。现有历史行不回填。
 
 ## 4. SQL 草案
 
@@ -99,7 +106,7 @@ ALTER TABLE htx_trend_order
     DROP COLUMN amend_count;
 ```
 
-SQLite 不支持直接删列。若将来真的加过这些列又要撤回，需要建新表再拷贝旧列，那一步也尚未设计成可执行脚本。
+SQLite 旧版本不支持直接删列。若将来真的加过这些列又要撤回，需要建新表再拷贝旧列，那一步也尚未设计成可执行脚本。
 
 ## 5. 风险
 
