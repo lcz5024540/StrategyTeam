@@ -108,3 +108,51 @@ def test_stale_or_invalid_fills_do_not_corrupt_projection(store):
     with pytest.raises(ValueError,match='stale'): apply(repo,filled_contracts=D(2))
     with pytest.raises(ValueError,match='positive average'): apply(repo,filled_contracts=D(5),average_price=None)
     assert D(db.raw.execute('SELECT remaining_contract_volume FROM htx_trend_position').fetchone()[0])==4
+
+
+def prepare_close(store):
+    db, repo = store
+    apply(repo, status='FILLED', filled_contracts=D(10))
+    db.raw.execute("INSERT INTO htx_trend_order(id,position_id,leg,client_order_id,request_volume,status,filled_contracts,fee) VALUES(2,1,'CLOSE','456',10,'ACCEPTED',0,0)")
+    db.commit()
+    return db, repo
+
+
+@pytest.mark.parametrize('leg', ['CLOSE', 'PARTIAL_CLOSE'])
+def test_live_close_split_cumulative_and_fee_only_corrections(store, leg):
+    db, repo = prepare_close(store)
+    db.raw.execute('UPDATE htx_trend_order SET leg=? WHERE id=2', (leg,)); db.commit()
+    args = dict(leg=leg, client_order_id='456', average_price=D(110))
+    apply(repo, **args, filled_contracts=D(4), fee=D('.01'), realized_profit=D('.4'))
+    final = dict(args, status='FILLED', filled_contracts=D(10), fee=D('.03'), realized_profit=D(1))
+    apply(repo, **final); apply(repo, **final)
+    rows = [dict(r) for r in db.raw.execute("SELECT * FROM coin_strategy_ledger_event WHERE client_order_id='456'")]
+    assert len(rows) == 6
+    assert {r['event_type'] for r in rows} == {'CLOSE_FILL', 'FEE', 'REALIZED_PNL'}
+    assert sum(D(r['net_pnl_after_fee']) for r in rows) == D('.97')
+    assert sum(D(r['filled_contracts'] or 0) for r in rows) == 10
+    assert all(D(r['fee_usdt']) == 0 and D(r['net_pnl_after_fee']) == 0 for r in rows if r['event_type']=='CLOSE_FILL')
+    apply(repo, **dict(final, fee=D('.04'), realized_profit=D('1.2')))
+    apply(repo, **dict(final, fee=D('.04'), realized_profit=D('1.2')))
+    assert sum(D(r[0]) for r in db.raw.execute("SELECT net_pnl_after_fee FROM coin_strategy_ledger_event WHERE client_order_id='456'")) == D('1.16')
+
+
+@pytest.mark.parametrize('failure_type', ['CLOSE_FILL', 'FEE', 'REALIZED_PNL'])
+def test_each_close_insert_failure_rolls_back_entire_snapshot(store, monkeypatch, failure_type):
+    db, repo = prepare_close(store)
+    original = repo.record_ledger_event
+    def record(event):
+        if event.event_type == failure_type:
+            raise RuntimeError('split insert failed')
+        original(event)
+    monkeypatch.setattr(repo, 'record_ledger_event', record)
+    args = dict(leg='CLOSE', client_order_id='456', status='FILLED', filled_contracts=D(10),
+                average_price=D(110), fee=D('.03'), realized_profit=D(1))
+    with pytest.raises(RuntimeError, match='split insert failed'):
+        apply(repo, **args)
+    assert db.raw.execute('SELECT status FROM htx_trend_order WHERE id=2').fetchone()[0] == 'ACCEPTED'
+    assert D(db.raw.execute('SELECT remaining_contract_volume FROM htx_trend_position').fetchone()[0]) == 10
+    assert db.raw.execute("SELECT count(*) FROM coin_strategy_ledger_event WHERE client_order_id='456'").fetchone()[0] == 0
+    monkeypatch.setattr(repo, 'record_ledger_event', original)
+    apply(repo, **args)
+    assert db.raw.execute("SELECT count(*) FROM coin_strategy_ledger_event WHERE client_order_id='456'").fetchone()[0] == 3

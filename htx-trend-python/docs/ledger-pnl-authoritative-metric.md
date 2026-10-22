@@ -94,3 +94,7 @@ leg 使用 ENTRY / CLOSE / PARTIAL_CLOSE；时间含时区；fee 是 USDT 成本
 - 所有类型逐账本事件：event_key、event_type、账户、策略、position_id/order_id、gross_pnl_usdt、fee_usdt、funding_fee_usdt、net_pnl_after_fee、occurred_at；保留独立 FEE、REALIZED_PNL、修正与资金费事件。
 - 完整资金流水、仓位分摊依据和覆盖起止时间；非 USDT 手续费需可审计的成交时换算依据。
 - 导出过滤条件、时区、快照时间和行数；无法关联的账本事件单列，不强行归仓；不导出凭据。
+
+## LIVE 平仓拆事件与残缺告警（LIVE-CLOSE）
+
+LIVE 重叠仓以拆事件记账：CLOSE_FILL（周转）+ FEE（平仓费）+ REALIZED_PNL（毛）。Python `order_accounting` 对新平仓按此写全；若 CLOSE 已 FILLED 仍缺三件套，日志告警码 `LIVE_CLOSE_LEDGER_INCOMPLETE`。离线补写仅 INSERT 缺事件、不改历史行；合入≠装机≠现网补写。禁止为对齐汇总差把 PAPER CLOSE_FILL 开仓费公式热更 LIVE。

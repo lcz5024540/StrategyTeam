@@ -6,6 +6,7 @@ from hashlib import sha256
 from typing import Any
 
 from .mysql_store import LedgerEvent
+from .live_close_ledger import split_close_events, detect_incomplete_close_ledger, emit_incomplete_close_alert
 
 ZERO = Decimal('0')
 PENDING = {'INTENT', 'ACCEPTED', 'PARTIALLY_FILLED', 'UNKNOWN'}
@@ -94,14 +95,27 @@ def apply_exchange_order(repo, *, account, instance, position_id: int, leg: str,
         if delta or fee_delta or delta_value or (pnl_delta is not None and pnl_delta != ZERO):
             key = sha256(f'{old["id"]}:{filled_contracts}:{resolved_average}:{resolved_fee}:{resolved_realized}'.encode()).hexdigest()
             size = number(position, 'contract_size')
-            repo.record_ledger_event(LedgerEvent(key, 'OPEN_FILL' if leg == 'ENTRY' else 'CLOSE_FILL', account,
+            event = LedgerEvent(key, 'OPEN_FILL' if leg == 'ENTRY' else 'CLOSE_FILL', account,
                 instance.strategy_family, instance.strategy_name, position['model_name'], position.get('run_id'),
                 position.get('factor_snapshot_id'), position['contract_code'], position_id, old['id'], client_order_id,
                 position['side'], 'exchange confirmed cumulative delta',
                 execution_price_usdt=delta_value / delta if delta else resolved_average,
                 entry_price_usdt=entry_price, close_price_usdt=close_price, filled_contracts=delta,
                 contract_size=size, amount_usdt=delta_value * size, fee_usdt=fee_delta,
-                gross_pnl_usdt=pnl_delta, net_pnl_after_fee=pnl_delta-fee_delta if pnl_delta is not None else None))
+                gross_pnl_usdt=pnl_delta, net_pnl_after_fee=pnl_delta-fee_delta if pnl_delta is not None else None)
+            if leg == 'ENTRY':
+                repo.record_ledger_event(event)
+            else:
+                # Include the previous cumulative facts: fee/PnL-only corrections
+                # at the same quantity must not collide with earlier projections.
+                transition = sha256(f'{previous}:{number(old, "average_price")}:{number(old, "fee")}:{old.get("realized_profit")}:{key}'.encode()).hexdigest()
+                for split in split_close_events(event, fee=fee_delta, pnl=pnl_delta,
+                                                suffix=f':{transition}'):
+                    repo.record_ledger_event(split)
+        events = repo._all('SELECT * FROM coin_strategy_ledger_event WHERE position_id=%s AND account_id=%s',
+                           (position_id, account.account_id))
+        for alert in detect_incomplete_close_ledger(orders, events):
+            emit_incomplete_close_alert(alert)
         if entered > ZERO:
             repo.mark_entry_cycle_active(position_id=position_id)
         if position_status == 'DONE':
