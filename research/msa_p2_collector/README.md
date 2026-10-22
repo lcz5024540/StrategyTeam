@@ -6,11 +6,9 @@
 
 ## 币池
 
-仓库里没有一份名为 ring-2 的 41 币冻结名单（该名单在仓库外的 `RESEARCH_RING2_DIR`）。默认币池读取已入库的三个月研究宇宙：
+默认币池是仓库内冻结的 ring-2 43 个 HTX USDT 永续合约（含 WIN-USDT），文件为 `contracts_ring2_43.json`。其中包含 BTC-USDT 与 ETH-USDT。`universe.yaml` 的 `contracts_file` 指向这份清单；加载时若缺少 BTC-USDT 或 ETH-USDT 会拒绝启动。替换 `contracts_file` 即可改币池。
 
-`htx-trend/research-config/20261004-three-month-research-universe-v1.json`
-
-该文件现有 52 个合约，其中包含 BTC-USDT 与 ETH-USDT。`universe.yaml` 的 `contracts_file` 可改成外部清单；加载时若缺少 BTC-USDT 或 ETH-USDT 会拒绝启动。产品口令里的「41 币 + BTC、ETH」用 43 个合约做存储规划，和这份 52 合约默认池分开写在下面。
+不再默认使用三个月研究宇宙的 52 个合约。
 
 ## 公开接口
 
@@ -42,12 +40,13 @@ _index/keys.txt
 
 字节来自 `estimate.canonical_record_bytes()` 的固定样例记录，不是线上实测。30 天，十进制 GB（10^9 字节）。强平按每合约每小时 1 条估计。盘口约 781 字节/张，1 分钟柱约 165 字节，成交编号索引约 31 字节/笔。
 
+默认口径是 ring-2 43 个合约（含 WIN），单合约逐笔 1 笔/秒，约 5.25 GB/月（表中 5.252 GB）。不再按 52 合约估算。
+
 | 合约数 | 单合约逐笔/秒 | 每月 |
 | --- | --- | --- |
-| 43（口令中的 41+BTC+ETH） | 0.2 | 2.488 GB |
-| 43 | 1 | 5.252 GB |
+| 43（默认 ring-2，含 WIN） | 0.2 | 2.488 GB |
+| 43（默认） | 1 | 5.252 GB |
 | 43 | 5 | 19.073 GB |
-| 52（当前默认研究宇宙） | 1 | 6.351 GB |
 
 主要体积是盘口 20 档和成交编号索引。若把逐笔原文也落盘，存储会按成交速率再升一档，默认不这么做。
 

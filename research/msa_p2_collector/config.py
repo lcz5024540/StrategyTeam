@@ -1,4 +1,4 @@
-"""研究币池。清单来自 yaml，默认读仓库内冻结研究宇宙。"""
+"""研究币池。清单来自 yaml，默认读仓库内冻结的 ring-2 43 合约。"""
 from __future__ import annotations
 
 import json

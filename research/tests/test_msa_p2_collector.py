@@ -18,14 +18,14 @@ from msa_p2_collector.__main__ import main
 
 REPO = Path(__file__).resolve().parents[2]
 PACKAGE = REPO / 'research/msa_p2_collector'
-UNIVERSE_JSON = REPO / 'htx-trend/research-config/20261004-three-month-research-universe-v1.json'
 
 
-def test_default_universe_matches_checked_in_research_contracts_and_anchors():
+def test_default_universe_is_ring2_43_and_includes_anchors():
     symbols = load_universe(PACKAGE / 'universe.yaml')
-    contracts = json.loads(UNIVERSE_JSON.read_text(encoding='utf-8'))['contracts']
-    assert list(symbols) == contracts
-    assert 'BTC-USDT' in symbols and 'ETH-USDT' in symbols
+    assert len(symbols) == 43
+    assert 'BTC-USDT' in symbols
+    assert 'ETH-USDT' in symbols
+    assert 'WIN-USDT' in symbols
     assert len(symbols) == len(set(symbols))
 
 
