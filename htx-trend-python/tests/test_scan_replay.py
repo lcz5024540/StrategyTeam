@@ -161,7 +161,12 @@ def test_position_alignment_checks_each_exit_leg_and_missing_evidence(report):
     assert a['entry_match'] and not a['exit_match']
     assert len(a['exit_leg_alignment']) == 2
     assert [x['quantity'] for x in a['replay']['exit_legs']] == [1, 1]
-    assert a['replay']['exit_legs'][0]['at_cst'].startswith('2026-10-21T05:00')
+    assert any(reason.startswith('EXIT_LEGS_MISMATCH') for reason in a['reasons'])
+    assert [(leg['at_cst'], leg['quantity'], leg['reason']) for leg in
+            json.loads(a['live']['exit_legs_json'])] == [
+        ('2026-10-21 09:00:21', 1, 'profit-at-risk-with-deteriorating-continuation'),
+        ('2026-10-21 09:15:54', 1, 'trend-weakened-protection-breach'),
+    ]
     t = deepcopy(a['replay'])
     t['exit_legs'] = json.loads(a['live']['exit_legs_json'])
     aligned, extras, missing = compare([a['live']], [t], report['bars'])
@@ -204,3 +209,40 @@ def test_book_uses_only_containing_bar_open_or_closed_fallback(now, mid):
         market.now = now
         half = D(mid) * spread / 2
         assert market.top_of_book('BTC-USDT') == TopOfBook(D(mid) - half, D(mid) + half)
+
+
+def test_complete_state_reference_and_honest_exit_boundaries(report):
+    evidence = json.loads((INPUTS / '_evidence_notes/exit_legs_from_state.json').read_text())
+    assert report['summary']['full_matches'] == 9
+    assert report['summary']['outside_coverage_count'] == 1
+    assert report['summary']['exit_mismatch_count'] == 2
+    for a in report['alignment']:
+        assert json.loads(a['live']['exit_legs_json']) == evidence[a['live']['position_key']]
+        assert a['live']['exit_reference_scope'] == 'LEGS_FROM_STATE_ORDERS_AND_EXIT_DECISION'
+        assert not any('EXIT_REFERENCE_INCOMPLETE' in r for r in a['reasons'])
+        assert a['match'] == (a['entry_match'] and a['exit_match'])
+    single = next(a for a in report['alignment'] if '20d87b03' in a['live']['position_key'])
+    assert single['exit_match'] is True and single['match'] is True
+    outside = next(a for a in report['alignment'] if '93cef710' in a['live']['position_key'])
+    assert outside['entry_match'] and not outside['match']
+    assert outside['replay']['exit_legs'] == []
+    assert outside['exit_outside_coverage']
+    assert any(r.startswith('EXIT_OUTSIDE_KLINE_COVERAGE') for r in outside['reasons'])
+    f56 = next(a for a in report['alignment'] if 'f56d3d17' in a['live']['position_key'])
+    assert not f56['exit_match'] and not f56['exit_outside_coverage']
+    assert any(r.startswith('EXIT_LEGS_MISMATCH') for r in f56['reasons'])
+
+
+def test_exit_buckets_and_coverage_do_not_hide_missing_legs(report):
+    from copy import deepcopy
+    a = next(a for a in report['alignment'] if '20d87b03' in a['live']['position_key'])
+    trade = deepcopy(a['replay'])
+    trade['exit_legs'] = json.loads(a['live']['exit_legs_json'])
+    trade['exit_legs'][0]['at_cst'] = '2026-10-20 04:29:59'
+    aligned, _, _ = compare([a['live']], [trade], report['bars'])
+    assert aligned[0]['match']  # Same 15m bucket, different seconds.
+    trade['exit_legs'] = []
+    aligned, _, _ = compare([a['live']], [trade], report['bars'],
+                           coverage_end={'ETH-USDT': epoch('2026-10-21 10:30:59')})
+    assert not aligned[0]['exit_outside_coverage']
+    assert any(r.startswith('EXIT_LEGS_MISMATCH') for r in aligned[0]['reasons'])

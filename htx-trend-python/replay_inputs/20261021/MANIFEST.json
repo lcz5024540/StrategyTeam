@@ -1,14 +1,15 @@
 {
   "sha256": {
     "klines.csv": "c9317a85fcca1b9fce1a88409f2356dd668cc22688a3d173797f1712a8aef923",
-    "trades_closed_window.csv": "f3f21b6eb2d203cc131bf9b5f8473a291a4bad76506537c22e8251dbdf438756"
+    "trades_closed_window.csv": "845643abcd4e8d9e153d823ae956f23f7c213684b906902dbd62641662337359"
   },
   "reference": {
     "positions": 12,
-    "source": "20261021 1501CST ops export: state_positions_ALL.json + state_ENTRY_ORDER_all.json; BTC legs: attribution report section 3",
-    "exit_legs": "BTC 02:15 two legs from attribution report; other positions retain aggregate references, not invented orders",
+    "source": "20261021 ops export: state positions, close orders + EXIT_DECISION reason; pre-generated _evidence_notes/exit_legs_from_state.json",
+    "exit_legs": "All 12 positions / 14 legs copied from pre-generated state evidence; BTC 02:15 attribution cross-validated by state. Prices informational; compare quantity, reason and 15m bucket.",
     "entry_window": "2026-10-19 21:35:46 through 2026-10-21 10:30:59 CST",
-    "export_closed_through": "2026-10-21 15:01 CST"
+    "export_closed_through": "2026-10-21 15:01 CST",
+    "outside_coverage": "ETH 93cef710 opened 2026-10-20 23:00:32, closed 2026-10-21 13:45:33 CST; replay ends 10:30:59, last 15m open 12:00 and last 60m open 11:00. No extrapolation or forced close."
   },
   "unavailable_assumptions": {
     "book": "盘口取证不可得 → 假设：scan_delay 时刻用形成中 15m bar 的 open 作 mid（优于上一根 close）；无形成中 bar 时回退上一根 close；spread=0",

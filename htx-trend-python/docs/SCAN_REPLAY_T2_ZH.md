@@ -1,4 +1,4 @@
-# T2 离线 runtime.scan 重放与 A+B 复核
+# T2 离线 runtime.scan 重放与 G3-EXIT 逐腿复核
 
 ## 运行与边界
 
@@ -31,13 +31,19 @@ PYTHONPATH=src /Users/jenniferni/jenifer/venv-research/bin/pytest -q
 
 每个position只占一个入场匹配名额；使用币种+入场15m桶定位，方向和主模型独立核验。JSON `trades[].exit_legs` 从实际 reduction fills 提取逐腿数量、时间、价格和退出原因。参考 `exit_legs_json` 给出已知腿；按次序比较每腿数量、退出15m桶和原因，缺腿、多腿均不通过。
 
-BTC 02:15参考两腿来自归因报告§3：09:00:21平1张 profit-at-risk，09:15:54平1张 trend-weakened。实际重放是05:00平1张 profit-at-risk、09:00再平1张 profit-at-risk，属于真实差异，不能因第一腿原因相同便标完整对齐。
+G3-EXIT：全部12仓14腿采用预生成 `replay_inputs/20261021/_evidence_notes/exit_legs_from_state.json`，来源为state close orders与EXIT_DECISION reason。CSV scope统一为 `LEGS_FROM_STATE_ORDERS_AND_EXIT_DECISION`，未臆造成交。BTC 02:15参考两腿与归因报告§3交叉验证：09:00:21平1张 profit-at-risk，09:15:54平1张 trend-weakened。实际重放是05:00平1张 profit-at-risk、09:00再平1张 profit-at-risk，属于真实差异，不能因第一腿原因相同便标完整对齐。
 
-其余position只有聚合参考，明确标 `EXIT_REFERENCE_INCOMPLETE`；不把聚合行伪装成逐腿订单。因此完整逐腿通过数为0；这不等于12笔入场全部错误。现有本地 BTC bundle 只含开仓订单/成交，并不含两笔退出订单 ID。
+已消除仅因参考腿缺失而产生的 `EXIT_REFERENCE_INCOMPLETE`。完整逐腿对齐 **9/12**：10个单腿仓中9个通过、ETH23:00窗外；另2个多腿仓仍不一致。因此未达到≥11/12，不能宣称出场闭合。
+
+- BTC02:15（36733c1f）：仍为 `EXIT_LEGS_MISMATCH`。缺入场及管理时刻真实bid/ask/mid、tick路径、实际评估时间。重放entry=82610，现网82633.5；重放04:45 ARM、05:00已非newly_armed，形成MFE/武装时序级联差异。OHLC不能唯一恢复真实盘口；未尝试按参考价或退出时刻干预决策，未回滚A。
+- ETH f56d3d17：仍为 `EXIT_LEGS_MISMATCH`。参考19:30:46减5张 `trend-weakened-protection-breach-partial`、19:45:32减2张 `trend-weakened-protection-breach`；重放19:30:30减3张 `profit-at-risk-with-deteriorating-continuation`、19:45:30减4张 `trend-weakened-protection-breach`。缺真实管理盘口mid/tick路径及实际评估时间，数量与原因无法由固定K线唯一恢复。
+- ETH23:00（93cef710）：参考13:45:33减1张 `model-or-initial-stop-invalidated`，重放无退出腿，标 `EXIT_OUTSIDE_KLINE_COVERAGE`。缺覆盖13:45的15m/60m行情，不外推、不强平。
+
+比较仍只按入场桶/方向/模型与逐腿quantity、reason、epoch//900；价格仅作证据展示，不纳入通过标准。行情和harness执行行为未改变，仅补参考与比较/报告边界。
 
 ## 当前验收结果
 
-入场 **12/12**，多发 **0**，漏发 **0**；ETH 23:00入场已匹配。同一输入两次独立运行的 `report.json`、`report.md` 逐字节一致。完整逐腿对齐仍为0，原因和证据缺口保留在B及报告中。全量 pytest：**458 passed**，含形成中bar边界、无形成中bar回退、spread保持及保证金拒绝回归。
+入场 **12/12**，多发 **0**，漏发 **0**；ETH 23:00入场已匹配。同一输入两次独立运行的 `report.json`、`report.md` 逐字节一致。完整逐腿对齐 **9/12**，窗内差异2仓、窗外1仓；原因和缺字段逐条记录于报告Markdown与JSON。scan_replay测试 **18 passed**；全量 pytest：**460 passed**，含形成中bar边界、无形成中bar回退、spread保持及保证金拒绝回归。
 
 默认重放至10-21 10:30:59。固定15m行情最后一根开盘12:00、60m最后11:00，无法延长到ETH 13:45退出而仍满足worker完整性/新鲜度检查；不外推行情、不强平。完整报告写入 output/report.md、report.json。
 
