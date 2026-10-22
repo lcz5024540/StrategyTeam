@@ -102,10 +102,23 @@ def main(argv=None):
     sub.add_argument('--B', type=int, default=2000)
     sub.add_argument('--ci-level', type=float, default=.90)
     sub.add_argument('--seed', type=int, default=20261022)
+    sub = subs.add_parser('calibrate-c2c5', help='sealed synthetic evidence; no admission')
+    sub.add_argument('--out-dir', required=True)
+    sub.add_argument('--tip-sha', default=os.environ.get('GIT_TIP_SHA', 'UNSPECIFIED'))
+    sub.add_argument('--master-seed', type=int, default=20261019)
+    sub.add_argument('--R', type=int, default=5000)
+    sub.add_argument('--c3-B', type=int, default=2000)
+    sub.add_argument('--c5-B', type=int, default=5000)
     args = parser.parse_args(argv)
     try:
         out = Path(args.out_dir)
-        if args.command == 'report':
+        if args.command == 'calibrate-c2c5':
+            from .calibration import calibrate_c2c5
+            result = calibrate_c2c5(out, tip_sha=args.tip_sha, master_seed=args.master_seed,
+                                   R=args.R, c3_B=args.c3_B, c5_B=args.c5_B)
+            print(json.dumps(result, sort_keys=True))
+            return 0 if result['all_pass'] else 1
+        elif args.command == 'report':
             from .report import write_report
             result = write_report(args.ledger, out, top_n=args.top_n, B=args.B,
                                   ci_level=args.ci_level, seed=args.seed)
