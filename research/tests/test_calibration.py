@@ -1,4 +1,4 @@
-"""Fixed-seed acceptance: 1000 experiments, test-only B=500, no seed search."""
+"""Fixed-seed acceptance: ≥5000 experiments, test-only B=500, no seed search."""
 import hashlib
 import numpy as np
 import pytest
@@ -13,7 +13,7 @@ def calibration(tmp_path_factory):
     path.write_text('{"split": {"test": "all synthetic replicates"}}')
     seal = dict(prereg_path=path, prereg_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
     rng = np.random.default_rng(20261019)
-    R, n, coins, rho = 1000, 1200, 4, .5
+    R, n, coins, rho = 5000, 1200, 4, .5
     # Shared volatility stays fixed for 10 days: squared returns cluster.
     # E(vol^2)=1; independent innovations imply zero return autocovariance.
     # Analytic cross-coin correlation=.5, portfolio variance=.625.
@@ -31,12 +31,12 @@ def calibration(tmp_path_factory):
         coverage += lo <= 0 <= hi
         shifted = run_g2(SealedDataset(x+effect, np.arange(n)).seal(**seal), **params)
         power += shifted['ci'][0] > 0
-    return dict(repetitions=R, false_positive=positives/R, power=power/R, coverage=coverage/R, effect=effect)
+    return dict(repetitions=R, master_seed=20261019, false_positive=positives/R, power=power/R, coverage=coverage/R, effect=effect)
 
 
 def test_nominal_5pct_one_sided_false_positive(calibration):
     print('CALIBRATION', calibration)
-    assert calibration['repetitions'] >= 1000
+    assert calibration['repetitions'] >= 5000
     assert .035 <= calibration['false_positive'] <= .065, calibration
 
 
