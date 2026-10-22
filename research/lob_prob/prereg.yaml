@@ -1,0 +1,34 @@
+# 订单簿方向概率预注册。运行口令是本文件原始字节的 SHA256。
+# 改任何一个字节都会改变哈希。分箱门槛低于 400 时，即使换了哈希也会被拒绝。
+
+tick_size: "0.1"
+k_ticks: [1, 2, 3]
+horizon_s: [5, 15, 30]
+start_rule: next_whole_second_after_signal
+
+prior:
+  name: queue_race
+  p_up: Qb/(Qb+Qa)
+
+imbalance_tilt:
+  optional: true
+  windows_min: [1, 5, 15]
+  target: contemporaneous_return_residual
+  link: logit_additive
+
+calibration:
+  min_bin_count: 400
+  lower_threshold: forbidden
+
+split:
+  method: time
+  train_fraction: "0.7"
+
+fees:
+  taker_bps: 12
+  maker_bps: measured
+
+fill_miss:
+  parameter: maker_miss_rate
+  value: measured
+  unfilled_pnl_bps: 0
