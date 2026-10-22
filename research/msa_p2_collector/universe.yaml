@@ -1,0 +1,5 @@
+schema: msa-p2-universe-v1
+# 默认币池是仓库内冻结的 ring-2 43 个 HTX USDT 永续（含 WIN-USDT）。
+# 必须包含 BTC-USDT 与 ETH-USDT。替换 contracts_file 即可改币池。
+contracts_file: contracts_ring2_43.json
+extra_contracts:

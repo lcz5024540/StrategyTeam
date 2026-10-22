@@ -1,0 +1,11 @@
+contract,side,phase,metric,n,median,p75,p90
+,LONG,CLOSE,fee_bps,3,4,4,4
+,LONG,OPEN,fee_bps,4,4,4,4
+BTC-USDT,LONG,CLOSE,fee_bps,2,4,4,4
+BTC-USDT,LONG,OPEN,fee_bps,2,4,4,4
+BTC-USDT,SHORT,CLOSE,fee_bps,3,4,4,4
+BTC-USDT,SHORT,OPEN,fee_bps,3,4,4,4
+ETH-USDT,LONG,CLOSE,fee_bps,1,4,4,4
+ETH-USDT,LONG,OPEN,fee_bps,1,4,4,4
+ETH-USDT,SHORT,CLOSE,fee_bps,5,4,4,4
+ETH-USDT,SHORT,OPEN,fee_bps,5,4,4,4
