@@ -22,11 +22,18 @@ synthetic, generated using the real PaperFileLedger and WorkerPaperExchange:
 is the LIVE schema equivalent of CLOSED. Unfilled/expired orders without a
 position are not trade facts and are omitted. Ambiguous/orphan fills fail closed.
 
-Only `paper:htx-trend-paper-primary` / `HTX_TREND_15M_V2` is accepted. The paper
-account is created idempotently and disabled for LIVE discovery. Existing enabled
-paper accounts are rejected rather than modified. All three mirror tables have
-paper account id/label; position/client keys use `paper-`. Existing identities
-owned by another account are rejected. The account lock serializes writers;
+Accepted identities are the allowlist pairs, not a single hardcoded primary.
+`strategy_name` and the ledger account string follow state `identity`:
+`HTX_TREND_15M_V2` + `paper:htx-trend-paper-primary`, and
+`HTX_TREND_4H_V2` + `paper:htx-trend-paper-4h`. Any other pair fails before
+writes. Module constants `STRATEGY` / `ACCOUNT` remain the 15m primary default
+for existing imports. The shared `account_label='paper'` row is created
+idempotently and disabled for LIVE discovery; its note records
+`paper:{instance}` for the inserting identity and is not rewritten later.
+Existing enabled paper accounts are rejected rather than modified. All three
+mirror tables have paper account id/label; position/client keys use `paper-`.
+Existing identities owned by another account or another allowed strategy name
+are rejected. The account lock serializes writers;
 transaction rollback includes intents, fills and final PnL. Existing schema
 unique keys are required. There is no runtime schema migration.
 
@@ -67,9 +74,11 @@ Missing mode defaults to LIVE; LIVE uses `account_label <> 'paper'`.
 Invalid modes return 400; POST/DELETE are not mapped (405). No trading dependency
 or write endpoint is added. Account identity is authoritative: `paper-*` client
 keys are returned unchanged as strings, not parsed as numeric exchange IDs.
-PAPER ledger strategy is `HTX_TREND_15M_V2`; LIVE retains `HTX_TREND_V1` and
-primary/TradeX account compatibility. A paper row bearing the old LIVE strategy
-name still cannot enter a LIVE report.
+PAPER mirror `strategy_name` follows identity (`HTX_TREND_15M_V2` or
+`HTX_TREND_4H_V2`). LIVE retains `HTX_TREND_V1` and primary/TradeX account
+compatibility. A paper row bearing the old LIVE strategy name still cannot
+enter a LIVE report. Reports that read `account_label='paper'` must also filter
+`strategy_name` when 15m and 4h rows share that account.
 
 PAPER fees reside on OPEN_FILL/CLOSE_FILL events. Its ledger net sums gross minus
 all fill fees, including entry fees; LIVE retains the existing FEE-event basis.

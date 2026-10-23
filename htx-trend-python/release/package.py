@@ -17,11 +17,17 @@ import tarfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 from htx_trend.admission import canonical
-from htx_trend.release_artifacts import load_artifacts
+from htx_trend.release_artifacts import load_artifacts, validate_schema
 from htx_trend.strategy_profiles import profile_strategy
 from htx_trend.timeframes import TimeframeProfile
 
 DISCLAIMER = '候选包 ≠ 可以热更 ≠ 可装现网'
+# paper=True 时按 strategy card 选择实例。15m 路径保持 primary，不得改成 4h。
+PAPER_INSTANCE_BY_STRATEGY = {
+    'HTX_TREND_15M_V2': 'htx-trend-paper-primary',
+    'HTX_TREND_4H_V2': 'htx-trend-paper-4h',
+}
+PAPER_4H_CARD = ROOT / 'release/artifacts/strategy_card.paper-4h.example.json'
 
 
 def encoded(value):
@@ -42,13 +48,44 @@ def git(*args):
     return subprocess.check_output(['git', '-C', str(ROOT), *args], text=True).strip()
 
 
-def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False):
+def paper_instance_key(strategy_version):
+    """PAPER 示例实例：15M→primary，4H→htx-trend-paper-4h。"""
+    try:
+        return PAPER_INSTANCE_BY_STRATEGY[strategy_version]
+    except KeyError as exc:
+        raise ValueError(f'paper package has no instance for {strategy_version}') from exc
+
+
+def load_strategy_card(path: Path):
+    """读取并校验一张 strategy card，供 4h PAPER 示例替换默认 15m card。"""
+    raw = path.read_bytes()
+    value = json.loads(raw)
+    schema = json.loads((ROOT / 'release/artifacts/strategy_card.schema.json').read_bytes())
+    validate_schema(value, schema)
+    return value, {
+        'id': value['id'], 'version': value['version'],
+        'path': path.relative_to(ROOT).as_posix(), 'sha256': digest(raw),
+        'schema_path': 'release/artifacts/strategy_card.schema.json',
+    }
+
+
+def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False):
+    # paper_4h 仍是 PAPER 候选包，只切换 card / instance，不改 15m paper=True 默认。
+    if paper_4h:
+        paper = True
     source = git('rev-parse', 'HEAD')
     short = git('rev-parse', '--short=8', 'HEAD')
     if not re.fullmatch('[0-9a-f]{8}', short):
         raise ValueError('expected exactly eight hex characters')
     version = f'0.1.6-paper-db-{short}' if paper else f'0.1.2-g3-candidate-{short}'
     card, refs = load_artifacts(ROOT / 'release/artifacts')
+    if paper_4h:
+        card, card_ref = load_strategy_card(PAPER_4H_CARD)
+        feature_keys = refs['feature_dict']['feature_keys']
+        experiment_ids = refs['experiment_ledger']['experiment_ids']
+        if not set(card['feature_keys']) <= set(feature_keys) or not set(card['experiment_ids']) <= set(experiment_ids):
+            raise ValueError('strategy card references unknown features/experiments')
+        refs = {**refs, 'strategy_card': card_ref}
     spec = profile_strategy(TimeframeProfile(card['timeframe_profile']), read_env=False)
     if spec.strategy.version != card['strategy_version']:
         raise ValueError('card strategy/profile mismatch')
@@ -65,8 +102,10 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False):
     config = {'synthetic': True, 'candidate': True, 'mode': 'PAPER' if paper else 'OBSERVE',
               'strategy_version': card['strategy_version'], 'timeframe_profile': card['timeframe_profile'],
               'note': 'Packaging example only; not a runtime configuration or account binding'}
+    instance_key = None
     if paper:
-        config.update(instance_key='htx-trend-paper-primary', max_active_positions=5,
+        instance_key = paper_instance_key(card['strategy_version'])
+        config.update(instance_key=instance_key, max_active_positions=5,
                       account_equity_usdt='300', max_total_margin_rate='0.10',
                       contracts=['BTC-USDT', 'ETH-USDT'])
     payload['release/config.example.json'] = encoded(config)
@@ -75,6 +114,8 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False):
                 'strategy_version': card['strategy_version'], 'timeframe_profile': card['timeframe_profile'],
                 'strategy_spec_hash': spec.spec_hash,
                 'package_sha256': {'ref': 'BUILD.json#/package_sha256', 'scope': 'final tar.gz bytes'}}
+    if instance_key is not None:
+        bindings['instance_key'] = instance_key
     manifest = {'schema': 'htx-candidate-package-g3', 'candidate': True, 'synthetic': True,
                 'disclaimer': DISCLAIMER, 'version': version, 'source_commit': source,
                 'build': {'created_at': datetime.now(UTC).isoformat(),
@@ -178,13 +219,15 @@ def main():
     builder = commands.add_parser('build')
     builder.add_argument('--out-root', type=Path, default=Path('/tmp/g3-codex/frozen'))
     builder.add_argument('--paper', action='store_true')
+    builder.add_argument('--paper-4h', action='store_true',
+                         help='PAPER 示例绑定 HTX_TREND_4H_V2 / htx-trend-paper-4h')
     commands.add_parser('verify').add_argument('archive', type=Path)
     template = commands.add_parser('approval-template')
     template.add_argument('archive', type=Path)
     template.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.command == 'build':
-        print(build(args.out_root, paper=args.paper))
+        print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h))
     elif args.command == 'verify':
         print(json.dumps({'status': 'PASS', **verify(args.archive)}, ensure_ascii=False))
     else:

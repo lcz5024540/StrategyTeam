@@ -10,16 +10,19 @@ from pathlib import Path
 from .mysql_store import (HtxTrendMySqlRepository, LedgerEvent, MySqlSettings,
                           PositionIntent, TradeAccount, TrendOrderIntent, connect)
 
+# 模块常量保留为 15m primary 默认，兼容既有测试 import。回填不得只认这两常量。
 STRATEGY = 'HTX_TREND_15M_V2'
 ACCOUNT = 'paper:htx-trend-paper-primary'
+# 允许镜像的 (strategy, instance)。ACCOUNT 形如 paper:{instance}。共享 account_label='paper'。
+ALLOWED_PAPER_IDENTITIES = {
+    ('HTX_TREND_15M_V2', 'htx-trend-paper-primary'),
+    ('HTX_TREND_4H_V2', 'htx-trend-paper-4h'),
+}
 FEE_RATE = D('.0004')
 CLIENT_ORDER_ID_MAX_LEN = 128
 LIVE_POSITION_SUMMARY_SQL = """SELECT COUNT(*) AS position_count,
  SUM(final_net_profit) AS net_profit FROM htx_trend_position
  WHERE account_label <> 'paper'"""
-PAPER_ACCOUNT_SQL = """INSERT IGNORE INTO htx_trade_account
- (account_label,account_role,enabled,trend_enabled,mirror_enabled,sync_leverage,note)
- VALUES ('paper','PAPER',0,0,0,0,'paper:htx-trend-paper-primary; simulated only')"""
 
 
 def _validate_client_order_id(client_order_id):
@@ -30,8 +33,22 @@ def _validate_client_order_id(client_order_id):
                          f'{CLIENT_ORDER_ID_MAX_LEN}')
 
 
-def ensure_paper_account(repo):
-    repo._write(PAPER_ACCOUNT_SQL, ())
+def resolve_paper_identity(identity):
+    """从 state identity 解析 strategy 与 paper:{instance}。非法组合在写库前拒绝。"""
+    if not isinstance(identity, dict):
+        raise ValueError('unsupported paper state identity')
+    strategy, instance = identity.get('strategy'), identity.get('instance')
+    if (strategy, instance) not in ALLOWED_PAPER_IDENTITIES:
+        raise ValueError('unsupported paper state identity')
+    return strategy, instance, 'paper:' + instance
+
+
+def ensure_paper_account(repo, instance='htx-trend-paper-primary'):
+    # 共享 account_label='paper' 行。note 按本次 instance 写入；INSERT IGNORE 不改已有行。
+    note = f'paper:{instance}; simulated only'
+    repo._write("""INSERT IGNORE INTO htx_trade_account
+ (account_label,account_role,enabled,trend_enabled,mirror_enabled,sync_leverage,note)
+ VALUES ('paper','PAPER',0,0,0,0,%s)""", (note,))
     row = repo._one("SELECT * FROM htx_trade_account WHERE account_label='paper' FOR UPDATE", ())
     if row is None or row['account_role'] not in {'PAPER', 'FOLLOWER'} or any(
             int(row.get(k) or 0) for k in ('enabled', 'trend_enabled', 'mirror_enabled')):
@@ -56,8 +73,7 @@ def backfill_paper_state_to_mysql(state_json, repo):
         state = json.loads(state_json) if state_json.lstrip().startswith('{') else json.loads(Path(state_json).read_text())
     else:
         state = state_json
-    if state['identity']['instance'] != ACCOUNT.split(':', 1)[1] or state['identity']['strategy'] != STRATEGY:
-        raise ValueError('unsupported paper state identity')
+    strategy, instance, account = resolve_paper_identity(state.get('identity'))
     orders, positions = state['orders'], state['positions']
     # Preflight before any writes; preserve authoritative IDs without truncation.
     for order in orders.values():
@@ -68,17 +84,17 @@ def backfill_paper_state_to_mysql(state_json, repo):
         if fill['fill_id'] in seen:
             raise ValueError('duplicate fill id in authoritative state')
         seen.add(fill['fill_id'])
-        if fill['account_id'] != ACCOUNT or orders[fill['order_id']]['account_id'] != ACCOUNT:
+        if fill['account_id'] != account or orders[fill['order_id']]['account_id'] != account:
             raise ValueError('non-paper fill/account')
         fills_by_order.setdefault(fill['order_id'], []).append(fill)
     # Resolve entry orders by the actual runtime's account/contract/side/run link.
     groups = []
     consumed = set()
     for key, position in positions.items():
-        if position['account_id'] != ACCOUNT:
+        if position['account_id'] != account:
             raise ValueError('non-paper position')
         linked = [(oid, o) for oid, o in orders.items() if o.get('position_id') == key or (
-            o.get('position_id') is None and o['account_id'] == ACCOUNT and
+            o.get('position_id') is None and o['account_id'] == account and
             o['contract_code'] == position['contract_code'] and o['position_side'] == position['side'] and
             o.get('strategy_run_id') == position['strategy_run_id'] and oid in fills_by_order)]
         entries = [(oid, o) for oid, o in linked if o.get('position_id') is None]
@@ -95,7 +111,7 @@ def backfill_paper_state_to_mysql(state_json, repo):
     repo._in_transaction = True
     added = 0
     try:
-        account = ensure_paper_account(repo)
+        trade_account = ensure_paper_account(repo, instance)
         for key, p, linked in groups:
             context = state['contexts'][key]
             size = D(str(context['contract_size']))
@@ -106,12 +122,12 @@ def backfill_paper_state_to_mysql(state_json, repo):
             entry = sum(D(str(f['price'])) * D(str(f['quantity'])) for f in entry_fills) / entered
             pk, model, run = _key(key), context['model'], p['strategy_run_id']
             existing = repo._one('SELECT * FROM htx_trend_position WHERE position_key=%s', (pk,))
-            if existing and (int(existing['account_id']) != account.account_id or existing['account_label'] != 'paper' or existing['strategy_name'] != STRATEGY):
+            if existing and (int(existing['account_id']) != trade_account.account_id or existing['account_label'] != 'paper' or existing['strategy_name'] != strategy):
                 raise ValueError('position key belongs to another writer')
             pid = repo.record_position_intent(PositionIntent(pk, run, p['contract_code'], p['side'], size,
-                int(entered), 10, account, model, None, 'PAPER', 'simulated fill',
+                int(entered), 10, trade_account, model, None, 'PAPER', 'simulated fill',
                 D(str(context['initial_stop'])) if context.get('initial_stop') else None,
-                None, None, None, strategy_name=STRATEGY))
+                None, None, None, strategy_name=strategy))
             closed = entry_fee = close_fee = gross = close_value = D(0)
             changed = existing is None
             for oid, order in linked:
@@ -119,15 +135,15 @@ def backfill_paper_state_to_mysql(state_json, repo):
                 if not fs:
                     continue
                 client = order['client_order_id']
-                if not client.startswith('paper-') or order['account_id'] != ACCOUNT:
+                if not client.startswith('paper-') or order['account_id'] != account:
                     raise ValueError('non-paper order')
                 leg = 'ENTRY' if order.get('position_id') is None else 'CLOSE'
                 old = repo._one('SELECT * FROM htx_trend_order WHERE client_order_id=%s', (client,))
-                if old and (int(old['account_id']) != account.account_id or old['account_label'] != 'paper' or int(old['position_id']) != pid):
+                if old and (int(old['account_id']) != trade_account.account_id or old['account_label'] != 'paper' or int(old['position_id']) != pid):
                     raise ValueError('order key belongs to another writer')
                 order_id = repo.record_order_intent(TrendOrderIntent(pid, pk, order['strategy_run_id'], p['contract_code'],
                     leg, p['side'], order['side'], p['side'], leg != 'ENTRY', client, order['quantity'],
-                    account, model, None, 'PAPER simulated', strategy_name=STRATEGY,
+                    trade_account, model, None, 'PAPER simulated', strategy_name=strategy,
                     signal_px=order.get('signal_px'), signal_ts=order.get('signal_ts'),
                     order_px=order.get('order_px'), order_px_source=order.get('order_px_source'),
                     order_ts=order.get('order_ts'), cancel_count=order.get('cancel_count'),
@@ -142,11 +158,12 @@ def backfill_paper_state_to_mysql(state_json, repo):
                     cost = amount * FEE_RATE
                     pnl = (price-entry) * q * size * (1 if p['side'] == 'LONG' else -1) if leg != 'ENTRY' else D(0)
                     quantity += q; value += q * price; fee += cost; profit += pnl
-                    event_key = 'paper-' + sha256(f'{ACCOUNT}:{f["fill_id"]}'.encode()).hexdigest()
+                    # 哈希纳入 paper:{instance}，避免不同 PAPER 实例的 fill_id 撞键。
+                    event_key = 'paper-' + sha256(f'{account}:{f["fill_id"]}'.encode()).hexdigest()
                     if repo._one('SELECT event_key FROM coin_strategy_ledger_event WHERE event_key=%s', (event_key,)):
                         continue
                     repo.record_ledger_event(LedgerEvent(event_key, 'OPEN_FILL' if leg == 'ENTRY' else 'CLOSE_FILL',
-                        account, 'TREND', STRATEGY, model, run, None, p['contract_code'], pid, order_id, client,
+                        trade_account, 'TREND', strategy, model, run, None, p['contract_code'], pid, order_id, client,
                         p['side'], 'PAPER_SIMULATED', execution_price_usdt=price, entry_price_usdt=entry,
                         close_price_usdt=price if leg != 'ENTRY' else None, filled_contracts=q, contract_size=size,
                         amount_usdt=amount, fee_usdt=cost, gross_pnl_usdt=pnl if leg != 'ENTRY' else None,

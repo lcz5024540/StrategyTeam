@@ -29,16 +29,20 @@ def paper_store(store):
     db.commit()
     return db, repo
 
-def make_state(tmp_path, count=3, client_id_length=None):
-    ledger = PaperFileLedger(tmp_path/'paper.json', {'instance': ACCOUNT.split(':')[1], 'strategy': STRATEGY}, mirror=lambda _: None)
+def make_state(tmp_path, count=3, client_id_length=None, *, instance=None, strategy=None):
+    # 默认仍是 15m primary；4h 用例显式传入 identity，账本 account 为 paper:{instance}。
+    instance = ACCOUNT.split(':')[1] if instance is None else instance
+    strategy = STRATEGY if strategy is None else strategy
+    account = 'paper:' + instance
+    ledger = PaperFileLedger(tmp_path/'paper.json', {'instance': instance, 'strategy': strategy}, mirror=lambda _: None)
     exchange = WorkerPaperExchange(ledger)
     exchange.contract_size = D('.01')
     when = datetime(2026,10,1,tzinfo=UTC)
     for i in range(count):
         run, side = f'paper-run-{i}', 'LONG' if i%2 == 0 else 'SHORT'
-        request = PaperOrder(ACCOUNT,'BTC-USDT',side,'BUY' if side=='LONG' else 'SELL',10,'MARKET',when,f'paper-entry-{i}',strategy_run_id=run)
+        request = PaperOrder(account,'BTC-USDT',side,'BUY' if side=='LONG' else 'SELL',10,'MARKET',when,f'paper-entry-{i}',strategy_run_id=run)
         exchange.submit(request,Candle(1,D(100),D(100),D(100),D(100)))
-        p = exchange.open_position(ACCOUNT,'BTC-USDT',side,10,D(100),when,run)
+        p = exchange.open_position(account,'BTC-USDT',side,10,D(100),when,run)
         ledger.save_position_context(p.position_id,{'contract_size':'.01','model':'DONCHIAN_BREAKOUT'})
         exchange.reduce_position(p,quantity=10,exit_price=D(110) if side=='LONG' else D(90),contract_size=D('.01'),when=when,run_id=f'paper-close-{i}')
     ledger.checkpoint()
@@ -132,6 +136,39 @@ def test_no_config_never_connects(monkeypatch):
     monkeypatch.delenv('HTX_PAPER_DB_HOST',raising=False)
     monkeypatch.setattr(module,'connect',lambda *_: pytest.fail('unexpected network'))
     module.mirror_checkpoint({})
+
+def test_4h_paper_identity_mirrors_strategy_name_and_instance(tmp_path, paper_store):
+    """4h PAPER 状态按 identity 入库，strategy_name 不得仍写成 15m。"""
+    db, repo = paper_store
+    state = make_state(tmp_path, 1, instance='htx-trend-paper-4h', strategy='HTX_TREND_4H_V2')
+    assert state['identity'] == {'instance': 'htx-trend-paper-4h', 'strategy': 'HTX_TREND_4H_V2'}
+    assert all(fill['account_id'] == 'paper:htx-trend-paper-4h' for fill in state['fills'])
+    assert backfill_paper_state_to_mysql(state, repo)['fills_added'] == 2
+    for table in ('htx_trend_position', 'htx_trend_order', 'coin_strategy_ledger_event'):
+        rows = list(db.raw.execute(f'SELECT * FROM {table}'))
+        assert rows
+        assert all(row['strategy_name'] == 'HTX_TREND_4H_V2' and row['account_label'] == 'paper' for row in rows)
+    note = db.raw.execute("SELECT note FROM htx_trade_account WHERE account_label='paper'").fetchone()[0]
+    assert note == 'paper:htx-trend-paper-4h; simulated only'
+    assert backfill_paper_state_to_mysql(state, repo)['fills_added'] == 0
+
+
+@pytest.mark.parametrize('instance,strategy', [
+    ('htx-trend-paper-4h', 'HTX_TREND_15M_V2'),
+    ('htx-trend-paper-primary', 'HTX_TREND_4H_V2'),
+    ('htx-trend-paper-other', 'HTX_TREND_4H_V2'),
+    ('htx-trend-paper-4h', 'HTX_TREND_V1'),
+])
+def test_reject_disallowed_identity_before_write(tmp_path, paper_store, monkeypatch, instance, strategy):
+    """允许集合之外的 strategy/instance 组合必须在任何写库之前失败。"""
+    db, repo = paper_store
+    state = make_state(tmp_path, 1, instance=instance, strategy=strategy)
+    before = list(db.raw.iterdump())
+    monkeypatch.setattr(repo, '_write', lambda *a, **k: pytest.fail('write before identity check'))
+    with pytest.raises(ValueError, match='unsupported paper state identity'):
+        backfill_paper_state_to_mysql(state, repo)
+    assert list(db.raw.iterdump()) == before
+
 
 def test_reject_live_identity_before_write(tmp_path,paper_store):
     db,repo=paper_store
