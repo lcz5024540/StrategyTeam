@@ -1,0 +1,18 @@
+{
+  "id": "SYNTHETIC-strategy_card-paper-4h",
+  "version": "1",
+  "synthetic": true,
+  "candidate": true,
+  "strategy_version": "HTX_TREND_4H_V2",
+  "timeframe_profile": "SWING_4H",
+  "hypothesis": "SYNTHETIC PAPER-4H packaging example; default JavaEntryConfig, not LIVE R0 4hour env",
+  "limitations": [
+    "No performance evidence; no LIVE authority; not installed"
+  ],
+  "feature_keys": [
+    "close_slope_20"
+  ],
+  "experiment_ids": [
+    "SYNTHETIC-G3-001"
+  ]
+}

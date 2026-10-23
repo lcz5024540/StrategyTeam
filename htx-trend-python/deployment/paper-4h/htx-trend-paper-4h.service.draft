@@ -1,0 +1,21 @@
+# 草稿：未装机。禁止 systemctl enable/start，禁止覆盖 htx-trend-paper-primary 或 LIVE。
+# 建议 unit 名：htx-trend-paper-4h.service
+# 参数走策略卡 HTX_TREND_4H_V2 / SWING_4H 的 JavaEntryConfig 默认
+# （Donchian lookback=20、ATR=14）。禁止照搬现网 LIVE R0 的 4hour env。
+# 本文件不会被打包进候选 tar，也不会在本任务中安装。
+
+[Unit]
+Description=HTX trend PAPER 4h worker (DRAFT, not installed)
+After=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/coinstrategy/htx-trend-paper-4h
+EnvironmentFile=/opt/coinstrategy/htx-trend-paper-4h/htx-python-paper.env
+ExecStart=/opt/coinstrategy/htx-trend-paper-4h/.venv/bin/python -m htx_trend.worker --strategy-instance htx-trend-paper-4h --interval-seconds 45
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

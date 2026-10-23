@@ -1,0 +1,19 @@
+-- 草稿：未装机、禁止在现网执行。
+-- 仅允许将来在装机口令下纯 INSERT 新行。禁止 UPDATE / DELETE 15m PAPER 或 LIVE 行。
+-- config_fingerprint 必须换成 4h 候选包的真实指纹，不要填 LIVE R0 指纹。
+-- 本文件不是迁移脚本，扩展名 .draft 表示不可直接当 SQL 跑。
+
+INSERT INTO strategy_runtime_instance (
+  instance_key, strategy_family, strategy_name, account_id, account_label,
+  execution_mode, enabled, deployment_unit, config_fingerprint
+) VALUES (
+  'htx-trend-paper-4h',
+  'TREND',
+  'HTX_TREND_4H_V2',
+  NULL,
+  NULL,
+  'PAPER',
+  1,
+  'htx-trend-paper-4h.service',
+  '<4h-candidate-fingerprint>'
+);

@@ -110,11 +110,44 @@ def test_receipt_tamper_rejected(archive):
         package.approval_template(archive)
 
 
+def _paper_config_and_bindings(archive):
+    with tarfile.open(archive) as tar:
+        config = json.load(tar.extractfile('release/config.example.json'))
+        manifest = json.load(tar.extractfile('MANIFEST.json'))
+    return config, manifest['bindings']
+
+
 def test_paper_db_candidate_version_and_template(tmp_path):
     import re
     archive = package.build(tmp_path / 'paper-frozen', paper=True)
     receipt = package.verify(archive)
     assert re.fullmatch(r'0\.1\.6-paper-db-[0-9a-f]{8}', receipt['version'])
     assert package.approval_template(archive)['label'] == 'SYNTHETIC'
+    config, bindings = _paper_config_and_bindings(archive)
+    # 15m paper 路径保持 primary，且 instance 进入 MANIFEST bindings。
+    assert config['mode'] == 'PAPER'
+    assert config['strategy_version'] == 'HTX_TREND_15M_V2'
+    assert config['timeframe_profile'] == 'INTRADAY_15M'
+    assert config['instance_key'] == 'htx-trend-paper-primary'
+    assert bindings['instance_key'] == 'htx-trend-paper-primary'
+    assert bindings['strategy_version'] == 'HTX_TREND_15M_V2'
+    assert receipt['bindings']['instance_key'] == 'htx-trend-paper-primary'
     with tarfile.open(archive) as tar:
         assert 'src/htx_trend/paper_db_persist.py' in tar.getnames()
+
+
+def test_paper_4h_config_binds_swing_instance(tmp_path):
+    """打包绑定 HTX_TREND_4H_V2 / SWING_4H 时，示例实例必须是 htx-trend-paper-4h。"""
+    archive = package.build(tmp_path / 'paper-4h-frozen', paper_4h=True)
+    receipt = package.verify(archive)
+    config, bindings = _paper_config_and_bindings(archive)
+    assert config['mode'] == 'PAPER'
+    assert config['synthetic'] is True
+    assert config['strategy_version'] == 'HTX_TREND_4H_V2'
+    assert config['timeframe_profile'] == 'SWING_4H'
+    assert config['instance_key'] == 'htx-trend-paper-4h'
+    assert bindings['strategy_version'] == 'HTX_TREND_4H_V2'
+    assert bindings['timeframe_profile'] == 'SWING_4H'
+    assert bindings['instance_key'] == 'htx-trend-paper-4h'
+    assert receipt['bindings']['instance_key'] == 'htx-trend-paper-4h'
+    assert receipt['bindings']['strategy_version'] == 'HTX_TREND_4H_V2'
