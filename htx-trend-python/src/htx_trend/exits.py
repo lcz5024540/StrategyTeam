@@ -86,6 +86,11 @@ class ExitInput:
     funding_rate_exit_reason: str | None = None
     observed_mfe_net_pnl: Decimal | None = None
     assessed_state: HoldingState | None = None
+    # MAINLINE-A A2 timeout and A1' minimum hold (bars, 15m baseline).
+    # timeout_bars=None/0 disables A2; min_hold_bars=None/0 disables A1'.
+    bars_held: int = 0
+    timeout_bars: int | None = None
+    min_hold_bars: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,8 +156,20 @@ def decide_v4(input_: ExitInput) -> ExitDecision:
     if invalidated or current_state is HoldingState.INVALIDATED:
         return _decision(input_, ExitPhase.INVALIDATED, ExitAction.FULL_CLOSE, 0, protection, max_r, armed_at, arm_reason,
                          "model-or-initial-stop-invalidated", current_state, favorable, adverse, mfe_net)
+    # MAINLINE-A A2: maximum holding duration.  Checked after hard stop so the
+    # initial/model stop is never delayed.  Fires only when no profit-protection
+    # / continuation milestone has armed (trailing_armed_at is None).
+    if input_.timeout_bars and input_.bars_held >= input_.timeout_bars and armed_at is None:
+        return _decision(input_, ExitPhase.THESIS_EXPIRED, ExitAction.FULL_CLOSE, 0, protection, max_r, armed_at, arm_reason,
+                         "a2-thesis-timeout", current_state, favorable, adverse, mfe_net)
+    # MAINLINE-A A1': optional minimum-hold sensitivity.  When active it delays
+    # only weak/non-hard exits; hard stop and A2 timeout above remain effective.
+    min_hold_active = input_.min_hold_bars is not None and input_.min_hold_bars > 0 and input_.bars_held < input_.min_hold_bars
     independent_failure = _opposite(input_) or _ema_against(input_) or input_.major_timeframe_opposition > 0 or input_.market_context_opposes
     if armed_at is None and input_.signal_side is TrendSide.FLAT and input_.flat_streak >= input_.required_flat_streak and input_.current_net_pnl < ZERO and input_.flat_loss_budget > ZERO and -input_.current_net_pnl >= input_.flat_loss_budget and independent_failure:
+        if min_hold_active:
+            return _decision(input_, ExitPhase.THESIS_INTACT, ExitAction.HOLD, None, protection, max_r, armed_at, arm_reason,
+                             "min-hold-suppressed:unarmed-flat-loss-budget", current_state, favorable, adverse, mfe_net)
         return _decision(input_, ExitPhase.THESIS_EXPIRED, ExitAction.FULL_CLOSE, 0, protection, max_r, None, None,
                          "unarmed-flat-loss-budget-with-independent-failure", current_state, favorable, adverse, mfe_net)
 
@@ -166,28 +183,47 @@ def decide_v4(input_: ExitInput) -> ExitDecision:
     confirmed_breach = armed_at is not None and not newly_armed and input_.protection_breach_bars >= policy.protection_breach_confirmation_bars
 
     if input_.funding_rate_exit_reason and not reference_breach:
+        if min_hold_active:
+            return _decision(input_, ExitPhase.THESIS_INTACT, ExitAction.HOLD, None, protection, max_r, armed_at, arm_reason,
+                             f"min-hold-suppressed:funding-rate-exit:{input_.funding_rate_exit_reason}", current_state, favorable, adverse, mfe_net)
         return _decision(input_, ExitPhase.FUNDING_RATE, ExitAction.FULL_CLOSE, 0, protection, max_r, armed_at, arm_reason,
                          f"funding-rate-exit: {input_.funding_rate_exit_reason}", current_state, favorable, adverse, mfe_net)
     if reference_breach and current_state is HoldingState.WEAKENING:
         if profitable and expected_reward > protected_risk:
             remaining = _target_remaining(input_.remaining_contracts, expected_reward, protected_risk, adverse, favorable)
             if remaining > 0:
+                if min_hold_active:
+                    return _decision(input_, ExitPhase.THESIS_INTACT, ExitAction.HOLD, None, protection, max_r, armed_at, arm_reason,
+                                     "min-hold-suppressed:trend-weakened-protection-breach-partial", current_state, favorable, adverse, mfe_net)
                 return _decision(input_, ExitPhase.PROFIT_AT_RISK, ExitAction.PARTIAL_CLOSE, remaining, protection, max_r, armed_at, arm_reason,
                                  "trend-weakened-protection-breach-partial", current_state, favorable, adverse, mfe_net)
+        if min_hold_active:
+            return _decision(input_, ExitPhase.THESIS_INTACT, ExitAction.HOLD, None, protection, max_r, armed_at, arm_reason,
+                             "min-hold-suppressed:trend-weakened-protection-breach", current_state, favorable, adverse, mfe_net)
         return _decision(input_, ExitPhase.REVERSAL_CONFIRMED, ExitAction.FULL_CLOSE, 0, protection, max_r, armed_at, arm_reason,
                          "trend-weakened-protection-breach", current_state, favorable, adverse, mfe_net)
     if reference_breach and dynamic_pullback:
+        if min_hold_active:
+            return _decision(input_, ExitPhase.THESIS_INTACT, ExitAction.HOLD, None, protection, max_r, armed_at, arm_reason,
+                             "min-hold-suppressed:armed-protection-breach-atr-impulse", current_state, favorable, adverse, mfe_net)
         return _decision(input_, ExitPhase.REVERSAL_CONFIRMED, ExitAction.FULL_CLOSE, 0, protection, max_r, armed_at, arm_reason,
                          "armed-protection-breach-atr-impulse", current_state, favorable, adverse, mfe_net)
     if confirmed_breach:
+        if min_hold_active:
+            return _decision(input_, ExitPhase.THESIS_INTACT, ExitAction.HOLD, None, protection, max_r, armed_at, arm_reason,
+                             "min-hold-suppressed:confirmed-profit-protection-breach", current_state, favorable, adverse, mfe_net)
         return _decision(input_, ExitPhase.REVERSAL_CONFIRMED, ExitAction.FULL_CLOSE, 0, protection, max_r, armed_at, arm_reason,
                          "confirmed-profit-protection-breach", current_state, favorable, adverse, mfe_net)
     if reference_breach:
+        # Arming a trailing stop on breach is not an exit; A1' does not suppress it.
         return _decision(input_, ExitPhase.PROFIT_AT_RISK, ExitAction.ARM_TRAILING, None, protection, max_r, armed_at, arm_reason,
                          "armed-protection-breach-awaiting-bar-confirmation", current_state, favorable, adverse, mfe_net)
     partial_qualified = cost_covered and favorable >= input_.atr * policy.partial_atr_multiplier
     if not newly_armed and profitable and partial_qualified and not continuation and (early_pullback or current_state is HoldingState.WEAKENING) and (reversal_evidence >= 2 or current_state is HoldingState.WEAKENING):
         remaining = _target_remaining(input_.remaining_contracts, expected_reward, protected_risk, adverse, favorable)
+        if min_hold_active:
+            return _decision(input_, ExitPhase.THESIS_INTACT, ExitAction.HOLD, None, protection, max_r, armed_at, arm_reason,
+                             "min-hold-suppressed:profit-at-risk-with-deteriorating-continuation", current_state, favorable, adverse, mfe_net)
         action = ExitAction.PARTIAL_CLOSE if remaining > 0 else ExitAction.FULL_CLOSE
         phase = ExitPhase.PROFIT_AT_RISK if remaining > 0 else ExitPhase.REVERSAL_CONFIRMED
         return _decision(input_, phase, action, remaining, protection, max_r, armed_at, arm_reason,
