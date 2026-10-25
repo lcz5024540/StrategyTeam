@@ -123,18 +123,17 @@ def test_evaluate_maker_lifecycle_zero_amends_never_amends() -> None:
     assert result.final_status == "CANCELLED"
 
 
-def test_evaluate_maker_lifecycle_partial_accept_false_cancels_remainder() -> None:
-    # Limit is touched -> evaluate_maker_fill returns PARTIAL when partial_accept=True.
-    # With partial_accept=False the lifecycle cancels the remainder immediately.
+def test_evaluate_maker_lifecycle_partial_accept_false_fills_fully_when_touched() -> None:
+    # Limit is touched and partial_accept=False -> evaluate_maker_fill fills fully.
     candles = (Candle(0, Decimal("100"), Decimal("101"), Decimal("98"), Decimal("100")),)
     result = evaluate_maker_lifecycle(
         side=TrendSide.LONG, quantity=10, placed_price=Decimal("99"),
         candles=candles, max_wait_bars=1, max_amends=0,
         amend_threshold_bps=Decimal("1"), partial_accept=False,
         timeout_action=MakerTimeoutAction.CANCEL)
-    assert result.final_status == "PARTIAL_CANCELLED"
-    assert result.filled_quantity > 0
-    assert result.remaining_quantity > 0
+    assert result.final_status == "FILLED"
+    assert result.filled_quantity == 10
+    assert result.remaining_quantity == 0
 
 
 def test_evaluate_maker_lifecycle_partial_accept_true_keeps_remaining() -> None:

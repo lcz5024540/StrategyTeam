@@ -150,7 +150,7 @@ def test_paper_maker_on_limit_not_touched_cancels_no_position(ledger):
     assert kinds & {"MAKER_CANCELLED", "MAKER_EXPIRED"}, kinds
 
 
-def test_paper_maker_on_limit_touched_partial_accept_false_cancels_no_position(ledger):
+def test_paper_maker_on_limit_touched_partial_accept_false_fills_full_position(ledger):
     runtime = _make_runtime(ledger, maker_config=MakerExecutionConfig(
         enabled=True, offset_bps=D("0"), max_wait_bars=1, max_amends=0,
         partial_accept=False, timeout_action=MakerTimeoutAction.CANCEL))
@@ -158,18 +158,19 @@ def test_paper_maker_on_limit_touched_partial_accept_false_cancels_no_position(l
     _mock_decide(runtime, now_epoch=now_epoch)
     entry = _window("BTC-USDT", "15min", (89, "100", None, None))
     book = _book()
-    # Candle low equals best bid (99.99) so the LIMIT would be touched, but
-    # partial_accept=False means any partial fill is cancelled immediately.
+    # Candle low equals best bid (99.99) so the LIMIT is touched.
+    # With partial_accept=False the lifecycle fills the full quantity.
     execution_candle = _bar(89, "100", "99.99", "100.60")
     result = runtime.scan(
         run_id="r1", entry_window=entry, trend_window=entry, now_epoch=now_epoch,
         at=datetime(2026, 1, 1, tzinfo=timezone.utc), book=book,
         contract=_contract(), funding=FundingRate("BTC-USDT", D("0.0001")),
         execution_candle=execution_candle)
-    assert result.paper_order_id is None
-    assert len(ledger.active_positions("main")) == 0
-    decisions = _decisions_for_run(ledger, "r1", kinds=("MAKER_PARTIAL_CANCELLED",))
-    assert len(decisions) == 1
+    assert result.paper_order_id is not None
+    assert len(ledger.active_positions("main")) == 1
+    orders = _orders_for_run(ledger, "r1")
+    assert len(orders) == 1
+    assert orders[0]["order_type"] == "LIMIT"
 
 
 

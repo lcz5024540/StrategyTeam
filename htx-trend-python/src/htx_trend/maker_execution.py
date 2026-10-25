@@ -203,7 +203,7 @@ def evaluate_maker_lifecycle(*, side: TrendSide, quantity: int, placed_price: De
         bars_held = i + 1
         fill = evaluate_maker_fill(
             side=side, quantity=remaining, limit_price=current_price,
-            candle_low=candle.low, candle_high=candle.high, partial_accept=True)
+            candle_low=candle.low, candle_high=candle.high, partial_accept=partial_accept)
         if fill.filled_quantity > 0:
             filled_total += fill.filled_quantity
             remaining -= fill.filled_quantity
