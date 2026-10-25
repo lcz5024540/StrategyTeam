@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
+
+ZERO = Decimal("0")
 from os import environ
 from hashlib import sha256
 from typing import Any, Callable
@@ -19,6 +21,7 @@ import uuid
 from .account_facts import HtxAccountFactsAdapter
 from .execution import ExecutionConfig, GateResult, PriorTrade, evaluate_gate
 from .htx_v5 import SwapOrderRequest
+from .maker_execution import MakerExecutionConfig, maker_limit_price, shadow_evidence, as_dict
 from .live import HtxLiveExecutor
 from .market_data import ContractSpec, FundingRate, OrderBook
 from .models import ModelCandidate, TrendSide
@@ -47,6 +50,8 @@ class EntryExecutionConfig:
     min_adaptive_multiplier: Decimal = Decimal("0.25")
     max_adaptive_multiplier: Decimal = Decimal("1.80")
     max_active_positions: int = 5
+    # MAINLINE-B maker path.  Default disabled; PAPER remains taker.
+    maker_config: MakerExecutionConfig = MakerExecutionConfig()
 
     @classmethod
     def from_env(cls) -> "EntryExecutionConfig":
@@ -67,6 +72,7 @@ class EntryExecutionConfig:
             min_adaptive_multiplier=dec("HTX_TREND_MIN_ADAPTIVE_POSITION_MULTIPLIER", defaults.min_adaptive_multiplier),
             max_adaptive_multiplier=dec("HTX_TREND_MAX_ADAPTIVE_POSITION_MULTIPLIER", defaults.max_adaptive_multiplier),
             max_active_positions=int(environ.get("HTX_TREND_MAX_ACTIVE_POSITIONS", str(defaults.max_active_positions))),
+            maker_config=MakerExecutionConfig.from_env(),
         )
 
 
@@ -334,7 +340,22 @@ class HtxTrendEntryExecutor:
                 self._repository.attach_entry_cycle_intent(structure_key=structure_key, source_run_id=run_id,
                                                           position_id=position_id)
             request = _order_request(contract.contract_code, candidate.side, client_order_id, gate.size_plan.contracts,
-                                     self._config.entry_order_type)
+                                     self._config.entry_order_type,
+                                     maker_config=self._config.maker_config, mid=book.top.mid)
+            # MAINLINE-B shadow/pair logging: record taker vs maker cost difference
+            # when maker path is enabled.  This is evidence only; it does not pass
+            # the ORDERPX gate (σ_d≥200 still owed).
+            if self._config.maker_config.enabled and self._evidence_store is not None:
+                taker_price = book.top.ask if candidate.side is TrendSide.LONG else book.top.bid
+                maker_price = Decimal(str(request.price)) if request.price is not None else None
+                evidence = shadow_evidence(
+                    run_id=run_id, contract_code=contract.contract_code, side=candidate.side,
+                    signal_price=candidate.entry_price, taker_price=taker_price, maker_price=maker_price,
+                    maker_fee_rate=self._config.maker_config.maker_fee_rate,
+                    taker_fee_rate=fee_rate or self._execution.fee_rate,
+                    fill_status="INTENT",
+                    notes=f"offset_bps={self._config.maker_config.offset_bps}; wait_bars={self._config.maker_config.max_wait_bars}")
+                self._evidence_store.put("maker_shadow_pair", as_dict(evidence), refs=(gate_ref,) if gate_ref else ())
             self._repository.record_order_intent(TrendOrderIntent(position_id, position_key, run_id, contract.contract_code,
                 "ENTRY", candidate.side.value, request.side.upper(), request.position_side.upper(), False, client_order_id,
                 gate.size_plan.contracts, self._account, candidate.model.value, factor_snapshot_id,
@@ -466,8 +487,14 @@ def _prior_trade(row: dict[str, Any] | None):
     return PriorTrade(str(row.get("contract_code") or ""), closed_at, realized - entry_fee - close_fee, row.get("message"))
 
 
-def _order_request(contract: str, side: TrendSide, client_order_id: str, volume: int, type_: str) -> SwapOrderRequest:
+def _order_request(contract: str, side: TrendSide, client_order_id: str, volume: int, type_: str,
+                   *, maker_config: MakerExecutionConfig | None = None, mid: Decimal | None = None) -> SwapOrderRequest:
     long = side is TrendSide.LONG
+    cfg = maker_config or MakerExecutionConfig()
+    if cfg.enabled and mid is not None and mid > ZERO:
+        limit = maker_limit_price(side, mid, cfg.offset_bps)
+        return SwapOrderRequest(contract, "long" if long else "short", "buy" if long else "sell", "limit",
+                                client_order_id, str(volume), price=str(limit))
     return SwapOrderRequest(contract, "long" if long else "short", "buy" if long else "sell", type_, client_order_id, str(volume))
 
 

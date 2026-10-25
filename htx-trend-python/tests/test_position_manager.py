@@ -50,10 +50,10 @@ def position():
         invalidation_price='90',target_zone_low='120',target_zone_high='130',timeframe_profile='INTRADAY_15M')
 
 
-def manager(repo=None,market=None,client=None,executor=None):
+def manager(repo=None,market=None,client=None,executor=None,config=None):
     return LivePositionManager(repo or Repo(),RuntimeInstance('p','TREND','HTX_TREND_V1',7,'primary','LIVE',True,'unit',None),
         TradeAccount(7,'primary','PRIMARY',True,False,'test'),market or Market(),client or Client(),executor or Executor(),
-        config=ExitConfig(engine_enabled=True,engine_live=True))
+        config=config or ExitConfig(engine_enabled=True,engine_live=True))
 
 
 def test_manager_only_processes_positions_owned_by_its_profile():
@@ -153,3 +153,69 @@ def test_close_metadata_uses_book_not_entry_or_fill():
     mgr.submit_close(position(), 4, 'direct', 'test without quote')
     assert mgr.repo.orders[-1].order_px is None
     assert mgr.repo.orders[-1].order_px_source is None
+
+
+# MAINLINE-A A2 integration tests
+
+def test_exit_config_reads_a2_timeout_bars_from_env():
+    from os import environ
+    environ['HTX_TREND_A2_TIMEOUT_BARS'] = '32'
+    try:
+        cfg = ExitConfig.from_env()
+        assert cfg.timeout_bars == 32
+    finally:
+        del environ['HTX_TREND_A2_TIMEOUT_BARS']
+
+
+def test_exit_config_default_a2_timeout_is_16_and_a1_prime_is_off():
+    from os import environ
+    for name in ('HTX_TREND_A2_TIMEOUT_BARS', 'HTX_TREND_A1_PRIME_MIN_HOLD_BARS'):
+        environ.pop(name, None)
+    cfg = ExitConfig.from_env()
+    assert cfg.timeout_bars == 16
+    assert cfg.min_hold_bars == 0
+
+
+def test_a2_timeout_reaches_exit_input_via_bars_held():
+    repo, live = Repo(), Executor()
+    p = position()
+    p['created_at_epoch'] = 0
+    step = period_seconds('15min')
+    # Price above stop so hard stop does not swallow the signal.
+    class SafeMarket(Market):
+        price = D('100')
+    mgr = manager(repo=repo, market=SafeMarket(), executor=live,
+                  config=ExitConfig(engine_enabled=True, engine_live=True, timeout_bars=16))
+    # 16 full bars after entry should trigger A2 timeout (unarmed, no profit protection)
+    mgr._manage(p, 16 * step, MarketContext())
+    assert repo.decisions
+    assert repo.decisions[-1]['exit_phase'] == 'THESIS_EXPIRED'
+    assert 'a2-thesis-timeout' in repo.decisions[-1]['evidence'].get('reason', '')
+
+
+def test_a2_timeout_does_not_fire_before_sixteen_bars():
+    repo, live = Repo(), Executor()
+    p = position()
+    p['created_at_epoch'] = 0
+    step = period_seconds('15min')
+    class SafeMarket(Market):
+        price = D('100')
+    mgr = manager(repo=repo, market=SafeMarket(), executor=live,
+                  config=ExitConfig(engine_enabled=True, engine_live=True, timeout_bars=16))
+    mgr._manage(p, 15 * step, MarketContext())
+    assert repo.decisions[-1]['exit_phase'] != 'THESIS_EXPIRED'
+
+
+def test_hard_stop_fires_before_and_after_a2_timeout():
+    repo, live = Repo(), Executor()
+    p = position()
+    p['created_at_epoch'] = 0
+    step = period_seconds('15min')
+    # price below stop triggers hard stop immediately regardless of bar count
+    class CheapMarket(Market):
+        price = D('80')
+    mgr = manager(repo=repo, market=CheapMarket(), executor=live,
+                  config=ExitConfig(engine_enabled=True, engine_live=True, timeout_bars=16))
+    mgr._manage(p, 100 * step, MarketContext())
+    assert len(live.sent) == 1
+    assert live.sent[0].reduce_only

@@ -77,11 +77,15 @@ class Executor:
 
 
 def executor(repo: Repository, live: Executor, *, strategy_name="HTX_TREND_V1", admission=None,
-             execution=None) -> HtxTrendEntryExecutor:
-    return HtxTrendEntryExecutor(repository=repo, instance=RuntimeInstance("python-main", "TREND", strategy_name, 7, "primary", "LIVE", True, "unit", None),
+             execution=None, config=None) -> HtxTrendEntryExecutor:
+    kwargs: dict = dict(
+        repository=repo, instance=RuntimeInstance("python-main", "TREND", strategy_name, 7, "primary", "LIVE", True, "unit", None),
         account=TradeAccount(7, "primary", "PRIMARY", True, False, "https://example.test"), facts=Facts(), executor=live,
         execution=execution or ExecutionConfig(min_score=Decimal("70"), min_net_r=Decimal("0"), min_notional=Decimal("1"), target_notional=Decimal("100"), max_notional=Decimal("100")),
         admission=admission)
+    if config is not None:
+        kwargs["config"] = config
+    return HtxTrendEntryExecutor(**kwargs)
 
 
 def full_admission():
@@ -289,3 +293,57 @@ def test_submission_timeout_is_unknown_and_does_not_free_structure(monkeypatch):
     assert not result.accepted and "UNKNOWN" in result.reason
     assert any(name=="unknown" for name,_ in repo.calls)
     assert not any(name=="rejected" for name,_ in repo.calls)
+
+
+# MAINLINE-B maker execution tests
+
+def test_default_entry_is_taker_market_order() -> None:
+    repo, live = Repository(), Executor()
+    bars = (Candle(9_000, Decimal("99"), Decimal("101"), Decimal("98"), Decimal("100"), turnover=Decimal("1000")),)
+    result = executor(repo, live).submit(run_id="run", candidate=candidate(), period="15min", atr=Decimal("2"),
+        ema_fast=Decimal("101"), ema_slow=Decimal("99"), adx=Decimal("30"), recent_candles=bars,
+        book=OrderBook(((Decimal("99.99"), Decimal("100")),), ((Decimal("100.01"), Decimal("100")),)),
+        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1),
+        funding=FundingRate("BTC-USDT", Decimal("0.0001")),
+        market_context=MarketContext(MarketRegime.BROAD_UP, TrendSide.LONG, Decimal("0.8")), now_epoch=10_000)
+    assert result.accepted
+    places = [value for name, value in repo.calls if name == 'order']
+    assert places
+    assert places[0].order_px_source == 'mid'
+    # Default order type remains market (taker)
+    market_places = [value for name, value in live.calls if name == 'place' and value.type == 'market']
+    assert market_places
+
+
+def test_maker_enabled_produces_limit_order_with_offset() -> None:
+    from htx_trend.maker_execution import MakerExecutionConfig
+    from htx_trend.execution import ExecutionConfig
+    repo, live = Repository(), Executor()
+    cfg = MakerExecutionConfig(enabled=True, offset_bps=Decimal("5"))
+    base_entry = executor(repo, live)._config
+    from dataclasses import replace
+    entry_cfg = replace(base_entry, maker_config=cfg)
+    exec_cfg = ExecutionConfig(min_score=Decimal("70"), min_net_r=Decimal("0"), min_notional=Decimal("1"),
+                                 target_notional=Decimal("100"), max_notional=Decimal("100"))
+    bars = (Candle(9_000, Decimal("99"), Decimal("101"), Decimal("98"), Decimal("100"), turnover=Decimal("1000")),)
+    result = executor(repo, live, execution=exec_cfg, config=entry_cfg).submit(
+        run_id="run", candidate=candidate(), period="15min", atr=Decimal("2"),
+        ema_fast=Decimal("101"), ema_slow=Decimal("99"), adx=Decimal("30"), recent_candles=bars,
+        book=OrderBook(((Decimal("99.99"), Decimal("100")),), ((Decimal("100.01"), Decimal("100")),)),
+        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1),
+        funding=FundingRate("BTC-USDT", Decimal("0.0001")),
+        market_context=MarketContext(MarketRegime.BROAD_UP, TrendSide.LONG, Decimal("0.8")), now_epoch=10_000)
+    assert result.accepted
+    market_places = [value for name, value in live.calls if name == 'place' and value.type == 'market']
+    limit_places = [value for name, value in live.calls if name == 'place' and value.type == 'limit']
+    assert not market_places
+    assert limit_places
+    limit = limit_places[0]
+    assert limit.price is not None
+    assert Decimal(limit.price) < Decimal("100")
+
+
+def test_maker_disabled_config_leaves_order_type_unchanged() -> None:
+    from htx_trend.maker_execution import MakerExecutionConfig
+    cfg = MakerExecutionConfig(enabled=False, offset_bps=Decimal("5"))
+    assert cfg.enabled is False

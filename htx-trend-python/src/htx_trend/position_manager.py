@@ -38,11 +38,19 @@ class ExitConfig:
     flat_budget: D = D('.25')
     flat_budget_rate: D = D('.003')
     policy: ProfitProtectionPolicy = ProfitProtectionPolicy()
+    # MAINLINE-A A2 timeout and A1' minimum hold.
+    timeout_bars: int | None = 16
+    min_hold_bars: int | None = 0
 
     @classmethod
     def from_env(cls):
         def flag(name): return environ.get(name,'false').lower() == 'true'
         def dec(name, default): return D(environ.get(name,str(default)))
+        def optional_int(name, default):
+            value = environ.get(name)
+            if value is None or value.strip().lower() in ('','none','null'):
+                return default
+            return int(value)
         default=cls()
         return cls(engine_enabled=flag('HTX_TREND_EXIT_ENGINE_ENABLED'),
             engine_live=flag('HTX_TREND_EXIT_ENGINE_LIVE_ENABLED'),
@@ -58,7 +66,9 @@ class ExitConfig:
                 dec('HTX_TREND_INTRADAY_PROFIT_PARTIAL_ATR_MULTIPLIER',D('.75')),
                 dec('HTX_TREND_INTRADAY_PROFIT_PULLBACK_ATR_MULTIPLIER',D('.40')),
                 dec('HTX_TREND_INTRADAY_PROFIT_MIN_NET_FEE_MULTIPLE',D('2')),
-                int(environ.get('HTX_TREND_INTRADAY_PROFIT_PROTECTION_BREACH_CONFIRMATION_BARS','2'))))
+                int(environ.get('HTX_TREND_INTRADAY_PROFIT_PROTECTION_BREACH_CONFIRMATION_BARS','2'))),
+            timeout_bars=optional_int('HTX_TREND_A2_TIMEOUT_BARS', default.timeout_bars),
+            min_hold_bars=optional_int('HTX_TREND_A1_PRIME_MIN_HOLD_BARS', default.min_hold_bars))
 
 
 def decimal(row, key, default=ZERO):
@@ -69,6 +79,26 @@ def timestamp(value):
     if value is None: return None
     parsed=datetime.fromisoformat(value) if isinstance(value,str) else value
     return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+
+
+def _entry_epoch(row: dict[str, Any]) -> int | None:
+    """Best-effort entry epoch for bar-counting; returns None when unavailable."""
+    # Tests may pass an explicit epoch key; production rows carry datetime fields.
+    if 'entry_filled_at_epoch' in row:
+        return int(row['entry_filled_at_epoch'])
+    if 'created_at_epoch' in row:
+        return int(row['created_at_epoch'])
+    for key in ('entry_filled_at', 'created_at'):
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            parsed = timestamp(value)
+            if parsed is not None:
+                return int(parsed.timestamp())
+        except Exception:
+            continue
+    return None
 
 
 def timeframe_side(candles):
@@ -185,6 +215,10 @@ class LivePositionManager:
         mfe=(best-entry)*size*quantity*(1 if side is TrendSide.LONG else -1)-entry_fee-best*size*quantity*rate
         funding=self.market.funding_rate(code).rate
         funding_reason='adverse current funding rate' if (funding if side is TrendSide.LONG else -funding)>self.config.max_adverse_funding_rate else None
+        entry_epoch = _entry_epoch(row)
+        bars_held = 0
+        if entry_epoch is not None and now_epoch > entry_epoch:
+            bars_held = max(0, (now_epoch - entry_epoch) // period_seconds(self.period))
         input_=ExitInput(ModelCode(row['primary_model']),side,quantity,size,entry,
             decimal(row,'stop_price',decimal(row,'invalidation_price')),decimal(row,'invalidation_price'),
             decimal(row,'target_zone_low' if side is TrendSide.LONG else 'target_zone_high') or None,
@@ -194,7 +228,8 @@ class LivePositionManager:
             decimal(state,'max_r',decimal(row,'max_favorable_r')),datetime.fromtimestamp(now_epoch,UTC),
             flat_streak=flat,required_flat_streak=self.config.flat_bars,
             flat_loss_budget=max(self.config.flat_budget,entry*size*entry_quantity*self.config.flat_budget_rate),
-            policy=self.config.policy,protection_breach_bars=breach,funding_rate_exit_reason=funding_reason,observed_mfe_net_pnl=mfe)
+            policy=self.config.policy,protection_breach_bars=breach,funding_rate_exit_reason=funding_reason,observed_mfe_net_pnl=mfe,
+            bars_held=bars_held,timeout_bars=self.config.timeout_bars,min_hold_bars=self.config.min_hold_bars)
         use_v4=self.config.engine_enabled
         decision=decide_v4(input_) if use_v4 else decide_legacy(input_,trailing_atr_multiplier=(self.config.swing_trailing_atr
             if row.get('timeframe_profile') in {'SWING_4H','TREND_1D'} else self.config.trailing_atr),trailing_activation_r=self.config.trailing_activation_r)
@@ -214,7 +249,7 @@ class LivePositionManager:
             account=self.account,contract_code=code,side=side.value,primary_model=row['primary_model'],engine_version='exit-engine-v4' if use_v4 else 'legacy',
             exit_phase=decision.phase.value,suggested_action=decision.action.value,executed_action='NONE',reference_price=reference,
             protection_price=decision.protection_price,current_net_pnl=input_.current_net_pnl,max_favorable_r=decision.max_favorable_r,
-            target_remaining=decision.target_remaining_contracts,evidence={**decision.evidence,'fee_source':fee_source},block_reason=blocked)
+            target_remaining=decision.target_remaining_contracts,evidence={**decision.evidence,'reason':decision.reason,'fee_source':fee_source},block_reason=blocked)
         if blocked or decision.action not in {ExitAction.FULL_CLOSE,ExitAction.PARTIAL_CLOSE}: return
         # Stop any residual entry first. Never create a simultaneous opening and closing order.
         if pending:
