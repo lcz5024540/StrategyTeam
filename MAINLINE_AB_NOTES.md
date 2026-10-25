@@ -96,4 +96,4 @@ MAINLINE_AB_NOTES.md                                     (本文件)
 
 ## tip SHA
 
-- 待本次 commit 后回填。
+- `271689530d77388389ac609737a22e2164a8e23e`
