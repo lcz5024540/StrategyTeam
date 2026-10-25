@@ -14,6 +14,7 @@
 
 - 分支：`feature/c1-maker-shadow-taker-20261026`
 - 返工后 tip SHA：`78f958fb542957a2ec529e0bba30b79d9f063e38`
+- partial_accept 透传修复后 tip SHA：`e3d34358241027f02caef00143789a5b601f3385`
 - PR 号/URL：#52 → `support_htx_python`
 
 ## 返工说明
@@ -63,6 +64,28 @@ place LIMIT @ 最优同向价 (offset=0)
 
 - `partial_accept=False` 时任何部分成直接取消剩余，不补挂。
 - 禁止在启用 maker 后静默走「超时转 taker」。
+
+## partial_accept 透传修复
+
+产品审合 Pass 后发现：`evaluate_maker_lifecycle` 内层调用 `evaluate_maker_fill(..., partial_accept=True)` 写死为 `True`，导致外层 `HTX_TREND_MAKER_PARTIAL_ACCEPT=false` 时，触及限价单仍被模拟为半成，进而进入 `PARTIAL_CANCELLED`，几乎无 FILLED 开仓样本。
+
+修复：将内层 `partial_accept=True` 改为透传外层参数 `partial_accept=partial_accept`。
+
+C1 语义：
+
+| 条件 | 期望 |
+|------|------|
+| `partial_accept=False` + 触及 limit | **FILLED 全成**（quantity 全填；有仓） |
+| `partial_accept=False` + 未触及 | **CANCELLED**（无仓；无 MARKET 回退） |
+| `partial_accept=True` + 触及 | 保留半成模拟路径（`evaluate_maker_fill` 半成；lifecycle 可多 bar 填完或 PARTIAL_*） |
+| 任何路径 | **禁止**半成后再挂 / 转 MARKET（C1 冻结：amends=0 / timeout=CANCEL） |
+
+对应测试更新：
+
+- `test_evaluate_maker_lifecycle_partial_accept_false_fills_fully_when_touched`：触及 + false → FILLED 全成
+- `test_paper_maker_on_limit_touched_partial_accept_false_fills_full_position`：PAPER 触及 + false → LIMIT 单成交、有仓
+- `test_evaluate_maker_lifecycle_partial_accept_true_keeps_remaining`：半成路径保留
+- `test_paper_maker_on_limit_not_touched_cancels_no_position`：未触及 cancel 路径保留
 
 ## P-SHADOW-TAKER
 
