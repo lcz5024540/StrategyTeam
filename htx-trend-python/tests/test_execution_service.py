@@ -77,7 +77,7 @@ class Executor:
 
 
 def executor(repo: Repository, live: Executor, *, strategy_name="HTX_TREND_V1", admission=None,
-             execution=None, config=None) -> HtxTrendEntryExecutor:
+    execution=None, config=None, evidence_store=None) -> HtxTrendEntryExecutor:
     kwargs: dict = dict(
         repository=repo, instance=RuntimeInstance("python-main", "TREND", strategy_name, 7, "primary", "LIVE", True, "unit", None),
         account=TradeAccount(7, "primary", "PRIMARY", True, False, "https://example.test"), facts=Facts(), executor=live,
@@ -85,6 +85,8 @@ def executor(repo: Repository, live: Executor, *, strategy_name="HTX_TREND_V1", 
         admission=admission)
     if config is not None:
         kwargs["config"] = config
+    if evidence_store is not None:
+        kwargs["evidence_store"] = evidence_store
     return HtxTrendEntryExecutor(**kwargs)
 
 
@@ -347,3 +349,96 @@ def test_maker_disabled_config_leaves_order_type_unchanged() -> None:
     from htx_trend.maker_execution import MakerExecutionConfig
     cfg = MakerExecutionConfig(enabled=False, offset_bps=Decimal("5"))
     assert cfg.enabled is False
+
+
+class MemoryEvidenceStore:
+    def __init__(self):
+        self.items: list[tuple[str, dict, tuple[str, ...]]] = []
+
+    def put(self, kind: str, payload: dict, *, refs: tuple[str, ...] = ()) -> str:
+        self.items.append((kind, payload, refs))
+        return f"ref-{len(self.items)}"
+
+
+def test_maker_enabled_with_zero_offset_uses_best_bid_for_long() -> None:
+    from htx_trend.maker_execution import MakerExecutionConfig
+    from htx_trend.execution import ExecutionConfig
+    repo, live = Repository(), Executor()
+    cfg = MakerExecutionConfig(enabled=True, offset_bps=Decimal("0"))
+    base_entry = executor(repo, live)._config
+    from dataclasses import replace
+    entry_cfg = replace(base_entry, maker_config=cfg)
+    exec_cfg = ExecutionConfig(min_score=Decimal("70"), min_net_r=Decimal("0"), min_notional=Decimal("1"),
+                               target_notional=Decimal("100"), max_notional=Decimal("100"))
+    bars = (Candle(9_000, Decimal("99"), Decimal("101"), Decimal("98"), Decimal("100"), turnover=Decimal("1000")),)
+    best_bid = Decimal("99.99")
+    result = executor(repo, live, execution=exec_cfg, config=entry_cfg).submit(
+        run_id="run", candidate=candidate(), period="15min", atr=Decimal("2"),
+        ema_fast=Decimal("101"), ema_slow=Decimal("99"), adx=Decimal("30"), recent_candles=bars,
+        book=OrderBook(((best_bid, Decimal("100")),), ((Decimal("100.01"), Decimal("100")),)),
+        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1),
+        funding=FundingRate("BTC-USDT", Decimal("0.0001")),
+        market_context=MarketContext(MarketRegime.BROAD_UP, TrendSide.LONG, Decimal("0.8")), now_epoch=10_000)
+    assert result.accepted
+    limit_places = [value for name, value in live.calls if name == "place" and value.type == "limit"]
+    assert limit_places
+    assert Decimal(limit_places[0].price) == best_bid
+
+
+def test_maker_enabled_limit_uses_post_only_time_in_force() -> None:
+    from htx_trend.maker_execution import MakerExecutionConfig
+    from htx_trend.execution import ExecutionConfig
+    repo, live = Repository(), Executor()
+    cfg = MakerExecutionConfig(enabled=True, offset_bps=Decimal("0"))
+    base_entry = executor(repo, live)._config
+    from dataclasses import replace
+    entry_cfg = replace(base_entry, maker_config=cfg)
+    exec_cfg = ExecutionConfig(min_score=Decimal("70"), min_net_r=Decimal("0"), min_notional=Decimal("1"),
+                               target_notional=Decimal("100"), max_notional=Decimal("100"))
+    bars = (Candle(9_000, Decimal("99"), Decimal("101"), Decimal("98"), Decimal("100"), turnover=Decimal("1000")),)
+    result = executor(repo, live, execution=exec_cfg, config=entry_cfg).submit(
+        run_id="run", candidate=candidate(), period="15min", atr=Decimal("2"),
+        ema_fast=Decimal("101"), ema_slow=Decimal("99"), adx=Decimal("30"), recent_candles=bars,
+        book=OrderBook(((Decimal("99.99"), Decimal("100")),), ((Decimal("100.01"), Decimal("100")),)),
+        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1),
+        funding=FundingRate("BTC-USDT", Decimal("0.0001")),
+        market_context=MarketContext(MarketRegime.BROAD_UP, TrendSide.LONG, Decimal("0.8")), now_epoch=10_000)
+    assert result.accepted
+    limit_places = [value for name, value in live.calls if name == "place" and value.type == "limit"]
+    assert limit_places
+    assert limit_places[0].time_in_force == "post_only"
+
+
+def test_maker_enabled_records_p_shadow_taker_evidence_with_legs() -> None:
+    from htx_trend.maker_execution import MakerExecutionConfig
+    from htx_trend.execution import ExecutionConfig
+    repo, live = Repository(), Executor()
+    store = MemoryEvidenceStore()
+    cfg = MakerExecutionConfig(enabled=True, offset_bps=Decimal("0"))
+    base_entry = executor(repo, live)._config
+    from dataclasses import replace
+    entry_cfg = replace(base_entry, maker_config=cfg)
+    exec_cfg = ExecutionConfig(min_score=Decimal("70"), min_net_r=Decimal("0"), min_notional=Decimal("1"),
+                               target_notional=Decimal("100"), max_notional=Decimal("100"))
+    bars = (Candle(9_000, Decimal("99"), Decimal("101"), Decimal("98"), Decimal("100"), turnover=Decimal("1000")),)
+    result = executor(repo, live, execution=exec_cfg, config=entry_cfg, evidence_store=store).submit(
+        run_id="run", candidate=candidate(), period="15min", atr=Decimal("2"),
+        ema_fast=Decimal("101"), ema_slow=Decimal("99"), adx=Decimal("30"), recent_candles=bars,
+        book=OrderBook(((Decimal("99.99"), Decimal("100")),), ((Decimal("100.01"), Decimal("100")),)),
+        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1),
+        funding=FundingRate("BTC-USDT", Decimal("0.0001")),
+        market_context=MarketContext(MarketRegime.BROAD_UP, TrendSide.LONG, Decimal("0.8")), now_epoch=10_000)
+    assert result.accepted
+    p_shadow_items = [payload for kind, payload, _refs in store.items if kind == "p_shadow_taker"]
+    assert p_shadow_items, "p_shadow_taker evidence must be recorded when maker is enabled"
+    evidence = p_shadow_items[0]
+    assert evidence["contract_code"] == "BTC-USDT"
+    assert evidence["side"] == "LONG"
+    legs = {leg["leg"]: leg for leg in evidence["legs"]}
+    assert "maker_live" in legs and "taker_shadow" in legs
+    # Live maker price is best bid for LONG; shadow taker price is best ask.
+    assert Decimal(legs["maker_live"]["price"]) == Decimal("99.99")
+    assert Decimal(legs["taker_shadow"]["price"]) == Decimal("100.01")
+    # Legacy maker_shadow_pair evidence is preserved for backward compatibility.
+    legacy_items = [payload for kind, payload, _refs in store.items if kind == "maker_shadow_pair"]
+    assert legacy_items
