@@ -13,7 +13,7 @@
 | 基线 | `origin/support_htx_python` @ `5c5a11d8173ed9a018357d210bcb37646445e99a`（MAINLINE-AB #51） | ✅ |
 
 - 分支：`feature/c1-maker-shadow-taker-20261026`
-- 返工后 tip SHA：`[TBD_AFTER_COMMIT]`
+- 返工后 tip SHA：`78f958fb542957a2ec529e0bba30b79d9f063e38`
 - PR 号/URL：#52 → `support_htx_python`
 
 ## 返工说明
