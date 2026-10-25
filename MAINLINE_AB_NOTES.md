@@ -96,4 +96,4 @@ MAINLINE_AB_NOTES.md                                     (本文件)
 
 ## tip SHA
 
-- `271689530d77388389ac609737a22e2164a8e23e`
+- `503f2802f0743abc5e4d3dfbbf885e48a6d7e04a`
