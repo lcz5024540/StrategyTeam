@@ -13,7 +13,7 @@
 | 基线 | `origin/support_htx_python` @ `5c5a11d8173ed9a018357d210bcb37646445e99a`（MAINLINE-AB #51） | ✅ |
 
 - 分支：`feature/c1-maker-shadow-taker-20261026`
-- 本笔记落笔时 tip SHA：`5c5a11d8173ed9a018357d210bcb37646445e99a`（提交后会更新）
+- 提交后 tip SHA：`60acff7a87a49c5381e16e892904f86490a2c369`
 - PR 号/URL：_提交后回填_
 
 ## 冻结表旋钮
