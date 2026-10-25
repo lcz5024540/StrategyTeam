@@ -19,6 +19,7 @@ import uuid
 from .execution import ExecutionConfig, ExecutionFacts
 from .java_entry_contract import evaluate
 from .ledger import Position
+from .maker_execution import MakerExecutionConfig
 from .market_data import Candle
 from .paper import PaperExchange
 from .runtime import PaperTrendRuntime
@@ -157,7 +158,7 @@ class WorkerPaperExchange(PaperExchange):
 
 
 class PaperTrendWorker:
-    def __init__(self, instance, market, state_root: Path, config: PaperWorkerConfig):
+    def __init__(self, instance, market, state_root: Path, config: PaperWorkerConfig, evidence_store=None):
         if instance.execution_mode != 'PAPER' or not re.fullmatch(r'[A-Za-z0-9_-]+', instance.instance_key):
             raise ValueError('PAPER requires an independent safe instance key')
         self.instance, self.market, self.config = instance, market, config
@@ -170,12 +171,14 @@ class PaperTrendWorker:
             dict(instance=instance.instance_key, strategy=instance.strategy_name,
                  config=json.loads(json.dumps(asdict(config), default=str))))
         self.exchange = WorkerPaperExchange(self.ledger)
-        self.runtime = PaperTrendRuntime(self.ledger, self.exchange, account_id=self.account,
+        self.runtime = PaperTrendRuntime(
+            self.ledger, self.exchange, account_id=self.account,
             entry_config=self.entry_config, strategy_version=instance.strategy_name,
             execution_config=replace(ExecutionConfig.from_env(), account_equity_usdt=config.equity,
                 max_total_margin_rate=config.margin_rate, max_active_positions=config.max_active_positions,
                 max_same_direction_positions=config.max_active_positions,
-                hard_risk_limits_enabled=True))
+                hard_risk_limits_enabled=True),
+            maker_config=MakerExecutionConfig.from_env(), evidence_store=evidence_store)
         self.stopped = False
 
     def stop(self):

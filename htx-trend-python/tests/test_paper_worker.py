@@ -9,6 +9,7 @@ import sys
 import pytest
 
 from htx_trend.admission import runtime_guard
+from htx_trend.maker_execution import MakerExecutionConfig, MakerTimeoutAction
 from htx_trend.market_data import Candle, KlineWindow, ContractSpec, TopOfBook, FundingRate, period_seconds
 from htx_trend.paper import PaperOrder
 from htx_trend.paper_worker import PaperFileLedger, PaperTrendWorker, PaperWorkerConfig, WorkerPaperExchange
@@ -190,3 +191,22 @@ def test_paper_candidate_package(tmp_path):
     assert receipt['frozen_path'] == str(archive.parent.resolve())
     template = package.approval_template(archive)
     assert template['synthetic'] is True and template['seal_hash'] == ''
+
+
+def test_paper_worker_reads_maker_config_from_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("HTX_TREND_MAKER_ENABLED", "true")
+    monkeypatch.setenv("HTX_TREND_MAKER_OFFSET_BPS", "0")
+    monkeypatch.setenv("HTX_TREND_MAKER_MAX_WAIT_BARS", "1")
+    monkeypatch.setenv("HTX_TREND_MAKER_MAX_AMENDS", "0")
+    monkeypatch.setenv("HTX_TREND_MAKER_PARTIAL_ACCEPT", "false")
+    monkeypatch.setenv("HTX_TREND_MAKER_TIMEOUT_ACTION", "CANCEL")
+    worker = PaperTrendWorker(instance(), Market(), tmp_path, PaperWorkerConfig())
+    assert worker.runtime._maker_config.enabled is True
+    assert worker.runtime._maker_config.offset_bps == D("0")
+    assert worker.runtime._maker_config.max_wait_bars == 1
+    assert worker.runtime._maker_config.max_amends == 0
+    assert worker.runtime._maker_config.partial_accept is False
+    assert worker.runtime._maker_config.timeout_action is MakerTimeoutAction.CANCEL
+    worker.stop()
+
+
