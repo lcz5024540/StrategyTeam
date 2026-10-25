@@ -13,8 +13,26 @@
 | 基线 | `origin/support_htx_python` @ `5c5a11d8173ed9a018357d210bcb37646445e99a`（MAINLINE-AB #51） | ✅ |
 
 - 分支：`feature/c1-maker-shadow-taker-20261026`
-- 提交后 tip SHA：`60acff7a87a49c5381e16e892904f86490a2c369`
-- PR 号/URL：_提交后回填_
+- 返工后 tip SHA：`[TBD_AFTER_COMMIT]`
+- PR 号/URL：#52 → `support_htx_python`
+
+## 返工说明
+
+产品审合 Fail 根因：maker / P-SHADOW 只挂在 `execution_service.py`（LIVE EntryExecutor），`paper_worker.py` / `runtime.py` 零引用 `MakerExecutionConfig` / `p_shadow_taker` / `evaluate_maker_lifecycle`。
+
+本次返工已把冻结表 + P-SHADOW-TAKER 接到 **PAPER 主路径**（`PaperTrendWorker` → `PaperTrendRuntime`）：
+
+- `htx-trend-python/src/htx_trend/paper_worker.py`：读取 `MakerExecutionConfig.from_env()` 并注入 `PaperTrendRuntime`；`worker.py` 将 `evidence_store` 传入 PAPER worker。
+- `htx-trend-python/src/htx_trend/runtime.py`：`PaperTrendRuntime.scan()` 在 `maker_config.enabled` 时走 maker 路径：
+  - 定价锚 = 最优同向价（`maker_reference_price`，已支持 `TopOfBook`）
+  - LIMIT 价 = `maker_limit_price(side, reference, offset_bps)`
+  - 单 bar 零改价生命周期 = `evaluate_maker_lifecycle(candles=(execution_candle,), max_wait_bars=cfg.max_wait_bars, max_amends=cfg.max_amends, partial_accept=cfg.partial_accept, timeout_action=cfg.timeout_action)`
+  - 超时/未成 = `CANCELLED` / `PARTIAL_CANCELLED` / `MAKER_EXPIRED`，**绝不**转 MARKET
+  - 无盘口 → `MAKER_MISSING_BOOK`（微结构缺失=缺失）
+- P-SHADOW-TAKER：maker on 时写 `p_shadow_taker` evidence（legs `maker_live` / `taker_shadow`）：
+  - 有 `evidence_store` 时 `put("p_shadow_taker", ...)`
+  - 无 store 时落 `ledger.decision(kind="P_SHADOW_TAKER", ...)`，保证可审计
+- maker off（默认）：PAPER 行为与现网一致，仍按 `gate.price_plan.style` 选 MARKET/LIMIT taker。
 
 ## 冻结表旋钮
 
@@ -27,12 +45,12 @@
 | `HTX_TREND_MAKER_PARTIAL_ACCEPT` | `false` | `false` | 部分成 = 缺失；不补挂 |
 | `HTX_TREND_MAKER_TIMEOUT_ACTION` | `TAKER` | `CANCEL` | 超时 ≠ 转吃单；C1 运维钉 CANCEL |
 
-- post-only：`SwapOrderRequest.time_in_force="post_only"`（maker 启用时）。触发吃单 → 撤/拒 = 缺失；禁止挂失败改吃单。
+- post-only：PAPER 模拟盘以 LIMIT 价触及为成交条件；未触及则 `CANCELLED` / `EXPIRED` / 缺失。禁止挂失败改吃单。
 - 定价锚：最优同向价。LONG→best bid；SHORT→best ask。无盘口→`maker_reference_price` 返回 `None`，微结构不可得=缺失，不静默用 mid。
 
 ## 单 bar 零改价最小闭环
 
-落点：`htx-trend-python/src/htx_trend/maker_execution.py` 新增纯函数 `evaluate_maker_lifecycle`。
+落点：`htx-trend-python/src/htx_trend/maker_execution.py` 纯函数 `evaluate_maker_lifecycle`，并在 `PaperTrendRuntime._submit_maker_entry` 中实际调用。
 
 ```
 place LIMIT @ 最优同向价 (offset=0)
@@ -56,7 +74,9 @@ place LIMIT @ 最优同向价 (offset=0)
   - `leg=taker_shadow`：假设 taker 价格（LONG 取 best ask，SHORT 取 best bid）、taker fee、成本 bps
 - 保留旧 `maker_shadow_pair` evidence（主 taker 时影子 maker），用于向后兼容；C1 主场景使用新 key。
 
-落点：`htx_trend-python/src/htx_trend/execution_service.py` 在 `submit()` 中 maker 启用且 `evidence_store` 存在时写入 `p_shadow_taker`。
+落点：
+- `htx-trend-python/src/htx_trend/execution_service.py`（LIVE `submit()`）
+- `htx-trend-python/src/htx_trend/runtime.py`（PAPER `_submit_maker_entry()`）
 
 ## 钟（代码侧只协助）
 
@@ -78,34 +98,35 @@ place LIMIT @ 最优同向价 (offset=0)
 
 | 套件 | passed | failed | skipped |
 |------|--------|--------|--------|
-| `htx-trend-python` | 548 | 0 | 0 |
+| `htx-trend-python` | 553 | 0 | 0 |
 
 运行命令：
 
 ```bash
-export ALL_PROXY=socks5h://127.0.0.1:7897 HTTPS_PROXY=socks5h://127.0.0.1:7897 HTTP_PROXY=socks5h://127.0.0.1:7897
+export PATH="/opt/homebrew/bin:$HOME/.local/bin:$PATH"
+export ALL_PROXY=socks5h://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 https_proxy=http://127.0.0.1:7897 http_proxy=http://127.0.0.1:7897
 PY=/Users/jenniferni/jenifer/venv-research/bin/python
 cd /Users/jenniferni/jenifer/build/c1-maker-shadow-20261026/htx-trend-python
 PYTHONPATH=src $PY -m pytest -q
 ```
 
 测试覆盖：
-1. maker 默认 off（行为与现 taker 一致）
-2. 启用后 LIMIT + 冻结旋钮可从 env 读入（offset=0 / wait=1 / amends=0 / partial=false / timeout=CANCEL）
-3. 超时 CANCEL：启用 maker + CANCEL ⇒ 超时不转 taker/market
-4. P-SHADOW-TAKER 有记录（maker on ⇒ `p_shadow_taker` evidence 存在，含 `leg` 区分）
-5. 部分成不补挂（partial_accept=false）
-6. 既有 MAINLINE-B / A2 套件保持通过
+1. PAPER 默认 maker off → 仍 MARKET/taker（`test_paper_maker_shadow.py`）
+2. PAPER maker on + 冻结旋钮（offset=0 / wait=1 / amends=0 / partial=false / timeout=CANCEL）→ LIMIT/锚价/单 bar 取消或缺失；**无 MARKET 回退**
+3. PAPER maker on ⇒ `p_shadow_taker` 记录存在（含 leg 区分）
+4. `test_paper_worker.py` 新增：PAPER worker 从 env 读取 maker 冻结旋钮并注入 runtime
+5. 既有 MAINLINE-B / A2 / maker / execution_service 套件保持通过
 
 ## 改动文件列表
 
 ```
 htx-trend-python/src/htx_trend/maker_execution.py
-htx-trend-python/src/htx_trend/execution_service.py
-htx-trend-python/tests/test_maker_execution.py
-htx-trend-python/tests/test_execution_service.py
+htx-trend-python/src/htx_trend/runtime.py
+htx-trend-python/src/htx_trend/paper_worker.py
+htx-trend-python/src/htx_trend/worker.py
+htx-trend-python/tests/test_paper_maker_shadow.py（新增）
+htx-trend-python/tests/test_paper_worker.py
 C1_MAKER_SHADOW_TAKER_NOTES.md（本文件）
-dev-order-c1-paper-maker-shadow-taker-20261026.md（口令副本，随 PR 提交）
 ```
 
 ## 声明

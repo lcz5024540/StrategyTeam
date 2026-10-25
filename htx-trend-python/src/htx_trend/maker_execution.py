@@ -12,7 +12,7 @@ from enum import StrEnum
 from os import environ
 from typing import Any
 
-from .market_data import Candle, OrderBook
+from .market_data import Candle, OrderBook, TopOfBook
 from .models import TrendSide
 
 ZERO = Decimal("0")
@@ -83,15 +83,16 @@ class MakerExecutionConfig:
         )
 
 
-def maker_reference_price(side: TrendSide, book: OrderBook) -> Decimal | None:
+def maker_reference_price(side: TrendSide, book: OrderBook | TopOfBook) -> Decimal | None:
     """Best same-side price from the order book.
 
     LONG entries price at the best bid; SHORT entries price at the best ask.
     If the book is empty on the required side the microstructure is missing
     and the function returns None; callers must treat that as a missed pair.
+    Accepts a full OrderBook or a TopOfBook snapshot (used by PAPER runtime).
     """
     try:
-        top = book.top
+        top = book if isinstance(book, TopOfBook) else book.top
     except ValueError:
         return None
     if side is TrendSide.LONG:

@@ -13,6 +13,11 @@ from typing import Sequence
 from .execution import ExecutionConfig, ExecutionFacts, GateResult, PriorTrade, evaluate_gate
 from .exits import ExitInput, ExitAction, decide
 from .ledger import TrendLedger
+from .maker_execution import (
+    MakerExecutionConfig, MakerTimeoutAction,
+    evaluate_maker_lifecycle, maker_limit_price, maker_reference_price,
+    p_shadow_taker_as_dict, p_shadow_taker_evidence,
+)
 from .market_data import Candle, ContractSpec, FundingRate, KlineWindow, TopOfBook
 from .java_entry_contract import JavaEntryConfig
 from .models import ModelCandidate, ModelCode, TrendSide, route_candidates
@@ -35,12 +40,16 @@ class PaperTrendRuntime:
     def __init__(self, ledger: TrendLedger, exchange: PaperExchange, *, account_id: str,
                  entry_config: JavaEntryConfig = JavaEntryConfig(), execution_config: ExecutionConfig = ExecutionConfig(),
                  mirror_account_id: str | None = None, strategy_version: str = LEGACY_STRATEGY_VERSION,
-                 admission: StrategyAdmissionArtifact | None = None) -> None:
+                 admission: StrategyAdmissionArtifact | None = None,
+                 maker_config: MakerExecutionConfig = MakerExecutionConfig(),
+                 evidence_store=None) -> None:
         self._ledger, self._exchange = ledger, exchange
         self._account_id, self._mirror_account_id = account_id, mirror_account_id
         self._decision = HtxStrategyDecisionEngine(strategy_version=strategy_version, config=entry_config,
                                                    admission=admission)
         self._execution_config = execution_config
+        self._maker_config = maker_config
+        self._evidence_store = evidence_store
 
     def scan(self, *, run_id: str, entry_window: KlineWindow, trend_window: KlineWindow, now_epoch: int,
              at: datetime, book: TopOfBook, contract: ContractSpec, funding: FundingRate | None,
@@ -74,6 +83,11 @@ class PaperTrendRuntime:
             return ScanOutcome(run_id, output, gates, None, None)
         gate = gates[output.index(selected)]
         assert gate.price_plan is not None and gate.size_plan is not None
+        if self._maker_config.enabled:
+            return self._submit_maker_entry(
+                run_id=run_id, selected=selected, gate=gate, book=book,
+                entry_window=entry_window, contract=contract, at=at,
+                execution_candle=execution_candle, output=output, gates=gates)
         order_type = "LIMIT" if gate.price_plan.style.value == "PASSIVE_LIMIT" else "MARKET"
         request = PaperOrder(self._account_id, entry_window.contract_code, selected.side.value,
                              "BUY" if selected.side.value == "LONG" else "SELL", gate.size_plan.contracts,
@@ -98,6 +112,80 @@ class PaperTrendRuntime:
             if self._mirror_account_id:
                 self._mirror(position.position_id, order.order_id, entry_window.contract_code, selected.side.value,
                              gate.size_plan.contracts, at, run_id, fill_candle, contract.contract_size, mid=book.mid)
+        return ScanOutcome(run_id, output, gates, selected, order.order_id)
+
+    def _submit_maker_entry(self, *, run_id: str, selected: ModelCandidate, gate: GateResult, book: TopOfBook,
+                            entry_window: KlineWindow, contract: ContractSpec, at: datetime,
+                            execution_candle: Candle | None, output: tuple[ModelCandidate, ...],
+                            gates: tuple[GateResult, ...]) -> ScanOutcome:
+        """PAPER maker path: LIMIT @ best same-side price, freeze-table lifecycle, no taker fallback."""
+        cfg = self._maker_config
+        reference = maker_reference_price(selected.side, book)
+        if reference is None or reference <= Decimal("0"):
+            self._ledger.decision(self._account_id, run_id, "MAKER_MISSING_BOOK", {
+                "candidate": selected.model.value, "side": selected.side.value,
+                "reason": "missing same-side book price; maker reference unavailable"})
+            return ScanOutcome(run_id, output, gates, selected, None)
+        limit_price = maker_limit_price(selected.side, reference, cfg.offset_bps)
+        fill_candle = execution_candle or entry_window.candles[-1]
+        lifecycle = evaluate_maker_lifecycle(
+            side=selected.side, quantity=gate.size_plan.contracts, placed_price=limit_price,
+            candles=(fill_candle,), max_wait_bars=cfg.max_wait_bars,
+            max_amends=cfg.max_amends, amend_threshold_bps=cfg.amend_threshold_bps,
+            partial_accept=cfg.partial_accept, timeout_action=cfg.timeout_action)
+        # P-SHADOW-TAKER: record maker_live vs taker_shadow cost pair for every signal.
+        taker_shadow_price = book.ask if selected.side is TrendSide.LONG else book.bid
+        p_evidence = p_shadow_taker_evidence(
+            run_id=run_id, contract_code=entry_window.contract_code, side=selected.side,
+            signal_price=selected.entry_price, maker_price=limit_price, taker_price=taker_shadow_price,
+            maker_fee_rate=cfg.maker_fee_rate, taker_fee_rate=self._execution_config.fee_rate,
+            fill_status=lifecycle.final_status,
+            notes=(f"offset_bps={cfg.offset_bps}; wait_bars={cfg.max_wait_bars}; "
+                   f"max_amends={cfg.max_amends}; timeout_action={cfg.timeout_action.value}; "
+                   f"lifecycle_reason={lifecycle.reason}"))
+        self._ledger.decision(self._account_id, run_id, "P_SHADOW_TAKER", p_shadow_taker_as_dict(p_evidence))
+        if self._evidence_store is not None:
+            self._evidence_store.put("p_shadow_taker", p_shadow_taker_as_dict(p_evidence))
+        if lifecycle.final_status not in ("FILLED", "PARTIAL_TAKER", "TAKER"):
+            decision_kind = "MAKER_CANCELLED"
+            if lifecycle.final_status in ("PARTIAL_CANCELLED",):
+                decision_kind = "MAKER_PARTIAL_CANCELLED"
+            elif lifecycle.final_status in ("OPEN",):
+                decision_kind = "MAKER_EXPIRED"
+            self._ledger.decision(self._account_id, run_id, decision_kind, {
+                "candidate": selected.model.value, "side": selected.side.value,
+                "limit_price": str(limit_price), "filled_quantity": lifecycle.filled_quantity,
+                "remaining_quantity": lifecycle.remaining_quantity,
+                "bars_held": lifecycle.bars_held, "amends_done": lifecycle.amends_done,
+                "final_status": lifecycle.final_status, "reason": lifecycle.reason})
+            return ScanOutcome(run_id, output, gates, selected, None)
+        # Fill the accepted portion at the limit price against a deterministic candle.
+        request = PaperOrder(self._account_id, entry_window.contract_code, selected.side.value,
+                             "BUY" if selected.side.value == "LONG" else "SELL", lifecycle.filled_quantity,
+                             "LIMIT", at, f"paper-{run_id}-{selected.model.value}",
+                             limit_price, strategy_run_id=run_id,
+                             signal_px=selected.entry_price, signal_ts=datetime.fromtimestamp(selected.bar_time, UTC), mid=book.mid)
+        fill_price = lifecycle.average_price or limit_price
+        synthetic_candle = Candle(
+            fill_candle.open_time, fill_price, fill_price, fill_price, fill_price,
+            volume=fill_candle.volume)
+        order = self._exchange.submit(request, synthetic_candle)
+        self._ledger.decision(self._account_id, run_id, "ENTRY_ORDER", {"candidate": selected.model.value,
+                              "order_id": order.order_id, "status": order.status, "gate": gate.reason,
+                              "maker_lifecycle_status": lifecycle.final_status})
+        if order.status == "FILLED":
+            position = self._exchange.open_position(self._account_id, entry_window.contract_code, selected.side.value,
+                                                    lifecycle.filled_quantity, fill_price, at, run_id)
+            self._ledger.save_position_context(position.position_id, {"model": selected.model.value,
+                "structure_key": selected.structure_key, "confirmation_models": [item.value for item in selected.confirmation_models],
+                "initial_stop": str(selected.invalidation_price), "invalidation": str(selected.invalidation_price),
+                "structure_target": str(selected.target_low), "contract_size": str(contract.contract_size),
+                "entry_fee": str(fill_price * contract.contract_size * Decimal(lifecycle.filled_quantity) * Decimal("0.0004")),
+                "highest": str(fill_price), "lowest": str(fill_price), "protection": None,
+                "trailing_armed_at": None, "trailing_arm_reason": None, "max_favorable_r": "0"})
+            if self._mirror_account_id:
+                self._mirror(position.position_id, order.order_id, entry_window.contract_code, selected.side.value,
+                             lifecycle.filled_quantity, at, run_id, synthetic_candle, contract.contract_size, mid=book.mid)
         return ScanOutcome(run_id, output, gates, selected, order.order_id)
 
     def _mirror(self, parent_position_id: str, parent_order_id: str, contract_code: str, side: str, quantity: int,

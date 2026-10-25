@@ -184,7 +184,8 @@ def main() -> None:
             paper_client = HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com"))
             worker = paper_worker = PaperTrendWorker(instance,
                 HtxMarketData(paper_client, evidence_store=evidence_store),
-                Path(os.environ.get("HTX_PAPER_STATE_DIR", "./paper-state")), PaperWorkerConfig.from_env())
+                Path(os.environ.get("HTX_PAPER_STATE_DIR", "./paper-state")), PaperWorkerConfig.from_env(),
+                evidence_store=evidence_store)
         elif family == "TREND" and instance.execution_mode == ExecutionMode.LIVE:
             if instance.account_id is None:
                 raise SystemExit("LIVE trend instance requires an account-bound runtime instance")
