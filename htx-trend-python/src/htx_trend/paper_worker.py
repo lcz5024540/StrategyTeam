@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
+import copy
 import fcntl
 import json
 import logging
@@ -191,10 +192,13 @@ class PaperTrendWorker:
             return WorkerHealth('STOPPED', 'paper worker stopped')
         now = datetime.now(UTC)
         count = 0
-        # All state transitions occur serially; rollback the full cycle on failure.
-        before = json.dumps(self.ledger.data, default=str)
-        try:
-            for contract in self.config.contracts:
+        skipped: list[str] = []
+        log = logging.getLogger(__name__)
+        for contract in self.config.contracts:
+            # Per-contract snapshot lets one bad contract fail without undoing
+            # progress made for healthy peers in the same tick.
+            contract_before = copy.deepcopy(self.ledger.data)
+            try:
                 periods = self.profile.contract
                 entry = self.market.kline_window(contract, periods.entry_period, 160, now_epoch=int(now.timestamp()))
                 trend = self.market.kline_window(contract, periods.trend_period, 160, now_epoch=int(now.timestamp()))
@@ -248,9 +252,13 @@ class PaperTrendWorker:
                                 * p.quantity * Decimal(self.ledger.position_context(p.position_id)['contract_size']) for p in positions), Decimal('0'))))
                     count += len(outcome.candidates)
                 self.ledger.data['bars'][contract] = bar.open_time
-            self.ledger.checkpoint()
-        except BaseException:
-            self.ledger.data = json.loads(before)
-            raise
-        return WorkerHealth('HEALTHY', 'PAPER public market / simulated fills', count,
+            except Exception as error:
+                self.ledger.data = contract_before
+                skipped.append(f"{contract}:{type(error).__name__}")
+                log.warning("PAPER skipped contract %s: %s", contract, error, exc_info=True)
+        self.ledger.checkpoint()
+        detail = 'PAPER public market / simulated fills'
+        if skipped:
+            detail += '; skipped=' + ','.join(skipped)
+        return WorkerHealth('DEGRADED' if skipped else 'HEALTHY', detail, count,
                             len(self.ledger.active_positions(self.account)))
