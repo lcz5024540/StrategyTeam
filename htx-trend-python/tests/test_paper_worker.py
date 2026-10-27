@@ -17,6 +17,25 @@ from htx_trend.strategy_decision import HtxStrategyDecisionEngine
 from htx_trend.strategy_profiles import STRATEGY_15M_V2
 
 
+UNIVERSE_83 = ",".join([
+    "BTC-USDT", "ETH-USDT", "BNB-USDT", "XRP-USDT", "SOL-USDT", "TRX-USDT",
+    "ZEC-USDT", "DOGE-USDT", "XMR-USDT", "LINK-USDT", "ADA-USDT", "XLM-USDT",
+    "NEAR-USDT", "BCH-USDT", "UNI-USDT", "SUI-USDT", "AAPL-USDT", "ABBV-USDT",
+    "ACNSTOCK-USDT", "ADBE-USDT", "AMAT-USDT", "AMD-USDT", "AMGN-USDT",
+    "AMZNX-USDT", "ANET-USDT", "AVGO-USDT", "BAC-USDT", "BKNG-USDT",
+    "BRKB-USDT", "CATSTOCK-USDT", "CMCSA-USDT", "COST-USDT", "CRM-USDT",
+    "CSCO-USDT", "CVXSTOCK-USDT", "DELL-USDT", "DIS-USDT", "GE-USDT",
+    "GEV-USDT", "GILD-USDT", "GOOGL-USDT", "GS-USDT", "HD-USDT", "IBM-USDT",
+    "INTCX-USDT", "INTU-USDT", "ISRG-USDT", "JNJ-USDT", "JPM-USDT", "KO-USDT",
+    "LIN-USDT", "LLY-USDT", "LMT-USDT", "LRCX-USDT", "MCD-USDT", "MDT-USDT",
+    "META-USDT", "MO-USDT", "MRK-USDT", "MSFT-USDT", "MU-USDT", "NFLX-USDT",
+    "NOW-USDT", "NVDA-USDT", "ORCL-USDT", "PANW-USDT", "PEP-USDT", "PG-USDT",
+    "PLTRX-USDT", "QCOM-USDT", "SBUX-USDT", "SNDK-USDT", "TSLAX-USDT",
+    "TXN-USDT", "UBER-USDT", "UNH-USDT", "V-USDT", "WMT-USDT", "XOM-USDT",
+    "SPY-USDT", "SPX500-USDT", "QQQ-USDT", "NASDAQ100-USDT",
+])
+
+
 def instance(mode='PAPER', key='paper-primary'):
     return NS(instance_key=key, strategy_family='TREND', strategy_name=STRATEGY_15M_V2,
               execution_mode=mode, enabled=True)
@@ -143,13 +162,14 @@ def test_paper_capacity_and_margin_are_hard_gates(tmp_path):
     worker.stop()
 
 
-def test_failed_cycle_rolls_back_and_can_retry(tmp_path):
+def test_failed_contract_is_skipped_and_retried_next_tick(tmp_path):
     market = Market()
     worker = PaperTrendWorker(instance(), market, tmp_path, PaperWorkerConfig())
     original = market.funding_rate
     market.funding_rate = Mock(side_effect=RuntimeError('market unavailable'))
-    with pytest.raises(RuntimeError):
-        worker.tick()
+    health = worker.tick()
+    assert health.status == 'DEGRADED'
+    assert 'skipped=' in health.detail
     assert worker.ledger.data['bars'] == {}
     assert worker.ledger.data['orders'] == {}
     market.funding_rate = original
@@ -207,6 +227,42 @@ def test_paper_worker_reads_maker_config_from_env(monkeypatch, tmp_path):
     assert worker.runtime._maker_config.max_amends == 0
     assert worker.runtime._maker_config.partial_accept is False
     assert worker.runtime._maker_config.timeout_action is MakerTimeoutAction.CANCEL
+    worker.stop()
+
+
+def test_paper_contracts_env_carries_83_universe(monkeypatch):
+    monkeypatch.setenv('HTX_PAPER_CONTRACTS', UNIVERSE_83)
+    config = PaperWorkerConfig.from_env()
+    expected = tuple(x.strip().upper() for x in UNIVERSE_83.split(',') if x.strip())
+    assert config.contracts == expected
+    assert len(config.contracts) == 83
+    assert 'HYPE-USDT' not in config.contracts
+
+
+def test_paper_config_accepts_stock_and_index_symbols(monkeypatch):
+    monkeypatch.setenv('HTX_PAPER_CONTRACTS', 'SPX500-USDT,NASDAQ100-USDT,ACNSTOCK-USDT,BRKB-USDT')
+    config = PaperWorkerConfig.from_env()
+    assert config.contracts == ('SPX500-USDT', 'NASDAQ100-USDT', 'ACNSTOCK-USDT', 'BRKB-USDT')
+
+
+def test_paper_worker_skips_failed_contract_without_stopping_healthy_peer(tmp_path, caplog):
+    market = Market()
+    original = market.kline_window
+    def kline_with_failure(contract, period, size, *, now_epoch):
+        if contract == 'UNKNOWN-USDT':
+            raise RuntimeError('market data unavailable')
+        return original(contract, period, size, now_epoch=now_epoch)
+    market.kline_window = kline_with_failure
+    worker = PaperTrendWorker(
+        instance(), market, tmp_path,
+        PaperWorkerConfig(contracts=('BTC-USDT', 'UNKNOWN-USDT')))
+    with caplog.at_level('WARNING', logger='htx_trend.paper_worker'):
+        health = worker.tick()
+    assert health.status == 'DEGRADED'
+    assert 'UNKNOWN-USDT' in health.detail
+    assert 'BTC-USDT' in worker.ledger.data['bars']
+    assert 'UNKNOWN-USDT' not in worker.ledger.data['bars']
+    assert any('UNKNOWN-USDT' in record.message for record in caplog.records)
     worker.stop()
 
 
