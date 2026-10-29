@@ -1,0 +1,45 @@
+{
+  "observed_at": "2026-10-29T04:08:59.096522+00:00",
+  "packages": [
+    {
+      "directory": "/opt/coinstrategy/htx-trend-paper/releases/0.1.6-paper-db-c00cbac6",
+      "manifest_source_commit": "c00cbac653d7cd204f4af2f21781f6ffe4bf38f1",
+      "manifest_version": "0.1.6-paper-db-c00cbac6",
+      "bindings": {
+        "config_fingerprint": "a118f5987477a7d95b525df462600fbe679ea1ee4df546cf919eb72c88aa1e42",
+        "config_hash": "a118f5987477a7d95b525df462600fbe679ea1ee4df546cf919eb72c88aa1e42",
+        "config_path": "release/config.example.json",
+        "instance_key": "htx-trend-paper-primary",
+        "package_sha256": {
+          "ref": "BUILD.json#/package_sha256",
+          "scope": "final tar.gz bytes"
+        },
+        "source_commit": "c00cbac653d7cd204f4af2f21781f6ffe4bf38f1",
+        "strategy_spec_hash": "d8cb5f01bd83382b7770ca3992284fe80ebf636a5865d6795db4b95ae956be9c",
+        "strategy_version": "HTX_TREND_15M_V2",
+        "timeframe_profile": "INTRADAY_15M"
+      },
+      "manifest_exists": true
+    },
+    {
+      "directory": "/opt/coinstrategy/htx-trend-paper/releases/0.1.6-paper-db-c00cbac6-4h",
+      "manifest_source_commit": "c00cbac653d7cd204f4af2f21781f6ffe4bf38f1",
+      "manifest_version": "0.1.6-paper-db-c00cbac6",
+      "bindings": {
+        "config_fingerprint": "84f3e9b5897a36344a5ddf728d7ca12db6e9fb3186f864ab911a3919d2606617",
+        "config_hash": "84f3e9b5897a36344a5ddf728d7ca12db6e9fb3186f864ab911a3919d2606617",
+        "config_path": "release/config.example.json",
+        "instance_key": "htx-trend-paper-4h",
+        "package_sha256": {
+          "ref": "BUILD.json#/package_sha256",
+          "scope": "final tar.gz bytes"
+        },
+        "source_commit": "c00cbac653d7cd204f4af2f21781f6ffe4bf38f1",
+        "strategy_spec_hash": "0e58827eb8677264d8a5da22ad1a6e921e7ab34705f6fc7ada79cd3cec412265",
+        "strategy_version": "HTX_TREND_4H_V2",
+        "timeframe_profile": "SWING_4H"
+      },
+      "manifest_exists": true
+    }
+  ]
+}

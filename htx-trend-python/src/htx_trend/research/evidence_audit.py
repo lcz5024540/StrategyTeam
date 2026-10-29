@@ -18,7 +18,7 @@ from ..market_data import Candle, completed_candles
 from .store import canonical, digest, read_object
 
 ROOT_KINDS = {'dataset_manifest', 'decision_trace', 'entry_gate_trace', 'exit_decision_trace',
-              'compact_entry_decision', 'compact_exit_decision', 'compact_execution_result'}
+              'compact_entry_decision', 'compact_exit_decision', 'compact_ledger_commit'}
 
 
 def semantic_window(obj):

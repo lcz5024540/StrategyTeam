@@ -1,0 +1,80 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net">
+  <diagram name="PAPER evidence" id="evidence">
+    <mxGraphModel dx="1200" dy="900" grid="1" page="1" pageWidth="1169" pageHeight="827">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="a" value="各实例公开行情&#10;15m/60m 或 4h/1d" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="30" width="230" height="85" />
+        </mxCell>
+        <mxCell id="b" value="稳定闭合 K 线 / 修订&#10;gzip CAS + 引用窗口" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="300" y="30" width="230" height="85" />
+        </mxCell>
+        <mxCell id="c" value="同窗口无决策&#10;仅有界观测状态" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="610" y="30" width="230" height="85" />
+        </mxCell>
+        <mxCell id="d" value="新 bar 实际评估&#10;原入场 / 持仓管理公式" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="300" y="190" width="230" height="85" />
+        </mxCell>
+        <mxCell id="e" value="决策原文与前后状态&#10;PROVISIONAL 执行结果" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="610" y="190" width="230" height="85" />
+        </mxCell>
+        <mxCell id="f" value="权威 paper-state 原子保存&#10;MySQL 镜像语义不变" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="300" y="360" width="230" height="85" />
+        </mxCell>
+        <mxCell id="g" value="账本 SHA256 确认回执&#10;关联订单 / 数量 / 费用" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="610" y="360" width="230" height="85" />
+        </mxCell>
+        <mxCell id="h" value="独立分页补采线程&#10;完整且落盘才推进检查点" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="190" width="230" height="85" />
+        </mxCell>
+        <mxCell id="i" value="证据失败：禁新增风险&#10;行情有效仍管理持仓" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="360" width="230" height="85" />
+        </mxCell>
+        <mxCell id="j" value="只读盘点 / 迁移预览&#10;未知保护；无删除命令" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="610" y="540" width="230" height="85" />
+        </mxCell>
+        <mxCell id="k" value="账本失败：明确故障&#10;先重试保存，暂停新执行" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="300" y="540" width="230" height="85" />
+        </mxCell>
+        <mxCell id="edge0" value="" source="a" target="b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="edge1" value="相同内容" source="b" target="c" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="edge2" value="实际评估" source="b" target="d" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="edge3" value="补缺 / 修订" source="h" target="b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="edge4" value="证据成功" source="d" target="e" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="edge5" value="仅证据失败" source="d" target="i" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="edge6" value="交易结果" source="d" target="f" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="edge7" value="有效管理" source="i" target="f" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="edge8" value="仅已发布账本引用" source="e" target="g" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="edge9" value="保存成功" source="f" target="g" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="edge10" value="保存失败" source="f" target="k" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="edge11" value="长期保留与盘点" source="g" target="j" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

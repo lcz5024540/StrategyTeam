@@ -180,12 +180,21 @@ class HtxMarketData:
         if size < 1:
             raise ValueError("K-line size must be positive")
         observed_at = int(datetime.now(UTC).timestamp())
-        envelope = self._client.history_kline_envelope(contract_code, period, size + 2)
-        raw = envelope.get("data")
-        if not isinstance(raw, list):
-            raise ValueError(f"HTX K-line response has no data list for {contract_code}")
-        candles = completed_candles((Candle.from_htx(item) for item in raw), period, now_epoch=now_epoch,
-                                   close_grace_seconds=self._close_grace_seconds)
+        envelope = None
+        try:
+            envelope = self._client.history_kline_envelope(contract_code, period, size + 2)
+            raw = envelope.get("data")
+            if not isinstance(raw, list):
+                raise ValueError(f"HTX K-line response has no data list for {contract_code}")
+            candles = completed_candles((Candle.from_htx(item) for item in raw), period, now_epoch=now_epoch,
+                                       close_grace_seconds=self._close_grace_seconds)
+        except Exception as error:
+            if self.compact is not None:
+                try:
+                    self.compact.failure(contract_code, period, 'SOURCE:' + type(error).__name__, envelope)
+                except Exception:
+                    pass  # Preserve the original read/parse failure when storage also fails.
+            raise
         selected = candles[-size:]
         refs: tuple[str, ...] = ()
         status = "NOT_CONFIGURED"
@@ -198,10 +207,12 @@ class HtxMarketData:
                 from .research.quality import audit
                 quality = audit(raw, period, start=min(c.open_time for c in (Candle.from_htx(x) for x in raw)),
                                 end=max(c.open_time for c in (Candle.from_htx(x) for x in raw)) + period_seconds(period))
-                if quality['integrity'] != 'COMPLETE':
-                    self.compact.failure(contract_code, period, 'INVALID_SOURCE', envelope)
-                    raise ValueError('source quality failed')
                 key = self.compact.capture(window, envelope, observed_at=observed_at, decision_as_of=now_epoch)
+                if quality['integrity'] != 'COMPLETE':
+                    # Unused/forming raw rows must not introduce a new strategy gate.
+                    self.compact.failure(contract_code, period, 'INVALID_SOURCE', envelope)
+                else:
+                    self.compact.clear_failure(contract_code, period)
                 return KlineWindow(contract_code, period, selected, size, (key,), 'COMPLETE', capture)
             except Exception:
                 return KlineWindow(contract_code, period, selected, size, (), 'FAILED', capture)

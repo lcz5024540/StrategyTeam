@@ -1,0 +1,50 @@
+{
+  "observed_at": "2026-10-29T04:08:53.484020+00:00",
+  "mode": "PUBLIC_READS_ONLY_NO_ACCOUNT",
+  "samples": [
+    {
+      "symbol": "BTC-USDT",
+      "period": "15min",
+      "status": "PASS",
+      "bars": 160,
+      "window_hash": "1c7871140a21c34d43c6bd0ec7c5b864da262039ada2d3e73dc7a4f908e1d350",
+      "raw_sha256": "fc39fed2d0cd5ba46544ce1952fc3098de4e75b5a194a27255e8c4f33318d536",
+      "first_bar": 1793102400,
+      "last_bar": 1793245500,
+      "closure_objects": 162
+    },
+    {
+      "symbol": "BTC-USDT",
+      "period": "60min",
+      "status": "PASS",
+      "bars": 160,
+      "window_hash": "9e0a43c84022c27362c6748f8d3480f23800c6a127114b26b902b61e28c354d8",
+      "raw_sha256": "963b66ec00f4c8693cd968e3710b301074820225d09534d13655e546642d5b32",
+      "first_bar": 1792670400,
+      "last_bar": 1793242800,
+      "closure_objects": 162
+    },
+    {
+      "symbol": "BTC-USDT",
+      "period": "4hour",
+      "status": "PASS",
+      "bars": 160,
+      "window_hash": "956c874eb55d9b7c20f8f7bde54619aeee464298c9fe8e12e3a8fa35949c97bd",
+      "raw_sha256": "8670857249f34c208c2ae417c8a99d58695662ee420ac9e41c0b814f4641e237",
+      "first_bar": 1790942400,
+      "last_bar": 1793232000,
+      "closure_objects": 162
+    },
+    {
+      "symbol": "BTC-USDT",
+      "period": "1day",
+      "status": "PASS",
+      "bars": 160,
+      "window_hash": "4a11d6796a252f258373b93268fe8c7150cb9a1c12cd785b096b0fb7c4d3a817",
+      "raw_sha256": "38464747e310dc43c7edc10bf4f07b5a264adc915514dc857aef2fd476b7a2fd",
+      "first_bar": 1779379200,
+      "last_bar": 1793116800,
+      "closure_objects": 162
+    }
+  ]
+}

@@ -132,3 +132,7 @@ JSON 保存初始化身份/资金配置，变更这些配置须使用新实例�
 工作区未 commit，tip8 基于 HEAD；执行器 commit 后可能重跑 package 对齐。
 `approval-template` 仅输出未签封的 SYNTHETIC 非真授权模板。
 候选包不代表可以装包、热更或启动 PAPER；须另行产品交审及运维开工短令。
+
+## PAPER evidence compact-v2
+
+[运行、盘点、部署与回滚说明](release/EVIDENCE-RETENTION.md)。默认 legacy-v1；新格式显式配置，只影响 PAPER。历史数据无自动删除。

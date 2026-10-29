@@ -15,6 +15,10 @@ class CompactEvidence:
             store.db.execute('''CREATE TABLE IF NOT EXISTS compact_bars(
                 symbol TEXT,period TEXT,bar_time INTEGER,hash TEXT,
                 PRIMARY KEY(symbol,period,bar_time,hash))''')
+            store.db.execute('''CREATE TABLE IF NOT EXISTS compact_latest(
+                symbol TEXT,period TEXT,bar_time INTEGER,hash TEXT, PRIMARY KEY(symbol,period,bar_time))''')
+            store.db.execute('''CREATE TABLE IF NOT EXISTS compact_confirmed_results(
+                result_hash TEXT PRIMARY KEY, commit_hash TEXT NOT NULL)''')
 
     @staticmethod
     def stream(symbol, period):
@@ -34,6 +38,13 @@ class CompactEvidence:
             old.update(last_seen=timestamp, count=old['count'] + 1)
             self.store.checkpoint(name, old)
 
+    def clear_failure(self, symbol, period):
+        name = 'failure:' + self.stream(symbol, period)
+        with self.store._lock:
+            previous = self.store.checkpoint(name)
+            if previous and previous.get('reason'):
+                self.store.checkpoint(name, {**previous, 'reason': None, 'recovered_at': datetime.now(UTC).isoformat()})
+
     def capture(self, window, envelope, *, observed_at, decision_as_of, history=False):
         symbol, period = window.contract_code, window.period
         if not window.is_complete:
@@ -48,13 +59,15 @@ class CompactEvidence:
                 self.store.get(old['window_ref'])
                 ref = old['window_ref']
             else:
-                refs, changed, rows = [], False, []
+                refs, changed, rows, previous_versions = [], False, [], {}
                 for bar in window.candles:
                     key = self.store.put('compact_candle', {
                         'exchange': 'HTX', 'contract_code': symbol, 'period': period, 'candle': bar})
-                    prior = self.store.db.execute('SELECT hash FROM compact_bars WHERE symbol=? AND period=? AND bar_time=?',
-                                                 (symbol, period, bar.open_time)).fetchall()
-                    changed |= bool(prior and key not in {r[0] for r in prior})
+                    prior = self.store.db.execute('SELECT hash FROM compact_latest WHERE symbol=? AND period=? AND bar_time=?',
+                                                 (symbol, period, bar.open_time)).fetchone()
+                    if prior and key != prior[0]:
+                        changed = True
+                        previous_versions[str(bar.open_time)] = prior[0]
                     refs.append(key)
                     rows.append((symbol, period, bar.open_time, key))
                 ref = self.store.put('compact_kline_window', {
@@ -64,9 +77,12 @@ class CompactEvidence:
                 if changed:
                     self.store.put('compact_kline_revision', {
                         'symbol': symbol, 'period': period, 'observed_at': observed_at,
-                        'decision_as_of': decision_as_of, 'response': envelope}, refs=(ref,))
+                        'decision_as_of': decision_as_of, 'response': envelope,
+                        'previous_versions': previous_versions, 'historical_repair': history},
+                        refs=(ref, *previous_versions.values()))
                 with self.store.db:
                     self.store.db.executemany('INSERT OR IGNORE INTO compact_bars VALUES(?,?,?,?)', rows)
+                    self.store.db.executemany('INSERT INTO compact_latest VALUES(?,?,?,?) ON CONFLICT(symbol,period,bar_time) DO UPDATE SET hash=excluded.hash', rows)
             start = window.candles[0].open_time
             end = window.candles[-1].open_time + period_seconds(period)
             # A later live window must not leap across a missing historical interval.
@@ -79,9 +95,31 @@ class CompactEvidence:
                 'observations': old.get('observations', 0) + 1}
             if not history:
                 update.update(window_content=content_id, window_ref=ref)
+            elif changed:
+                update.pop('window_content', None)
             self.store.checkpoint(name, update)
-            self.store.checkpoint('failure:' + name, {'reason': None, 'count': 0})
             return ref
+
+    def confirm_ledger(self, instance, path):
+        """Only a successfully published authoritative snapshot can confirm results."""
+        import json
+        from hashlib import sha256
+        raw = path.read_bytes()
+        data = json.loads(raw)
+        refs = {d['payload']['evidence_ref'] for d in data['decisions']
+                if d['kind'] == 'EVIDENCE_RESULT' and d['payload'].get('evidence_ref')}
+        with self.store._lock:
+            pending = tuple(sorted(ref for ref in refs if not self.store.db.execute(
+                'SELECT 1 FROM compact_confirmed_results WHERE result_hash=?', (ref,)).fetchone()))
+            if not pending:
+                return None
+            key = self.store.put('compact_ledger_commit', {'instance': instance,
+                'ledger_sha256': sha256(raw).hexdigest(), 'result_refs': pending,
+                'commit_status': 'AUTHORITATIVE_LEDGER_PUBLISHED'}, refs=pending)
+            with self.store.db:
+                self.store.db.executemany('INSERT OR IGNORE INTO compact_confirmed_results VALUES(?,?)',
+                                         [(ref, key) for ref in pending])
+            return key
 
     def retain_input(self, window):
         """Pin actual decision-time raw separately from the reusable stable window."""
@@ -113,6 +151,7 @@ class CompactEvidence:
         candles = tuple(sorted((Candle.from_htx(row) for row in envelope['data']), key=lambda c: c.open_time))
         self.capture(KlineWindow(symbol, period, candles, len(candles)), envelope,
                      observed_at=int(datetime.now(UTC).timestamp()), decision_as_of=end, history=True)
+        self.clear_failure(symbol, period)
         return True
 
 

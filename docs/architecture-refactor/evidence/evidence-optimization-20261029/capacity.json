@@ -1,0 +1,86 @@
+{
+  "scope": "SYNTHETIC unchanged 160-bar windows; timestamps vary; no decisions; not live saving estimate",
+  "includes": "objects and closed SQLite index; local filesystem block allocation",
+  "results": [
+    {
+      "period": "15min",
+      "format": "legacy-v1",
+      "polls": 1000,
+      "objects": 2000,
+      "object_logical_bytes": 34185000,
+      "total_logical_bytes": 34959144,
+      "total_allocated_bytes": 41734144,
+      "elapsed_seconds": 4.063
+    },
+    {
+      "period": "15min",
+      "format": "compact-v2",
+      "polls": 1000,
+      "objects": 161,
+      "object_logical_bytes": 41394,
+      "total_logical_bytes": 201138,
+      "total_allocated_bytes": 823296,
+      "elapsed_seconds": 1.695
+    },
+    {
+      "period": "60min",
+      "format": "legacy-v1",
+      "polls": 1000,
+      "objects": 2000,
+      "object_logical_bytes": 34373000,
+      "total_logical_bytes": 35138952,
+      "total_allocated_bytes": 41742336,
+      "elapsed_seconds": 4.208
+    },
+    {
+      "period": "60min",
+      "format": "compact-v2",
+      "polls": 1000,
+      "objects": 161,
+      "object_logical_bytes": 41627,
+      "total_logical_bytes": 201371,
+      "total_allocated_bytes": 823296,
+      "elapsed_seconds": 1.687
+    },
+    {
+      "period": "4hour",
+      "format": "legacy-v1",
+      "polls": 1000,
+      "objects": 2000,
+      "object_logical_bytes": 34600000,
+      "total_logical_bytes": 35357760,
+      "total_allocated_bytes": 41742336,
+      "elapsed_seconds": 4.208
+    },
+    {
+      "period": "4hour",
+      "format": "compact-v2",
+      "polls": 1000,
+      "objects": 161,
+      "object_logical_bytes": 41604,
+      "total_logical_bytes": 201348,
+      "total_allocated_bytes": 823296,
+      "elapsed_seconds": 1.717
+    },
+    {
+      "period": "1day",
+      "format": "legacy-v1",
+      "polls": 1000,
+      "objects": 2000,
+      "object_logical_bytes": 34825000,
+      "total_logical_bytes": 35582760,
+      "total_allocated_bytes": 41730048,
+      "elapsed_seconds": 4.215
+    },
+    {
+      "period": "1day",
+      "format": "compact-v2",
+      "polls": 1000,
+      "objects": 161,
+      "object_logical_bytes": 41762,
+      "total_logical_bytes": 201506,
+      "total_allocated_bytes": 823296,
+      "elapsed_seconds": 1.722
+    }
+  ]
+}

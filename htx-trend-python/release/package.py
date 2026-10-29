@@ -69,15 +69,19 @@ def load_strategy_card(path: Path):
     }
 
 
-def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False):
+def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False, compact_evidence=False):
     # paper_4h 仍是 PAPER 候选包，只切换 card / instance，不改 15m paper=True 默认。
     if paper_4h:
         paper = True
+    if compact_evidence and not paper:
+        raise ValueError('compact evidence packages are PAPER only')
     source = git('rev-parse', 'HEAD')
     short = git('rev-parse', '--short=8', 'HEAD')
     if not re.fullmatch('[0-9a-f]{8}', short):
         raise ValueError('expected exactly eight hex characters')
     version = f'0.1.6-paper-db-{short}' if paper else f'0.1.2-g3-candidate-{short}'
+    if compact_evidence:
+        version = f'0.1.7-evidence-v2-{short}' + ('-4h' if paper_4h else '')
     card, refs = load_artifacts(ROOT / 'release/artifacts')
     if paper_4h:
         card, card_ref = load_strategy_card(PAPER_4H_CARD)
@@ -92,7 +96,8 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False)
     # Explicit allowlist: no env, keys, SQL, tests, real approvals or state trees.
     paths = sorted((ROOT / 'src/htx_trend').rglob('*.py'))
     paths += [ROOT / 'pyproject.toml', ROOT / 'README.md',
-              ROOT / 'release/package.py', ROOT / 'release/README.md']
+              ROOT / 'release/package.py', ROOT / 'release/README.md',
+              ROOT / 'release/EVIDENCE-RETENTION.md']
     paths += sorted((ROOT / 'release/artifacts').glob('*.json'))
     payload = {}
     for path in paths:
@@ -108,6 +113,9 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False)
         config.update(instance_key=instance_key, max_active_positions=5,
                       account_equity_usdt='300', max_total_margin_rate='0.10',
                       contracts=['BTC-USDT', 'ETH-USDT'])
+    if compact_evidence:
+        config['evidence_format'] = 'compact-v2'
+        config['runtime_env_required'] = {'HTX_PAPER_EVIDENCE_FORMAT': 'compact-v2'}
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
                 'config_hash': digest(encoded(config)), 'config_path': 'release/config.example.json',
@@ -176,7 +184,7 @@ def verify(archive: Path):
         if entry != {'sha256': hashed, 'hash_mode': mode}:
             raise ValueError(f'member hash mismatch: {name}')
     if (manifest.get('candidate') is not True or manifest.get('synthetic') is not True
-            or not re.fullmatch(r'0\.1\.(?:(?:2-g3|3-paper)-candidate|[56]-paper-db|4-paper-fixa)-[0-9a-f]{8}', manifest['version'])):
+            or not re.fullmatch(r'0\.1\.(?:(?:(?:2-g3|3-paper)-candidate|[56]-paper-db|4-paper-fixa)-[0-9a-f]{8}|7-evidence-v2-[0-9a-f]{8}(?:-4h)?)', manifest['version'])):
         raise ValueError('not a candidate package')
     if (archive.parent / 'MANIFEST.json').read_bytes() != data['MANIFEST.json']:
         raise ValueError('external manifest mismatch')
@@ -219,6 +227,7 @@ def main():
     builder = commands.add_parser('build')
     builder.add_argument('--out-root', type=Path, default=Path('/tmp/g3-codex/frozen'))
     builder.add_argument('--paper', action='store_true')
+    builder.add_argument('--compact-evidence', action='store_true', help='PAPER compact-v2 candidate; runtime switch still requires explicit env')
     builder.add_argument('--paper-4h', action='store_true',
                          help='PAPER 示例绑定 HTX_TREND_4H_V2 / htx-trend-paper-4h')
     commands.add_parser('verify').add_argument('archive', type=Path)
@@ -227,7 +236,7 @@ def main():
     template.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.command == 'build':
-        print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h))
+        print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h, compact_evidence=args.compact_evidence))
     elif args.command == 'verify':
         print(json.dumps({'status': 'PASS', **verify(args.archive)}, ensure_ascii=False))
     else:

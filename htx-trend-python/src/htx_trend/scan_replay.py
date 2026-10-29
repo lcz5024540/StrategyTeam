@@ -408,6 +408,8 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
         max_active_positions=assumptions.max_active_positions, leverage=assumptions.leverage)
     worker.account, worker.profile, worker.entry_config = 'offline', TimeframeProfile.INTRADAY_15M, JavaEntryConfig()
     worker.ledger, worker.market, worker.stopped = ledger, market, False
+    worker._checkpoint_failed = False
+    worker._failures = {}
     worker.exchange = WorkerPaperExchange(ledger)
     execution_config = replace(ExecutionConfig(), account_equity_usdt=worker.config.equity,
         max_total_margin_rate=worker.config.margin_rate, max_active_positions=worker.config.max_active_positions,

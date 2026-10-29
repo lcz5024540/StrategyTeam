@@ -34,3 +34,7 @@ TAR="$OUT/htx-trend-python-$VER.tar.gz"
 - 后续真实准入必须另获授权、核对研究/PAPER 证据，并独立采集 `context.json` 中 `admission.BINDINGS` 所列的运行绑定；**不得从模板复制 context 当作独立证据**。G2 admission 内层 `source_commit/config_hash/strategy_version` 与 approval 对应字段交叉绑定，`admission_hash/admission_seal_hash` 必须来自另行核验的 admission。哈希校验只证明完整性，不证明签发者或部署权限。
 
 交给测试时传递 tar、sha256、MANIFEST、BUILD 和可选模板。G3.5 尚未执行，不据工程测试结果宣称现网可安装。
+
+## PAPER evidence compact-v2
+
+[运行、盘点、部署与回滚说明](EVIDENCE-RETENTION.md)。默认 legacy-v1；新格式显式配置，只影响 PAPER。历史数据无自动删除。

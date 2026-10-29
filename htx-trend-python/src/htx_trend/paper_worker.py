@@ -199,6 +199,17 @@ class PaperTrendWorker:
         if old:
             logging.getLogger(__name__).info('PAPER recovered %s after %s failures', contract, old['count'])
 
+    def _confirm_evidence(self):
+        if self.runtime._compact is None or not self.ledger.path.exists():
+            return True
+        try:
+            self.runtime._compact.confirm_ledger(self.instance.instance_key, self.ledger.path)
+            self._recovered('LEDGER_CONFIRMATION')
+            return True
+        except Exception as error:
+            self._failure('LEDGER_CONFIRMATION', type(error).__name__)
+            return False
+
     def _record_run_evidence(self, run_id, contract, before, at):
         """Small execution result linked to the durable input decision, never a full ledger copy."""
         if self.runtime._compact is None:
@@ -214,7 +225,7 @@ class PaperTrendWorker:
             ref = self.runtime._evidence_store.put('compact_execution_result', {
                 'instance': self.instance.instance_key, 'strategy': self.instance.strategy_name,
                 'timeframe_profile': self.profile.value, 'contract': contract, 'run_id': run_id, 'at': at,
-                'simulated': True, 'orders': orders,
+                'simulated': True, 'commit_status': 'PROVISIONAL', 'orders': orders,
                 'fills': [f for f in self.ledger.data['fills'] if f['order_id'] in orders],
                 'positions': {k: self.ledger.data['positions'][k] for k in ids},
                 'contexts': {k: self.ledger.data['contexts'].get(k) for k in ids},
@@ -240,10 +251,12 @@ class PaperTrendWorker:
             # snapshot is uncommitted. Retrying publication itself is idempotent.
             self.ledger.checkpoint()
             self._checkpoint_failed = False
+            self._confirm_evidence()
             return WorkerHealth('DEGRADED', 'pending PAPER ledger persisted; resume next cycle')
         now = datetime.now(UTC)
         count = 0
-        skipped: list[str] = []
+        confirmation_ok = self._confirm_evidence()
+        skipped: list[str] = [] if confirmation_ok else ['LEDGER_CONFIRMATION_FAILED']
         log = logging.getLogger(__name__)
         for contract in self.config.contracts:
             # Per-contract snapshot lets one bad contract fail without undoing
@@ -256,7 +269,7 @@ class PaperTrendWorker:
                 trend = self.market.kline_window(contract, periods.trend_period, 160, now_epoch=int(now.timestamp()))
                 if not entry.is_complete or not trend.is_complete:
                     raise ValueError('PAPER market data incomplete')
-                evidence_failed = entry.evidence_status == 'FAILED' or trend.evidence_status == 'FAILED'
+                evidence_failed = not confirmation_ok or entry.evidence_status == 'FAILED' or trend.evidence_status == 'FAILED'
                 if evidence_failed:
                     skipped.append(f'{contract}:MARKET_EVIDENCE_FAILED')
                     self._failure(contract, 'MARKET_EVIDENCE_FAILED')
@@ -333,6 +346,8 @@ class PaperTrendWorker:
         except Exception:
             self._checkpoint_failed = True
             raise
+        if not self._confirm_evidence():
+            skipped.append('LEDGER_CONFIRMATION_FAILED')
         detail = 'PAPER public market / simulated fills'
         if skipped:
             detail += '; skipped=' + ','.join(skipped)
