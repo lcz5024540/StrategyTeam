@@ -1,0 +1,22 @@
+✗ check-docs-sync：21 项违规
+  - H-10 轨迹链接：trace 条目「cockpit-joycode-config-audit」commit='' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「joycode-codex-cockpit-proxy-guide」commit='' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「github-crypto-trend-strategy-research」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「projects-node-rpc-inventory」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「master-mainnet-rpc-sheet2」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「testhk-quicknode-rpc-sheet2」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「testhk-security-kafka-independent-bootstrap」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「security-kafka-dev-test-disabled」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「security-kafka-sasl-ssl-config-fix」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「security-operation-event-contract-doc」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「ada-perp-arbitrage-article-analysis」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「coinstrategy-fetch-all-commits」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「coinstrategy-event-entry-trend-exit-design」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「coinstrategy-event-unified-exit-design-v2」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「pelican-bicycle-svg-animation」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「wyckoff-theory-explanation」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「social-belonging-comment-analysis」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「rwa-auto-deploy-s3-bucket-query」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「rwa-auto-deploy-additional-bucket-query」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「rwa-auto-deploy-s3-config-inventory」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
+  - H-10 轨迹链接：trace 条目「htx-python-evidence-retention-audit」commit='pending' 非真哈希 → 修复：回填该条目的实际 commit 哈希（除最后一条外不许 pending；GAP-6 区分已验证增量 vs 悬空）
