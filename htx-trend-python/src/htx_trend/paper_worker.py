@@ -18,6 +18,7 @@ import re
 import uuid
 
 from .execution import ExecutionConfig, ExecutionFacts
+from .continuation import LINKED, ContinuationConfig, latest_completed
 from .java_entry_contract import evaluate
 from .ledger import Position
 from .maker_execution import MakerExecutionConfig
@@ -159,12 +160,15 @@ class WorkerPaperExchange(PaperExchange):
 
 
 class PaperTrendWorker:
-    def __init__(self, instance, market, state_root: Path, config: PaperWorkerConfig, evidence_store=None):
+    def __init__(self, instance, market, state_root: Path, config: PaperWorkerConfig, evidence_store=None,
+                 continuation_config: ContinuationConfig | None = None):
         if instance.execution_mode != 'PAPER' or not re.fullmatch(r'[A-Za-z0-9_-]+', instance.instance_key):
             raise ValueError('PAPER requires an independent safe instance key')
         self.instance, self.market, self.config = instance, market, config
         self.account = 'paper:' + instance.instance_key
         self.profile = profile_for_version(instance.strategy_name) or TimeframeProfile.INTRADAY_15M
+        self.continuation = continuation_config or ContinuationConfig.from_env()
+        self.continuation.require_15m(self.profile is TimeframeProfile.INTRADAY_15M and instance.strategy_name == 'HTX_TREND_15M_V2')
         self.entry_config = (JavaEntryConfig.from_env() if instance.strategy_name == LEGACY_STRATEGY_VERSION
                              else profile_entry_config(self.profile))
         HtxStrategyDecisionEngine(strategy_version=instance.strategy_name).require("PAPER")
@@ -181,7 +185,9 @@ class PaperTrendWorker:
                 hard_risk_limits_enabled=True),
             maker_config=MakerExecutionConfig.from_env(), evidence_store=evidence_store,
             compact=getattr(market, 'compact', None),
-            evidence_context={'instance': instance.instance_key, 'timeframe_profile': self.profile.value})
+            evidence_context={'instance': instance.instance_key, 'timeframe_profile': self.profile.value},
+            continuation_config=self.continuation)
+        self.runtime._paper_worker_config = asdict(config)
         self.stopped = False
         self._checkpoint_failed = False
         self._failures = {}
@@ -299,7 +305,9 @@ class PaperTrendWorker:
                         lowest_price=min(Decimal(context['lowest']), bar.low), atr=signal.indicators.atr,
                         signal_side=signal.side, ema_fast=signal.indicators.ema_fast,
                         ema_slow=signal.indicators.ema_slow, major_timeframe_opposition=0,
-                        market_context_opposes=False, at=now, evidence_windows=(entry, trend))
+                        market_context_opposes=False, at=now, evidence_windows=(entry, trend), evaluation_candle=bar,
+                        market_snapshot={'book': book, 'contract': spec, 'at': now,
+                                         'funding_quote_status': 'NOT_REQUESTED_ON_MANAGEMENT_PATH'})
                     if self.runtime.evidence_error:
                         skipped.append(f'{contract}:EXIT_EVIDENCE_FAILED')
                         self._failure(contract, 'EXIT_EVIDENCE_FAILED')
@@ -318,8 +326,17 @@ class PaperTrendWorker:
                 if not had_position:
                     if evidence_failed:
                         continue  # no order and no bar advance; retry after recovery
+                    policy = getattr(self, 'continuation', ContinuationConfig())
+                    prior, previous_exit = (latest_completed(self.ledger, self.account, contract, self.runtime._evidence_store)
+                        if policy.cooldown or policy.version == LINKED else (None, None))
+                    if policy.cooldown and previous_exit is not None and prior is None:
+                        self.ledger.decision(self.account, run_id, 'ENTRY_REJECTED',
+                            {'reason': 'COOLDOWN_COST_UNKNOWN', 'contract': contract})
+                        self.ledger.data['bars'][contract] = bar.open_time
+                        continue
                     outcome = self.runtime.scan(run_id=run_id, entry_window=entry, trend_window=trend,
                         now_epoch=int(now.timestamp()), at=now, book=book,
+                        prior_trade=prior if policy.cooldown else None, previous_exit=previous_exit,
                         execution_candle=Candle(int(now.timestamp()), book.bid, book.ask, book.bid, book.ask),
                         claimed_structure_keys=frozenset(c["structure_key"] for c in self.ledger.data["contexts"].values() if c.get("structure_key")),
                         contract=spec, funding=self.market.funding_rate(contract),

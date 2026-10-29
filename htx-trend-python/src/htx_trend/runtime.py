@@ -16,6 +16,8 @@ from pathlib import Path
 
 from .execution import ExecutionConfig, ExecutionFacts, GateResult, PriorTrade, evaluate_gate
 from .exits import ExitInput, ExitAction, decide
+from .continuation import (BASELINE, CONFIRM, LINKED, ContinuationConfig, advance_confirmation,
+                           decide_continuation, reentry_gate)
 from .ledger import TrendLedger
 from .maker_execution import (
     MakerExecutionConfig, MakerTimeoutAction,
@@ -46,7 +48,8 @@ class PaperTrendRuntime:
                  mirror_account_id: str | None = None, strategy_version: str = LEGACY_STRATEGY_VERSION,
                  admission: StrategyAdmissionArtifact | None = None,
                  maker_config: MakerExecutionConfig = MakerExecutionConfig(),
-                 evidence_store=None, compact=None, evidence_context=None) -> None:
+                 evidence_store=None, compact=None, evidence_context=None,
+                 continuation_config: ContinuationConfig = ContinuationConfig()) -> None:
         self._ledger, self._exchange = ledger, exchange
         self._account_id, self._mirror_account_id = account_id, mirror_account_id
         self._decision = HtxStrategyDecisionEngine(strategy_version=strategy_version, config=entry_config,
@@ -57,13 +60,16 @@ class PaperTrendRuntime:
         self._compact = compact
         self._evidence_context = evidence_context or {}
         self.evidence_error = None
+        continuation_config.require_15m(strategy_version == "HTX_TREND_15M_V2")
+        self._continuation = continuation_config
 
     def _version_ref(self):
         from .research.store import digest
         manifest_path = Path(__file__).resolve().parents[2] / 'MANIFEST.json'
         manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
         config = {'entry': asdict(self._decision.config), 'execution': asdict(self._execution_config),
-                  'maker': asdict(self._maker_config)}
+                  'maker': asdict(self._maker_config), 'continuation': asdict(self._continuation),
+                  'paper_worker': getattr(self, '_paper_worker_config', None)}
         return self._evidence_store.put('compact_strategy_version', {
             **self._evidence_context, 'strategy': self._decision.strategy_version,
             'source_commit': manifest.get('source_commit') or os.getenv('HTX_PYTHON_SOURCE_COMMIT') or 'UNPACKAGED',
@@ -76,7 +82,7 @@ class PaperTrendRuntime:
              prior_trade: PriorTrade | None = None, market_context: MarketContext | None = None,
              execution_facts: ExecutionFacts | None = None,
              claimed_structure_keys: frozenset[str] = frozenset(),
-             execution_candle: Candle | None = None) -> ScanOutcome:
+             execution_candle: Candle | None = None, previous_exit: dict | None = None) -> ScanOutcome:
         decision = self._decision.decide(contract_code=entry_window.contract_code, period=entry_window.period,
                                          candles=entry_window.candles, surface=DecisionSurface.PAPER)
         signal = decision.signal
@@ -92,6 +98,9 @@ class PaperTrendRuntime:
                                         signal.indicators.atr, signal.indicators.ema_fast) if item.model is ModelCode.FIB_PULLBACK_CONTINUATION
                                                        and signal.indicators is not None else None),
                                     config=self._execution_config) for item in output)
+        if self._continuation.version == LINKED:
+            gates = tuple(reentry_gate(item, entry_window.candles[-1], book, previous_exit) or gate
+                          for item, gate in zip(output, gates))
         evidence = {}
         if self._compact is not None:
             refs = (*self._compact.retain_input(entry_window), *self._compact.retain_input(trend_window), self._version_ref())
@@ -103,6 +112,7 @@ class PaperTrendRuntime:
                 'funding_quote': funding, 'funding_paid': None, 'funding_paid_status': 'UNKNOWN',
                 'execution_facts': execution_facts, 'prior_trade': prior_trade, 'market_context': context,
                 'claimed_structure_keys': sorted(claimed_structure_keys), 'execution_candle': execution_candle,
+                'previous_exit': previous_exit, 'continuation': asdict(self._continuation),
                 'entry_window': entry_window.evidence_refs, 'trend_window': trend_window.evidence_refs,
             }, refs=refs)
             evidence = {'evidence_ref': ref, 'evidence_status': 'COMPLETE'}
@@ -112,6 +122,7 @@ class PaperTrendRuntime:
             "candidates": [item.model.value for item in output], "gates": [item.reason for item in gates],
             "primary_model": route.primary.model.value if route.primary else None, "route": route.reason,
             "strategy_version": decision.strategy_version, "decision_hash": decision.decision_hash,
+            **({"continuation_version": self._continuation.version} if self._continuation.version != BASELINE else {}),
         })
         selected = next((item for item in route.ranked if gates[output.index(item)].allowed), None)
         if selected is None:
@@ -143,7 +154,8 @@ class PaperTrendRuntime:
                 "structure_target": str(selected.target_low), "contract_size": str(contract.contract_size),
                 "entry_fee": str(entry_price * contract.contract_size * Decimal(gate.size_plan.contracts) * Decimal("0.0004")),
                 "highest": str(entry_price), "lowest": str(entry_price), "protection": None,
-                "trailing_armed_at": None, "trailing_arm_reason": None, "max_favorable_r": "0"})
+                "trailing_armed_at": None, "trailing_arm_reason": None, "max_favorable_r": "0",
+                **({"continuation_version": self._continuation.version} if self._continuation.version != BASELINE else {})})
             if self._mirror_account_id:
                 self._mirror(position.position_id, order.order_id, entry_window.contract_code, selected.side.value,
                              gate.size_plan.contracts, at, run_id, fill_candle, contract.contract_size, mid=book.mid)
@@ -217,7 +229,8 @@ class PaperTrendRuntime:
                 "structure_target": str(selected.target_low), "contract_size": str(contract.contract_size),
                 "entry_fee": str(fill_price * contract.contract_size * Decimal(lifecycle.filled_quantity) * Decimal("0.0004")),
                 "highest": str(fill_price), "lowest": str(fill_price), "protection": None,
-                "trailing_armed_at": None, "trailing_arm_reason": None, "max_favorable_r": "0"})
+                "trailing_armed_at": None, "trailing_arm_reason": None, "max_favorable_r": "0",
+                **({"continuation_version": self._continuation.version} if self._continuation.version != BASELINE else {})})
             if self._mirror_account_id:
                 self._mirror(position.position_id, order.order_id, entry_window.contract_code, selected.side.value,
                              lifecycle.filled_quantity, at, run_id, synthetic_candle, contract.contract_size, mid=book.mid)
@@ -240,7 +253,7 @@ class PaperTrendRuntime:
                lowest_price: Decimal, atr: Decimal, signal_side, ema_fast: Decimal | None, ema_slow: Decimal | None,
                major_timeframe_opposition: int, market_context_opposes: bool, at: datetime,
                flat_streak: int = 0, protection_breach_bars: int = 0,
-               evidence_windows: tuple[KlineWindow, ...] = ()) -> object:
+               evidence_windows: tuple[KlineWindow, ...] = (), evaluation_candle: Candle | None = None, market_snapshot: dict | None = None) -> object:
         position = self._ledger.position(position_id)
         context = self._ledger.position_context(position_id)
         context_before = copy.deepcopy(context)
@@ -260,7 +273,28 @@ class PaperTrendRuntime:
             estimated_close_fee, datetime.fromisoformat(context["trailing_armed_at"]) if context.get("trailing_armed_at") else None,
             context.get("trailing_arm_reason"), Decimal(context.get("max_favorable_r", "0")), at, flat_streak=flat_streak,
             protection_breach_bars=protection_breach_bars)
-        decision = decide(exit_input)
+        version = context.get('continuation_version', BASELINE)
+        if version not in (BASELINE, CONFIRM, LINKED):
+            raise ValueError('unknown position continuation version')
+        candidate_policy = version in (CONFIRM, LINKED)
+        if candidate_policy:
+            if self._decision.strategy_version != 'HTX_TREND_15M_V2':
+                raise ValueError('candidate position policy requires 15m')
+            count, last_bar = advance_confirmation(exit_input, evaluation_candle, context)
+            decision = decide_continuation(exit_input, count)
+            if (evaluation_candle is not None and context.get('continuation_last_bar') is not None
+                    and evaluation_candle.open_time <= int(context['continuation_last_bar'])):
+                from dataclasses import replace
+                return replace(decision, action=ExitAction.HOLD, target_remaining_contracts=None,
+                               reason='continuation-duplicate-bar')
+            context.update(continuation_breach_count=count, continuation_last_bar=last_bar)
+        else:
+            decision = decide(exit_input)
+        if decision.action is ExitAction.FULL_CLOSE and evaluation_candle is not None:
+            context['complete_exit'] = dict(position_id=position_id, side=position.side, reason=decision.reason,
+                closed_at=at.isoformat(), protection=str(decision.protection_price) if decision.protection_price else None,
+                bar_time=evaluation_candle.open_time, bar_high=str(evaluation_candle.high),
+                bar_low=str(evaluation_candle.low), evidence_status='RECORDED')
         context.update({"highest": str(highest_price), "lowest": str(lowest_price),
                         "protection": str(decision.protection_price) if decision.protection_price else None,
                         "trailing_armed_at": decision.trailing_armed_at.isoformat() if decision.trailing_armed_at else None,
@@ -274,6 +308,8 @@ class PaperTrendRuntime:
                     **self._evidence_context, 'run_id': run_id, 'at': at, 'position_id': position_id,
                     'position_before': position, 'context_before': context_before, 'input': exit_input,
                     'decision': decision, 'context_after': context, 'funding_paid': None,
+                    'evaluation_candle': evaluation_candle, 'continuation_version': version,
+                    'market_snapshot': market_snapshot,
                     'funding_paid_status': 'UNKNOWN'}, refs=(*refs, self._version_ref()))
                 evidence = {'evidence_ref': ref, 'evidence_status': 'COMPLETE'}
             except Exception as error:
