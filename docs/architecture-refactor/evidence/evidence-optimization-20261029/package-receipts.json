@@ -1,0 +1,85 @@
+{
+  "mode": "LOCAL_FROZEN_CANDIDATES_NOT_DEPLOYED",
+  "packages": [
+    {
+      "archive": "/Users/lichangzheng.ray/Ray/frozen/htx-evidence-20261029/0.1.7-evidence-v2-4778b1a7/htx-trend-python-0.1.7-evidence-v2-4778b1a7.tar.gz",
+      "verify": "PASS",
+      "working_tree_dirty": false,
+      "self_test": {
+        "status": "PASS",
+        "checks": 2,
+        "synthetic": true
+      },
+      "audit_cli": "PASS",
+      "receipt": {
+        "archive": "htx-trend-python-0.1.7-evidence-v2-4778b1a7.tar.gz",
+        "archive_path": "/Users/lichangzheng.ray/Ray/frozen/htx-evidence-20261029/0.1.7-evidence-v2-4778b1a7/htx-trend-python-0.1.7-evidence-v2-4778b1a7.tar.gz",
+        "bindings": {
+          "config_fingerprint": "c0e7106e83f89dee402a8b1a1360f02d624a275016faabcbf624eab89694439f",
+          "config_hash": "c0e7106e83f89dee402a8b1a1360f02d624a275016faabcbf624eab89694439f",
+          "config_path": "release/config.example.json",
+          "instance_key": "htx-trend-paper-primary",
+          "package_sha256": "1a790845d5562fe2ad6fa3806f90be2a3f7d71f3e03cde08e920439b1336fef6",
+          "source_commit": "4778b1a765b138fecc9a725f681cf5bb79431844",
+          "strategy_spec_hash": "d8cb5f01bd83382b7770ca3992284fe80ebf636a5865d6795db4b95ae956be9c",
+          "strategy_version": "HTX_TREND_15M_V2",
+          "timeframe_profile": "INTRADAY_15M"
+        },
+        "build": {
+          "created_at": "2026-10-29T04:23:16.612061+00:00",
+          "source_note": "HEAD plus working-tree payload; per-file hashes bind actual bytes",
+          "version_note": "tip8 is based on HEAD; for an uncommitted working tree, the executor may rebuild after commit to align tip8",
+          "working_tree_dirty": false
+        },
+        "candidate": true,
+        "disclaimer": "候选包 ≠ 可以热更 ≠ 可装现网",
+        "frozen_path": "/Users/lichangzheng.ray/Ray/frozen/htx-evidence-20261029/0.1.7-evidence-v2-4778b1a7",
+        "manifest_sha256": "7f8630abad32eba4074120226cd3fb0fee398d475571c12b2d2ba6ad3c049f81",
+        "package_sha256": "1a790845d5562fe2ad6fa3806f90be2a3f7d71f3e03cde08e920439b1336fef6",
+        "schema": "htx-candidate-build-g3",
+        "synthetic": true,
+        "version": "0.1.7-evidence-v2-4778b1a7"
+      }
+    },
+    {
+      "archive": "/Users/lichangzheng.ray/Ray/frozen/htx-evidence-20261029/0.1.7-evidence-v2-4778b1a7-4h/htx-trend-python-0.1.7-evidence-v2-4778b1a7-4h.tar.gz",
+      "verify": "PASS",
+      "working_tree_dirty": false,
+      "self_test": {
+        "status": "PASS",
+        "checks": 2,
+        "synthetic": true
+      },
+      "audit_cli": "PASS",
+      "receipt": {
+        "archive": "htx-trend-python-0.1.7-evidence-v2-4778b1a7-4h.tar.gz",
+        "archive_path": "/Users/lichangzheng.ray/Ray/frozen/htx-evidence-20261029/0.1.7-evidence-v2-4778b1a7-4h/htx-trend-python-0.1.7-evidence-v2-4778b1a7-4h.tar.gz",
+        "bindings": {
+          "config_fingerprint": "24323f920ea252f90d027ca54c38b53bbffd729c4d39ba2f6f1da4779f3c9620",
+          "config_hash": "24323f920ea252f90d027ca54c38b53bbffd729c4d39ba2f6f1da4779f3c9620",
+          "config_path": "release/config.example.json",
+          "instance_key": "htx-trend-paper-4h",
+          "package_sha256": "8db32eebab60332704e5b7b16e775e5ef273bc1ae5b83ae100aa990433aba9dd",
+          "source_commit": "4778b1a765b138fecc9a725f681cf5bb79431844",
+          "strategy_spec_hash": "0e58827eb8677264d8a5da22ad1a6e921e7ab34705f6fc7ada79cd3cec412265",
+          "strategy_version": "HTX_TREND_4H_V2",
+          "timeframe_profile": "SWING_4H"
+        },
+        "build": {
+          "created_at": "2026-10-29T04:23:43.366671+00:00",
+          "source_note": "HEAD plus working-tree payload; per-file hashes bind actual bytes",
+          "version_note": "tip8 is based on HEAD; for an uncommitted working tree, the executor may rebuild after commit to align tip8",
+          "working_tree_dirty": false
+        },
+        "candidate": true,
+        "disclaimer": "候选包 ≠ 可以热更 ≠ 可装现网",
+        "frozen_path": "/Users/lichangzheng.ray/Ray/frozen/htx-evidence-20261029/0.1.7-evidence-v2-4778b1a7-4h",
+        "manifest_sha256": "48c9e5e75f0455f490ec85e9e32af8d8679ec5d3d440dbada6ac5792fddabb0a",
+        "package_sha256": "8db32eebab60332704e5b7b16e775e5ef273bc1ae5b83ae100aa990433aba9dd",
+        "schema": "htx-candidate-build-g3",
+        "synthetic": true,
+        "version": "0.1.7-evidence-v2-4778b1a7-4h"
+      }
+    }
+  ]
+}

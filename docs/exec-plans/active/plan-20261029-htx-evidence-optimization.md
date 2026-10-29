@@ -1,6 +1,6 @@
 # HTX Python双实例evidence优化
 
-日期：2026-10-29；状态：active；WIP=1。
+日期：2026-10-29；状态：本地实现及候选交付完成；生产验收未执行；WIP=0。
 分支codex/evidence-retention-optimization；工作树/Users/lichangzheng.ray/Ray/CoinStrategy-evidence-retention；固定基线c00cbac653d7cd204f4af2f21781f6ffe4bf38f1，独立于事件交易分支。桌面工具拒绝嵌套业务仓sourceRoot，已用原生git创建隔离工作树。
 
 ## 已批准的实现契约
@@ -17,7 +17,7 @@
 - [x] E3：实际输入原文/稳定窗口、版本配置、entry/exit和execution result引用关联，拒绝/无信号及前后状态/费用保留；23项PAPER/执行相关测试通过。
 - [x] E4：完整行情下evidence失败禁新风险、允许管理并推进已管理bar；权威snapshot失败阻止继续执行并重试保存；47项PAPER/恢复/镜像测试通过。
 - [x] E5：只读metadata/类别/引用/冻结根/语义重复/无损压缩映射预览；不打开索引，无删除入口；3项快照零改写/截断/损坏/缺引用/未知保护测试通过。
-- [ ] E6 in_progress：验证 / 自检、打包/部署与回滚材料。
+- [x] E6：Python全套593通过、编译/CLI/图XML/diff通过；15m与4H候选包已冻结并验证，部署/回滚与只读盘点材料齐全。根治理H-10及生产验收明确未通过/未执行，不宣称全部上线门禁全绿。
 
 ## 验证矩阵
 重复1000轮无新大对象；修订/分页断档/日线锚点/重启不丢进度；15m/4h固定输入与旧行为等价；拒绝/无动作退出/部分成交退出可追踪；文件/索引/账本故障独立注入；旧JSON+gzip/哈希损坏/缺引用/迁移中断；本地容量对比与真实公开API；Python全套、结构校验与检查点。
@@ -37,3 +37,15 @@
 - 手工调用链复核替代不可用codegraph；数据流程图、幂等矩阵、材料索引见 docs/architecture-refactor/evidence/evidence-optimization-20261029/README.md；运行说明见 htx-trend-python/release/EVIDENCE-RETENTION.md。
 
 E6独立复核发现并修复两个边界：unused raw未对齐导致audit抛异常时仍保持原选中窗口准入；latest已提交而stream checkpoint失败后，缓存快路径核对有序版本索引，避免漏记B→A恢复。两个精确故障复现均已成为回归测试。
+
+## 本地交付检查点
+
+实现提交 `4778b1a7`，两个候选包均从干净工作树构建（working_tree_dirty=false）：
+
+- 15m：`0.1.7-evidence-v2-4778b1a7`。
+- 4H：`0.1.7-evidence-v2-4778b1a7-4h`。
+- 冻结根目录：`/Users/lichangzheng.ray/Ray/frozen/htx-evidence-20261029/`。
+- 包清单/逐成员哈希/压缩包哈希与绑定验证通过；两包解包后CLI自检和盘点帮助入口运行通过。详情见 `docs/architecture-refactor/evidence/evidence-optimization-20261029/package-receipts.json`。
+- 593项Python测试通过（20.75秒）；不运行Java模块；不混入事件分支。
+
+后续由用户单独批准部署后，运维执行运行说明中的15m两bar→4H一bar验收；历史清理仍需独立可验证映射及逐文件批准。首次切换仅减少未来写入，不立即释放现有历史磁盘空间。
