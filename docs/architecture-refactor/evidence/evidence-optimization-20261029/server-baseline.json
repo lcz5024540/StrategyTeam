@@ -1,0 +1,45 @@
+{
+  "observed_at": "2026-10-29T03:52:01.796915+00:00",
+  "instances": [
+    {
+      "instance": "primary",
+      "package": "0.1.6-paper-db-c00cbac6",
+      "package_manifest": {},
+      "config": {
+        "HTX_PAPER_STATE_DIR": "/opt/coinstrategy/htx-trend-paper-primary/state",
+        "HTX_PYTHON_EVIDENCE_DIR": "/opt/coinstrategy/htx-trend-paper-primary/evidence",
+        "HTX_PAPER_CONTRACTS": "BTC-USDT,ETH-USDT,BNB-USDT,XRP-USDT,SOL-USDT,TRX-USDT,ZEC-USDT,DOGE-USDT,XMR-USDT,LINK-USDT,ADA-USDT,XLM-USDT,NEAR-USDT,BCH-USDT,UNI-USDT,SUI-USDT,AAPL-USDT,ACNSTOCK-USDT,ADBE-USDT,AMAT-USDT,AMD-USDT,AMGN-USDT,AMZNX-USDT,ANET-USDT,AVGO-USDT,BAC-USDT,BKNG-USDT,BRKB-USDT,CATSTOCK-USDT,COST-USDT,CRM-USDT,CSCO-USDT,CVXSTOCK-USDT,DELL-USDT,DIS-USDT,GE-USDT,GEV-USDT,GILD-USDT,GOOGL-USDT,GS-USDT,HD-USDT,IBM-USDT,INTCX-USDT,INTU-USDT,ISRG-USDT,JNJ-USDT,JPM-USDT,KO-USDT,LIN-USDT,LLY-USDT,LMT-USDT,LRCX-USDT,MCD-USDT,META-USDT,MO-USDT,MRK-USDT,MSFT-USDT,MU-USDT,NFLX-USDT,NOW-USDT,NVDA-USDT,ORCL-USDT,PANW-USDT,PEP-USDT,PLTRX-USDT,QCOM-USDT,SBUX-USDT,SNDK-USDT,TSLAX-USDT,TXN-USDT,UBER-USDT,UNH-USDT,V-USDT,WMT-USDT,XOM-USDT,SPY-USDT,SPX500-USDT,QQQ-USDT,NASDAQ100-USDT"
+      },
+      "contract_count": 79,
+      "evidence": {
+        "files": 484618,
+        "bytes": 12163248454,
+        "allocated_bytes": 13224136704
+      },
+      "kind_sample_first_256_not_random": {
+        "runtime_raw_kline": 123,
+        "runtime_kline_window": 133
+      }
+    },
+    {
+      "instance": "4h",
+      "package": "0.1.6-paper-db-c00cbac6-4h",
+      "package_manifest": {},
+      "config": {
+        "HTX_PAPER_STATE_DIR": "/opt/coinstrategy/htx-trend-paper-4h/state",
+        "HTX_PYTHON_EVIDENCE_DIR": "/opt/coinstrategy/htx-trend-paper-4h/evidence",
+        "HTX_PAPER_CONTRACTS": "BTC-USDT,ETH-USDT,BNB-USDT,XRP-USDT,SOL-USDT,TRX-USDT,ZEC-USDT,DOGE-USDT,XMR-USDT,LINK-USDT,ADA-USDT,XLM-USDT,NEAR-USDT,BCH-USDT,UNI-USDT,SUI-USDT,AAPL-USDT,AMD-USDT,AMZNX-USDT,AVGO-USDT,BRKB-USDT,COST-USDT,CSCO-USDT,DIS-USDT,GOOGL-USDT,HD-USDT,INTCX-USDT,JPM-USDT,LLY-USDT,META-USDT,MSFT-USDT,MU-USDT,NFLX-USDT,NVDA-USDT,ORCL-USDT,PLTRX-USDT,QCOM-USDT,SNDK-USDT,TSLAX-USDT,UBER-USDT,V-USDT,SPY-USDT,SPX500-USDT,QQQ-USDT,NASDAQ100-USDT"
+      },
+      "contract_count": 45,
+      "evidence": {
+        "files": 377070,
+        "bytes": 9799557198,
+        "allocated_bytes": 10558357504
+      },
+      "kind_sample_first_256_not_random": {
+        "runtime_raw_kline": 134,
+        "runtime_kline_window": 122
+      }
+    }
+  ]
+}
