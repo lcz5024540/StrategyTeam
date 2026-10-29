@@ -9,6 +9,10 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Sequence
+import copy
+import json
+import os
+from pathlib import Path
 
 from .execution import ExecutionConfig, ExecutionFacts, GateResult, PriorTrade, evaluate_gate
 from .exits import ExitInput, ExitAction, decide
@@ -42,7 +46,7 @@ class PaperTrendRuntime:
                  mirror_account_id: str | None = None, strategy_version: str = LEGACY_STRATEGY_VERSION,
                  admission: StrategyAdmissionArtifact | None = None,
                  maker_config: MakerExecutionConfig = MakerExecutionConfig(),
-                 evidence_store=None) -> None:
+                 evidence_store=None, compact=None, evidence_context=None) -> None:
         self._ledger, self._exchange = ledger, exchange
         self._account_id, self._mirror_account_id = account_id, mirror_account_id
         self._decision = HtxStrategyDecisionEngine(strategy_version=strategy_version, config=entry_config,
@@ -50,6 +54,22 @@ class PaperTrendRuntime:
         self._execution_config = execution_config
         self._maker_config = maker_config
         self._evidence_store = evidence_store
+        self._compact = compact
+        self._evidence_context = evidence_context or {}
+        self.evidence_error = None
+
+    def _version_ref(self):
+        from .research.store import digest
+        manifest_path = Path(__file__).resolve().parents[2] / 'MANIFEST.json'
+        manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+        config = {'entry': asdict(self._decision.config), 'execution': asdict(self._execution_config),
+                  'maker': asdict(self._maker_config)}
+        return self._evidence_store.put('compact_strategy_version', {
+            **self._evidence_context, 'strategy': self._decision.strategy_version,
+            'source_commit': os.getenv('HTX_PYTHON_SOURCE_COMMIT') or manifest.get('source_commit', 'UNPACKAGED'),
+            'package_version': manifest.get('version', 'UNPACKAGED'),
+            'package_sha256': os.getenv('HTX_PYTHON_PACKAGE_SHA256') or None,
+            'config_fingerprint': digest(config), 'config': config})
 
     def scan(self, *, run_id: str, entry_window: KlineWindow, trend_window: KlineWindow, now_epoch: int,
              at: datetime, book: TopOfBook, contract: ContractSpec, funding: FundingRate | None,
@@ -72,7 +92,22 @@ class PaperTrendRuntime:
                                         signal.indicators.atr, signal.indicators.ema_fast) if item.model is ModelCode.FIB_PULLBACK_CONTINUATION
                                                        and signal.indicators is not None else None),
                                     config=self._execution_config) for item in output)
+        evidence = {}
+        if self._compact is not None:
+            refs = (*self._compact.retain_input(entry_window), *self._compact.retain_input(trend_window), self._version_ref())
+            ref = self._evidence_store.put('compact_entry_decision', {
+                **self._evidence_context, 'run_id': run_id, 'at': at, 'now_epoch': now_epoch,
+                'contract_code': entry_window.contract_code, 'period': entry_window.period,
+                'signal': signal, 'candidates': output, 'gates': gates, 'route': route,
+                'decision_hash': decision.decision_hash, 'book': book, 'contract': contract,
+                'funding_quote': funding, 'funding_paid': None, 'funding_paid_status': 'UNKNOWN',
+                'execution_facts': execution_facts, 'prior_trade': prior_trade, 'market_context': context,
+                'claimed_structure_keys': sorted(claimed_structure_keys), 'execution_candle': execution_candle,
+                'entry_window': entry_window.evidence_refs, 'trend_window': trend_window.evidence_refs,
+            }, refs=refs)
+            evidence = {'evidence_ref': ref, 'evidence_status': 'COMPLETE'}
         self._ledger.decision(self._account_id, run_id, "ENTRY_SCAN", {
+            **evidence,
             "signal": signal.reason, "side": signal.side.value,
             "candidates": [item.model.value for item in output], "gates": [item.reason for item in gates],
             "primary_model": route.primary.model.value if route.primary else None, "route": route.reason,
@@ -204,9 +239,12 @@ class PaperTrendRuntime:
     def manage(self, *, run_id: str, position_id: str, reference_price: Decimal, highest_price: Decimal,
                lowest_price: Decimal, atr: Decimal, signal_side, ema_fast: Decimal | None, ema_slow: Decimal | None,
                major_timeframe_opposition: int, market_context_opposes: bool, at: datetime,
-               flat_streak: int = 0, protection_breach_bars: int = 0) -> object:
+               flat_streak: int = 0, protection_breach_bars: int = 0,
+               evidence_windows: tuple[KlineWindow, ...] = ()) -> object:
         position = self._ledger.position(position_id)
         context = self._ledger.position_context(position_id)
+        context_before = copy.deepcopy(context)
+        self.evidence_error = None
         if position.status != "OPEN":
             raise ValueError("only open paper positions can be managed")
         side = TrendSide(position.side)
@@ -214,20 +252,34 @@ class PaperTrendRuntime:
         contract_size = Decimal(context["contract_size"])
         gross = (reference_price - position.entry_price) * contract_size * position.quantity if side.value == "LONG" else (position.entry_price - reference_price) * contract_size * position.quantity
         estimated_close_fee = reference_price * contract_size * Decimal(position.quantity) * Decimal("0.0004")
-        decision = decide(ExitInput(model, side, position.quantity, contract_size, position.entry_price,
+        exit_input = ExitInput(model, side, position.quantity, contract_size, position.entry_price,
             Decimal(context["initial_stop"]), Decimal(context["invalidation"]), Decimal(context["structure_target"]),
             reference_price, Decimal(context["protection"]) if context.get("protection") else None, highest_price, lowest_price,
             atr, signal_side, ema_fast, ema_slow, major_timeframe_opposition, market_context_opposes,
             gross - Decimal(context.get("entry_fee", "0")) - estimated_close_fee, Decimal(context.get("entry_fee", "0")),
             estimated_close_fee, datetime.fromisoformat(context["trailing_armed_at"]) if context.get("trailing_armed_at") else None,
             context.get("trailing_arm_reason"), Decimal(context.get("max_favorable_r", "0")), at, flat_streak=flat_streak,
-            protection_breach_bars=protection_breach_bars))
+            protection_breach_bars=protection_breach_bars)
+        decision = decide(exit_input)
         context.update({"highest": str(highest_price), "lowest": str(lowest_price),
                         "protection": str(decision.protection_price) if decision.protection_price else None,
                         "trailing_armed_at": decision.trailing_armed_at.isoformat() if decision.trailing_armed_at else None,
                         "trailing_arm_reason": decision.trailing_arm_reason, "max_favorable_r": str(decision.max_favorable_r)})
         self._ledger.save_position_context(position_id, context)
-        self._ledger.decision(position.account_id, run_id, "EXIT_DECISION", {"phase": decision.phase.value,
+        evidence = {}
+        if self._compact is not None:
+            try:
+                refs = tuple(ref for window in evidence_windows for ref in self._compact.retain_input(window))
+                ref = self._evidence_store.put('compact_exit_decision', {
+                    **self._evidence_context, 'run_id': run_id, 'at': at, 'position_id': position_id,
+                    'position_before': position, 'context_before': context_before, 'input': exit_input,
+                    'decision': decision, 'context_after': context, 'funding_paid': None,
+                    'funding_paid_status': 'UNKNOWN'}, refs=(*refs, self._version_ref()))
+                evidence = {'evidence_ref': ref, 'evidence_status': 'COMPLETE'}
+            except Exception as error:
+                self.evidence_error = type(error).__name__
+                evidence = {'evidence_status': 'FAILED', 'evidence_error': self.evidence_error}
+        self._ledger.decision(position.account_id, run_id, "EXIT_DECISION", {**evidence, "phase": decision.phase.value,
                               "action": decision.action.value, "reason": decision.reason, "evidence": decision.evidence}, position_id=position_id)
         if decision.action in (ExitAction.FULL_CLOSE, ExitAction.PARTIAL_CLOSE):
             quantity = position.quantity if decision.action is ExitAction.FULL_CLOSE else position.quantity - (decision.target_remaining_contracts or 0)

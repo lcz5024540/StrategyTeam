@@ -179,8 +179,38 @@ class PaperTrendWorker:
                 max_total_margin_rate=config.margin_rate, max_active_positions=config.max_active_positions,
                 max_same_direction_positions=config.max_active_positions,
                 hard_risk_limits_enabled=True),
-            maker_config=MakerExecutionConfig.from_env(), evidence_store=evidence_store)
+            maker_config=MakerExecutionConfig.from_env(), evidence_store=evidence_store,
+            compact=getattr(market, 'compact', None),
+            evidence_context={'instance': instance.instance_key, 'timeframe_profile': self.profile.value})
         self.stopped = False
+
+    def _record_run_evidence(self, run_id, contract, before, at):
+        """Small execution result linked to the durable input decision, never a full ledger copy."""
+        if self.runtime._compact is None:
+            return True
+        decisions = [d for d in self.ledger.data['decisions'] if d['run_id'] == run_id]
+        refs = tuple(d['payload']['evidence_ref'] for d in decisions if d['payload'].get('evidence_ref'))
+        ids = {d['position_id'] for d in decisions if d.get('position_id')}
+        ids.update(k for k, value in self.ledger.data['positions'].items()
+                   if before['positions'].get(k) != value or before['contexts'].get(k) != self.ledger.data['contexts'].get(k))
+        orders = {k: v for k, v in self.ledger.data['orders'].items() if v.get('strategy_run_id') == run_id}
+        complete = all(d['payload'].get('evidence_status') != 'FAILED' for d in decisions)
+        try:
+            ref = self.runtime._evidence_store.put('compact_execution_result', {
+                'instance': self.instance.instance_key, 'strategy': self.instance.strategy_name,
+                'timeframe_profile': self.profile.value, 'contract': contract, 'run_id': run_id, 'at': at,
+                'simulated': True, 'orders': orders,
+                'fills': [f for f in self.ledger.data['fills'] if f['order_id'] in orders],
+                'positions': {k: self.ledger.data['positions'][k] for k in ids},
+                'contexts': {k: self.ledger.data['contexts'].get(k) for k in ids},
+                'input_evidence_status': 'COMPLETE' if complete else 'INCOMPLETE',
+                'funding_paid': None, 'funding_paid_status': 'UNKNOWN'}, refs=refs)
+            payload = {'evidence_ref': ref, 'evidence_status': 'COMPLETE' if complete else 'INCOMPLETE'}
+        except Exception as error:
+            payload = {'evidence_status': 'FAILED', 'evidence_error': type(error).__name__}
+            complete = False
+        self.ledger.decision(self.account, run_id, 'EVIDENCE_RESULT', payload)
+        return complete
 
     def stop(self):
         if not self.stopped:
@@ -228,7 +258,7 @@ class PaperTrendWorker:
                         lowest_price=min(Decimal(context['lowest']), bar.low), atr=signal.indicators.atr,
                         signal_side=signal.side, ema_fast=signal.indicators.ema_fast,
                         ema_slow=signal.indicators.ema_slow, major_timeframe_opposition=0,
-                        market_context_opposes=False, at=now)
+                        market_context_opposes=False, at=now, evidence_windows=(entry, trend))
                 positions = self.ledger.active_positions(self.account)
                 used = sum((p.entry_price * p.quantity * Decimal(self.ledger.position_context(p.position_id)['contract_size'])
                             / self.config.leverage for p in positions), Decimal('0'))
@@ -251,6 +281,8 @@ class PaperTrendWorker:
                             reserved_risk_usdt=sum((abs(p.entry_price-Decimal(self.ledger.position_context(p.position_id)['initial_stop']))
                                 * p.quantity * Decimal(self.ledger.position_context(p.position_id)['contract_size']) for p in positions), Decimal('0'))))
                     count += len(outcome.candidates)
+                if not self._record_run_evidence(run_id, contract, contract_before, now):
+                    skipped.append(f'{contract}:EVIDENCE_RESULT_FAILED')
                 self.ledger.data['bars'][contract] = bar.open_time
             except Exception as error:
                 self.ledger.data = contract_before
