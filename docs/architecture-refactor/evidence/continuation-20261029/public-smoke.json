@@ -1,0 +1,30 @@
+{
+  "at": "2026-10-29T16:12:01.516341+00:00",
+  "health": {
+    "status": "HEALTHY",
+    "detail": "PAPER public market / simulated fills",
+    "candidate_count": 0,
+    "active_position_count": 0
+  },
+  "decisions": [
+    {
+      "account_id": "paper:offline-public-smoke",
+      "run_id": "paper-5911b7eb-41ee-4b31-bf20-683b74cee630",
+      "kind": "ENTRY_SCAN",
+      "payload": {
+        "signal": "partial bullish EMA alignment; positive momentum; ADX confirms trend strength; ATR volatility usable; volume expansion",
+        "side": "LONG",
+        "candidates": [],
+        "gates": [],
+        "primary_model": null,
+        "route": "no independently valid model candidate",
+        "strategy_version": "HTX_TREND_15M_V2",
+        "decision_hash": "6ce0f17d391d84e3aebcb9338abfd8f384fd3a7a688b520a8dc99ba15bf886fc",
+        "continuation_version": "linked-v1"
+      },
+      "position_id": null
+    }
+  ],
+  "orders": 0,
+  "production_mutated": false
+}

@@ -48,7 +48,7 @@ def test_new_protection_and_prearm_candle_cannot_retroactively_confirm():
     v=inp(protection_price=None)
     assert advance_confirmation(v,bar(T+900,'102'),{})[0]==0
     assert decide_continuation(v,0).action is not ExitAction.FULL_CLOSE
-    assert advance_confirmation(inp(trailing_armed_at=datetime.fromtimestamp(T+901,UTC)),bar(T+900,'102'),{})[0]==0
+    assert advance_confirmation(inp(trailing_armed_at=datetime.fromtimestamp(T+1801,UTC)),bar(T+900,'102'),{})[0]==0
 
 
 @pytest.mark.parametrize('kwargs',[dict(reference_price=D('94')),dict(signal_side=TrendSide.SHORT),
@@ -184,4 +184,53 @@ def test_candidate_fault_management_checkpoint_and_retry(tmp_path,monkeypatch,fa
         monkeypatch.setattr(w.ledger,'checkpoint',original)
         assert w.tick().status=='DEGRADED'
         assert w.ledger.position(p.position_id).status=='CLOSED'
+    w.stop();store.close()
+
+
+def test_full_profit_at_risk_close_also_requires_new_price():
+    prev=dict(side='LONG',reason='profit-at-risk-with-deteriorating-continuation',protection='100',bar_high='103',bar_low='97',bar_time=T)
+    assert reentry_gate(NS(side=TrendSide.LONG,bar_time=T+900),bar(T+900,'101'),TopOfBook(D('101'),D('102')),prev).stage=='REENTRY_NEW_PRICE_REQUIRED'
+
+
+def test_confirmation_crash_reloads_last_durable_count(tmp_path,monkeypatch):
+    from test_compact_paper import EvidenceMarket
+    from htx_trend.research.store import FileEvidenceStore
+    import json
+    now=datetime.fromtimestamp(T+1810,UTC)
+    class Clock(datetime):
+        @classmethod
+        def now(cls,tz=None):return now
+    monkeypatch.setattr('htx_trend.paper_worker.datetime',Clock)
+    monkeypatch.setattr('htx_trend.paper_worker.evaluate',lambda *a: NS(side=TrendSide.LONG,
+        indicators=NS(atr=D('2'),ema_fast=D('105'),ema_slow=D('102'))))
+    store=FileEvidenceStore(tmp_path/'cas',compress=True);cfg=PaperWorkerConfig(contracts=('BTC-USDT',))
+    w=PaperTrendWorker(instance(),EvidenceMarket(store),tmp_path/'state',cfg,store,ContinuationConfig(LINKED))
+    p=opened(w);assert w.tick().status=='HEALTHY'
+    assert w.ledger.position_context(p.position_id)['continuation_breach_count']==1
+    now=datetime.fromtimestamp(T+2710,UTC)
+    monkeypatch.setattr(w.ledger,'checkpoint',lambda: (_ for _ in ()).throw(OSError('power loss')))
+    with pytest.raises(OSError):w.tick()
+    assert w._checkpoint_failed
+    assert json.loads(w.ledger.path.read_text())['contexts'][p.position_id]['continuation_breach_count']==1
+    w.stop()
+    restarted=PaperTrendWorker(instance(),EvidenceMarket(store),tmp_path/'state',cfg,store,ContinuationConfig())
+    assert restarted.tick().status=='HEALTHY'
+    assert restarted.ledger.position(p.position_id).status=='CLOSED'
+    assert len(restarted.ledger.data['fills'])==1
+    restarted.tick();assert len(restarted.ledger.data['fills'])==1
+    restarted.stop();store.close()
+
+
+def test_cooldown_unknown_fee_rejection_keeps_compact_input(tmp_path):
+    from test_compact_paper import EvidenceMarket
+    from htx_trend.research.store import FileEvidenceStore
+    store=FileEvidenceStore(tmp_path/'cas',compress=True)
+    w=PaperTrendWorker(instance(),EvidenceMarket(store),tmp_path/'state',PaperWorkerConfig(contracts=('BTC-USDT',)),store,ContinuationConfig(cooldown=True))
+    p=opened(w,None);w.ledger.reduce_position(p.position_id,0,D('0'),datetime.fromtimestamp(T+900,UTC))
+    context=w.ledger.position_context(p.position_id);context.pop('entry_fee');w.ledger.save_position_context(p.position_id,context)
+    w.tick()
+    records=[store.get(k)['payload'] for k in store.keys('compact_entry_decision')]
+    assert records[0]['entry_block']['stage']=='COOLDOWN_COST_UNKNOWN'
+    assert records[0]['entry_window'] and not w.ledger.data['orders']
+    assert store.keys('compact_execution_result')
     w.stop();store.close()

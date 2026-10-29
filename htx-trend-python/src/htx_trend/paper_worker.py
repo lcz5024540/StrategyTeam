@@ -17,7 +17,7 @@ from pathlib import Path
 import re
 import uuid
 
-from .execution import ExecutionConfig, ExecutionFacts
+from .execution import ExecutionConfig, ExecutionFacts, GateResult
 from .continuation import LINKED, ContinuationConfig, latest_completed
 from .java_entry_contract import evaluate
 from .ledger import Position
@@ -329,14 +329,11 @@ class PaperTrendWorker:
                     policy = getattr(self, 'continuation', ContinuationConfig())
                     prior, previous_exit = (latest_completed(self.ledger, self.account, contract, self.runtime._evidence_store)
                         if policy.cooldown or policy.version == LINKED else (None, None))
-                    if policy.cooldown and previous_exit is not None and prior is None:
-                        self.ledger.decision(self.account, run_id, 'ENTRY_REJECTED',
-                            {'reason': 'COOLDOWN_COST_UNKNOWN', 'contract': contract})
-                        self.ledger.data['bars'][contract] = bar.open_time
-                        continue
+                    entry_block = (GateResult(False, 'COOLDOWN_COST_UNKNOWN', 'complete-trade opening cost unknown')
+                        if policy.cooldown and previous_exit is not None and prior is None else None)
                     outcome = self.runtime.scan(run_id=run_id, entry_window=entry, trend_window=trend,
                         now_epoch=int(now.timestamp()), at=now, book=book,
-                        prior_trade=prior if policy.cooldown else None, previous_exit=previous_exit,
+                        prior_trade=prior if policy.cooldown else None, previous_exit=previous_exit, entry_block=entry_block,
                         execution_candle=Candle(int(now.timestamp()), book.bid, book.ask, book.bid, book.ask),
                         claimed_structure_keys=frozenset(c["structure_key"] for c in self.ledger.data["contexts"].values() if c.get("structure_key")),
                         contract=spec, funding=self.market.funding_rate(contract),

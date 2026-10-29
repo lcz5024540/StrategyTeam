@@ -82,7 +82,8 @@ class PaperTrendRuntime:
              prior_trade: PriorTrade | None = None, market_context: MarketContext | None = None,
              execution_facts: ExecutionFacts | None = None,
              claimed_structure_keys: frozenset[str] = frozenset(),
-             execution_candle: Candle | None = None, previous_exit: dict | None = None) -> ScanOutcome:
+             execution_candle: Candle | None = None, previous_exit: dict | None = None,
+             entry_block: GateResult | None = None) -> ScanOutcome:
         decision = self._decision.decide(contract_code=entry_window.contract_code, period=entry_window.period,
                                          candles=entry_window.candles, surface=DecisionSurface.PAPER)
         signal = decision.signal
@@ -101,6 +102,8 @@ class PaperTrendRuntime:
         if self._continuation.version == LINKED:
             gates = tuple(reentry_gate(item, entry_window.candles[-1], book, previous_exit) or gate
                           for item, gate in zip(output, gates))
+        if entry_block is not None:
+            gates = tuple(entry_block for _ in output)
         evidence = {}
         if self._compact is not None:
             refs = (*self._compact.retain_input(entry_window), *self._compact.retain_input(trend_window), self._version_ref())
@@ -112,7 +115,7 @@ class PaperTrendRuntime:
                 'funding_quote': funding, 'funding_paid': None, 'funding_paid_status': 'UNKNOWN',
                 'execution_facts': execution_facts, 'prior_trade': prior_trade, 'market_context': context,
                 'claimed_structure_keys': sorted(claimed_structure_keys), 'execution_candle': execution_candle,
-                'previous_exit': previous_exit, 'continuation': asdict(self._continuation),
+                'previous_exit': previous_exit, 'continuation': asdict(self._continuation), 'entry_block': entry_block,
                 'entry_window': entry_window.evidence_refs, 'trend_window': trend_window.evidence_refs,
             }, refs=refs)
             evidence = {'evidence_ref': ref, 'evidence_status': 'COMPLETE'}
@@ -123,6 +126,7 @@ class PaperTrendRuntime:
             "primary_model": route.primary.model.value if route.primary else None, "route": route.reason,
             "strategy_version": decision.strategy_version, "decision_hash": decision.decision_hash,
             **({"continuation_version": self._continuation.version} if self._continuation.version != BASELINE else {}),
+            **({"entry_block": asdict(entry_block)} if entry_block is not None else {}),
         })
         selected = next((item for item in route.ranked if gates[output.index(item)].allowed), None)
         if selected is None:

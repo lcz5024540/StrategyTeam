@@ -1,0 +1,33 @@
+{
+  "eligible": false,
+  "status": "NOT_ELIGIBLE",
+  "ledger_sha256": "a86bf335cfa1ddfdca7b3426fd7d7bd528d7c4622d9524ef9413ed9d8085b505",
+  "canonical_ledger_sha256": "1054236e1c99d648a29ed67ea582f141fd135f4df77b96cf8577866bda18d2f0",
+  "counts": {
+    "ENTRY_SCAN": {
+      "total": 15797,
+      "with_ref": 3194
+    },
+    "EXIT_DECISION": {
+      "total": 1187,
+      "with_ref": 124
+    },
+    "EVIDENCE_RESULT": {
+      "total": 3318,
+      "with_ref": 3318
+    }
+  },
+  "blockers": [
+    "LEGACY_DECISION_INPUT_MISSING",
+    "MISSING_CAS_CLOSURE",
+    "COUNTERFACTUAL_INPUT_GAP",
+    "POOL_HISTORY_MISSING",
+    "FUNDING_SETTLEMENT_UNKNOWN"
+  ],
+  "details": [
+    "Ledger summaries do not contain complete point-in-time windows/book/spec/configuration.",
+    "Historical exit evidence has a one-sided reference price, not a two-sided counterfactual book.",
+    "Current pool/configuration does not establish historical pool order or revisions.",
+    "A rate quote is not proof of paid funding. No historical return is manufactured."
+  ]
+}

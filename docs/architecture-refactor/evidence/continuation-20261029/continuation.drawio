@@ -1,0 +1,101 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net">
+  <diagram name="15m continuation">
+    <mxGraphModel dx="1100" dy="900" grid="1">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="tick" value="New completed 15m bar" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="400" y="20" width="220" height="60" />
+        </mxCell>
+        <mxCell id="holding" value="Existing position?" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="400" y="105" width="220" height="60" />
+        </mxCell>
+        <mxCell id="version" value="Read persisted position policy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="150" y="190" width="220" height="60" />
+        </mxCell>
+        <mxCell id="old" value="Legacy v4: unchanged" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="30" y="280" width="220" height="60" />
+        </mxCell>
+        <mxCell id="priority" value="Original hard / model / weak exits" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="280" y="280" width="220" height="60" />
+        </mxCell>
+        <mxCell id="confirm" value="C/D: prior protection + 2 adjacent closes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="280" y="380" width="220" height="60" />
+        </mxCell>
+        <mxCell id="quote" value="Executable quote still breached?" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="280" y="475" width="220" height="60" />
+        </mxCell>
+        <mxCell id="exit" value="Full close + durable exit boundary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="280" y="565" width="220" height="60" />
+        </mxCell>
+        <mxCell id="scan" value="New candidate + original entry gates" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="680" y="190" width="220" height="60" />
+        </mxCell>
+        <mxCell id="reentry" value="D: new bar + exit range recovered" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="680" y="300" width="220" height="60" />
+        </mxCell>
+        <mxCell id="open" value="Open with persisted policy version" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="680" y="410" width="220" height="60" />
+        </mxCell>
+        <mxCell id="save" value="Atomic ledger checkpoint + compact refs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="430" y="685" width="220" height="60" />
+        </mxCell>
+        <mxCell id="e0" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="tick" target="holding">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e1" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="holding" target="version">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e2" value="missing / baseline" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="version" target="old">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e3" value="confirm / linked" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="version" target="priority">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e4" value="existing exit wins" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="priority" target="exit">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e5" value="trend still same" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="priority" target="confirm">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e6" value="two closes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="confirm" target="quote">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e7" value="wait / reset" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="confirm" target="save">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e8" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="quote" target="exit">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e9" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="quote" target="save">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e10" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="holding" target="scan">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e11" value="linked candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="scan" target="reentry">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e12" value="A/B/C pass" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="scan" target="open">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e13" value="new price + gates pass" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="reentry" target="open">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e14" value="reject" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="reentry" target="save">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e15" value="no same-bar reentry" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="exit" target="save">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e16" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="old" target="save">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="e17" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="open" target="save">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
