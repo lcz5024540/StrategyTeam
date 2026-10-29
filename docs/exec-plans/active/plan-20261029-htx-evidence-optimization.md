@@ -15,8 +15,8 @@
 - [x] E1：SSH恢复；两实例WorkingDirectory对应c00cbac6包，间隔45秒，根盘84%/9.6G可用。只读文件盘点见server-baseline.json；没有修改服务器。
 - [x] E2：compact candle/window、gzip旧JSON兼容、PAPER显式开关及独立repair线程；1000轮×4周期无新大对象、修订/分页/重启/损坏测试，23项相关测试通过。
 - [x] E3：实际输入原文/稳定窗口、版本配置、entry/exit和execution result引用关联，拒绝/无信号及前后状态/费用保留；23项PAPER/执行相关测试通过。
-- [ ] E4 in_progress：evidence故障与权威账本故障隔离。
-- [ ] E5 只读盘点/引用保护/迁移清理预览。
+- [x] E4：完整行情下evidence失败禁新风险、允许管理并推进已管理bar；权威snapshot失败阻止继续执行并重试保存；47项PAPER/恢复/镜像测试通过。
+- [ ] E5 in_progress：只读盘点/引用保护/迁移清理预览。
 - [ ] E6 验证 / 自检、打包/部署与回滚材料。
 
 ## 验证矩阵

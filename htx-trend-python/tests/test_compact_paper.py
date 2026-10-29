@@ -75,3 +75,66 @@ def test_exit_tracks_pre_post_state_and_actual_simulated_cost(tmp_path):
     assert result['fills'] and D(result['fills'][0]['fee']) > 0
     assert store.verify(ref)['objects'] > 160
     worker.stop();store.close()
+
+
+@pytest.mark.parametrize('failure', ['market','exit','result'])
+def test_evidence_failure_does_not_rollback_close_or_repeat_after_restart(tmp_path, monkeypatch, failure):
+    store = FileEvidenceStore(tmp_path/'evidence', compress=True)
+    market = EvidenceMarket(store)
+    worker = PaperTrendWorker(instance(), market, tmp_path/'state', PaperWorkerConfig(contracts=('BTC-USDT',)), store)
+    p = open_position(worker)
+    original = store.put
+    if failure == 'market':market.failed = True
+    else:
+        def fail(kind, *a, **kw):
+            if kind == {'exit':'compact_exit_decision','result':'compact_execution_result'}[failure]:
+                raise OSError('disk full')
+            return original(kind,*a,**kw)
+        monkeypatch.setattr(store,'put',fail)
+    assert worker.tick().status == 'DEGRADED'
+    assert worker.ledger.position(p.position_id).status == 'CLOSED'
+    fills = len(worker.ledger.data['fills'])
+    assert fills == 1
+    worker.stop()
+    monkeypatch.setattr(store,'put',original);market.failed=False
+    worker = PaperTrendWorker(instance(), market, tmp_path/'state', PaperWorkerConfig(contracts=('BTC-USDT',)), store)
+    worker.tick()
+    assert len(worker.ledger.data['fills']) == fills
+    assert worker.ledger.position(p.position_id).status == 'CLOSED'
+    worker.stop();store.close()
+
+
+def test_failed_entry_evidence_has_no_orders_and_can_retry(tmp_path, monkeypatch):
+    store = FileEvidenceStore(tmp_path/'evidence', compress=True)
+    worker = PaperTrendWorker(instance(), EvidenceMarket(store), tmp_path/'state', PaperWorkerConfig(contracts=('BTC-USDT',)), store)
+    original = store.put
+    def fail(kind,*a,**kw):
+        if kind == 'compact_entry_decision':raise OSError('index full')
+        return original(kind,*a,**kw)
+    monkeypatch.setattr(store,'put',fail)
+    assert worker.tick().status == 'DEGRADED'
+    assert worker.ledger.data['orders'] == {} and worker.ledger.data['bars'] == {}
+    monkeypatch.setattr(store,'put',original)
+    assert worker.tick().status == 'HEALTHY'
+    assert worker.ledger.data['bars']
+    worker.stop();store.close()
+
+
+def test_authoritative_checkpoint_failure_blocks_more_execution_until_persisted(tmp_path, monkeypatch):
+    store = FileEvidenceStore(tmp_path/'evidence', compress=True)
+    worker = PaperTrendWorker(instance(), EvidenceMarket(store), tmp_path/'state', PaperWorkerConfig(contracts=('BTC-USDT',)), store)
+    p = open_position(worker)
+    worker.ledger.checkpoint()
+    original = worker.ledger.checkpoint
+    monkeypatch.setattr(worker.ledger,'checkpoint',lambda: (_ for _ in ()).throw(OSError('state disk full')))
+    with pytest.raises(OSError):worker.tick()
+    assert worker._checkpoint_failed
+    on_disk = json.loads(worker.ledger.path.read_text())
+    assert on_disk['positions'][p.position_id]['status'] == 'OPEN'
+    fills = len(worker.ledger.data['fills'])
+    with pytest.raises(OSError):worker.tick()
+    assert len(worker.ledger.data['fills']) == fills
+    monkeypatch.setattr(worker.ledger,'checkpoint',original)
+    assert worker.tick().status == 'DEGRADED'
+    assert json.loads(worker.ledger.path.read_text())['positions'][p.position_id]['status'] == 'CLOSED'
+    worker.stop();store.close()

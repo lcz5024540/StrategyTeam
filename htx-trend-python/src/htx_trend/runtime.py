@@ -66,7 +66,7 @@ class PaperTrendRuntime:
                   'maker': asdict(self._maker_config)}
         return self._evidence_store.put('compact_strategy_version', {
             **self._evidence_context, 'strategy': self._decision.strategy_version,
-            'source_commit': os.getenv('HTX_PYTHON_SOURCE_COMMIT') or manifest.get('source_commit', 'UNPACKAGED'),
+            'source_commit': manifest.get('source_commit') or os.getenv('HTX_PYTHON_SOURCE_COMMIT') or 'UNPACKAGED',
             'package_version': manifest.get('version', 'UNPACKAGED'),
             'package_sha256': os.getenv('HTX_PYTHON_PACKAGE_SHA256') or None,
             'config_fingerprint': digest(config), 'config': config})

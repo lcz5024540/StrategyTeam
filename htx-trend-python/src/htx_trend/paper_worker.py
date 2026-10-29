@@ -183,6 +183,21 @@ class PaperTrendWorker:
             compact=getattr(market, 'compact', None),
             evidence_context={'instance': instance.instance_key, 'timeframe_profile': self.profile.value})
         self.stopped = False
+        self._checkpoint_failed = False
+        self._failures = {}
+
+    def _failure(self, contract, reason):
+        old = self._failures.get(contract)
+        if old is None or old['reason'] != reason:
+            logging.getLogger(__name__).warning('PAPER degraded %s: %s', contract, reason)
+            old = {'reason': reason, 'count': 0, 'first_seen': datetime.now(UTC).isoformat()}
+        old.update(count=old['count'] + 1, last_seen=datetime.now(UTC).isoformat())
+        self._failures[contract] = old
+
+    def _recovered(self, contract):
+        old = self._failures.pop(contract, None)
+        if old:
+            logging.getLogger(__name__).info('PAPER recovered %s after %s failures', contract, old['count'])
 
     def _record_run_evidence(self, run_id, contract, before, at):
         """Small execution result linked to the durable input decision, never a full ledger copy."""
@@ -220,6 +235,12 @@ class PaperTrendWorker:
     def tick(self):
         if self.stopped:
             return WorkerHealth('STOPPED', 'paper worker stopped')
+        if self._checkpoint_failed:
+            # Do not produce more simulated executions while the authoritative
+            # snapshot is uncommitted. Retrying publication itself is idempotent.
+            self.ledger.checkpoint()
+            self._checkpoint_failed = False
+            return WorkerHealth('DEGRADED', 'pending PAPER ledger persisted; resume next cycle')
         now = datetime.now(UTC)
         count = 0
         skipped: list[str] = []
@@ -228,17 +249,24 @@ class PaperTrendWorker:
             # Per-contract snapshot lets one bad contract fail without undoing
             # progress made for healthy peers in the same tick.
             contract_before = copy.deepcopy(self.ledger.data)
+            self.runtime.evidence_error = None
             try:
                 periods = self.profile.contract
                 entry = self.market.kline_window(contract, periods.entry_period, 160, now_epoch=int(now.timestamp()))
                 trend = self.market.kline_window(contract, periods.trend_period, 160, now_epoch=int(now.timestamp()))
-                if not entry.is_complete or not trend.is_complete or entry.evidence_status == 'FAILED' or trend.evidence_status == 'FAILED':
-                    raise ValueError('PAPER market evidence unavailable')
+                if not entry.is_complete or not trend.is_complete:
+                    raise ValueError('PAPER market data incomplete')
+                evidence_failed = entry.evidence_status == 'FAILED' or trend.evidence_status == 'FAILED'
+                if evidence_failed:
+                    skipped.append(f'{contract}:MARKET_EVIDENCE_FAILED')
+                    self._failure(contract, 'MARKET_EVIDENCE_FAILED')
                 bar = entry.candles[-1]
                 from .market_data import period_seconds
                 if int(now.timestamp()) - bar.open_time > 2 * period_seconds(periods.entry_period):
                     raise ValueError('PAPER stale market data')
                 if self.ledger.data['bars'].get(contract) == bar.open_time:
+                    if not evidence_failed:
+                        self._recovered(contract)
                     continue
                 spec = self.market.contract_spec(contract)
                 self.exchange.contract_size = spec.contract_size
@@ -259,6 +287,13 @@ class PaperTrendWorker:
                         signal_side=signal.side, ema_fast=signal.indicators.ema_fast,
                         ema_slow=signal.indicators.ema_slow, major_timeframe_opposition=0,
                         market_context_opposes=False, at=now, evidence_windows=(entry, trend))
+                    if self.runtime.evidence_error:
+                        skipped.append(f'{contract}:EXIT_EVIDENCE_FAILED')
+                        self._failure(contract, 'EXIT_EVIDENCE_FAILED')
+                    # Protect a completed management action from any subsequent
+                    # entry/evidence error. The bar marker prevents double reduction.
+                    self.ledger.data['bars'][contract] = bar.open_time
+                    contract_before = copy.deepcopy(self.ledger.data)
                 positions = self.ledger.active_positions(self.account)
                 used = sum((p.entry_price * p.quantity * Decimal(self.ledger.position_context(p.position_id)['contract_size'])
                             / self.config.leverage for p in positions), Decimal('0'))
@@ -268,6 +303,8 @@ class PaperTrendWorker:
                     if self.ledger.data['orders'][f['order_id']]['position_id'] is not None), Decimal('0'))
                 equity = self.config.equity + pnl + exit_fees - fees
                 if not had_position:
+                    if evidence_failed:
+                        continue  # no order and no bar advance; retry after recovery
                     outcome = self.runtime.scan(run_id=run_id, entry_window=entry, trend_window=trend,
                         now_epoch=int(now.timestamp()), at=now, book=book,
                         execution_candle=Candle(int(now.timestamp()), book.bid, book.ask, book.bid, book.ask),
@@ -283,12 +320,19 @@ class PaperTrendWorker:
                     count += len(outcome.candidates)
                 if not self._record_run_evidence(run_id, contract, contract_before, now):
                     skipped.append(f'{contract}:EVIDENCE_RESULT_FAILED')
+                    self._failure(contract, 'EVIDENCE_RESULT_FAILED')
+                elif not evidence_failed and not self.runtime.evidence_error:
+                    self._recovered(contract)
                 self.ledger.data['bars'][contract] = bar.open_time
             except Exception as error:
                 self.ledger.data = contract_before
                 skipped.append(f"{contract}:{type(error).__name__}")
-                log.warning("PAPER skipped contract %s: %s", contract, error, exc_info=True)
-        self.ledger.checkpoint()
+                self._failure(contract, type(error).__name__ + ':' + str(error))
+        try:
+            self.ledger.checkpoint()
+        except Exception:
+            self._checkpoint_failed = True
+            raise
         detail = 'PAPER public market / simulated fills'
         if skipped:
             detail += '; skipped=' + ','.join(skipped)
