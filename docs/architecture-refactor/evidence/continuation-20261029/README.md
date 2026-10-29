@@ -21,5 +21,7 @@ Review fixes: cross-split drawdown, full profit-at-risk protection reason, exact
 ## Truthful delivery boundary
 Candidate behavior is implemented and tested. Historical net-return/drawdown acceptance has NOT passed: source coverage and settled funding are insufficient. The fixture cannot establish profitability or TSLAX/AVGO retention. No merge, push, deployment or policy enablement occurred.
 
-Runtime and rollback details: ../../../..//htx-trend-python/release/CONTINUATION.md
+Runtime and rollback details: ../../../../htx-trend-python/release/CONTINUATION.md
 Full binary rollback while candidate positions remain is unsafe; disable new entries using the candidate-capable binary instead.
+
+Final delivery: DELIVERY.md. Unknown funding is null; hypothetical curves explicitly exclude it.

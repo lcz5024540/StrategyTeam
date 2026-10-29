@@ -488,7 +488,7 @@ def main():
         for label,rows in [('equity',g['curve']),('fills',g['fills']),('positions',g['position_summary'])]:
             if rows:
                 with (args.out/(name+'-'+label+'.csv')).open('w',newline='') as stream:
-                    writer=csv.DictWriter(stream,fieldnames=list(rows[0]));writer.writeheader();writer.writerows(rows)
+                    writer=csv.DictWriter(stream,fieldnames=list(rows[0]),lineterminator='\n');writer.writeheader();writer.writerows(rows)
         lines+=['',f'## {name}',f"Fills: {len(g['fills'])}; evaluated scans: {len(g['decisions'])}",json.dumps(g['metrics'],ensure_ascii=False)]
     (args.out/'report.md').write_text('\n'.join(lines)+'\n')
     print(json.dumps({'eligible':result['eligible'],'blockers':result['blockers']},ensure_ascii=False))

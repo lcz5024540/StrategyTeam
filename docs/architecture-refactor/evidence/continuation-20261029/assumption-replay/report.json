@@ -15,7 +15,7 @@
   "clock_start": "2026-10-19T14:00:30+00:00",
   "source_sha256": {
     "continuation.py": "673a15e959bf7cee526af026db182d78bc582199086c6aa8a112646ede5966f6",
-    "continuation_replay.py": "8bf720f627b12ade3bdfa6760f1be5f821d6277b9780914607b0545dc07c553b",
+    "continuation_replay.py": "35537dca591a152f2de3f2ddf91bddc593d6eec8527b4db810432e5421985c9b",
     "paper_worker.py": "6f5e32e2dd892b8c69aca22915a4f030772d19538be2d72af19eaad7ddb1532a",
     "runtime.py": "6053676ef7b97f986b5318eee2fb787ca3ef9cc77b9fd2ff109cfa79dce75aee",
     "exits.py": "dd0d58e9a1b7470d1622a0d752c3a049d01fd0f328df3a6c855c7c66244aa866"
@@ -3214,7 +3214,7 @@
       ],
       "positions": [
         {
-          "position_id": "9f9f1e22-883e-44b5-b02e-bc83d837530b",
+          "position_id": "60e1def1-58cc-41e5-99bc-67954dc6869d",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -3225,10 +3225,10 @@
           "opened_at": "2026-10-19T19:15:30+00:00",
           "closed_at": "2026-10-19T20:15:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-730fbecc-00c2-41f8-a8f0-f0853457dbff"
+          "strategy_run_id": "paper-3e0a337a-b960-4ad8-a4cb-ab9dbfa3ca4c"
         },
         {
-          "position_id": "230d314a-d3cc-42f9-b8e5-9d16cdfd3ed6",
+          "position_id": "33a608d0-bbd9-4596-926e-4cd2c787540e",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -3239,10 +3239,10 @@
           "opened_at": "2026-10-20T00:15:30+00:00",
           "closed_at": "2026-10-20T01:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-293788aa-affa-4157-9716-71a9e7e71a11"
+          "strategy_run_id": "paper-313d8aac-6766-4f53-97b6-73a1ae3f3ad5"
         },
         {
-          "position_id": "fd6a47d4-2c04-4711-aabe-462e2add4df0",
+          "position_id": "dd5b9d1c-7c5c-47e1-9eb5-d76c0196da06",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -3253,10 +3253,10 @@
           "opened_at": "2026-10-20T01:15:30+00:00",
           "closed_at": "2026-10-20T04:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-e154814a-a3b1-4995-96da-7e5eb6c1fa29"
+          "strategy_run_id": "paper-3a2ce686-6fe0-46ec-9421-d22a6bd2f73a"
         },
         {
-          "position_id": "bbf03ee1-2bf7-492d-8ea8-348046571065",
+          "position_id": "230678a1-cb64-4873-aaad-37dd1fc32d75",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -3267,10 +3267,10 @@
           "opened_at": "2026-10-20T01:15:30+00:00",
           "closed_at": "2026-10-20T04:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-6c2eb72e-1140-4e38-959c-45867c714901"
+          "strategy_run_id": "paper-3d0dcfe3-1482-4d22-8685-782e9630e2f2"
         },
         {
-          "position_id": "50985372-1ea7-4fa8-8c93-e7f060f88d86",
+          "position_id": "f1a8e9b9-c387-4254-a556-7797d6082252",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "LONG",
@@ -3281,10 +3281,10 @@
           "opened_at": "2026-10-20T05:30:30+00:00",
           "closed_at": "2026-10-20T06:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-18a789d8-abfb-44c9-9ceb-e3359049f4a3"
+          "strategy_run_id": "paper-f4682599-d712-4e44-a5c6-513c27be9bc4"
         },
         {
-          "position_id": "5cdd3fa7-a4b3-4f73-b129-51f4117e0420",
+          "position_id": "59d59fc2-4f4b-4907-ad48-30855335a1ed",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -3295,10 +3295,10 @@
           "opened_at": "2026-10-20T06:15:30+00:00",
           "closed_at": "2026-10-20T10:15:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-7b0cd729-b0b6-4628-823e-e105c5603701"
+          "strategy_run_id": "paper-fffb7b44-5dd1-48a9-b02a-83ca5902ddbb"
         },
         {
-          "position_id": "fd1a915c-67c7-48e6-aa78-556db7f10b4c",
+          "position_id": "d6be3582-1281-42ff-a4a9-ee34550a1039",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -3309,10 +3309,10 @@
           "opened_at": "2026-10-20T07:45:30+00:00",
           "closed_at": "2026-10-20T08:45:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-fc397f1c-a8c3-4e24-935f-82c1383e16b2"
+          "strategy_run_id": "paper-ec0a7a2f-d789-4465-9895-3be479c0c28c"
         },
         {
-          "position_id": "ea03bdef-85f4-41b5-80a5-5f0644c77847",
+          "position_id": "1ce12062-f7b6-4133-812f-276fb6c94a2c",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -3323,10 +3323,10 @@
           "opened_at": "2026-10-20T10:15:30+00:00",
           "closed_at": "2026-10-20T11:45:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-c1571157-67c1-4781-addc-ba3132a4fb27"
+          "strategy_run_id": "paper-c6c39f67-00b3-4ff7-96c3-e2e61d0450e2"
         },
         {
-          "position_id": "5cbcdf1e-4432-4df6-8071-fb2f18a9ce55",
+          "position_id": "23610dea-6a37-4e86-8ef5-01cc534d4027",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -3337,10 +3337,10 @@
           "opened_at": "2026-10-20T13:15:30+00:00",
           "closed_at": "2026-10-20T14:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-c0bf7b82-c6e9-409c-8f5f-8128451beced"
+          "strategy_run_id": "paper-5fd5367b-1045-462b-8083-984972866418"
         },
         {
-          "position_id": "110f700a-baf7-4c74-a764-6685b6709406",
+          "position_id": "17c6d07f-e978-4c30-9a11-7cf5c627bad8",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "LONG",
@@ -3351,10 +3351,10 @@
           "opened_at": "2026-10-20T15:00:30+00:00",
           "closed_at": null,
           "parent_position_id": null,
-          "strategy_run_id": "paper-4b320956-bbd9-4c86-9970-c212ff99f6ec"
+          "strategy_run_id": "paper-9872a829-9921-4752-be12-5ae04fbb1707"
         },
         {
-          "position_id": "f67112e8-aac3-4b99-b49b-0a9fbbf4fbc5",
+          "position_id": "99015937-0260-4a31-aeaa-ad986c0918e9",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "LONG",
@@ -3365,10 +3365,10 @@
           "opened_at": "2026-10-20T18:15:30+00:00",
           "closed_at": "2026-10-21T01:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-31f1a375-4277-440d-9884-d00ae6498637"
+          "strategy_run_id": "paper-58cd0c0a-76fb-4197-8295-f75a7892b866"
         },
         {
-          "position_id": "54c3a936-ed36-4163-a187-7ea4a702b83a",
+          "position_id": "9d77da05-0758-42aa-aaf8-6e3e1e16b223",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "LONG",
@@ -3379,11 +3379,11 @@
           "opened_at": "2026-10-21T01:30:30+00:00",
           "closed_at": null,
           "parent_position_id": null,
-          "strategy_run_id": "paper-9c9ebcd7-676a-4b6f-bcc9-4d87066589a5"
+          "strategy_run_id": "paper-d5833ed8-f416-41f8-9f1e-db53752cf614"
         }
       ],
       "contexts": {
-        "9f9f1e22-883e-44b5-b02e-bc83d837530b": {
+        "60e1def1-58cc-41e5-99bc-67954dc6869d": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -3399,7 +3399,7 @@
           "trailing_arm_reason": "NET_POSITIVE_MFE_COST_FLOOR",
           "max_favorable_r": "0.6019810411303304565027935078",
           "complete_exit": {
-            "position_id": "9f9f1e22-883e-44b5-b02e-bc83d837530b",
+            "position_id": "60e1def1-58cc-41e5-99bc-67954dc6869d",
             "side": "SHORT",
             "reason": "trend-weakened-protection-breach",
             "closed_at": "2026-10-19T20:15:30+00:00",
@@ -3410,7 +3410,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "230d314a-d3cc-42f9-b8e5-9d16cdfd3ed6": {
+        "33a608d0-bbd9-4596-926e-4cd2c787540e": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -3426,7 +3426,7 @@
           "trailing_arm_reason": "RISK_REWARD_MILESTONE",
           "max_favorable_r": "1.454445088460158427905783586",
           "complete_exit": {
-            "position_id": "230d314a-d3cc-42f9-b8e5-9d16cdfd3ed6",
+            "position_id": "33a608d0-bbd9-4596-926e-4cd2c787540e",
             "side": "SHORT",
             "reason": "armed-protection-breach-atr-impulse",
             "closed_at": "2026-10-20T01:00:30+00:00",
@@ -3437,7 +3437,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "fd6a47d4-2c04-4711-aabe-462e2add4df0": {
+        "dd5b9d1c-7c5c-47e1-9eb5-d76c0196da06": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -3453,7 +3453,7 @@
           "trailing_arm_reason": null,
           "max_favorable_r": "0.03492501973164956590370955012",
           "complete_exit": {
-            "position_id": "fd6a47d4-2c04-4711-aabe-462e2add4df0",
+            "position_id": "dd5b9d1c-7c5c-47e1-9eb5-d76c0196da06",
             "side": "SHORT",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T04:00:30+00:00",
@@ -3464,7 +3464,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "bbf03ee1-2bf7-492d-8ea8-348046571065": {
+        "230678a1-cb64-4873-aaad-37dd1fc32d75": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -3480,7 +3480,7 @@
           "trailing_arm_reason": null,
           "max_favorable_r": "0.03234020881079704609116373822",
           "complete_exit": {
-            "position_id": "bbf03ee1-2bf7-492d-8ea8-348046571065",
+            "position_id": "230678a1-cb64-4873-aaad-37dd1fc32d75",
             "side": "SHORT",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T04:00:30+00:00",
@@ -3491,7 +3491,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "50985372-1ea7-4fa8-8c93-e7f060f88d86": {
+        "f1a8e9b9-c387-4254-a556-7797d6082252": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -3507,7 +3507,7 @@
           "trailing_arm_reason": null,
           "max_favorable_r": "0.06326034063260340632603406326",
           "complete_exit": {
-            "position_id": "50985372-1ea7-4fa8-8c93-e7f060f88d86",
+            "position_id": "f1a8e9b9-c387-4254-a556-7797d6082252",
             "side": "LONG",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T06:00:30+00:00",
@@ -3518,7 +3518,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "5cdd3fa7-a4b3-4f73-b129-51f4117e0420": {
+        "59d59fc2-4f4b-4907-ad48-30855335a1ed": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -3534,7 +3534,7 @@
           "trailing_arm_reason": "NET_POSITIVE_MFE_COST_FLOOR",
           "max_favorable_r": "0.9909466211477349425473285272",
           "complete_exit": {
-            "position_id": "5cdd3fa7-a4b3-4f73-b129-51f4117e0420",
+            "position_id": "59d59fc2-4f4b-4907-ad48-30855335a1ed",
             "side": "SHORT",
             "reason": "armed-protection-breach-atr-impulse",
             "closed_at": "2026-10-20T10:15:30+00:00",
@@ -3545,7 +3545,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "fd1a915c-67c7-48e6-aa78-556db7f10b4c": {
+        "d6be3582-1281-42ff-a4a9-ee34550a1039": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -3561,7 +3561,7 @@
           "trailing_arm_reason": "NET_COST_AND_ATR_MILESTONE",
           "max_favorable_r": "0.3125712115457652867451576149",
           "complete_exit": {
-            "position_id": "fd1a915c-67c7-48e6-aa78-556db7f10b4c",
+            "position_id": "d6be3582-1281-42ff-a4a9-ee34550a1039",
             "side": "SHORT",
             "reason": "armed-protection-breach-atr-impulse",
             "closed_at": "2026-10-20T08:45:30+00:00",
@@ -3572,7 +3572,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "ea03bdef-85f4-41b5-80a5-5f0644c77847": {
+        "1ce12062-f7b6-4133-812f-276fb6c94a2c": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -3588,7 +3588,7 @@
           "trailing_arm_reason": "NET_COST_AND_ATR_MILESTONE",
           "max_favorable_r": "0.5626060166905684142072160474",
           "complete_exit": {
-            "position_id": "ea03bdef-85f4-41b5-80a5-5f0644c77847",
+            "position_id": "1ce12062-f7b6-4133-812f-276fb6c94a2c",
             "side": "SHORT",
             "reason": "trend-weakened-protection-breach",
             "closed_at": "2026-10-20T11:45:30+00:00",
@@ -3599,7 +3599,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "5cbcdf1e-4432-4df6-8071-fb2f18a9ce55": {
+        "23610dea-6a37-4e86-8ef5-01cc534d4027": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -3615,7 +3615,7 @@
           "trailing_arm_reason": null,
           "max_favorable_r": "0.2492625101701928955972181102",
           "complete_exit": {
-            "position_id": "5cbcdf1e-4432-4df6-8071-fb2f18a9ce55",
+            "position_id": "23610dea-6a37-4e86-8ef5-01cc534d4027",
             "side": "SHORT",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T14:00:30+00:00",
@@ -3626,7 +3626,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "110f700a-baf7-4c74-a764-6685b6709406": {
+        "17c6d07f-e978-4c30-9a11-7cf5c627bad8": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -3642,7 +3642,7 @@
           "trailing_arm_reason": null,
           "max_favorable_r": "0.002949852507374631268436578171"
         },
-        "f67112e8-aac3-4b99-b49b-0a9fbbf4fbc5": {
+        "99015937-0260-4a31-aeaa-ad986c0918e9": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -3658,7 +3658,7 @@
           "trailing_arm_reason": "NET_POSITIVE_MFE_COST_FLOOR",
           "max_favorable_r": "1.048251880847696973004400951",
           "complete_exit": {
-            "position_id": "f67112e8-aac3-4b99-b49b-0a9fbbf4fbc5",
+            "position_id": "99015937-0260-4a31-aeaa-ad986c0918e9",
             "side": "LONG",
             "reason": "profit-at-risk-with-deteriorating-continuation",
             "closed_at": "2026-10-21T01:00:30+00:00",
@@ -3669,7 +3669,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "54c3a936-ed36-4163-a187-7ea4a702b83a": {
+        "9d77da05-0758-42aa-aaf8-6e3e1e16b223": {
           "model": "FIB_PULLBACK_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -7112,7 +7112,7 @@
       ],
       "positions": [
         {
-          "position_id": "54162188-2819-4927-8641-dc527f7d3b50",
+          "position_id": "0dd68cfe-b1c6-4aad-8f6f-62af7a7e7c33",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -7123,10 +7123,10 @@
           "opened_at": "2026-10-19T19:15:30+00:00",
           "closed_at": "2026-10-19T20:15:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-37621702-b12c-4499-8f3c-0466018e678c"
+          "strategy_run_id": "paper-b803f431-6071-479d-bf7f-3387566ba119"
         },
         {
-          "position_id": "2bf87282-11fb-43b6-a7e4-8627d4a750c9",
+          "position_id": "7a1c23f6-1e60-4a97-afa7-d6212bc02168",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -7137,10 +7137,10 @@
           "opened_at": "2026-10-20T00:15:30+00:00",
           "closed_at": "2026-10-20T01:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-ced9dde6-6955-45d3-91b6-a7d9cfaba0c2"
+          "strategy_run_id": "paper-4f6977ff-d5ec-4a3c-ae8d-3cd8593af2c6"
         },
         {
-          "position_id": "7595e8d7-8939-43cd-b913-c529da55253b",
+          "position_id": "00e84d3f-9034-4713-a879-2d353333e257",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -7151,10 +7151,10 @@
           "opened_at": "2026-10-20T01:15:30+00:00",
           "closed_at": "2026-10-20T04:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-fef65502-d52c-4efc-9d27-944f27e935db"
+          "strategy_run_id": "paper-ac07d3e2-6205-423e-87a1-eaae113363f6"
         },
         {
-          "position_id": "aba7b20f-fef4-4400-a14e-b90555bd2935",
+          "position_id": "45a7ef21-264d-47f4-b0b8-92b9935cc67f",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -7165,10 +7165,10 @@
           "opened_at": "2026-10-20T02:00:30+00:00",
           "closed_at": "2026-10-20T03:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-00e6c4ae-1f2d-42b7-b25a-2e5c6603c6e8"
+          "strategy_run_id": "paper-ed2ee8d5-65eb-426b-9cc6-f95a866f58b2"
         },
         {
-          "position_id": "690ffe4a-0b5f-4691-8ff0-9d6285e00cb3",
+          "position_id": "3dbaa530-8e41-4186-be45-c37b7518b6cd",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "LONG",
@@ -7179,10 +7179,10 @@
           "opened_at": "2026-10-20T05:30:30+00:00",
           "closed_at": "2026-10-20T06:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-ea719451-f3a4-4fd4-a0a5-d99b7f30ad96"
+          "strategy_run_id": "paper-cea5b650-30d0-440f-9f6d-1da8df543ba5"
         },
         {
-          "position_id": "d16af201-023f-4583-9209-428a4eb37d02",
+          "position_id": "4fc94b2d-535e-4d7c-9ca6-85ad753cdf68",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -7193,10 +7193,10 @@
           "opened_at": "2026-10-20T06:15:30+00:00",
           "closed_at": "2026-10-20T10:15:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-36e4f204-eb98-4e03-ae4b-b28c71373f5d"
+          "strategy_run_id": "paper-d6d425b6-f44a-4967-9fea-1aa0eb306ad6"
         },
         {
-          "position_id": "8fe9d06f-d1e6-4323-948a-b0f1abea4db9",
+          "position_id": "b9efdc58-3caf-4b6b-91d7-f42ebcc2d99b",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -7207,10 +7207,10 @@
           "opened_at": "2026-10-20T07:45:30+00:00",
           "closed_at": "2026-10-20T08:45:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-f1cd8d59-a23c-4648-b6d5-73023df18b24"
+          "strategy_run_id": "paper-d148172c-db90-4eeb-bacd-f16e25349a5b"
         },
         {
-          "position_id": "02a5a341-5178-4cab-9579-4fc7d91a2188",
+          "position_id": "a977ae1b-312b-49e1-9c99-cb84556dfd24",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -7221,10 +7221,10 @@
           "opened_at": "2026-10-20T10:15:30+00:00",
           "closed_at": "2026-10-20T11:45:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-24588d13-9627-4e3e-b214-72ed29e56fb6"
+          "strategy_run_id": "paper-939f2d97-bea4-4ea0-bf68-f111bce1090c"
         },
         {
-          "position_id": "abef2601-e103-461c-85fa-86e019cffbd7",
+          "position_id": "b828be4b-5c58-41cd-8e59-13cce8bd5562",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -7235,10 +7235,10 @@
           "opened_at": "2026-10-20T13:15:30+00:00",
           "closed_at": "2026-10-20T14:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-b3d2ee17-cf31-406e-a6be-5870d4d87ede"
+          "strategy_run_id": "paper-e3dc642e-fae1-4069-9a4b-5cd8adf3f701"
         },
         {
-          "position_id": "9cb9e6f7-4d23-4ba0-9e24-82708bbccf42",
+          "position_id": "3f5e36ff-13e9-4b33-b11d-6abb3bc3861d",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "LONG",
@@ -7249,10 +7249,10 @@
           "opened_at": "2026-10-20T15:00:30+00:00",
           "closed_at": null,
           "parent_position_id": null,
-          "strategy_run_id": "paper-f5229355-8c7e-4214-a56e-f200d85196d5"
+          "strategy_run_id": "paper-c0f38c29-9b5d-4db9-a52d-9688bc13e4db"
         },
         {
-          "position_id": "4a5b01ae-d188-4ac3-a209-1e81a6b51e6b",
+          "position_id": "60f65a61-fbaa-462e-a4f0-539cc7bd6692",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "LONG",
@@ -7263,10 +7263,10 @@
           "opened_at": "2026-10-20T18:15:30+00:00",
           "closed_at": "2026-10-21T01:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-e8e365fd-d4b6-4710-9792-23d552a5188d"
+          "strategy_run_id": "paper-48f42a85-cb69-4bbf-a149-3b4328d7e442"
         },
         {
-          "position_id": "ba9ff2ac-104a-4f73-a867-bd3bdaa434db",
+          "position_id": "31e4491c-58e8-4847-9ad2-bf5c9872af5a",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "LONG",
@@ -7277,11 +7277,11 @@
           "opened_at": "2026-10-21T01:30:30+00:00",
           "closed_at": null,
           "parent_position_id": null,
-          "strategy_run_id": "paper-474053a9-ec7f-4635-8ff3-193caf9020f4"
+          "strategy_run_id": "paper-63330006-5439-4370-a0b4-e68d36175344"
         }
       ],
       "contexts": {
-        "54162188-2819-4927-8641-dc527f7d3b50": {
+        "0dd68cfe-b1c6-4aad-8f6f-62af7a7e7c33": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -7297,7 +7297,7 @@
           "trailing_arm_reason": "NET_POSITIVE_MFE_COST_FLOOR",
           "max_favorable_r": "0.6019810411303304565027935078",
           "complete_exit": {
-            "position_id": "54162188-2819-4927-8641-dc527f7d3b50",
+            "position_id": "0dd68cfe-b1c6-4aad-8f6f-62af7a7e7c33",
             "side": "SHORT",
             "reason": "trend-weakened-protection-breach",
             "closed_at": "2026-10-19T20:15:30+00:00",
@@ -7308,7 +7308,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "2bf87282-11fb-43b6-a7e4-8627d4a750c9": {
+        "7a1c23f6-1e60-4a97-afa7-d6212bc02168": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -7324,7 +7324,7 @@
           "trailing_arm_reason": "RISK_REWARD_MILESTONE",
           "max_favorable_r": "1.454445088460158427905783586",
           "complete_exit": {
-            "position_id": "2bf87282-11fb-43b6-a7e4-8627d4a750c9",
+            "position_id": "7a1c23f6-1e60-4a97-afa7-d6212bc02168",
             "side": "SHORT",
             "reason": "armed-protection-breach-atr-impulse",
             "closed_at": "2026-10-20T01:00:30+00:00",
@@ -7335,7 +7335,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "7595e8d7-8939-43cd-b913-c529da55253b": {
+        "00e84d3f-9034-4713-a879-2d353333e257": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -7351,7 +7351,7 @@
           "trailing_arm_reason": null,
           "max_favorable_r": "0.03492501973164956590370955012",
           "complete_exit": {
-            "position_id": "7595e8d7-8939-43cd-b913-c529da55253b",
+            "position_id": "00e84d3f-9034-4713-a879-2d353333e257",
             "side": "SHORT",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T04:00:30+00:00",
@@ -7362,7 +7362,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "aba7b20f-fef4-4400-a14e-b90555bd2935": {
+        "45a7ef21-264d-47f4-b0b8-92b9935cc67f": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -7378,7 +7378,7 @@
           "trailing_arm_reason": "RISK_REWARD_MILESTONE",
           "max_favorable_r": "1.054225496214446490748417443",
           "complete_exit": {
-            "position_id": "aba7b20f-fef4-4400-a14e-b90555bd2935",
+            "position_id": "45a7ef21-264d-47f4-b0b8-92b9935cc67f",
             "side": "SHORT",
             "reason": "armed-protection-breach-atr-impulse",
             "closed_at": "2026-10-20T03:00:30+00:00",
@@ -7389,7 +7389,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "690ffe4a-0b5f-4691-8ff0-9d6285e00cb3": {
+        "3dbaa530-8e41-4186-be45-c37b7518b6cd": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -7405,7 +7405,7 @@
           "trailing_arm_reason": null,
           "max_favorable_r": "0.06326034063260340632603406326",
           "complete_exit": {
-            "position_id": "690ffe4a-0b5f-4691-8ff0-9d6285e00cb3",
+            "position_id": "3dbaa530-8e41-4186-be45-c37b7518b6cd",
             "side": "LONG",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T06:00:30+00:00",
@@ -7416,7 +7416,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "d16af201-023f-4583-9209-428a4eb37d02": {
+        "4fc94b2d-535e-4d7c-9ca6-85ad753cdf68": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -7432,7 +7432,7 @@
           "trailing_arm_reason": "NET_POSITIVE_MFE_COST_FLOOR",
           "max_favorable_r": "0.9909466211477349425473285272",
           "complete_exit": {
-            "position_id": "d16af201-023f-4583-9209-428a4eb37d02",
+            "position_id": "4fc94b2d-535e-4d7c-9ca6-85ad753cdf68",
             "side": "SHORT",
             "reason": "armed-protection-breach-atr-impulse",
             "closed_at": "2026-10-20T10:15:30+00:00",
@@ -7443,7 +7443,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "8fe9d06f-d1e6-4323-948a-b0f1abea4db9": {
+        "b9efdc58-3caf-4b6b-91d7-f42ebcc2d99b": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -7459,7 +7459,7 @@
           "trailing_arm_reason": "NET_COST_AND_ATR_MILESTONE",
           "max_favorable_r": "0.3125712115457652867451576149",
           "complete_exit": {
-            "position_id": "8fe9d06f-d1e6-4323-948a-b0f1abea4db9",
+            "position_id": "b9efdc58-3caf-4b6b-91d7-f42ebcc2d99b",
             "side": "SHORT",
             "reason": "armed-protection-breach-atr-impulse",
             "closed_at": "2026-10-20T08:45:30+00:00",
@@ -7470,7 +7470,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "02a5a341-5178-4cab-9579-4fc7d91a2188": {
+        "a977ae1b-312b-49e1-9c99-cb84556dfd24": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -7486,7 +7486,7 @@
           "trailing_arm_reason": "NET_COST_AND_ATR_MILESTONE",
           "max_favorable_r": "0.5626060166905684142072160474",
           "complete_exit": {
-            "position_id": "02a5a341-5178-4cab-9579-4fc7d91a2188",
+            "position_id": "a977ae1b-312b-49e1-9c99-cb84556dfd24",
             "side": "SHORT",
             "reason": "trend-weakened-protection-breach",
             "closed_at": "2026-10-20T11:45:30+00:00",
@@ -7497,7 +7497,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "abef2601-e103-461c-85fa-86e019cffbd7": {
+        "b828be4b-5c58-41cd-8e59-13cce8bd5562": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -7513,7 +7513,7 @@
           "trailing_arm_reason": null,
           "max_favorable_r": "0.2492625101701928955972181102",
           "complete_exit": {
-            "position_id": "abef2601-e103-461c-85fa-86e019cffbd7",
+            "position_id": "b828be4b-5c58-41cd-8e59-13cce8bd5562",
             "side": "SHORT",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T14:00:30+00:00",
@@ -7524,7 +7524,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "9cb9e6f7-4d23-4ba0-9e24-82708bbccf42": {
+        "3f5e36ff-13e9-4b33-b11d-6abb3bc3861d": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -7540,7 +7540,7 @@
           "trailing_arm_reason": null,
           "max_favorable_r": "0.002949852507374631268436578171"
         },
-        "4a5b01ae-d188-4ac3-a209-1e81a6b51e6b": {
+        "60f65a61-fbaa-462e-a4f0-539cc7bd6692": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -7556,7 +7556,7 @@
           "trailing_arm_reason": "NET_POSITIVE_MFE_COST_FLOOR",
           "max_favorable_r": "1.048251880847696973004400951",
           "complete_exit": {
-            "position_id": "4a5b01ae-d188-4ac3-a209-1e81a6b51e6b",
+            "position_id": "60f65a61-fbaa-462e-a4f0-539cc7bd6692",
             "side": "LONG",
             "reason": "profit-at-risk-with-deteriorating-continuation",
             "closed_at": "2026-10-21T01:00:30+00:00",
@@ -7567,7 +7567,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "ba9ff2ac-104a-4f73-a867-bd3bdaa434db": {
+        "31e4491c-58e8-4847-9ad2-bf5c9872af5a": {
           "model": "FIB_PULLBACK_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -10304,7 +10304,7 @@
       ],
       "positions": [
         {
-          "position_id": "c927632d-e04a-4cd9-bb9c-678706a6bddd",
+          "position_id": "80e362dd-6ad1-4f77-a903-946a50490aa0",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -10315,10 +10315,10 @@
           "opened_at": "2026-10-19T19:15:30+00:00",
           "closed_at": "2026-10-19T20:15:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-297d072d-266e-4b23-a868-d1b5d32926f3"
+          "strategy_run_id": "paper-58a644ca-5160-4155-98f7-f0ac365bc5e0"
         },
         {
-          "position_id": "7fc327d6-29a7-4bdc-a394-476db0c669e3",
+          "position_id": "6e776591-eedf-4411-b516-f006cb906e73",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -10329,10 +10329,10 @@
           "opened_at": "2026-10-20T00:15:30+00:00",
           "closed_at": "2026-10-20T03:15:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-b4b0b422-c425-4241-9e4a-54b021ea239d"
+          "strategy_run_id": "paper-56adf4c6-2212-46aa-8fbc-773351cd2ab3"
         },
         {
-          "position_id": "50d0d6af-a8e1-40ea-a678-0cabffc288b6",
+          "position_id": "45397be6-fa71-48a5-8421-7853a5c71996",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -10343,10 +10343,10 @@
           "opened_at": "2026-10-20T01:15:30+00:00",
           "closed_at": "2026-10-20T04:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-4f16b1ea-eaea-4a4a-a7a8-21dfaa47e052"
+          "strategy_run_id": "paper-71552688-f12e-47d1-9095-071ba7964667"
         },
         {
-          "position_id": "e6a77b3c-7bff-44cd-a9af-af7523f612f5",
+          "position_id": "f1caf9fe-dd1e-41ed-b085-f4c6f5730da1",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "LONG",
@@ -10357,10 +10357,10 @@
           "opened_at": "2026-10-20T05:30:30+00:00",
           "closed_at": "2026-10-20T06:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-e7488932-7de3-439b-9962-3a8cb35632bb"
+          "strategy_run_id": "paper-7c1b89f7-e357-4c24-9236-15fb9888b08e"
         },
         {
-          "position_id": "d1425306-df43-414f-82f5-9616b5b76db0",
+          "position_id": "b8e599dd-c4fe-418c-b1d6-233bbc6100cc",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -10371,10 +10371,10 @@
           "opened_at": "2026-10-20T06:15:30+00:00",
           "closed_at": "2026-10-20T10:30:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-75d0a427-2d4b-4b77-9826-73c2256cc75a"
+          "strategy_run_id": "paper-9fb4a0a7-094c-449c-afa0-f19a6535283d"
         },
         {
-          "position_id": "ade6a732-6819-43db-b2e3-e1af17be88de",
+          "position_id": "3caadfd2-99d5-40ea-a3aa-8e68e3133461",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -10385,10 +10385,10 @@
           "opened_at": "2026-10-20T07:45:30+00:00",
           "closed_at": "2026-10-20T11:45:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-17e78478-8ad7-43d5-81fb-f4fa2ea7ea72"
+          "strategy_run_id": "paper-c6646917-aae6-4b7d-aa72-59dd7f6b88ee"
         },
         {
-          "position_id": "836dcf80-3e73-44d9-9d9e-f4d1c291cacd",
+          "position_id": "8055a4f2-837b-467f-a3fc-74f18a9df134",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -10399,10 +10399,10 @@
           "opened_at": "2026-10-20T13:15:30+00:00",
           "closed_at": "2026-10-20T14:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-e9b5fc88-b2c3-4536-8d70-170994b7e3a9"
+          "strategy_run_id": "paper-319834db-7ecc-4620-afcd-31658b851e4f"
         },
         {
-          "position_id": "efe8f27f-b22d-4b4e-9ee4-c33edebb8e09",
+          "position_id": "5670c0ca-a9a7-4574-9daa-8d44af76fd29",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "LONG",
@@ -10413,10 +10413,10 @@
           "opened_at": "2026-10-20T15:00:30+00:00",
           "closed_at": null,
           "parent_position_id": null,
-          "strategy_run_id": "paper-e04eb73f-ded9-4e04-a672-d92e9bbc1438"
+          "strategy_run_id": "paper-064edf68-6dc7-4d66-aa61-bb3d87d9a83f"
         },
         {
-          "position_id": "d2db3c8c-1e54-4ae6-8f22-97e1ce77ab2a",
+          "position_id": "042c1d39-ea7a-4236-9ce9-1ebf43e4f2ce",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "LONG",
@@ -10427,10 +10427,10 @@
           "opened_at": "2026-10-20T18:15:30+00:00",
           "closed_at": "2026-10-21T01:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-b792c4ef-7d0b-4c12-b02b-182b553c905d"
+          "strategy_run_id": "paper-7c0d9c85-b76a-4641-9847-a756bfce07c2"
         },
         {
-          "position_id": "b4153e01-ecfa-4503-a046-52e207709312",
+          "position_id": "8c3d7da4-632c-45e7-bde9-5c82444176b5",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "LONG",
@@ -10441,11 +10441,11 @@
           "opened_at": "2026-10-21T01:30:30+00:00",
           "closed_at": null,
           "parent_position_id": null,
-          "strategy_run_id": "paper-3da6f0b3-1fa8-4663-8301-0030e1552688"
+          "strategy_run_id": "paper-6e79e652-30c6-4ab6-be23-0bb33148afda"
         }
       ],
       "contexts": {
-        "c927632d-e04a-4cd9-bb9c-678706a6bddd": {
+        "80e362dd-6ad1-4f77-a903-946a50490aa0": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -10464,7 +10464,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792440000,
           "complete_exit": {
-            "position_id": "c927632d-e04a-4cd9-bb9c-678706a6bddd",
+            "position_id": "80e362dd-6ad1-4f77-a903-946a50490aa0",
             "side": "SHORT",
             "reason": "trend-weakened-protection-breach",
             "closed_at": "2026-10-19T20:15:30+00:00",
@@ -10475,7 +10475,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "7fc327d6-29a7-4bdc-a394-476db0c669e3": {
+        "6e776591-eedf-4411-b516-f006cb906e73": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -10494,7 +10494,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792465200,
           "complete_exit": {
-            "position_id": "7fc327d6-29a7-4bdc-a394-476db0c669e3",
+            "position_id": "6e776591-eedf-4411-b516-f006cb906e73",
             "side": "SHORT",
             "reason": "trend-weakened-protection-breach",
             "closed_at": "2026-10-20T03:15:30+00:00",
@@ -10505,7 +10505,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "50d0d6af-a8e1-40ea-a678-0cabffc288b6": {
+        "45397be6-fa71-48a5-8421-7853a5c71996": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -10524,7 +10524,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792467900,
           "complete_exit": {
-            "position_id": "50d0d6af-a8e1-40ea-a678-0cabffc288b6",
+            "position_id": "45397be6-fa71-48a5-8421-7853a5c71996",
             "side": "SHORT",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T04:00:30+00:00",
@@ -10535,7 +10535,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "e6a77b3c-7bff-44cd-a9af-af7523f612f5": {
+        "f1caf9fe-dd1e-41ed-b085-f4c6f5730da1": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -10554,7 +10554,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792475100,
           "complete_exit": {
-            "position_id": "e6a77b3c-7bff-44cd-a9af-af7523f612f5",
+            "position_id": "f1caf9fe-dd1e-41ed-b085-f4c6f5730da1",
             "side": "LONG",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T06:00:30+00:00",
@@ -10565,7 +10565,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "d1425306-df43-414f-82f5-9616b5b76db0": {
+        "b8e599dd-c4fe-418c-b1d6-233bbc6100cc": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -10584,7 +10584,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792491300,
           "complete_exit": {
-            "position_id": "d1425306-df43-414f-82f5-9616b5b76db0",
+            "position_id": "b8e599dd-c4fe-418c-b1d6-233bbc6100cc",
             "side": "SHORT",
             "reason": "trend-weakened-protection-breach",
             "closed_at": "2026-10-20T10:30:30+00:00",
@@ -10595,7 +10595,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "ade6a732-6819-43db-b2e3-e1af17be88de": {
+        "3caadfd2-99d5-40ea-a3aa-8e68e3133461": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -10614,7 +10614,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792495800,
           "complete_exit": {
-            "position_id": "ade6a732-6819-43db-b2e3-e1af17be88de",
+            "position_id": "3caadfd2-99d5-40ea-a3aa-8e68e3133461",
             "side": "SHORT",
             "reason": "trend-weakened-protection-breach",
             "closed_at": "2026-10-20T11:45:30+00:00",
@@ -10625,7 +10625,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "836dcf80-3e73-44d9-9d9e-f4d1c291cacd": {
+        "8055a4f2-837b-467f-a3fc-74f18a9df134": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -10644,7 +10644,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792503900,
           "complete_exit": {
-            "position_id": "836dcf80-3e73-44d9-9d9e-f4d1c291cacd",
+            "position_id": "8055a4f2-837b-467f-a3fc-74f18a9df134",
             "side": "SHORT",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T14:00:30+00:00",
@@ -10655,7 +10655,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "efe8f27f-b22d-4b4e-9ee4-c33edebb8e09": {
+        "5670c0ca-a9a7-4574-9daa-8d44af76fd29": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -10674,7 +10674,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792546200
         },
-        "d2db3c8c-1e54-4ae6-8f22-97e1ce77ab2a": {
+        "042c1d39-ea7a-4236-9ce9-1ebf43e4f2ce": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -10693,7 +10693,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792543500,
           "complete_exit": {
-            "position_id": "d2db3c8c-1e54-4ae6-8f22-97e1ce77ab2a",
+            "position_id": "042c1d39-ea7a-4236-9ce9-1ebf43e4f2ce",
             "side": "LONG",
             "reason": "profit-at-risk-with-deteriorating-continuation",
             "closed_at": "2026-10-21T01:00:30+00:00",
@@ -10704,7 +10704,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "b4153e01-ecfa-4503-a046-52e207709312": {
+        "8c3d7da4-632c-45e7-bde9-5c82444176b5": {
           "model": "FIB_PULLBACK_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -13663,7 +13663,7 @@
       ],
       "positions": [
         {
-          "position_id": "c1bb0d6d-5d4b-49f8-9347-8d71b825ea66",
+          "position_id": "c09cfe36-45e0-4624-8498-f319e23b924a",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -13674,10 +13674,10 @@
           "opened_at": "2026-10-19T19:15:30+00:00",
           "closed_at": "2026-10-19T20:15:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-bac6e7aa-3524-419d-82e1-fdd0ec259e67"
+          "strategy_run_id": "paper-7d585770-9a44-4b7e-b1bb-4b82091a5a5a"
         },
         {
-          "position_id": "8b056399-6112-4543-aa25-c02dc5f6ff08",
+          "position_id": "cf592d8b-38ea-4795-92b8-e3778033d980",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -13688,10 +13688,10 @@
           "opened_at": "2026-10-20T01:00:30+00:00",
           "closed_at": "2026-10-20T02:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-1c8af709-06d7-44f0-82e6-c9a137e5b900"
+          "strategy_run_id": "paper-e7d03d87-3883-4a65-8f26-0c418ba71d88"
         },
         {
-          "position_id": "4af225a5-247e-43c8-8339-e6e48ca38c67",
+          "position_id": "1506c43b-1d75-411d-b19c-e9a11853d17b",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -13702,10 +13702,10 @@
           "opened_at": "2026-10-20T01:15:30+00:00",
           "closed_at": "2026-10-20T04:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-8eec8b86-37c4-4456-88c3-cf6d03dff7d7"
+          "strategy_run_id": "paper-eeb22ed6-c048-4f54-9ad7-6f5790bf8247"
         },
         {
-          "position_id": "ad3266b6-5a08-4d30-a2f0-a733be4e7c22",
+          "position_id": "6fb23eb4-a4e2-4ad2-bc07-43b90e98a4e9",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -13716,10 +13716,10 @@
           "opened_at": "2026-10-20T02:45:30+00:00",
           "closed_at": "2026-10-20T04:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-f3fad873-f8a5-44a2-9a87-3a1e477a885d"
+          "strategy_run_id": "paper-688e0698-d854-4f84-a910-b031bfd95295"
         },
         {
-          "position_id": "557cca24-7d29-4bcc-b9cf-e1bb5c335de2",
+          "position_id": "f1ac33d0-4b7e-4dd4-8ea2-da6fdf2626af",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "LONG",
@@ -13730,10 +13730,10 @@
           "opened_at": "2026-10-20T05:30:30+00:00",
           "closed_at": "2026-10-20T06:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-fe28325a-028e-4475-a256-2350c303eedb"
+          "strategy_run_id": "paper-8b7ba0a7-3a02-4022-ae98-f5c30ebf39d1"
         },
         {
-          "position_id": "c8c33c9b-8070-4760-bd1c-19eec27d51e7",
+          "position_id": "bd79ef85-c479-4d7e-bc96-cc75f906d0f4",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -13744,10 +13744,10 @@
           "opened_at": "2026-10-20T06:15:30+00:00",
           "closed_at": "2026-10-20T10:30:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-640701dc-9c67-44be-bc04-4de3b5cd5190"
+          "strategy_run_id": "paper-ea8691ae-d3bc-44a4-9848-ffae4f43c85c"
         },
         {
-          "position_id": "a6a75629-a724-411a-a058-d17f09fcdaf4",
+          "position_id": "945ce4f1-426e-4be2-bfcd-af6bd6649771",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "SHORT",
@@ -13758,10 +13758,10 @@
           "opened_at": "2026-10-20T07:45:30+00:00",
           "closed_at": "2026-10-20T11:45:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-60f60c1d-19fb-4d2f-8e80-d9a34227fa4e"
+          "strategy_run_id": "paper-f5c11af0-7fe0-4580-970d-aa1a64d7f1f7"
         },
         {
-          "position_id": "59314c69-fcb8-4040-9709-c1eb4f2492ee",
+          "position_id": "754ebc34-155f-40b9-b1e0-f6497c062c34",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "SHORT",
@@ -13772,10 +13772,10 @@
           "opened_at": "2026-10-20T13:15:30+00:00",
           "closed_at": "2026-10-20T14:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-7756dc6a-776e-4488-a9e7-ad5dce03a1a0"
+          "strategy_run_id": "paper-86d9c344-e128-4442-b432-aaa6d900d420"
         },
         {
-          "position_id": "dc81f773-7c47-4643-824f-6552e25c2ba0",
+          "position_id": "110984bd-2896-4959-bbc1-b2c28d155423",
           "account_id": "offline",
           "contract_code": "ETH-USDT",
           "side": "LONG",
@@ -13786,10 +13786,10 @@
           "opened_at": "2026-10-20T15:00:30+00:00",
           "closed_at": null,
           "parent_position_id": null,
-          "strategy_run_id": "paper-bf3f2e39-6efa-45c6-82fe-f4fbe1ea17ef"
+          "strategy_run_id": "paper-f093ea74-4dab-4116-a195-2e04e67c7a09"
         },
         {
-          "position_id": "41b4dd34-b27b-4f62-8587-1f3aa454e59a",
+          "position_id": "cde0409c-997f-473e-8aec-3157d9024ab0",
           "account_id": "offline",
           "contract_code": "BTC-USDT",
           "side": "LONG",
@@ -13800,11 +13800,11 @@
           "opened_at": "2026-10-20T18:15:30+00:00",
           "closed_at": "2026-10-21T01:00:30+00:00",
           "parent_position_id": null,
-          "strategy_run_id": "paper-49606e94-7467-45fd-9823-2197af0368c0"
+          "strategy_run_id": "paper-6520b5f6-e373-4bb0-93f3-96d40a987a4e"
         }
       ],
       "contexts": {
-        "c1bb0d6d-5d4b-49f8-9347-8d71b825ea66": {
+        "c09cfe36-45e0-4624-8498-f319e23b924a": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -13823,7 +13823,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792440000,
           "complete_exit": {
-            "position_id": "c1bb0d6d-5d4b-49f8-9347-8d71b825ea66",
+            "position_id": "c09cfe36-45e0-4624-8498-f319e23b924a",
             "side": "SHORT",
             "reason": "trend-weakened-protection-breach",
             "closed_at": "2026-10-19T20:15:30+00:00",
@@ -13834,7 +13834,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "8b056399-6112-4543-aa25-c02dc5f6ff08": {
+        "cf592d8b-38ea-4795-92b8-e3778033d980": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -13853,7 +13853,7 @@
           "continuation_breach_count": 2,
           "continuation_last_bar": 1792460700,
           "complete_exit": {
-            "position_id": "8b056399-6112-4543-aa25-c02dc5f6ff08",
+            "position_id": "cf592d8b-38ea-4795-92b8-e3778033d980",
             "side": "SHORT",
             "reason": "continuation-protection-confirmed",
             "closed_at": "2026-10-20T02:00:30+00:00",
@@ -13864,7 +13864,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "4af225a5-247e-43c8-8339-e6e48ca38c67": {
+        "1506c43b-1d75-411d-b19c-e9a11853d17b": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -13883,7 +13883,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792467900,
           "complete_exit": {
-            "position_id": "4af225a5-247e-43c8-8339-e6e48ca38c67",
+            "position_id": "1506c43b-1d75-411d-b19c-e9a11853d17b",
             "side": "SHORT",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T04:00:30+00:00",
@@ -13894,7 +13894,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "ad3266b6-5a08-4d30-a2f0-a733be4e7c22": {
+        "6fb23eb4-a4e2-4ad2-bc07-43b90e98a4e9": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -13913,7 +13913,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792467900,
           "complete_exit": {
-            "position_id": "ad3266b6-5a08-4d30-a2f0-a733be4e7c22",
+            "position_id": "6fb23eb4-a4e2-4ad2-bc07-43b90e98a4e9",
             "side": "SHORT",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T04:00:30+00:00",
@@ -13924,7 +13924,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "557cca24-7d29-4bcc-b9cf-e1bb5c335de2": {
+        "f1ac33d0-4b7e-4dd4-8ea2-da6fdf2626af": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -13943,7 +13943,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792475100,
           "complete_exit": {
-            "position_id": "557cca24-7d29-4bcc-b9cf-e1bb5c335de2",
+            "position_id": "f1ac33d0-4b7e-4dd4-8ea2-da6fdf2626af",
             "side": "LONG",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T06:00:30+00:00",
@@ -13954,7 +13954,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "c8c33c9b-8070-4760-bd1c-19eec27d51e7": {
+        "bd79ef85-c479-4d7e-bc96-cc75f906d0f4": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -13973,7 +13973,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792491300,
           "complete_exit": {
-            "position_id": "c8c33c9b-8070-4760-bd1c-19eec27d51e7",
+            "position_id": "bd79ef85-c479-4d7e-bc96-cc75f906d0f4",
             "side": "SHORT",
             "reason": "trend-weakened-protection-breach",
             "closed_at": "2026-10-20T10:30:30+00:00",
@@ -13984,7 +13984,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "a6a75629-a724-411a-a058-d17f09fcdaf4": {
+        "945ce4f1-426e-4be2-bfcd-af6bd6649771": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -14003,7 +14003,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792495800,
           "complete_exit": {
-            "position_id": "a6a75629-a724-411a-a058-d17f09fcdaf4",
+            "position_id": "945ce4f1-426e-4be2-bfcd-af6bd6649771",
             "side": "SHORT",
             "reason": "trend-weakened-protection-breach",
             "closed_at": "2026-10-20T11:45:30+00:00",
@@ -14014,7 +14014,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "59314c69-fcb8-4040-9709-c1eb4f2492ee": {
+        "754ebc34-155f-40b9-b1e0-f6497c062c34": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -14033,7 +14033,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792503900,
           "complete_exit": {
-            "position_id": "59314c69-fcb8-4040-9709-c1eb4f2492ee",
+            "position_id": "754ebc34-155f-40b9-b1e0-f6497c062c34",
             "side": "SHORT",
             "reason": "model-or-initial-stop-invalidated",
             "closed_at": "2026-10-20T14:00:30+00:00",
@@ -14044,7 +14044,7 @@
             "evidence_status": "RECORDED"
           }
         },
-        "dc81f773-7c47-4643-824f-6552e25c2ba0": {
+        "110984bd-2896-4959-bbc1-b2c28d155423": {
           "model": "DONCHIAN_BREAKOUT",
           "structure_key": "",
           "confirmation_models": [],
@@ -14063,7 +14063,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792546200
         },
-        "41b4dd34-b27b-4f62-8587-1f3aa454e59a": {
+        "cde0409c-997f-473e-8aec-3157d9024ab0": {
           "model": "EMA_MOMENTUM_CONTINUATION",
           "structure_key": "",
           "confirmation_models": [],
@@ -14082,7 +14082,7 @@
           "continuation_breach_count": 0,
           "continuation_last_bar": 1792543500,
           "complete_exit": {
-            "position_id": "41b4dd34-b27b-4f62-8587-1f3aa454e59a",
+            "position_id": "cde0409c-997f-473e-8aec-3157d9024ab0",
             "side": "LONG",
             "reason": "profit-at-risk-with-deteriorating-continuation",
             "closed_at": "2026-10-21T01:00:30+00:00",

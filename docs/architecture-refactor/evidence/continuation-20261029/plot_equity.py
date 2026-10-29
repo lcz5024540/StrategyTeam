@@ -23,3 +23,6 @@ ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
 ax.grid(alpha=.2);ax.legend(ncol=5,loc='lower left',fontsize=9)
 fig.savefig(base/'assumption-replay/equity.png',dpi=160)
 fig.savefig(base/'assumption-replay/equity.svg')
+
+svg=base/'assumption-replay/equity.svg'
+svg.write_text('\n'.join(line.rstrip() for line in svg.read_text().splitlines())+'\n')
