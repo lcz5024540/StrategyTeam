@@ -6,7 +6,7 @@ indicator or execution path, which keeps live and replay semantics identical.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from hashlib import sha256
@@ -72,6 +72,7 @@ class KlineWindow:
     expected_size: int
     evidence_refs: tuple[str, ...] = ()
     evidence_status: str = "NOT_CONFIGURED"
+    capture: dict | None = field(default=None, compare=False, repr=False)
 
     @property
     def is_complete(self) -> bool:
@@ -165,10 +166,11 @@ class FundingRate:
 class HtxMarketData:
     """Public market adapter.  No private credential or execution path is used here."""
 
-    def __init__(self, client: HtxV5Client, *, close_grace_seconds: int = 10, evidence_store=None) -> None:
+    def __init__(self, client: HtxV5Client, *, close_grace_seconds: int = 10, evidence_store=None, compact=None) -> None:
         self._client = client
         self._close_grace_seconds = close_grace_seconds
         self._evidence_store = evidence_store
+        self.compact = compact
 
     @property
     def evidence_store(self):
@@ -187,6 +189,22 @@ class HtxMarketData:
         selected = candles[-size:]
         refs: tuple[str, ...] = ()
         status = "NOT_CONFIGURED"
+        if self.compact is not None:
+            capture = {"exchange": "HTX", "contract_code": contract_code, "period": period,
+                       "requested_size": size + 2, "observed_at": observed_at,
+                       "decision_as_of": now_epoch, "response": envelope}
+            window = KlineWindow(contract_code, period, selected, size)
+            try:
+                from .research.quality import audit
+                quality = audit(raw, period, start=min(c.open_time for c in (Candle.from_htx(x) for x in raw)),
+                                end=max(c.open_time for c in (Candle.from_htx(x) for x in raw)) + period_seconds(period))
+                if quality['integrity'] != 'COMPLETE':
+                    self.compact.failure(contract_code, period, 'INVALID_SOURCE', envelope)
+                    raise ValueError('source quality failed')
+                key = self.compact.capture(window, envelope, observed_at=observed_at, decision_as_of=now_epoch)
+                return KlineWindow(contract_code, period, selected, size, (key,), 'COMPLETE', capture)
+            except Exception:
+                return KlineWindow(contract_code, period, selected, size, (), 'FAILED', capture)
         if self._evidence_store is not None:
             try:
                 raw_ref = self._evidence_store.put("runtime_raw_kline", {

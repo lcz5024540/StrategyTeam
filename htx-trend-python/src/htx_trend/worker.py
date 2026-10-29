@@ -144,6 +144,7 @@ def main() -> None:
     started = False
     paper_worker = None
     paper_client = None
+    backfill = None
     try:
         repository.validate_runtime_schema()
         instance = repository.runtime_instance(args.strategy_instance)
@@ -153,9 +154,16 @@ def main() -> None:
             raise SystemExit(f"strategy instance is disabled: {args.strategy_instance}")
         family = instance.strategy_family.upper()
         admission = _load_admission(instance.strategy_name) if family == "TREND" and instance.execution_mode != ExecutionMode.PAPER else None
+        compact = None
         if family == "TREND":
+            paper_format = os.environ.get("HTX_PAPER_EVIDENCE_FORMAT", "legacy-v1") if instance.execution_mode == ExecutionMode.PAPER else "legacy-v1"
+            if paper_format not in {"legacy-v1", "compact-v2"}:
+                raise SystemExit("unknown PAPER evidence format")
             evidence_store = FileEvidenceStore(Path(os.environ.get(
-                "HTX_PYTHON_EVIDENCE_DIR", "./research-data/evidence")))
+                "HTX_PYTHON_EVIDENCE_DIR", "./research-data/evidence")), compress=paper_format == "compact-v2")
+            if paper_format == "compact-v2":
+                from .research.compact import CompactEvidence
+                compact = CompactEvidence(evidence_store)
         if family == "TREND" and instance.execution_mode == ExecutionMode.OBSERVE:
             contracts = tuple(dict.fromkeys(item.strip().upper() for item in os.environ.get(
                 "HTX_TREND_CONTRACTS", ",".join(DEFAULT_TREND_CONTRACTS)).split(",") if item.strip()))
@@ -183,9 +191,16 @@ def main() -> None:
             from .paper_worker import PaperTrendWorker, PaperWorkerConfig
             paper_client = HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com"))
             worker = paper_worker = PaperTrendWorker(instance,
-                HtxMarketData(paper_client, evidence_store=evidence_store),
+                HtxMarketData(paper_client, evidence_store=evidence_store, compact=compact),
                 Path(os.environ.get("HTX_PAPER_STATE_DIR", "./paper-state")), PaperWorkerConfig.from_env(),
                 evidence_store=evidence_store)
+            if compact is not None:
+                from .research.compact import CompactBackfill
+                periods = worker.profile.contract
+                backfill = CompactBackfill(compact,
+                    HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com")),
+                    worker.config.contracts, (periods.entry_period, periods.trend_period))
+                backfill.start()
         elif family == "TREND" and instance.execution_mode == ExecutionMode.LIVE:
             if instance.account_id is None:
                 raise SystemExit("LIVE trend instance requires an account-bound runtime instance")
@@ -239,6 +254,8 @@ def main() -> None:
             if started:
                 repository.mark_runtime_stopped(instance.instance_key)
         finally:
+            if backfill is not None:
+                backfill.close()
             if paper_worker is not None:
                 paper_worker.stop()
             if paper_client is not None:

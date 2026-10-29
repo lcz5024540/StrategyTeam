@@ -11,6 +11,7 @@ from decimal import Decimal
 from enum import Enum
 from hashlib import sha256
 import json
+import gzip
 import os
 from pathlib import Path
 import re
@@ -61,8 +62,9 @@ class EvidenceStore(Protocol):
 
 
 class FileEvidenceStore:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, compress: bool = False):
         self.root = Path(root)
+        self.compress = compress
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
         self.db = sqlite3.connect(self.root / 'index.sqlite3', check_same_thread=False)
@@ -102,15 +104,17 @@ class FileEvidenceStore:
                      'refs': sorted(set(refs)), 'payload': primitive(payload)}
             data = canonical(value)
             key = sha256(data).hexdigest()
-            path = self._path(key)
+            plain = self._path(key)
+            packed = plain.with_suffix('.json.gz')
+            path = packed if self.compress else plain
             path.parent.mkdir(parents=True, exist_ok=True)
-            if path.exists():
+            if plain.exists() or packed.exists():
                 self.get(key)
             else:
                 fd, temp = tempfile.mkstemp(dir=path.parent, prefix='.pending-')
                 try:
                     with os.fdopen(fd, 'wb') as f:
-                        f.write(data)
+                        f.write(gzip.compress(data, mtime=0) if self.compress else data)
                         f.flush()
                         os.fsync(f.fileno())
                     try:
@@ -131,17 +135,7 @@ class FileEvidenceStore:
             return key
 
     def get(self, key: str) -> dict:
-        path = self._path(key)
-        try:
-            data = path.read_bytes()
-        except FileNotFoundError as error:
-            raise IntegrityError(f'missing evidence {key}') from error
-        if sha256(data).hexdigest() != key:
-            raise IntegrityError(f'evidence hash mismatch {key}')
-        value = json.loads(data)
-        if value.get('schema') != 'htx-python-evidence-v1':
-            raise IntegrityError('unknown evidence schema')
-        return value
+        return read_object(self.root, key)
 
     def verify(self, key: str) -> dict:
         seen = set()
@@ -186,3 +180,33 @@ class FileEvidenceStore:
                     self.db.execute('UPDATE outbox SET attempts=attempts+1,delivered=?,last_error=? WHERE hash=?',
                                     (int(error is None), error, key))
             return {'attempted': len(rows), 'delivered': sent}
+
+
+def read_object(root: Path, key: str) -> dict:
+    """Read without opening SQLite or creating directories (also used by audit)."""
+    if not re.fullmatch('[0-9a-f]{64}', key):
+        raise IntegrityError('invalid evidence digest')
+    plain = Path(root) / 'objects' / key[:2] / (key + '.json')
+    found = None
+    for path in (plain, plain.with_suffix('.json.gz')):
+        if not path.exists():
+            continue
+        if path.is_symlink():
+            raise IntegrityError('symlink evidence is not allowed')
+        try:
+            data = path.read_bytes()
+            if path.name.endswith('.gz'):
+                data = gzip.decompress(data)
+            if sha256(data).hexdigest() != key:
+                raise IntegrityError(f'evidence hash mismatch {key}')
+            value = json.loads(data)
+            if value.get('schema') != 'htx-python-evidence-v1':
+                raise IntegrityError('unknown evidence schema')
+            found = value
+        except IntegrityError:
+            raise
+        except (OSError, EOFError, ValueError) as error:
+            raise IntegrityError(f'invalid evidence {key}: {type(error).__name__}') from error
+    if found is None:
+        raise IntegrityError(f'missing evidence {key}')
+    return found
