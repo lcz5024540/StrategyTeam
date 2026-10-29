@@ -35,3 +35,5 @@
 - 部署与历史删除未执行；根check-docs-sync仍有20项既有H-10历史轨迹缺commit，见 root-structure-check.txt，未伪造历史或夹带修复。
 - 完整旧包回滚及生产15m两bar/4H一bar观察留给单独批准后的部署验收，不能视为本地已完成。新包中默认旧格式，新格式需显式env。
 - 手工调用链复核替代不可用codegraph；数据流程图、幂等矩阵、材料索引见 docs/architecture-refactor/evidence/evidence-optimization-20261029/README.md；运行说明见 htx-trend-python/release/EVIDENCE-RETENTION.md。
+
+E6独立复核发现并修复两个边界：unused raw未对齐导致audit抛异常时仍保持原选中窗口准入；latest已提交而stream checkpoint失败后，缓存快路径核对有序版本索引，避免漏记B→A恢复。两个精确故障复现均已成为回归测试。

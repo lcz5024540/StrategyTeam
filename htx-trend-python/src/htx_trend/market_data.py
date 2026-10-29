@@ -205,8 +205,13 @@ class HtxMarketData:
             window = KlineWindow(contract_code, period, selected, size)
             try:
                 from .research.quality import audit
-                quality = audit(raw, period, start=min(c.open_time for c in (Candle.from_htx(x) for x in raw)),
-                                end=max(c.open_time for c in (Candle.from_htx(x) for x in raw)) + period_seconds(period))
+                try:
+                    quality = audit(raw, period, start=min(c.open_time for c in (Candle.from_htx(x) for x in raw)),
+                                    end=max(c.open_time for c in (Candle.from_htx(x) for x in raw)) + period_seconds(period))
+                except Exception:
+                    # The audit may reject an unused row/range before returning a
+                    # report. Selected-window completeness is the trading contract.
+                    quality = {'integrity': 'PARTIAL'}
                 key = self.compact.capture(window, envelope, observed_at=observed_at, decision_as_of=now_epoch)
                 if quality['integrity'] != 'COMPLETE':
                     # Unused/forming raw rows must not introduce a new strategy gate.

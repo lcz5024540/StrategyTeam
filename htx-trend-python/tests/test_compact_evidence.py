@@ -199,3 +199,37 @@ def test_concurrent_same_window_has_one_identity_and_no_lost_observations(tmp_pa
         assert len(set(refs))==1
         assert len(store.keys('compact_kline_window'))==1
         assert store.checkpoint(compact.stream('BTC-USDT','15min'))['observations']==32
+
+
+def test_unused_unaligned_row_audit_exception_does_not_change_market_status(tmp_path):
+    w=window(first=900)
+    payload=envelope(w)
+    payload['data'].insert(0,{**payload['data'][0],'id':1})
+    class Client:
+        def history_kline_envelope(self,*args):return payload
+    with FileEvidenceStore(tmp_path/'old') as old, FileEvidenceStore(tmp_path/'new',compress=True) as new:
+        legacy=HtxMarketData(Client(),evidence_store=old).kline_window('BTC-USDT','15min',160,now_epoch=145810)
+        compact=HtxMarketData(Client(),evidence_store=new,compact=CompactEvidence(new)).kline_window('BTC-USDT','15min',160,now_epoch=145810)
+        assert legacy.candles==compact.candles==w.candles
+        assert legacy.evidence_status==compact.evidence_status=='COMPLETE'
+        assert len(new.keys('compact_data_anomaly'))==1
+
+
+def test_checkpoint_failure_between_revision_and_stream_reconciles_cached_window(tmp_path, monkeypatch):
+    w=window(count=3)
+    changed=replace(w,candles=(*w.candles[:-1],replace(w.candles[-1],close=D('102'))))
+    with FileEvidenceStore(tmp_path,compress=True) as store:
+        compact=CompactEvidence(store)
+        ref=compact.capture(w,envelope(w),observed_at=1,decision_as_of=1)
+        checkpoint=store.checkpoint
+        def fail(name,value=None):
+            if value is not None and name==compact.stream('BTC-USDT','15min'):raise OSError('checkpoint full')
+            return checkpoint(name,value)
+        monkeypatch.setattr(store,'checkpoint',fail)
+        with pytest.raises(OSError):compact.capture(changed,envelope(changed),observed_at=2,decision_as_of=2)
+        monkeypatch.setattr(store,'checkpoint',checkpoint)
+        assert compact.capture(w,envelope(w),observed_at=3,decision_as_of=3)==ref
+        assert sorted(store.get(k)['payload']['observed_at'] for k in store.keys('compact_kline_revision'))==[2,3]
+        latest=store.db.execute('SELECT hash FROM compact_latest WHERE symbol=? AND period=? AND bar_time=?',
+                               ('BTC-USDT','15min',w.candles[-1].open_time)).fetchone()[0]
+        assert D(store.get(latest)['payload']['candle']['close'])==D('101')

@@ -23,9 +23,9 @@
 | 入口 / 状态 | 验收证据 |
 | --- | --- |
 | 首次采集 / 成功 / 重复轮询 | test_compact_evidence：4周期1000轮无新增大对象，重启同哈希 |
-| 内容输入变体与修订 | 规范Decimal、raw时间变动不改身份；A→B→A独立修订引用 |
+| 内容输入变体与修订 | 规范Decimal、raw时间变动不改身份；A→B→A独立修订引用；latest成功但stream checkpoint失败后，快路径核验并恢复版本索引 |
 | 同时写入 | 共享RLock和SQLite；4线程32次同窗口一次对象写入且计数完整 |
-| 文件或索引明确失败 | 模拟写盘失败、真实SQLite query_only写入错误；覆盖检查点不推进，恢复补索引 |
+| 文件或索引明确失败 | 模拟文件/检查点中途失败、真实SQLite query_only写入错误；覆盖检查点不推进，恢复补索引 |
 | 历史补偿 | 分页缺口/重复页/日线锚点；失败不推进；重启后由相同coverage_end继续 |
 | 实际entry成功/拒绝/未成交 | test_compact_paper：真实候选/门/成交及maker未成交与legacy一致，含无信号 |
 | 持仓HOLD/ARM/PARTIAL/FULL | 15m/4H固定输入输出/保护/成交/费用等价；最新账本重启恢复 |

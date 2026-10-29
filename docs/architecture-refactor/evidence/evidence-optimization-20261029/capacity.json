@@ -10,7 +10,7 @@
       "object_logical_bytes": 34185000,
       "total_logical_bytes": 34959144,
       "total_allocated_bytes": 41734144,
-      "elapsed_seconds": 4.063
+      "elapsed_seconds": 4.368
     },
     {
       "period": "15min",
@@ -20,7 +20,7 @@
       "object_logical_bytes": 41394,
       "total_logical_bytes": 201138,
       "total_allocated_bytes": 823296,
-      "elapsed_seconds": 1.695
+      "elapsed_seconds": 1.835
     },
     {
       "period": "60min",
@@ -30,7 +30,7 @@
       "object_logical_bytes": 34373000,
       "total_logical_bytes": 35138952,
       "total_allocated_bytes": 41742336,
-      "elapsed_seconds": 4.208
+      "elapsed_seconds": 4.328
     },
     {
       "period": "60min",
@@ -40,7 +40,7 @@
       "object_logical_bytes": 41627,
       "total_logical_bytes": 201371,
       "total_allocated_bytes": 823296,
-      "elapsed_seconds": 1.687
+      "elapsed_seconds": 1.84
     },
     {
       "period": "4hour",
@@ -50,7 +50,7 @@
       "object_logical_bytes": 34600000,
       "total_logical_bytes": 35357760,
       "total_allocated_bytes": 41742336,
-      "elapsed_seconds": 4.208
+      "elapsed_seconds": 4.385
     },
     {
       "period": "4hour",
@@ -60,7 +60,7 @@
       "object_logical_bytes": 41604,
       "total_logical_bytes": 201348,
       "total_allocated_bytes": 823296,
-      "elapsed_seconds": 1.717
+      "elapsed_seconds": 1.757
     },
     {
       "period": "1day",
@@ -70,7 +70,7 @@
       "object_logical_bytes": 34825000,
       "total_logical_bytes": 35582760,
       "total_allocated_bytes": 41730048,
-      "elapsed_seconds": 4.215
+      "elapsed_seconds": 4.204
     },
     {
       "period": "1day",
@@ -80,7 +80,7 @@
       "object_logical_bytes": 41762,
       "total_logical_bytes": 201506,
       "total_allocated_bytes": 823296,
-      "elapsed_seconds": 1.722
+      "elapsed_seconds": 1.733
     }
   ]
 }

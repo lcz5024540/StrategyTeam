@@ -54,9 +54,16 @@ class CompactEvidence:
         with self.store._lock:
             old = self.store.checkpoint(name) or {}
             content_id = digest([symbol, period, window.expected_size, window.window_hash])
-            if not history and old.get('window_content') == content_id:
-                # Full closure is verified again when this window is used by a decision.
-                self.store.get(old['window_ref'])
+            unchanged = not history and old.get('window_content') == content_id
+            if unchanged:
+                cached = self.store.get(old['window_ref'])
+                latest = self.store.db.execute(
+                    'SELECT hash FROM compact_latest WHERE symbol=? AND period=? AND bar_time>=? AND bar_time<=? ORDER BY bar_time',
+                    (symbol, period, window.candles[0].open_time, window.candles[-1].open_time)).fetchall()
+                # A failed stream checkpoint may leave a newer durable version
+                # index. Reconcile before accepting the cached window identity.
+                unchanged = [row[0] for row in latest] == cached['payload']['candle_refs']
+            if unchanged:
                 ref = old['window_ref']
             else:
                 refs, changed, rows, previous_versions = [], False, [], {}
