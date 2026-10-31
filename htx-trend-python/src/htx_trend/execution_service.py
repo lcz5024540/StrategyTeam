@@ -36,7 +36,6 @@ from .strategy_context import (CandidateTrendState, EntryStateConfig, FibonacciQ
                                evaluate_candidate_state, evaluate_counter_market)
 from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
 from .strategy_decision import LEGACY_STRATEGY_VERSION
-from .continuation import LINKED, ContinuationConfig, reentry_gate
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,8 +125,7 @@ class HtxTrendEntryExecutor:
                  execution: ExecutionConfig = ExecutionConfig(), config: EntryExecutionConfig = EntryExecutionConfig(),
                  on_confirmed_entry: Callable[[ConfirmedEntryFill], None] | None = None,
                  on_confirmed_reduction: Callable[[ConfirmedReductionFill], None] | None = None,
-                 admission: StrategyAdmissionArtifact | None = None, evidence_store=None,
-                 continuation_config: ContinuationConfig | None = None) -> None:
+                 admission: StrategyAdmissionArtifact | None = None, evidence_store=None) -> None:
         if instance.account_id != account.account_id:
             raise ValueError("strategy instance and execution account differ")
         self._repository, self._instance, self._account = repository, instance, account
@@ -135,7 +133,6 @@ class HtxTrendEntryExecutor:
         self._on_confirmed_entry, self._on_confirmed_reduction = on_confirmed_entry, on_confirmed_reduction
         self._admission = admission
         self._evidence_store = evidence_store
-        self._continuation = continuation_config
 
     def submit(self, *, run_id: str, candidate: ModelCandidate, period: str, atr: Decimal,
                ema_fast: Decimal, ema_slow: Decimal, adx: Decimal, recent_candles, book: OrderBook, contract: ContractSpec,

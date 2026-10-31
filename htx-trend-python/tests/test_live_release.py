@@ -52,9 +52,42 @@ def test_synthetic_demo_seal_fails_formal_live(live_archive, tmp_path):
     out = tmp_path / 'seal'
     seal_live.seal_demo_bundle(live_archive, out)
     context = json.loads((out / 'context.json').read_text())
+    approval = json.loads((out / 'approval.json').read_text())
+    admission = json.loads((out / 'admission.json').read_text())
+    assert approval['synthetic'] is True and admission['synthetic'] is True
     now = datetime.fromisoformat(context['issued_at'].replace('Z', '+00:00')) + timedelta(hours=1)
     with pytest.raises(ValueError, match='SYNTHETIC'):
         validate_approval(out / 'approval.json', out / 'admission.json', context, 'LIVE', now=now)
+
+
+def test_product_template_stays_synthetic_and_fails_formal_live(live_archive, tmp_path):
+    out = tmp_path / 'seal-product'
+    seal_live.seal_demo_bundle(
+        live_archive, out, account_id=7, draft=True,
+        approved_by='ops@example.com', rollback_point='RB-2026-10-31',
+        issued_at='2026-10-31T00:00:00Z', expires_at='2026-12-31T00:00:00Z',
+    )
+    approval = json.loads((out / 'approval.json').read_text())
+    admission = json.loads((out / 'admission.json').read_text())
+    manifest = json.loads((out / 'SEAL_MANIFEST.json').read_text())
+    assert approval['synthetic'] is True and admission['synthetic'] is True
+    assert approval['label'] == 'PRODUCT-DRAFT' and manifest['synthetic'] is True
+    context = json.loads((out / 'context.json').read_text())
+    now = datetime.fromisoformat(context['issued_at'].replace('Z', '+00:00')) + timedelta(hours=1)
+    with pytest.raises(ValueError, match='SYNTHETIC'):
+        validate_approval(out / 'approval.json', out / 'admission.json', context, 'LIVE', now=now)
+
+
+def test_product_template_cli_stays_synthetic(live_archive, tmp_path):
+    out = tmp_path / 'cli-product'
+    seal_live.main([
+        'product-template', str(live_archive),
+        '--output', str(out), '--account-id', '7',
+        '--approved-by', 'ops@example.com', '--rollback-point', 'RB-TEST',
+        '--issued-at', '2026-10-31T00:00:00Z', '--expires-at', '2026-12-31T00:00:00Z',
+    ])
+    approval = json.loads((out / 'approval.json').read_text())
+    assert approval['synthetic'] is True and approval['label'] == 'PRODUCT-DRAFT'
 
 
 def test_matching_bindings_validate_paper_surface(live_archive, tmp_path):

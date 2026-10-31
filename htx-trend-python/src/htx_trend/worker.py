@@ -236,8 +236,7 @@ def main() -> None:
             entry_config = EntryExecutionConfig.from_env()
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
                 facts=HtxAccountFactsAdapter(private_client, AccountFactConfig(leverage=entry_config.leverage)), executor=live, execution=entry_execution,
-                config=entry_config, admission=admission, evidence_store=evidence_store,
-                continuation_config=live_continuation)
+                config=entry_config, admission=admission, evidence_store=evidence_store)
             profile_workers = []
             for scan_config in scan_configs:
                 manager = LivePositionManager(repository, instance, account, market, private_client, live,

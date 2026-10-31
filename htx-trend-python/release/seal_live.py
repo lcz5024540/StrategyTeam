@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Seal LIVE admission/approval/context bindings from a verified LIVE encode package.
 
-Demo output stays synthetic and cannot authorize formal LIVE. Product authority
-requires explicit operator fields and still does not forge research evidence.
+All outputs from fixture-backed commands stay ``synthetic:true`` and cannot
+authorize formal LIVE. ``product-template`` only pre-fills operator metadata
+(PRODUCT-DRAFT); it never emits ``synthetic:false``.
 """
 from __future__ import annotations
 
@@ -61,8 +62,14 @@ def context_from_bindings(bindings: dict, *, account_id: int, approved_by: str,
     }
 
 
+DRAFT_DISCLAIMER = (
+    'PRODUCT-DRAFT: fixture-backed binding scaffold only; '
+    '≠ deployment authority; ≠ product-authorized seal; formal LIVE rejects this output'
+)
+
+
 def seal_demo_bundle(archive: Path, out_dir: Path, *, account_id: int = 7,
-                     product_authority: bool = False, approved_by: str = 'SYNTHETIC',
+                     draft: bool = False, approved_by: str = 'SYNTHETIC',
                      issued_at: str | None = None, expires_at: str | None = None,
                      rollback_point: str = 'SYNTHETIC-NO-DEPLOY') -> dict:
     receipt = _package.verify_live(archive)
@@ -73,16 +80,19 @@ def seal_demo_bundle(archive: Path, out_dir: Path, *, account_id: int = 7,
     shutil.copy2(fixture / 'evidence.json', out_dir / 'evidence.json')
     issued = issued_at or datetime(2026, 10, 18, tzinfo=UTC).isoformat().replace('+00:00', 'Z')
     expires = expires_at or datetime(2099, 1, 1, tzinfo=UTC).isoformat().replace('+00:00', 'Z')
-    if product_authority:
-        if approved_by in ('', 'SYNTHETIC') or rollback_point.startswith('SYNTHETIC'):
-            raise ValueError('product authority requires non-synthetic approved_by and rollback_point')
+    if draft:
+        if not approved_by.strip() or approved_by == 'SYNTHETIC':
+            raise ValueError('product-template requires a non-SYNTHETIC --approved-by for audit metadata only')
+        if rollback_point.startswith('SYNTHETIC'):
+            raise ValueError('product-template requires a non-SYNTHETIC --rollback-point label')
         if datetime.fromisoformat(expires.replace('Z', '+00:00')) <= datetime.fromisoformat(issued.replace('Z', '+00:00')):
-            raise ValueError('product authority requires expires_at after issued_at')
+            raise ValueError('product-template requires expires_at after issued_at')
+    label = 'PRODUCT-DRAFT' if draft else 'SYNTHETIC'
     admission_raw = json.loads((fixture / 'admission.json').read_text())
     admission_raw['issued_at'] = issued
     admission_raw['expires_at'] = expires
-    admission_raw['synthetic'] = not product_authority
-    admission_raw['label'] = 'SYNTHETIC' if not product_authority else 'PRODUCT-DEMO'
+    admission_raw['synthetic'] = True
+    admission_raw['label'] = label
     artifact = admission_raw['artifact']
     artifact.update(source_commit=bindings['source_commit'],
                     config_hash=bindings['config_fingerprint'],
@@ -108,9 +118,9 @@ def seal_demo_bundle(archive: Path, out_dir: Path, *, account_id: int = 7,
     approval_inner['approval_hash'] = _hash(approval_inner, clear='approval_hash')
     approval_doc = seal({
         'schema': 'htx-live-approval-g2',
-        'synthetic': not product_authority,
-        'label': 'SYNTHETIC' if not product_authority else 'PRODUCT-DEMO',
-        'note': 'demo seal only; not deployment authority' if not product_authority else 'operator opt-in; admission evidence still required for formal LIVE',
+        'synthetic': True,
+        'label': label,
+        'note': DRAFT_DISCLAIMER if draft else 'demo seal only; not deployment authority',
         'approval': approval_inner,
         'admission_seal_hash': admission_doc['seal_hash'],
         'account_equity_usdt': context['account_equity_usdt'],
@@ -126,7 +136,9 @@ def seal_demo_bundle(archive: Path, out_dir: Path, *, account_id: int = 7,
         'archive': str(archive.resolve()),
         'package_sha256': receipt['package_sha256'],
         'instance_key': bindings.get('instance_key'),
-        'synthetic': not product_authority,
+        'synthetic': True,
+        'label': label,
+        'disclaimer': DRAFT_DISCLAIMER if draft else 'synthetic demo; formal LIVE validation must fail',
         'paths': {name: str(out_dir / name) for name in ('admission.json', 'approval.json', 'context.json', 'evidence.json')},
         'required_env': {
             'HTX_TREND_STRATEGY_ADMISSION_PATH': str(out_dir / 'admission.json'),
@@ -147,7 +159,10 @@ def main(argv: list[str] | None = None) -> None:
     demo.add_argument('archive', type=Path, help='path to htx-trend-python-*-live-*.tar.gz')
     demo.add_argument('--output', type=Path, required=True)
     demo.add_argument('--account-id', type=int, default=7)
-    product = sub.add_parser('product-template', help='same as demo but synthetic:false on approval when operator fields supplied')
+    product = sub.add_parser(
+        'product-template',
+        help='PRODUCT-DRAFT scaffold: synthetic:true only; operator fields are metadata, not authority',
+    )
     product.add_argument('archive', type=Path)
     product.add_argument('--output', type=Path, required=True)
     product.add_argument('--account-id', type=int, required=True)
@@ -166,10 +181,9 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps({'status': 'SEALED', **manifest}, ensure_ascii=False))
         return
     if args.command == 'product-template':
-        manifest = seal_demo_bundle(args.archive, args.output, account_id=args.account_id,
-                                    product_authority=True, approved_by=args.approved_by,
-                                    issued_at=args.issued_at, expires_at=args.expires_at,
-                                    rollback_point=args.rollback_point)
+        manifest = seal_demo_bundle(args.archive, args.output, account_id=args.account_id, draft=True,
+                                    approved_by=args.approved_by, issued_at=args.issued_at,
+                                    expires_at=args.expires_at, rollback_point=args.rollback_point)
         print(json.dumps({'status': 'SEALED', **manifest}, ensure_ascii=False))
         return
     current = json.loads(args.context.read_text())
