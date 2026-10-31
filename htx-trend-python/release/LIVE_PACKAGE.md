@@ -42,7 +42,19 @@ TAR="$("$PY" release/package.py build-live --out-root /tmp/htx-live/build2)"  # 
 
 ## 15m continuation（LIVE，范围说明）
 
-**当前 LIVE 生效范围（本 PR）：**
+**路径 B 对齐范围（相对 PAPER `0.1.6-paper-db-dbfee173` + `confirm-v1`）：**
+
+| # | 能力 | 状态 |
+|---|---|---|
+| 1 | 开单主路径（信号→闸门→下单） | **已对齐逻辑族**；`ProductLiveWaiver` 旁路 G2 PAPER≥14d 后 `LiveTrendWorker`→`runtime.scan`→`HtxTrendEntryExecutor.submit` 可走通 |
+| 2 | 出场 / 保护位 confirm-v1 | **保持**（`LivePositionManager` + `HTX_LIVE_CONTINUATION_VERSION=confirm-v1`） |
+| 3 | 杠杆 10 | **装机/交审须设** `HTX_TREND_LEVERAGE=10`（代码默认 5 未改） |
+| 4 | 最大活跃仓 | **故意不对齐**：LIVE 硬限 **3**（`LiveRiskPolicy`）；PAPER 默认可 5 |
+| 5 | linked `reentry_gate` | **confirm-v1 下非生效条件**（仅 `linked-v1` 在 PAPER 有意义）；LIVE 入场未接 reentry |
+| 6 | cooldown B 组 | **故意不对齐**（LIVE 无 env；confirm-v1 默认 cooldown=false 时行为等同） |
+| 7 | ProductLiveWaiver 启 LIVE | **`HTX_TREND_PRODUCT_LIVE_WAIVER_PATH`**；与 G2 三件套双挂 **fail-closed** |
+
+**当前 LIVE 生效范围（exit 侧）：**
 
 - **Exit / 持仓管理**：`HTX_LIVE_CONTINUATION_VERSION=confirm-v1`（或 `linked-v1`）在 `LivePositionManager` 对 **15m `HTX_TREND_15M_V2`** 持仓走 `advance_confirmation` / `decide_continuation`。
 - **Entry / 入场**：**未**接入 PAPER 的 `reentry_gate` / linked 再入逻辑；`HTX_LIVE_CONTINUATION_VERSION=linked-v1` 在 LIVE **不会**改变入场闸门（与 PAPER 全量不对齐）。
@@ -50,9 +62,35 @@ TAR="$("$PY" release/package.py build-live --out-root /tmp/htx-live/build2)"  # 
 
 ```sh
 export HTX_LIVE_CONTINUATION_VERSION=confirm-v1   # baseline-v4 | confirm-v1 | linked-v1
+export HTX_TREND_LEVERAGE=10                      # 交审/装机对齐 PAPER HTX_PAPER_LEVERAGE=10
 ```
 
 PAPER 仍只读 `HTX_PAPER_CONTINUATION_VERSION`；LIVE **不会**单独读取 PAPER 变量。详见 [CONTINUATION.md](CONTINUATION.md) 开关表。
+
+## ProductLiveWaiver（路径 B · 旁路 G2 PAPER≥14d）
+
+**≠ 伪造 `synthetic:false` admission**；顶层 `synthetic:false` 仅表示本 waiver 件非 demo fixture。
+
+从 **已 verify 的新 B LIVE 冻包**（交审 Pass 后 `build-live` 产出；**不是**基线 `0.1.7-live-73fe4c1b`）签发：
+
+```sh
+"$PY" release/seal_product_live_waiver.py seal "$TAR" --output /tmp/product-live-waiver.json \
+  --account-id 7 --approved-by 'product@example' --rollback-point 'RB-path-B' \
+  --product-stamp /workspace/reports/product-stamp-live15m-path-B-waiver-encode-20261031.md
+"$PY" release/seal_product_live_waiver.py validate --artifact /tmp/product-live-waiver.json
+```
+
+运行时（旁路枝，**仍需** strategy admission 供 RANKING/GATE/SIZING；**不要**同时配置 G2 approval+context）：
+
+- `HTX_TREND_PRODUCT_LIVE_WAIVER_PATH`
+- `HTX_TREND_STRATEGY_ADMISSION_PATH`（OBSERVE 面校验，非 LIVE 面 PAPER≥14d）
+- `HTX_PYTHON_PACKAGE_SHA256` / `HTX_PYTHON_SOURCE_COMMIT`
+
+正式满窗 G2 三件套路径 **并行保留**（`HTX_TREND_LIVE_APPROVAL_PATH` + `HTX_TREND_APPROVAL_CONTEXT_PATH` + admission LIVE 面）。
+
+## 基线冻包不可装机
+
+- `0.1.7-live-73fe4c1b` · SHA256 `ca57bbf7d9c2ac585c5227ee2c3b8ae4d877806150400d0f2a29db90fa9b95be` — **仅编码基线**，不得装机、不得启 LIVE。
 
 ## G2 密封（demo / PRODUCT-DRAFT）
 
@@ -100,7 +138,9 @@ PAPER 仍只读 `HTX_PAPER_CONTINUATION_VERSION`；LIVE **不会**单独读取 P
 
 ## 授权引用
 
-- Product stamp: `reports/product-stamp-live15m-path-A-encode-20261031.md` SHA256 `ada77a6d5bb45bd0a53b788867af7c1c0245c8c437ff469dece84beb9dd061af`
-- Dev order: `reports/dev-order-live15m-path-A-encode-20261031.md` SHA256 `afd13f7e928b9f278cfec2a1be3c67efb8b3e4343976540be2b27ef3a4792d11`
+- Path B product stamp: `reports/product-stamp-live15m-path-B-waiver-encode-20261031.md`
+- Path B dev order: `reports/dev-order-live15m-path-B-waiver-encode-20261031.md`
+- Path B spec: `reports/spec-product-live-waiver-seal-B-20261031.full.md`
+- Path A stamp（历史 encode；**不可切机**）: `reports/product-stamp-live15m-path-A-encode-20261031.md`
 
-上述 stamp **仅授权 encode + LIVE 包路径**，不包含 install/start LIVE。
+**本 PR = 路径 B encode + 交审材料**；≠ merge ≠装机 ≠启 LIVE ≠ build-live（待产品 Pass）。

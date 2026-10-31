@@ -87,7 +87,11 @@ def _validate_live_approval(instance, account, admission, scan_configs) -> None:
     source_commit = os.environ.get("HTX_PYTHON_SOURCE_COMMIT", "").strip()
     config_fingerprint = (instance.config_fingerprint or "").strip()
     profiles = tuple(item.timeframe_profile.value for item in scan_configs if item.entry_enabled)
+    from .product_live_waiver import assert_no_dual_live_authorization
     from .admission import runtime_guard
+    waiver_path = os.environ.get("HTX_TREND_PRODUCT_LIVE_WAIVER_PATH", "").strip()
+    if waiver_path:
+        assert_no_dual_live_authorization()
     approvals = [runtime_guard(instance, account, enabled_profile)[1]
                  for enabled_profile in profiles]
     if not profiles:
@@ -108,6 +112,27 @@ def _validate_live_approval(instance, account, admission, scan_configs) -> None:
                 raise SystemExit(f"legacy LIVE waiver {name} mismatch")
         if set(profiles) - set(waiver.profiles):
             raise SystemExit("legacy LIVE waiver does not authorize every enabled profile")
+        return
+    if waiver_path:
+        if admission is None:
+            raise SystemExit("new strategy LIVE with ProductLiveWaiver still requires strategy admission artifact for decision surfaces")
+        approval = approvals[0]
+        profile = profile_for_version(instance.strategy_name)
+        if profile is None or len(profiles) != 1 or profiles[0] != profile.value:
+            raise SystemExit("new strategy LIVE instance must own exactly its versioned profile")
+        spec = profile_strategy(profile)
+        expected = {
+            "strategy_version": instance.strategy_name,
+            "timeframe_profile": profile.value,
+            "source_commit": source_commit,
+            "package_sha256": package_sha,
+            "config_fingerprint": config_fingerprint,
+            "strategy_spec_hash": spec.spec_hash,
+            "account_id": account.account_id,
+        }
+        for name, value in expected.items():
+            if getattr(approval, name) != value:
+                raise SystemExit(f"ProductLiveWaiver {name} mismatch")
         return
     path = os.environ.get("HTX_TREND_LIVE_APPROVAL_PATH", "").strip()
     if not path or admission is None:
