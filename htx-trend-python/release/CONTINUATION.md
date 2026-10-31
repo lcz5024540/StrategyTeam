@@ -5,14 +5,16 @@ Base branch: support_htx_python, implementation base c6d7467d8f388d42c8325a2bb16
 
 ## Runtime switches and ownership
 
-| Group | HTX_PAPER_CONTINUATION_VERSION | HTX_PAPER_COMPLETED_TRADE_COOLDOWN |
-|---|---|---|
-| A / existing default | baseline-v4 | false |
-| B / cooldown control | baseline-v4 | true |
-| C / confirmation only | confirm-v1 | false |
-| D / linked candidate | linked-v1 | false |
+| Group | HTX_PAPER_CONTINUATION_VERSION | HTX_PAPER_COMPLETED_TRADE_COOLDOWN | HTX_LIVE_CONTINUATION_VERSION |
+|---|---|---|---|
+| A / existing default | baseline-v4 | false | baseline-v4 (default when unset) |
+| B / cooldown control | baseline-v4 | true | — (LIVE has no cooldown env) |
+| C / confirmation only | confirm-v1 | false | confirm-v1 |
+| D / linked candidate | linked-v1 | false | linked-v1 |
 
-These are explicit **15m PAPER** controls. Non-default controls reject 4H before opening its ledger. LIVE does not read them. Invalid names and cooldown combined with C/D reject startup. Instance strategy stays HTX_TREND_15M_V2; continuation is an independent, persisted policy version, not a fabricated trend model.
+These are explicit **15m** controls. PAPER reads `HTX_PAPER_*` only. **LIVE 15m** reads `HTX_LIVE_CONTINUATION_VERSION` (same allowed values: `baseline-v4`, `confirm-v1`, `linked-v1`). LIVE does **not** honor `HTX_PAPER_CONTINUATION_VERSION` alone. Non-default controls reject 4H before opening its ledger (PAPER) or reject LIVE worker startup when a non-baseline LIVE continuation is configured alongside enabled 4H LIVE entry.
+
+**LIVE scope (this delivery):** exit-side confirm-v1 (and linked-v1 exit policy) on 15m `HTX_TREND_15M_V2` via `LivePositionManager` only. LIVE entry does **not** implement PAPER linked reentry / cooldown B; do not treat LIVE as full PAPER continuation parity.
 
 New C/D positions save continuation_version in their context. Missing version means the old v4 policy. Management reads the position version, not the current entry switch; setting the switch back to baseline does not silently reinterpret existing candidate positions. New decision/version CAS includes the entry/execution/maker/continuation configuration and worker pool/order, without repeating windows. Exit CAS also retains the already-fetched book/spec; management does not add a funding API request or change cadence.
 

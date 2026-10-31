@@ -28,6 +28,12 @@ PAPER_INSTANCE_BY_STRATEGY = {
     'HTX_TREND_4H_V2': 'htx-trend-paper-4h',
 }
 PAPER_4H_CARD = ROOT / 'release/artifacts/strategy_card.paper-4h.example.json'
+LIVE_INSTANCE_KEY = 'htx-trend-live-primary'
+LIVE_STRATEGY_VERSION = 'HTX_TREND_15M_V2'
+LIVE_TIMEFRAME = TimeframeProfile.INTRADAY_15M
+LIVE_VERSION_RE = re.compile(r'0\.1\.7-live-[0-9a-f]{8}')
+CANDIDATE_VERSION_RE = re.compile(
+    r'0\.1\.(?:(?:(?:2-g3|3-paper)-candidate|[56]-paper-db|4-paper-fixa)-[0-9a-f]{8}|7-evidence-v2-[0-9a-f]{8}(?:-4h)?)')
 
 
 def encoded(value):
@@ -161,8 +167,140 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False,
     return archive
 
 
+def _live_payload_paths():
+    paths = sorted((ROOT / 'src/htx_trend').rglob('*.py'))
+    paths += [ROOT / 'pyproject.toml', ROOT / 'README.md',
+              ROOT / 'release/package.py', ROOT / 'release/README.md', ROOT / 'release/LIVE_PACKAGE.md',
+              ROOT / 'release/seal_live.py', ROOT / 'release/EVIDENCE-RETENTION.md']
+    paths += sorted((ROOT / 'release/artifacts').glob('*.json'))
+    paths += sorted(p for p in (ROOT / 'deployment').rglob('*') if p.is_file())
+    return paths
+
+
+def build_live(out_root=Path('/tmp/htx-live/frozen')):
+    """Encode-only LIVE tarball for htx-trend-live-primary / HTX_TREND_15M_V2."""
+    source = git('rev-parse', 'HEAD')
+    short = git('rev-parse', '--short=8', 'HEAD')
+    if not re.fullmatch('[0-9a-f]{8}', short):
+        raise ValueError('expected exactly eight hex characters')
+    version = f'0.1.7-live-{short}'
+    card, refs = load_artifacts(ROOT / 'release/artifacts')
+    if card['strategy_version'] != LIVE_STRATEGY_VERSION or card['timeframe_profile'] != LIVE_TIMEFRAME.value:
+        raise ValueError('default strategy card must bind 15m V2 for LIVE encode')
+    spec = profile_strategy(LIVE_TIMEFRAME, read_env=False)
+    if spec.strategy.version != LIVE_STRATEGY_VERSION:
+        raise ValueError('card strategy/profile mismatch')
+    paths = _live_payload_paths()
+    payload = {}
+    for path in paths:
+        if path.is_symlink() or any(p.is_symlink() for p in path.parents):
+            raise ValueError(f'symlink payload forbidden: {path}')
+        payload[path.relative_to(ROOT).as_posix()] = path.read_bytes()
+    config = {'synthetic': True, 'candidate': False, 'live_package': True, 'mode': 'LIVE',
+              'strategy_version': LIVE_STRATEGY_VERSION, 'timeframe_profile': LIVE_TIMEFRAME.value,
+              'instance_key': LIVE_INSTANCE_KEY, 'max_active_positions': 3,
+              'account_equity_usdt': '300', 'max_total_margin_rate': '0.10',
+              'contracts': ['BTC-USDT', 'ETH-USDT'],
+              'note': 'LIVE encode package only; sealed admission/approval required before trading'}
+    payload['release/config.example.json'] = encoded(config)
+    bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
+                'config_hash': digest(encoded(config)), 'config_path': 'release/config.example.json',
+                'strategy_version': LIVE_STRATEGY_VERSION, 'timeframe_profile': LIVE_TIMEFRAME.value,
+                'strategy_spec_hash': spec.spec_hash, 'instance_key': LIVE_INSTANCE_KEY,
+                'package_sha256': {'ref': 'BUILD.json#/package_sha256', 'scope': 'final tar.gz bytes'}}
+    manifest = {'schema': 'htx-live-package-g3', 'candidate': False, 'live': True, 'mode': 'LIVE', 'synthetic': True,
+                'disclaimer': 'LIVE encode tarball ≠ deployment authority ≠ start trading',
+                'version': version, 'source_commit': source,
+                'build': {'created_at': datetime.now(UTC).isoformat(),
+                          'working_tree_dirty': bool(git('status', '--porcelain')),
+                          'mode': 'LIVE', 'instance_key': LIVE_INSTANCE_KEY,
+                          'version_note': '0.1.7-live-* avoids collision with retired 0.1.1-live line'},
+                'bindings': bindings, 'artifacts': refs,
+                'files': {name: {'sha256': digest(raw), 'hash_mode': 'raw'} for name, raw in payload.items()}}
+    manifest['files']['MANIFEST.json'] = {'sha256': '', 'hash_mode': 'canonical-json-self-sha256-empty'}
+    manifest['files']['MANIFEST.json']['sha256'] = manifest_hash(manifest)
+    payload['MANIFEST.json'] = encoded(manifest)
+    out = Path(out_root) / version
+    out.mkdir(parents=True, exist_ok=False)
+    archive = out / f'htx-trend-python-{version}.tar.gz'
+    with archive.open('wb') as raw:
+        with gzip.GzipFile(fileobj=raw, mode='wb', filename='', mtime=0) as compressed:
+            with tarfile.open(fileobj=compressed, mode='w', format=tarfile.USTAR_FORMAT) as tar:
+                for name, data in sorted(payload.items()):
+                    entry = tarfile.TarInfo(name)
+                    entry.size, entry.mode = len(data), 0o644
+                    tar.addfile(entry, io.BytesIO(data))
+    package_sha = digest(archive.read_bytes())
+    receipt = {'schema': 'htx-live-build-g3', 'candidate': False, 'live': True, 'synthetic': True,
+               'disclaimer': manifest['disclaimer'], 'frozen_path': str(out.resolve()),
+               'archive_path': str(archive.resolve()), 'archive': archive.name,
+               'package_sha256': package_sha, 'manifest_sha256': digest(payload['MANIFEST.json']),
+               'version': version, 'bindings': {**bindings, 'package_sha256': package_sha}}
+    (out / 'MANIFEST.json').write_bytes(payload['MANIFEST.json'])
+    (out / 'BUILD.json').write_bytes(encoded(receipt))
+    archive.with_name(archive.name + '.sha256').write_text(f'{package_sha}  {archive.name}\n')
+    verify_live(archive)
+    return archive
+
+
+def verify_live(archive: Path):
+    archive = Path(archive)
+    expected = archive.with_name(archive.name + '.sha256').read_text().split()
+    actual = digest(archive.read_bytes())
+    if expected != [actual, archive.name]:
+        raise ValueError('tar SHA256 mismatch')
+    with tarfile.open(archive, 'r:gz') as tar:
+        members = tar.getmembers()
+        names = [m.name for m in members]
+        if len(names) != len(set(names)):
+            raise ValueError('duplicate tar members')
+        if any(not m.isfile() or PurePosixPath(m.name).is_absolute() or '..' in PurePosixPath(m.name).parts for m in members):
+            raise ValueError('unsafe tar member')
+        data = {m.name: tar.extractfile(m).read() for m in members}
+    manifest = json.loads(data['MANIFEST.json'])
+    if manifest.get('live') is not True or manifest.get('mode') != 'LIVE':
+        raise ValueError('not a LIVE encode package')
+    if manifest.get('candidate') is True or manifest.get('synthetic') is not True:
+        raise ValueError('LIVE package metadata invalid')
+    if not LIVE_VERSION_RE.fullmatch(manifest['version']):
+        raise ValueError('not a LIVE package version')
+    if manifest['bindings'].get('instance_key') != LIVE_INSTANCE_KEY:
+        raise ValueError('LIVE instance binding mismatch')
+    if set(manifest['files']) != set(names):
+        raise ValueError('manifest membership mismatch')
+    for name, entry in manifest['files'].items():
+        mode = 'canonical-json-self-sha256-empty' if name == 'MANIFEST.json' else 'raw'
+        hashed = manifest_hash(manifest) if name == 'MANIFEST.json' else digest(data[name])
+        if entry != {'sha256': hashed, 'hash_mode': mode}:
+            raise ValueError(f'member hash mismatch: {name}')
+    if not any(n.startswith('deployment/') for n in names):
+        raise ValueError('LIVE package must include deployment/')
+    if (archive.parent / 'MANIFEST.json').read_bytes() != data['MANIFEST.json']:
+        raise ValueError('external manifest mismatch')
+    receipt = json.loads((archive.parent / 'BUILD.json').read_bytes())
+    binding = {**manifest['bindings'], 'package_sha256': actual}
+    if (receipt['package_sha256'] != actual or receipt['manifest_sha256'] != digest(data['MANIFEST.json'])
+            or receipt['bindings'] != binding or receipt['archive'] != archive.name
+            or receipt['version'] != manifest['version'] or receipt.get('live') is not True):
+        raise ValueError('build receipt mismatch')
+    config_path = binding['config_path']
+    if digest(data[config_path]) != binding['config_fingerprint']:
+        raise ValueError('config binding mismatch')
+    cfg = json.loads(data[config_path])
+    if cfg.get('mode') != 'LIVE' or cfg.get('instance_key') != LIVE_INSTANCE_KEY:
+        raise ValueError('config LIVE binding mismatch')
+    for ref in manifest['artifacts'].values():
+        if digest(data[ref['path']]) != ref['sha256']:
+            raise ValueError('artifact binding mismatch')
+    return receipt
+
+
 def verify(archive: Path):
     archive = Path(archive)
+    with tarfile.open(archive, 'r:gz') as tar:
+        manifest = json.loads(tar.extractfile('MANIFEST.json').read())
+    if manifest.get('live') is True:
+        return verify_live(archive)
     expected = archive.with_name(archive.name + '.sha256').read_text().split()
     actual = digest(archive.read_bytes())
     if expected != [actual, archive.name]:
@@ -184,7 +322,8 @@ def verify(archive: Path):
         if entry != {'sha256': hashed, 'hash_mode': mode}:
             raise ValueError(f'member hash mismatch: {name}')
     if (manifest.get('candidate') is not True or manifest.get('synthetic') is not True
-            or not re.fullmatch(r'0\.1\.(?:(?:(?:2-g3|3-paper)-candidate|[56]-paper-db|4-paper-fixa)-[0-9a-f]{8}|7-evidence-v2-[0-9a-f]{8}(?:-4h)?)', manifest['version'])):
+            or manifest.get('live') is True
+            or not CANDIDATE_VERSION_RE.fullmatch(manifest['version'])):
         raise ValueError('not a candidate package')
     if (archive.parent / 'MANIFEST.json').read_bytes() != data['MANIFEST.json']:
         raise ValueError('external manifest mismatch')
@@ -230,6 +369,8 @@ def main():
     builder.add_argument('--compact-evidence', action='store_true', help='PAPER compact-v2 candidate; runtime switch still requires explicit env')
     builder.add_argument('--paper-4h', action='store_true',
                          help='PAPER 示例绑定 HTX_TREND_4H_V2 / htx-trend-paper-4h')
+    live_builder = commands.add_parser('build-live', help='LIVE encode package for htx-trend-live-primary')
+    live_builder.add_argument('--out-root', type=Path, default=Path('/tmp/htx-live/frozen'))
     commands.add_parser('verify').add_argument('archive', type=Path)
     template = commands.add_parser('approval-template')
     template.add_argument('archive', type=Path)
@@ -237,6 +378,8 @@ def main():
     args = parser.parse_args()
     if args.command == 'build':
         print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h, compact_evidence=args.compact_evidence))
+    elif args.command == 'build-live':
+        print(build_live(args.out_root))
     elif args.command == 'verify':
         print(json.dumps({'status': 'PASS', **verify(args.archive)}, ensure_ascii=False))
     else:

@@ -28,6 +28,7 @@ from .strategy_decision import LEGACY_STRATEGY_VERSION
 from .strategy_profiles import profile_for_version, profile_strategy
 from .strategy_profiles import profile_entry_config
 from .timeframes import TimeframeProfile
+from .continuation import BASELINE, ContinuationConfig
 from .live_approval import LegacyLiveWaiver, LiveRiskPolicy
 from .research.store import FileEvidenceStore
 
@@ -213,6 +214,14 @@ def main() -> None:
             if any(a.role != "PRIMARY" and a.mirror_enabled for a in repository.enabled_trend_accounts()):
                 raise SystemExit("first Python cutover is primary-only; mirror recovery acceptance is still required")
             scan_configs = LiveTrendWorkerConfig.profiles_from_env(strategy_version=instance.strategy_name)
+            live_continuation = None
+            if instance.strategy_name == 'HTX_TREND_15M_V2':
+                live_continuation = ContinuationConfig.from_live_env()
+                for scan_config in scan_configs:
+                    if not scan_config.entry_enabled:
+                        continue
+                    live_continuation.require_15m(
+                        scan_config.timeframe_profile is TimeframeProfile.INTRADAY_15M, live=True)
             _validate_live_approval(instance, account, admission, scan_configs)
             writer_lock = TrendWriterLock(connect(MySqlSettings.from_env()))
             writer_lock.acquire()
@@ -232,7 +241,9 @@ def main() -> None:
             for scan_config in scan_configs:
                 manager = LivePositionManager(repository, instance, account, market, private_client, live,
                     period=scan_config.entry_period, timeframe_profile=scan_config.timeframe_profile,
-                    java_config=scan_config.java_entry, config=ExitConfig.from_env(), evidence_store=evidence_store)
+                    java_config=scan_config.java_entry, config=ExitConfig.from_env(), evidence_store=evidence_store,
+                    continuation_config=(live_continuation if scan_config.timeframe_profile is TimeframeProfile.INTRADAY_15M
+                                         else ContinuationConfig(BASELINE)))
                 profile_workers.append(LiveTrendWorker(instance, repository, market, entry, scan_config,
                     position_manager=manager, writer_guard=writer_lock.assert_owned, admission=admission))
             worker = (profile_workers[0] if len(profile_workers) == 1
