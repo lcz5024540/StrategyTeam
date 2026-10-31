@@ -119,35 +119,66 @@ def _position_volumes(rows: list[dict[str, Any]], side: TrendSide) -> tuple[Deci
     return same, opposite
 
 
+_MARGIN_FIELD_NAMES = ("available_margin", "margin_available", "marginAvailable")
+_EQUITY_FIELD_NAMES = ("margin_balance", "marginBalance", "margin_equity", "equity")
+
+
+def _detail_currency(row: Mapping[str, Any]) -> str:
+    return str(row.get("currency") or row.get("currency_code") or "").upper()
+
+
+def _confirmed_positive(row: Mapping[str, Any], *names: str) -> Decimal | None:
+    parsed = _decimal(dict(row), *names)
+    if parsed is not None and parsed > ZERO:
+        return parsed
+    return None
+
+
+def _from_detail_rows(rows: list[dict[str, Any]], *names: str, empty_error: str) -> Decimal:
+    if not rows:
+        raise ValueError(empty_error)
+    for row in rows:
+        if _detail_currency(row) == "USDT":
+            usdt = _confirmed_positive(row, *names)
+            if usdt is not None:
+                return usdt
+    total = ZERO
+    found = False
+    for row in rows:
+        item = _confirmed_positive(row, *names)
+        if item is not None:
+            total += item
+            found = True
+    if not found:
+        raise ValueError(empty_error)
+    return total
+
+
 def _available_margin(value: Mapping[str, Any] | list[dict[str, Any]]) -> Decimal:
     """Read V5's account-wide margin, with a detail-list compatibility path."""
+    empty_error = "HTX account margin response is empty"
+    unavailable_error = "HTX V5 account balance lacks available margin"
     if isinstance(value, Mapping):
-        direct = _decimal(dict(value), "available_margin", "margin_available", "marginAvailable")
+        direct = _confirmed_positive(dict(value), *_MARGIN_FIELD_NAMES)
         if direct is not None:
             return direct
         details = value.get("details")
         if isinstance(details, list):
-            return _available_margin(details)
-        raise ValueError("HTX V5 account balance lacks available margin")
-    values = [_decimal(row, "margin_available", "marginAvailable", "available_margin") or ZERO for row in value]
-    if not values:
-        raise ValueError("HTX account margin response is empty")
-    return sum(values, ZERO)
+            return _from_detail_rows(details, *_MARGIN_FIELD_NAMES, empty_error=empty_error)
+        raise ValueError(unavailable_error)
+    return _from_detail_rows(value, *_MARGIN_FIELD_NAMES, empty_error=empty_error)
 
 
 def _account_equity(value: Mapping[str, Any] | list[dict[str, Any]]) -> Decimal:
     """Return exchange-confirmed equity; never infer it from available margin."""
+    empty_error = "HTX account response lacks account equity"
+    unavailable_error = "HTX V5 account balance lacks account equity"
     if isinstance(value, Mapping):
-        direct = _decimal(dict(value), "margin_balance", "marginBalance", "margin_equity", "equity")
+        direct = _confirmed_positive(dict(value), *_EQUITY_FIELD_NAMES)
         if direct is not None:
             return direct
         details = value.get("details")
         if isinstance(details, list):
-            return _account_equity(details)
-        raise ValueError("HTX V5 account balance lacks account equity")
-    values = [_decimal(row, "margin_balance", "marginBalance", "margin_equity", "equity")
-              for row in value]
-    known = [item for item in values if item is not None]
-    if not known:
-        raise ValueError("HTX account response lacks account equity")
-    return sum(known, ZERO)
+            return _from_detail_rows(details, *_EQUITY_FIELD_NAMES, empty_error=empty_error)
+        raise ValueError(unavailable_error)
+    return _from_detail_rows(value, *_EQUITY_FIELD_NAMES, empty_error=empty_error)
