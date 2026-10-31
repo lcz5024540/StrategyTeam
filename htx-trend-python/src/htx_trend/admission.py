@@ -132,14 +132,24 @@ def runtime_guard(instance, account, profile):
     if getattr(instance, "execution_mode", None) == "PAPER":
         return None, None  # Simulation is not LIVE authorization.
     import os
+    from .product_live_waiver import (ProductLiveWaiver, assert_no_dual_live_authorization,
+                                      product_waiver_path_configured)
     from .execution import ExecutionConfig
     from .strategy_profiles import profile_strategy
     from .timeframes import TimeframeProfile
+    waiver_path = os.environ.get('HTX_TREND_PRODUCT_LIVE_WAIVER_PATH', '').strip()
+    if waiver_path:
+        assert_no_dual_live_authorization()
+        waiver = ProductLiveWaiver.load(Path(waiver_path))
+        waiver.validate_runtime(instance, account, profile)
+        return None, waiver.to_approval_view()
     admission = os.environ.get('HTX_TREND_STRATEGY_ADMISSION_PATH', '')
     approval = os.environ.get('HTX_TREND_LIVE_APPROVAL_PATH', '')
     context_path = os.environ.get('HTX_TREND_APPROVAL_CONTEXT_PATH', '')
+    if product_waiver_path_configured():
+        assert_no_dual_live_authorization()
     if not admission or not approval or not context_path:
-        raise ValueError('LIVE requires G2 admission, approval and current context')
+        raise ValueError('LIVE requires G2 admission, approval and current context, or ProductLiveWaiver')
     current = json.loads(Path(context_path).read_text())
     config = ExecutionConfig.from_env()
     current.update(strategy_version=instance.strategy_name, timeframe_profile=profile,

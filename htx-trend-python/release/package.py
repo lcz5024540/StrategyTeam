@@ -170,8 +170,8 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False,
 def _live_payload_paths():
     paths = sorted((ROOT / 'src/htx_trend').rglob('*.py'))
     paths += [ROOT / 'pyproject.toml', ROOT / 'README.md',
-              ROOT / 'release/package.py', ROOT / 'release/README.md', ROOT / 'release/LIVE_PACKAGE.md',
-              ROOT / 'release/seal_live.py', ROOT / 'release/EVIDENCE-RETENTION.md']
+              ROOT / 'release/package.py', ROOT / 'release/README.md',               ROOT / 'release/LIVE_PACKAGE.md', ROOT / 'release/seal_live.py',
+              ROOT / 'release/seal_product_live_waiver.py', ROOT / 'release/EVIDENCE-RETENTION.md']
     paths += sorted((ROOT / 'release/artifacts').glob('*.json'))
     paths += sorted(p for p in (ROOT / 'deployment').rglob('*') if p.is_file())
     return paths
