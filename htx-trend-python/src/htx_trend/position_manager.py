@@ -13,6 +13,8 @@ from typing import Any
 from .account_facts import _position_volumes, _taker_fee
 from .execution_service import _numeric_client_order_id, _order_id, _client_id
 from .exits import ExitAction, ExitInput, ProfitProtectionPolicy, decide_v4, decide_legacy
+from .continuation import (BASELINE, CONFIRM, LINKED, ContinuationConfig, advance_confirmation,
+                           decide_continuation)
 from .htx_v5 import SwapOrderRequest
 from .indicators import ema
 from .java_entry_contract import JavaEntryConfig, evaluate
@@ -112,13 +114,15 @@ def timeframe_side(candles):
 class LivePositionManager:
     def __init__(self, repository, instance, account, market, client, executor, *,
                  period='15min', timeframe_profile: TimeframeProfile | None = None,
-                 java_config=JavaEntryConfig(), config=ExitConfig(), evidence_store=None):
+                 java_config=JavaEntryConfig(), config=ExitConfig(), evidence_store=None,
+                 continuation_config: ContinuationConfig | None = None):
         self.repo,self.instance,self.account=repository,instance,account
         self.market,self.client,self.executor=market,client,executor
         self.period,self.java_config,self.config=period,java_config,config
         self.timeframe_profile = timeframe_profile or TimeframeProfile.for_period(period)
         self.timeframe_profile.validate(period, self.timeframe_profile.contract.trend_period)
         self.evidence_store=evidence_store
+        self._continuation = continuation_config or ContinuationConfig(BASELINE)
 
     def _evidence(self, kind, payload, refs=()):
         if self.evidence_store is None:
@@ -198,6 +202,11 @@ class LivePositionManager:
         try: rate=_taker_fee(self.client.swap_fee(code)); fee_source='HTX_ACCOUNT'
         except Exception: rate=self.config.fee_rate; fee_source='CONFIGURED_FALLBACK'
         state=self.repo.exit_state(row['id'])
+        if not state and self._continuation.version != BASELINE:
+            state = {'continuation_version': self._continuation.version}
+        version = state.get('continuation_version', BASELINE)
+        if version not in (BASELINE, CONFIRM, LINKED):
+            raise ValueError('unknown position continuation version')
         highest=max(decimal(state,'highest',decimal(row,'highest_price',entry)),reference)
         lowest=min(decimal(state,'lowest',decimal(row,'lowest_price',entry)),reference)
         protection=decimal(state,'protection',decimal(row,'profit_protection_price')) or None
@@ -230,9 +239,31 @@ class LivePositionManager:
             flat_loss_budget=max(self.config.flat_budget,entry*size*entry_quantity*self.config.flat_budget_rate),
             policy=self.config.policy,protection_breach_bars=breach,funding_rate_exit_reason=funding_reason,observed_mfe_net_pnl=mfe,
             bars_held=bars_held,timeout_bars=self.config.timeout_bars,min_hold_bars=self.config.min_hold_bars)
-        use_v4=self.config.engine_enabled
-        decision=decide_v4(input_) if use_v4 else decide_legacy(input_,trailing_atr_multiplier=(self.config.swing_trailing_atr
-            if row.get('timeframe_profile') in {'SWING_4H','TREND_1D'} else self.config.trailing_atr),trailing_activation_r=self.config.trailing_activation_r)
+        evaluation_candle = window.candles[-1]
+        candidate_policy = version in (CONFIRM, LINKED)
+        if candidate_policy:
+            if self.instance.strategy_name != 'HTX_TREND_15M_V2':
+                raise ValueError('candidate position policy requires 15m')
+            count, last_bar = advance_confirmation(input_, evaluation_candle, state)
+            cont_decision = decide_continuation(input_, count)
+            if (state.get('continuation_last_bar') is not None
+                    and evaluation_candle.open_time <= int(state['continuation_last_bar'])):
+                from dataclasses import replace
+                cont_decision = replace(cont_decision, action=ExitAction.HOLD, target_remaining_contracts=None,
+                                        reason='continuation-duplicate-bar')
+            state.update(continuation_breach_count=count, continuation_last_bar=last_bar)
+            if cont_decision.action is ExitAction.FULL_CLOSE:
+                state['complete_exit'] = dict(position_id=row['id'], side=row['side'], reason=cont_decision.reason,
+                    closed_at=datetime.fromtimestamp(now_epoch, UTC).isoformat(),
+                    protection=str(cont_decision.protection_price) if cont_decision.protection_price else None,
+                    bar_time=evaluation_candle.open_time, bar_high=str(evaluation_candle.high),
+                    bar_low=str(evaluation_candle.low), evidence_status='RECORDED')
+            decision = cont_decision
+            use_v4 = False
+        else:
+            use_v4=self.config.engine_enabled
+            decision=decide_v4(input_) if use_v4 else decide_legacy(input_,trailing_atr_multiplier=(self.config.swing_trailing_atr
+                if row.get('timeframe_profile') in {'SWING_4H','TREND_1D'} else self.config.trailing_atr),trailing_activation_r=self.config.trailing_activation_r)
         self._evidence('exit_decision_trace', {'position_id': row['id'], 'strategy_version': self.instance.strategy_name,
             'engine_version': 'exit-engine-v4' if use_v4 else 'legacy', 'input': input_, 'decision': decision,
             'conditions': {'hard_stop': False, 'management_data_complete': True,

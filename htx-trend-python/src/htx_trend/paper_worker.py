@@ -167,8 +167,8 @@ class PaperTrendWorker:
         self.instance, self.market, self.config = instance, market, config
         self.account = 'paper:' + instance.instance_key
         self.profile = profile_for_version(instance.strategy_name) or TimeframeProfile.INTRADAY_15M
-        self.continuation = continuation_config or ContinuationConfig.from_env()
-        self.continuation.require_15m(self.profile is TimeframeProfile.INTRADAY_15M and instance.strategy_name == 'HTX_TREND_15M_V2')
+        self.continuation = continuation_config or ContinuationConfig.from_paper_env()
+        self.continuation.require_15m(self.profile is TimeframeProfile.INTRADAY_15M and instance.strategy_name == 'HTX_TREND_15M_V2', live=False)
         self.entry_config = (JavaEntryConfig.from_env() if instance.strategy_name == LEGACY_STRATEGY_VERSION
                              else profile_entry_config(self.profile))
         HtxStrategyDecisionEngine(strategy_version=instance.strategy_name).require("PAPER")

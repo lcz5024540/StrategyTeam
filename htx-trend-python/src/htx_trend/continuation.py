@@ -1,4 +1,4 @@
-"""Opt-in 15m PAPER continuation policy and complete-trade reentry facts.
+"""Opt-in 15m continuation policy (PAPER or LIVE) and complete-trade reentry facts.
 
 No order placement, network access, or changes to the shared v4 defaults.
 """
@@ -31,20 +31,31 @@ class ContinuationConfig:
 
     def __post_init__(self):
         if self.version not in (BASELINE, CONFIRM, LINKED):
-            raise ValueError('unknown PAPER continuation version')
+            raise ValueError('unknown continuation version')
         if self.cooldown and self.version != BASELINE:
             raise ValueError('cooldown is an independent baseline-only control')
 
     @classmethod
     def from_env(cls):
+        """PAPER worker default: read HTX_PAPER_* only."""
+        return cls.from_paper_env()
+
+    @classmethod
+    def from_paper_env(cls):
         value = os.getenv('HTX_PAPER_COMPLETED_TRADE_COOLDOWN', 'false').lower()
         if value not in ('true', 'false'):
             raise ValueError('HTX_PAPER_COMPLETED_TRADE_COOLDOWN must be true/false')
         return cls(os.getenv('HTX_PAPER_CONTINUATION_VERSION', BASELINE), value == 'true')
 
-    def require_15m(self, is_15m):
+    @classmethod
+    def from_live_env(cls):
+        """LIVE 15m switch: HTX_LIVE_CONTINUATION_VERSION only (no PAPER env)."""
+        return cls(os.getenv('HTX_LIVE_CONTINUATION_VERSION', BASELINE), False)
+
+    def require_15m(self, is_15m, *, live=False):
+        scope = '15m LIVE' if live else '15m PAPER'
         if not is_15m and (self.version != BASELINE or self.cooldown):
-            raise ValueError('continuation/cooldown experiment requires 15m PAPER')
+            raise ValueError(f'continuation/cooldown experiment requires {scope}')
 
 
 def crossed(side, price, boundary):
