@@ -555,8 +555,8 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions(),
                 trade['realized_pnl'] = raw['realized_pnl']
     coverage_end = {
         contract: min(epoch(assumptions.end_cst),
-                      min(max(c.open_time + period_seconds(period) for c in series)
-                          for (symbol, period), series in candles.items() if symbol == contract))
+                      min((max(c.open_time + period_seconds(period) for c in series)
+                          for (symbol, period), series in candles.items() if symbol == contract), default=0))
         for contract in {row['contract'] for row in live}
     }
     aligned, extras, missing = compare(live, trades, bars, coverage_end=coverage_end, entry_period_seconds=entry_period_seconds)
@@ -681,10 +681,12 @@ def main():
         parser.error(f'Invalid profile: {args.profile}. Must be one of: {", ".join(p.name for p in TimeframeProfile)}')
     
     overrides = json.loads(args.assumptions.read_text()) if args.assumptions else {}
+    known_fields = set(asdict(Assumptions()).keys())
+    filtered = {k: v for k, v in overrides.items() if k in known_fields}
     for key, default in asdict(Assumptions()).items():
-        if key in overrides and isinstance(default, Decimal):
-            overrides[key] = D(str(overrides[key]))
-    report = replay(args.inputs, Assumptions(**overrides), strategy=args.strategy, profile=profile)
+        if key in filtered and isinstance(default, Decimal):
+            filtered[key] = D(str(filtered[key]))
+    report = replay(args.inputs, Assumptions(**filtered), strategy=args.strategy, profile=profile)
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / 'report.json').write_text(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + '\n')
     (args.out / 'report.md').write_text(markdown(report))

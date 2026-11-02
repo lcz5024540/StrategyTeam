@@ -478,3 +478,76 @@ def test_exit_buckets_and_coverage_do_not_hide_missing_legs(report):
                            coverage_end={'ETH-USDT': epoch('2026-10-21 10:30:59')})
     assert not aligned[0]['exit_outside_coverage']
     assert any(r.startswith('EXIT_LEGS_MISMATCH') for r in aligned[0]['reasons'])
+
+
+def test_assumptions_ignores_unknown_keys_like_notes(tmp_path):
+    """Assumptions 应忽略 JSON 中的未知键（如 notes），不抛出 TypeError。"""
+    for name in ('klines.csv', 'trades_closed_window.csv', 'MANIFEST.json'):
+        shutil.copyfile(INPUTS / name, tmp_path / name)
+    
+    assumptions_json = tmp_path / 'assumptions.json'
+    assumptions_json.write_text(json.dumps({
+        'scan_delay_seconds': 45,
+        'equity': '500',
+        'notes': ['这是一个未声明的字段', '应该被忽略而不报错'],
+        'unknown_field': 'should also be ignored',
+        'start_cst': '2026-10-20 03:00:00',
+        'end_cst': '2026-10-20 03:30:59',
+    }))
+    
+    from htx_trend.scan_replay import replay as replay_scan
+    from decimal import Decimal as D
+    
+    result = replay_scan(tmp_path, 
+                        Assumptions(scan_delay_seconds=45, equity=D('500'),
+                                   start_cst='2026-10-20 03:00:00',
+                                   end_cst='2026-10-20 03:30:59'),
+                        profile=TimeframeProfile.INTRADAY_15M)
+    assert result['header']['assumptions']['scan_delay_seconds'] == 45
+    assert result['header']['assumptions']['equity'] == '500'
+    assert 'notes' not in result['header']['assumptions']
+    assert 'unknown_field' not in result['header']['assumptions']
+
+
+def test_empty_candle_series_does_not_crash_coverage_end():
+    """当某合约无 K 线时，coverage_end 应使用 default=0 而非崩溃。"""
+    from htx_trend.scan_replay import compare, epoch
+    from decimal import Decimal as D
+    
+    candles = {
+        ('BTC-USDT', '15min'): [
+            type('Candle', (), {'open_time': 1729382400})()
+        ],
+    }
+    
+    live = [
+        {
+            'position_key': 'test-btc', 'contract': 'BTC-USDT', 'side': 'LONG',
+            'model': 'EMA_MOMENTUM_CONTINUATION', 'opened_at_cst': '2024-10-20 03:15:40',
+            'signal_bar_cst': '2024-10-20 03:15:00', 'exit_reason': 'trend-weakened-protection-breach',
+            'closed_at_cst': '2024-10-20 04:30:21', 'exit_legs_json': '[]',
+        },
+        {
+            'position_key': 'test-stock', 'contract': 'AAPL-USDT', 'side': 'LONG',
+            'model': 'EMA_MOMENTUM_CONTINUATION', 'opened_at_cst': '2024-10-20 03:15:40',
+            'signal_bar_cst': '2024-10-20 03:15:00', 'exit_reason': 'trend-weakened-protection-breach',
+            'closed_at_cst': '2024-10-20 04:30:21', 'exit_legs_json': '[]',
+        }
+    ]
+    
+    from htx_trend.market_data import period_seconds
+    coverage_end = {
+        contract: min(epoch('2024-10-20 05:00:00'),
+                      min((max(c.open_time + period_seconds(period) for c in series)
+                          for (symbol, period), series in candles.items() if symbol == contract), default=0))
+        for contract in {row['contract'] for row in live}
+    }
+    
+    assert 'BTC-USDT' in coverage_end
+    assert 'AAPL-USDT' in coverage_end
+    assert coverage_end['AAPL-USDT'] == 0
+    
+    aligned, extras, missing = compare(live, [], [], coverage_end=coverage_end)
+    
+    aapl_alignment = next(a for a in aligned if a['live']['contract'] == 'AAPL-USDT')
+    assert 'OUTSIDE_REPLAY_COVERAGE' in ' '.join(aapl_alignment['reasons'])
