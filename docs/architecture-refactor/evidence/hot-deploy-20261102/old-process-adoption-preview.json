@@ -1,0 +1,87 @@
+{
+  "account_id": "7",
+  "hash": "a45caff218536f70c82d7aa16cff7cee6cc4b0a93b5322c88bf6176d2c1c5cf7",
+  "holdings": [
+    {
+      "identity": {
+        "account_id": "7",
+        "contract_code": "SOL-USDT",
+        "id": "676480",
+        "position_key": "python-trend-ba41de4f-fdca-401a-ba5d-b7c3734b071b",
+        "side": "SHORT",
+        "strategy_family": "TREND",
+        "strategy_name": "HTX_TREND_15M_V2",
+        "timeframe_profile": "INTRADAY_15M"
+      },
+      "policy": {
+        "continuation_version": "confirm-v1",
+        "entry": {
+          "adx_period": 14,
+          "atr_period": 14,
+          "box_window_bars": 32,
+          "breakout_lookback": 20,
+          "combination_require_trending_regime": true,
+          "entry_score_threshold": "60",
+          "fast_ema_period": 20,
+          "fib_source_lookback_bars": 8,
+          "medium_ema_period": 60,
+          "min_adx": "16",
+          "min_atr_pct": "0.0010",
+          "min_momentum_pct": "0.0015",
+          "min_score_gap": "12",
+          "min_volume_ratio": "1.10",
+          "momentum_lookback": 12,
+          "slow_ema_period": 120,
+          "volume_lookback": 20
+        },
+        "exit": {
+          "engine_enabled": false,
+          "engine_live": false,
+          "fee_rate": "0.0004",
+          "flat_bars": 3,
+          "flat_budget": "0.25",
+          "flat_budget_rate": "0.003",
+          "max_adverse_funding_rate": "0.0012",
+          "min_hold_bars": 0,
+          "policy": {
+            "arm_atr_multiplier": "0.50",
+            "lock_atr_multiplier": "0.15",
+            "min_net_fee_multiple": "2",
+            "partial_atr_multiplier": "0.75",
+            "protection_breach_confirmation_bars": 2,
+            "pullback_atr_multiplier": "0.40"
+          },
+          "swing_trailing_atr": "3",
+          "timeout_bars": 16,
+          "trailing_activation_r": "1",
+          "trailing_atr": "2"
+        },
+        "hash": "ef0ba0813a44fdf9a4ff27dd25835cd935d0662454902e72ad242d68fcbfc3c1",
+        "implementation": "htx-exit-20261102-v1",
+        "implementation_hashes": {
+          "continuation.py": "7cb1471018e262b4f3be7dd1e420c0096cef09e1adaa6b4c6c3eac4dbada3456",
+          "exits.py": "dd0d58e9a1b7470d1622a0d752c3a049d01fd0f328df3a6c855c7c66244aa866",
+          "indicators.py": "b2d5c297f306c8014e50f5cc0a82ebe802d9a6ea0e1e66efd9fb42f0015f922c",
+          "java_entry_contract.py": "662a11f04785d12f7d2543894b8ad5076a0422ddaeb5851ef3630c80c4521831",
+          "models.py": "0143c0dc07f6f9b6985ec0973e4319cdb73841aaeb86506e8c2e4cee297d5fe2"
+        },
+        "owner": {
+          "account_id": "7",
+          "execution_mode": "LIVE",
+          "instance_key": "htx-trend-live-primary",
+          "strategy_family": "TREND",
+          "strategy_name": "HTX_TREND_15M_V2",
+          "timeframe_profile": "INTRADAY_15M"
+        },
+        "period": "15min",
+        "schema": "htx-holding-policy-v1"
+      }
+    }
+  ],
+  "instance_key": "htx-trend-live-primary",
+  "mode": "LIVE",
+  "observed_at": "2026-11-02T11:40:36.614971+00:00",
+  "schema": "htx-holding-adoption-v1",
+  "source_commit": "8e0a0cc40708edaccfdaf5e753866e82e1c9556e",
+  "source_package": "/opt/coinstrategy/htx-trend-py/releases/0.1.7-live-8e0a0cc4"
+}

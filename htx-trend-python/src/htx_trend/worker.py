@@ -217,10 +217,13 @@ def main() -> None:
         elif family == "TREND" and instance.execution_mode == ExecutionMode.PAPER:
             from .paper_worker import PaperTrendWorker, PaperWorkerConfig
             paper_client = HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com"))
+            from .holding_adoption import HoldingAdoption
+            adoption_path = os.environ.get('HTX_HOLDING_ADOPTION_PATH', '').strip()
+            holding_adoption = HoldingAdoption.read(Path(adoption_path)) if adoption_path else None
             worker = paper_worker = PaperTrendWorker(instance,
                 HtxMarketData(paper_client, evidence_store=evidence_store, compact=compact),
                 Path(os.environ.get("HTX_PAPER_STATE_DIR", "./paper-state")), PaperWorkerConfig.from_env(),
-                evidence_store=evidence_store)
+                evidence_store=evidence_store, holding_adoption=holding_adoption, require_holding_policy=True)
             if compact is not None:
                 from .research.compact import CompactBackfill
                 periods = worker.profile.contract
@@ -265,17 +268,31 @@ def main() -> None:
                 "entry_plan=%s continuation=%s maker_timeout=%s wait_bars=%s",
                 instance.instance_key, account.account_id, instance.strategy_name,
                 entry_config.entry_order_type, entry_execution.entry_plan_version,
-                live_continuation.version, entry_config.maker_config.timeout_action.value,
+                live_continuation.version if live_continuation else BASELINE, entry_config.maker_config.timeout_action.value,
                 entry_config.maker_config.max_wait_bars)
 
+            from .holding_policy import HoldingPolicy
+            from .holding_adoption import HoldingAdoption
+            adoption_path = os.environ.get('HTX_HOLDING_ADOPTION_PATH', '').strip()
+            holding_adoption = HoldingAdoption.read(Path(adoption_path)) if adoption_path else None
+            exit_config = ExitConfig.from_env()
+            holding_policies = {config.timeframe_profile.value: HoldingPolicy.create(
+                instance_key=instance.instance_key, account_id=account.account_id,
+                strategy_family=instance.strategy_family, strategy_name=instance.strategy_name,
+                mode='LIVE', profile=config.timeframe_profile, entry_config=config.java_entry,
+                exit_config=exit_config,
+                continuation_version=(live_continuation.version if live_continuation is not None
+                                      and config.timeframe_profile is TimeframeProfile.INTRADAY_15M else BASELINE))
+                for config in scan_configs}
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
                 facts=HtxAccountFactsAdapter(private_client, AccountFactConfig(leverage=entry_config.leverage)), executor=live, execution=entry_execution,
-                config=entry_config, admission=admission, evidence_store=evidence_store)
+                config=entry_config, admission=admission, evidence_store=evidence_store, holding_policies=holding_policies)
             profile_workers = []
             for scan_config in scan_configs:
                 manager = LivePositionManager(repository, instance, account, market, private_client, live,
                     period=scan_config.entry_period, timeframe_profile=scan_config.timeframe_profile,
-                    java_config=scan_config.java_entry, config=ExitConfig.from_env(), evidence_store=evidence_store,
+                    java_config=scan_config.java_entry, config=exit_config, evidence_store=evidence_store,
+                    require_holding_policy=True, holding_adoption=holding_adoption,
                     continuation_config=(live_continuation if scan_config.timeframe_profile is TimeframeProfile.INTRADAY_15M
                                          else ContinuationConfig(BASELINE)))
                 profile_workers.append(LiveTrendWorker(instance, repository, market, entry, scan_config,

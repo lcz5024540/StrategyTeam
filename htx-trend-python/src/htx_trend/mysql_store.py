@@ -691,10 +691,45 @@ class HtxTrendMySqlRepository:
 
     def initialize_entry_state(self, position_id: int, state: dict[str, Any]) -> None:
         """Create immutable entry identity/deadline before exchange submission."""
+        if state.get('holding_policy') is not None:
+            from .holding_policy import resolve_holding_policy
+            resolve_holding_policy(state, required=True)
         self._write("INSERT INTO python_trend_exit_state(position_id,state_json) VALUES(%s,%s)",
                     (position_id, json.dumps(state, default=str, sort_keys=True)))
 
+    def adopt_holding_policy(self, position_id: int, adoption, *, instance_key: str) -> dict[str, Any]:
+        """Under the writer lock, bind verified old parameters without replacing live state."""
+        from .holding_adoption import adopted_state
+        self._connection.rollback()
+        self._in_transaction = True
+        try:
+            row = self._one("SELECT * FROM htx_trend_position WHERE id=%s FOR UPDATE", (position_id,))
+            if row is None or row.get('source_position_id') is not None or row.get('account_label') == 'paper':
+                raise ValueError('adoption requires an owned LIVE position')
+            stored = self._one("SELECT state_json FROM python_trend_exit_state WHERE position_id=%s FOR UPDATE",
+                               (position_id,))
+            state = json.loads(stored['state_json']) if stored else {}
+            policy = adoption.policy_for(row, state, instance_key=instance_key, mode='LIVE')
+            state = adopted_state(state, policy)
+            self._write("INSERT INTO python_trend_exit_state(position_id,state_json) VALUES(%s,%s) "
+                        "ON DUPLICATE KEY UPDATE state_json=VALUES(state_json),updated_at=CURRENT_TIMESTAMP(3)",
+                        (position_id,json.dumps(state,default=str,sort_keys=True)))
+            self._connection.commit()
+            return state
+        except BaseException:
+            self._connection.rollback()
+            raise
+        finally:
+            self._in_transaction = False
+
     def save_exit_state(self, position_id: int, state: dict[str, Any], decision) -> None:
+        previous = self.exit_state(position_id)
+        if previous.get('holding_policy') is not None:
+            if state.get('holding_policy') != previous['holding_policy']:
+                raise ValueError('immutable holding policy cannot be replaced or deleted')
+        if state.get('holding_policy') is not None:
+            from .holding_policy import resolve_holding_policy
+            resolve_holding_policy(state, required=True)
         self._write("""INSERT INTO python_trend_exit_state(position_id,state_json) VALUES(%s,%s)
           ON DUPLICATE KEY UPDATE state_json=VALUES(state_json),updated_at=CURRENT_TIMESTAMP(3)""",
           (position_id,json.dumps(state,default=str,sort_keys=True)))

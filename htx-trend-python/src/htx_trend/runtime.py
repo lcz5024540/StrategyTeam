@@ -5,7 +5,7 @@ paper/shadow runtime used to compare Python decisions with Java before P6.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Sequence
@@ -31,6 +31,8 @@ from .strategy_context import FibonacciQuality, MarketContext
 from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
 from .strategy_decision import HtxStrategyDecisionEngine, LEGACY_STRATEGY_VERSION
 from .paper import PaperExchange, PaperOrder
+from .holding_policy import HoldingPolicy, HoldingPolicyError, paper_exit_config, resolve_holding_policy
+from .timeframes import TimeframeProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +51,8 @@ class PaperTrendRuntime:
                  admission: StrategyAdmissionArtifact | None = None,
                  maker_config: MakerExecutionConfig = MakerExecutionConfig(),
                  evidence_store=None, compact=None, evidence_context=None,
-                 continuation_config: ContinuationConfig = ContinuationConfig()) -> None:
+                 continuation_config: ContinuationConfig = ContinuationConfig(),
+                 holding_policy: HoldingPolicy | None = None, require_holding_policy: bool = False) -> None:
         self._ledger, self._exchange = ledger, exchange
         self._account_id, self._mirror_account_id = account_id, mirror_account_id
         self._decision = HtxStrategyDecisionEngine(strategy_version=strategy_version, config=entry_config,
@@ -62,6 +65,19 @@ class PaperTrendRuntime:
         self.evidence_error = None
         continuation_config.require_15m(strategy_version == "HTX_TREND_15M_V2")
         self._continuation = continuation_config
+        from .strategy_profiles import profile_for_version
+        self._holding_policy = holding_policy or HoldingPolicy.create(
+            instance_key=self._evidence_context.get('instance', account_id), account_id=account_id,
+            strategy_family='TREND', strategy_name=strategy_version, mode='PAPER',
+            profile=profile_for_version(strategy_version) or TimeframeProfile.INTRADAY_15M,
+            entry_config=entry_config, exit_config=paper_exit_config(),
+            continuation_version=continuation_config.version)
+        self._holding_policy.require_owner(instance_key=self._evidence_context.get('instance', account_id),
+            account_id=account_id, strategy_family='TREND', strategy_name=strategy_version, mode='PAPER',
+            profile=profile_for_version(strategy_version) or TimeframeProfile.INTRADAY_15M)
+        if self._holding_policy.continuation_version != continuation_config.version:
+            raise HoldingPolicyError('new entry continuation differs from its holding policy')
+        self._require_holding_policy = require_holding_policy
 
     def _version_ref(self):
         from .research.store import digest
@@ -164,6 +180,7 @@ class PaperTrendRuntime:
             self._ledger.save_position_context(position.position_id, {"model": selected.model.value,
                 "structure_key": selected.structure_key, "confirmation_models": [item.value for item in selected.confirmation_models],
                 "initial_stop": str(selected.invalidation_price), "invalidation": str(selected.invalidation_price),
+                "holding_policy": self._holding_policy.to_dict(),
                 "structure_target": str(structural_target(selected) if self._execution_config.entry_plan_version == "structure-cost-v1" else selected.target_low), "contract_size": str(contract.contract_size),
                 "entry_fee": str(entry_price * contract.contract_size * Decimal(gate.size_plan.contracts) * Decimal("0.0004")),
                 "highest": str(entry_price), "lowest": str(entry_price), "protection": None,
@@ -239,6 +256,7 @@ class PaperTrendRuntime:
             self._ledger.save_position_context(position.position_id, {"model": selected.model.value,
                 "structure_key": selected.structure_key, "confirmation_models": [item.value for item in selected.confirmation_models],
                 "initial_stop": str(selected.invalidation_price), "invalidation": str(selected.invalidation_price),
+                "holding_policy": self._holding_policy.to_dict(),
                 "structure_target": str(structural_target(selected) if self._execution_config.entry_plan_version == "structure-cost-v1" else selected.target_low), "contract_size": str(contract.contract_size),
                 "entry_fee": str(fill_price * contract.contract_size * Decimal(lifecycle.filled_quantity) * Decimal("0.0004")),
                 "highest": str(fill_price), "lowest": str(fill_price), "protection": None,
@@ -273,11 +291,24 @@ class PaperTrendRuntime:
         self.evidence_error = None
         if position.status != "OPEN":
             raise ValueError("only open paper positions can be managed")
+        if position.account_id != self._account_id:
+            raise HoldingPolicyError('PAPER holding account mismatch')
         side = TrendSide(position.side)
-        model = ModelCode(context["model"])
         contract_size = Decimal(context["contract_size"])
         gross = (reference_price - position.entry_price) * contract_size * position.quantity if side.value == "LONG" else (position.entry_price - reference_price) * contract_size * position.quantity
-        estimated_close_fee = reference_price * contract_size * Decimal(position.quantity) * Decimal("0.0004")
+        try:
+            policy = resolve_holding_policy(context, required=self._require_holding_policy)
+        except HoldingPolicyError:
+            return self._known_price_stop(position, context, reference_price, contract_size, at, run_id,
+                                          evaluation_candle)
+        model = ModelCode(context["model"])
+        exit_config = policy.exit if policy is not None else paper_exit_config()
+        if policy is not None:
+            policy.require_owner(instance_key=self._evidence_context.get('instance', self._account_id),
+                account_id=position.account_id, strategy_family='TREND',
+                strategy_name=policy.owner['strategy_name'], mode='PAPER',
+                profile=TimeframeProfile(self._holding_policy.owner['timeframe_profile']))
+        estimated_close_fee = reference_price * contract_size * Decimal(position.quantity) * exit_config.fee_rate
         exit_input = ExitInput(model, side, position.quantity, contract_size, position.entry_price,
             Decimal(context["initial_stop"]), Decimal(context["invalidation"]), Decimal(context["structure_target"]),
             reference_price, Decimal(context["protection"]) if context.get("protection") else None, highest_price, lowest_price,
@@ -285,13 +316,16 @@ class PaperTrendRuntime:
             gross - Decimal(context.get("entry_fee", "0")) - estimated_close_fee, Decimal(context.get("entry_fee", "0")),
             estimated_close_fee, datetime.fromisoformat(context["trailing_armed_at"]) if context.get("trailing_armed_at") else None,
             context.get("trailing_arm_reason"), Decimal(context.get("max_favorable_r", "0")), at, flat_streak=flat_streak,
-            protection_breach_bars=protection_breach_bars)
+            protection_breach_bars=protection_breach_bars, policy=exit_config.policy,
+            required_flat_streak=exit_config.flat_bars, flat_loss_budget=exit_config.flat_budget,
+            timeout_bars=exit_config.timeout_bars, min_hold_bars=exit_config.min_hold_bars)
         version = context.get('continuation_version', BASELINE)
         if version not in (BASELINE, CONFIRM, LINKED):
             raise ValueError('unknown position continuation version')
         candidate_policy = version in (CONFIRM, LINKED)
         if candidate_policy:
-            if self._decision.strategy_version != 'HTX_TREND_15M_V2':
+            if (policy.owner['timeframe_profile'] != 'INTRADAY_15M' if policy is not None
+                    else self._decision.strategy_version != 'HTX_TREND_15M_V2'):
                 raise ValueError('candidate position policy requires 15m')
             count, last_bar = advance_confirmation(exit_input, evaluation_candle, context)
             decision = decide_continuation(exit_input, count)
@@ -336,6 +370,37 @@ class PaperTrendRuntime:
                 close = self._exchange.reduce_position(position, quantity=quantity, exit_price=reference_price,
                                                        contract_size=contract_size, when=at, run_id=run_id)
                 self._mirror_reduction(position_id, quantity, reference_price, at, run_id, close.order_id, contract_size)
+        return decision
+
+    def _known_price_stop(self, position, context, reference, size, at, run_id, candle):
+        """Emergency PAPER reduction depends only on the persisted price boundary.
+
+        No fabricated indicator/model/target context is fed to the normal engine.
+        The same atomic ledger checkpoint still owns the simulated fill.
+        """
+        from .exits import ExitDecision, ExitPhase
+        stop, invalidation = Decimal(context['initial_stop']), Decimal(context['invalidation'])
+        if any(not v.is_finite() or v <= 0 for v in (stop, invalidation, reference, size)):
+            raise HoldingPolicyError('known price stop lacks a valid price boundary')
+        boundary = max(stop, invalidation) if position.side == 'LONG' else min(stop, invalidation)
+        crossed = reference <= boundary if position.side == 'LONG' else reference >= boundary
+        if not crossed:
+            raise HoldingPolicyError('holding policy recovery required; known price stop not crossed')
+        decision = ExitDecision(ExitPhase.INVALIDATED, ExitAction.FULL_CLOSE, 0, None,
+            Decimal(0), None, None, 'initial/model stop invalidated',
+            {'boundary': boundary, 'reference': reference, 'holding_policy_unavailable': True})
+        if candle is not None:
+            context['complete_exit'] = dict(position_id=position.position_id, side=position.side,
+                reason=decision.reason, closed_at=at.isoformat(), protection=None,
+                bar_time=candle.open_time, bar_high=str(candle.high), bar_low=str(candle.low))
+        self._ledger.save_position_context(position.position_id, context)
+        self._ledger.decision(position.account_id, run_id, 'EXIT_DECISION',
+            dict(phase=decision.phase.value, action=decision.action.value, reason=decision.reason,
+                 evidence=decision.evidence), position_id=position.position_id)
+        close = self._exchange.reduce_position(position, quantity=position.quantity,
+            exit_price=reference, contract_size=size, when=at, run_id=run_id)
+        self._mirror_reduction(position.position_id, position.quantity, reference, at, run_id,
+                               close.order_id, size)
         return decision
 
     def _mirror_reduction(self, primary_position_id: str, quantity: int, price: Decimal, at: datetime, run_id: str,

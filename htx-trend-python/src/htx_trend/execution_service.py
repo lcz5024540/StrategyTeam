@@ -7,6 +7,8 @@ deployment to acquire execution rights.
 """
 from __future__ import annotations
 
+from .timeframes import TimeframeProfile
+
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -152,7 +154,7 @@ class HtxTrendEntryExecutor:
                  execution: ExecutionConfig = ExecutionConfig(), config: EntryExecutionConfig = EntryExecutionConfig(),
                  on_confirmed_entry: Callable[[ConfirmedEntryFill], None] | None = None,
                  on_confirmed_reduction: Callable[[ConfirmedReductionFill], None] | None = None,
-                 admission: StrategyAdmissionArtifact | None = None, evidence_store=None) -> None:
+                 admission: StrategyAdmissionArtifact | None = None, evidence_store=None, holding_policies=None) -> None:
         if instance.account_id != account.account_id:
             raise ValueError("strategy instance and execution account differ")
         self._repository, self._instance, self._account = repository, instance, account
@@ -160,6 +162,7 @@ class HtxTrendEntryExecutor:
         self._on_confirmed_entry, self._on_confirmed_reduction = on_confirmed_entry, on_confirmed_reduction
         self._admission = admission
         self._evidence_store = evidence_store
+        self._holding_policies = holding_policies
         self._continuation = (ContinuationConfig.from_live_env() if instance.strategy_name == "HTX_TREND_15M_V2"
                               else ContinuationConfig())
 
@@ -437,9 +440,18 @@ class HtxTrendEntryExecutor:
                 total_multiplier, sizing_reason, gate.reason, fee_rate, estimated_entry_fee, estimated_close_fee,
                 signal_px=candidate.entry_price, signal_ts=datetime.fromtimestamp(candidate.bar_time, UTC),
                 **order_px_fields(request.type, limit=request.price, mid=book.top.mid)))
-            if self._config.maker_config.enabled or self._instance.strategy_name == "HTX_TREND_15M_V2":
+            if self._holding_policies is not None or self._config.maker_config.enabled or self._instance.strategy_name == "HTX_TREND_15M_V2":
                 initial_state = {"continuation_version": self._continuation.version,
                                  "entry_plan_version": self._execution.entry_plan_version}
+                if self._holding_policies is not None:
+                    policy = self._holding_policies[timeframe_profile]
+                    from .holding_policy import HoldingPolicy
+                    policy = HoldingPolicy.load(policy.to_dict())
+                    policy.require_owner(instance_key=self._instance.instance_key,
+                        account_id=self._account.account_id, strategy_family=self._instance.strategy_family,
+                        strategy_name=self._instance.strategy_name, mode='LIVE',
+                        profile=TimeframeProfile(timeframe_profile))
+                    initial_state['holding_policy'] = policy.to_dict()
                 if self._config.maker_config.enabled:
                     submitted_epoch = int(time.time())
                     initial_state['entry_execution'] = {

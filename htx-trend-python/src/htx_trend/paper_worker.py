@@ -122,6 +122,12 @@ class PaperFileLedger:
         return dict(self.data['contexts'][position_id])
 
     def save_position_context(self, position_id, context):
+        previous = self.data['contexts'].get(position_id, {})
+        if previous.get('holding_policy') is not None and context.get('holding_policy') != previous['holding_policy']:
+            raise ValueError('immutable holding policy cannot be replaced or deleted')
+        if context.get('holding_policy') is not None and previous.get('holding_policy') is None:
+            from .holding_policy import resolve_holding_policy
+            resolve_holding_policy(context, required=True)
         self.data['contexts'][position_id] = context
 
     def reduce_position(self, position_id, remaining_quantity, realized_pnl, when):
@@ -167,10 +173,12 @@ class WorkerPaperExchange(PaperExchange):
 
 class PaperTrendWorker:
     def __init__(self, instance, market, state_root: Path, config: PaperWorkerConfig, evidence_store=None,
-                 continuation_config: ContinuationConfig | None = None):
+                 continuation_config: ContinuationConfig | None = None,
+                 holding_adoption=None, require_holding_policy: bool = False):
         if instance.execution_mode != 'PAPER' or not re.fullmatch(r'[A-Za-z0-9_-]+', instance.instance_key):
             raise ValueError('PAPER requires an independent safe instance key')
         self.instance, self.market, self.config = instance, market, config
+        self.holding_adoption, self.require_holding_policy = holding_adoption, require_holding_policy
         self.account = 'paper:' + instance.instance_key
         self.profile = profile_for_version(instance.strategy_name) or TimeframeProfile.INTRADAY_15M
         self.continuation = continuation_config or ContinuationConfig.from_paper_env()
@@ -192,11 +200,36 @@ class PaperTrendWorker:
             maker_config=MakerExecutionConfig.from_env(), evidence_store=evidence_store,
             compact=getattr(market, 'compact', None),
             evidence_context={'instance': instance.instance_key, 'timeframe_profile': self.profile.value},
-            continuation_config=self.continuation)
+            continuation_config=self.continuation, require_holding_policy=require_holding_policy)
         self.runtime._paper_worker_config = asdict(config)
         self.stopped = False
         self._checkpoint_failed = False
         self._failures = {}
+
+    def _prepare_holding_policies(self):
+        from .holding_policy import resolve_holding_policy
+        from .holding_adoption import adopted_state
+        complete, changed = True, False
+        for position in self.ledger.active_positions(self.account):
+            try:
+                state = self.ledger.position_context(position.position_id)
+                if state.get('holding_policy') is None and self.holding_adoption is not None:
+                    policy = self.holding_adoption.policy_for(asdict(position), state,
+                        instance_key=self.instance.instance_key, mode='PAPER')
+                    self.ledger.save_position_context(position.position_id, adopted_state(state, policy))
+                    state = self.ledger.position_context(position.position_id)
+                    changed = True
+                policy = resolve_holding_policy(state, required=self.require_holding_policy)
+                if policy is not None:
+                    policy.require_owner(instance_key=self.instance.instance_key, account_id=self.account,
+                        strategy_family=self.instance.strategy_family, strategy_name=self.instance.strategy_name,
+                        mode='PAPER', profile=self.profile)
+            except Exception as error:
+                complete = False
+                self._failure(position.contract_code, 'HOLDING_POLICY:' + type(error).__name__)
+        if changed:
+            self.ledger.checkpoint()
+        return complete
 
     def _failure(self, contract, reason):
         old = self._failures.get(contract)
@@ -267,8 +300,11 @@ class PaperTrendWorker:
             return WorkerHealth('DEGRADED', 'pending PAPER ledger persisted; resume next cycle')
         now = datetime.now(UTC)
         count = 0
+        policies_ready = self._prepare_holding_policies()
         confirmation_ok = self._confirm_evidence()
         skipped: list[str] = [] if confirmation_ok else ['LEDGER_CONFIRMATION_FAILED']
+        if not policies_ready:
+            skipped.append('HOLDING_POLICY_RECOVERY_REQUIRED')
         log = logging.getLogger(__name__)
         for contract in self.config.contracts:
             # Per-contract snapshot lets one bad contract fail without undoing
@@ -303,14 +339,21 @@ class PaperTrendWorker:
                 for position in self.ledger.active_positions(self.account):
                     if position.contract_code != contract:
                         continue
-                    if signal.indicators is None:
-                        raise ValueError('PAPER exit indicators unavailable')
                     context = self.ledger.position_context(position.position_id)
+                    from .holding_policy import resolve_holding_policy
+                    try:
+                        policy = resolve_holding_policy(context, required=self.require_holding_policy)
+                    except ValueError:
+                        policy = None  # runtime allows only the known price stop in strict mode
+                    holding_signal = evaluate(entry.candles, policy.entry) if policy is not None else signal
+                    policy_fault = self.require_holding_policy and policy is None
+                    if holding_signal.indicators is None and not policy_fault:
+                        raise ValueError('PAPER exit indicators unavailable')
                     self.runtime.manage(run_id=run_id, position_id=position.position_id,
                         reference_price=(book.bid if position.side == "LONG" else book.ask), highest_price=max(Decimal(context['highest']), bar.high),
-                        lowest_price=min(Decimal(context['lowest']), bar.low), atr=signal.indicators.atr,
-                        signal_side=signal.side, ema_fast=signal.indicators.ema_fast,
-                        ema_slow=signal.indicators.ema_slow, major_timeframe_opposition=0,
+                        lowest_price=min(Decimal(context['lowest']), bar.low), atr=holding_signal.indicators.atr if holding_signal.indicators else Decimal(0),
+                        signal_side=holding_signal.side, ema_fast=holding_signal.indicators.ema_fast if holding_signal.indicators else None,
+                        ema_slow=holding_signal.indicators.ema_slow if holding_signal.indicators else None, major_timeframe_opposition=0,
                         market_context_opposes=False, at=now, evidence_windows=(entry, trend), evaluation_candle=bar,
                         market_snapshot={'book': book, 'contract': spec, 'at': now,
                                          'funding_quote_status': 'NOT_REQUESTED_ON_MANAGEMENT_PATH'})
@@ -330,6 +373,8 @@ class PaperTrendWorker:
                     if self.ledger.data['orders'][f['order_id']]['position_id'] is not None), Decimal('0'))
                 equity = self.config.equity + pnl + exit_fees - fees
                 if not had_position:
+                    if not policies_ready:
+                        continue
                     if evidence_failed:
                         continue  # no order and no bar advance; retry after recovery
                     policy = getattr(self, 'continuation', ContinuationConfig())
