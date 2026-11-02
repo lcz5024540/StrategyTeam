@@ -5,3 +5,6 @@
 - [角色待办](ROLE-TODOS.md)
 
 - [热部署持仓延续交付（2026-11-02）](hot-deploy-20261102.md)
+
+- [15m实时结构候选交付、验证与未完成项](realtime-entry-20261102.md)
+- [实时全机会回放协议](realtime-replay-20261102.md)

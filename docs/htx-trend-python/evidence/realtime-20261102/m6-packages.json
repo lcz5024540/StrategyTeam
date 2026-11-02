@@ -1,0 +1,50 @@
+{
+  "packages": [
+    {
+      "version": "0.1.7-evidence-v2-47e58413",
+      "source_commit": "47e584139f70f18080215ddd80898407b6c47a5e",
+      "archive": "/tmp/htx-realtime-final-frozen/0.1.7-evidence-v2-47e58413/htx-trend-python-0.1.7-evidence-v2-47e58413.tar.gz",
+      "sha256": "9b8ff90ce7ede98a67fcf0cbc6d8c86c9a3cfa5befe5dfd295c281b56d33fe2c",
+      "verified": true,
+      "working_tree_dirty": false,
+      "cli_smoke": true,
+      "old_and_new_policy_decode": true,
+      "realtime_checkpoint_decode": true
+    },
+    {
+      "version": "0.1.7-evidence-v2-47e58413-4h",
+      "source_commit": "47e584139f70f18080215ddd80898407b6c47a5e",
+      "archive": "/tmp/htx-realtime-final-frozen/0.1.7-evidence-v2-47e58413-4h/htx-trend-python-0.1.7-evidence-v2-47e58413-4h.tar.gz",
+      "sha256": "eb36724eae00cee260dbcf9034b019063645942eddbc524af01c4ea8d6c19aea",
+      "verified": true,
+      "working_tree_dirty": false,
+      "cli_smoke": true,
+      "old_and_new_policy_decode": true,
+      "realtime_checkpoint_decode": true
+    },
+    {
+      "version": "0.1.7-live-47e58413",
+      "source_commit": "47e584139f70f18080215ddd80898407b6c47a5e",
+      "archive": "/tmp/htx-realtime-final-frozen/0.1.7-live-47e58413/htx-trend-python-0.1.7-live-47e58413.tar.gz",
+      "sha256": "6d75888a46879eafc0c45eb40639dea48e97b5df4d162c4b89f60565886b5dc3",
+      "verified": true,
+      "working_tree_dirty": false,
+      "cli_smoke": true,
+      "old_and_new_policy_decode": true,
+      "realtime_checkpoint_decode": true
+    },
+    {
+      "version": "0.1.7-realtime-candidate-47e58413",
+      "source_commit": "47e584139f70f18080215ddd80898407b6c47a5e",
+      "archive": "/tmp/htx-realtime-final-frozen/0.1.7-realtime-candidate-47e58413/htx-trend-python-0.1.7-realtime-candidate-47e58413.tar.gz",
+      "sha256": "5eed4d1d3481da7496b9f7c7590e8c947eb9a1f5629efc1efdecdf321184e8de",
+      "verified": true,
+      "working_tree_dirty": false,
+      "cli_smoke": true,
+      "old_and_new_policy_decode": true,
+      "realtime_checkpoint_decode": true
+    }
+  ],
+  "old_package_rejects_new_holding": true,
+  "deployment": false
+}
