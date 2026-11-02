@@ -1,0 +1,5 @@
+EXP-SPRT-20261102 phase-0 exploration file count
+plans 2
+zone_events 4
+arm_a 2
+meta 4

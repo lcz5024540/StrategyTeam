@@ -1,0 +1,62 @@
+{
+  "event_type": "zone_arrival_evaluation",
+  "stage": "primary_decision",
+  "exp_id": "EXP-SPRT-20261102",
+  "phase": "phase-0",
+  "track": "探索",
+  "description_only": true,
+  "formal_m2_counted": false,
+  "formal_window": false,
+  "plan_id": "sprt-BTC-USDT-b6a1efb6a215cd5bff73",
+  "symbol": "BTC-USDT",
+  "observed_at_ms": 1700000202000,
+  "mid_price": "116.5",
+  "mid_source": "book",
+  "orderbook_snapshot_hash": "sha256:44e9fee4b5a734c5e7e7287dd8f418d81af11d4f3aa954913aa1dd56e5de2c34",
+  "trade_evidence_hash": "sha256:75440a490fce8c095234cd0f5f21c8429618915b06f7c2f758bc7569e557c882",
+  "inside_max_acceptable_fill_band": true,
+  "rr_recompute": {
+    "executable_price": "116.4",
+    "net_rr": "4.48105263",
+    "qualified": true,
+    "fee_rate_assumption": "0.0004"
+  },
+  "shadow_executable_price": "116.4",
+  "orders_placed": 0,
+  "primary_predicate": "R1",
+  "primary_result": true,
+  "decision": "confirmed",
+  "reasons": [
+    "primary_confirmed"
+  ],
+  "m2_denominator": "pending_outcome_not_in_denominator",
+  "false_trigger": null,
+  "sensitivity_notes": [
+    {
+      "id": "R2",
+      "role": "sensitivity",
+      "result": false
+    }
+  ],
+  "exploration_notes": [
+    {
+      "id": "R3",
+      "role": "exploration",
+      "result": true
+    },
+    {
+      "id": "R4",
+      "role": "exploration",
+      "result": true
+    }
+  ],
+  "dual_primary": false,
+  "data_origin": "fixture_replay",
+  "dedupe": {
+    "status": "inactive",
+    "would_trigger_without_dedupe": true,
+    "reactivate_reason": null,
+    "effect": "LOG_ONLY_NO_ORDERS"
+  },
+  "p3_freeze": "R1_REJECTION_B2_BREAKOUT"
+}

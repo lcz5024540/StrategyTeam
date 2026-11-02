@@ -1,0 +1,85 @@
+{
+  "plan_id": "sprt-BTC-USDT-13f05e5ddeacb136cf81",
+  "schema_version": "sprt-plan-v0.1",
+  "generated_at": "2023-11-15T03:28:20Z",
+  "symbol": "BTC-USDT",
+  "timeframe_structure": "15min",
+  "bias": "SHORT",
+  "trade_forbidden_if": [],
+  "zone_support": [
+    {
+      "low": "100",
+      "high": "103"
+    }
+  ],
+  "zone_resistance": [
+    {
+      "low": "117",
+      "high": "120"
+    }
+  ],
+  "entry_behavior": {
+    "kind": "BREAKOUT",
+    "primary_predicate": "B2",
+    "sensitivity_predicates": [
+      "B1"
+    ],
+    "exploration_predicates": [
+      "B3"
+    ],
+    "status": "FROZEN_P3",
+    "dual_primary_forbidden": true,
+    "track": "探索",
+    "phase": "phase-0",
+    "exp_id": "EXP-SPRT-20261102",
+    "freeze_ref": "product-stamp-exp-sprt-p3-freeze-20261102"
+  },
+  "invalidation_price": "120",
+  "target_price": "80",
+  "target_structure_ref": "phase0-swing20-band15pct-v0:low:1700000000",
+  "max_acceptable_fill_band": {
+    "low": "97",
+    "high": "100"
+  },
+  "rr_formula": {
+    "expression": "net_rr = reward_after_fee / risk_including_fee",
+    "fee_rate_assumption": "0.0004",
+    "reward_after_fee": "directional_reward * (1 - fee_rate) - executable * fee_rate",
+    "risk_including_fee": "directional_risk * (1 + fee_rate) + executable * fee_rate",
+    "min_net_rr_gate": "UNFROZEN_NOT_APPLIED",
+    "track": "探索/Phase-0"
+  },
+  "plan_expiry": {
+    "expires_at": "2023-11-15T07:28:20Z",
+    "bars": 16,
+    "anchor": "signal_bar_close",
+    "log_only": true
+  },
+  "cancel_resting_if": {
+    "mode": "LOG_ONLY_NO_ORDERS",
+    "conditions": [
+      "superseded_by_new_plan_id",
+      "plan_expiry_reached",
+      "price_beyond_invalidation_before_confirmation"
+    ]
+  },
+  "dedupe_cooldown": {
+    "window_seconds": 900,
+    "scope": "plan_id",
+    "effect": "CENSOR_NOT_M2_DENOMINATOR"
+  },
+  "reactivate_if": {
+    "conditions": [
+      "price_left_zone_and_reentered",
+      "cooldown_elapsed"
+    ],
+    "log_only": true
+  },
+  "evidence_ptr": {
+    "kline_window_sha256": "sha256:c02c6538ddc84bcda1b3cf0f98b7921241801a4105ac6bf202894ba8d31f672d",
+    "generator_rule": "phase0-swing20-band15pct-v0",
+    "break_level_mapping_sentence": "v0.1区界映射（无独立break_level字段）：空突破 S := z_lo，取本计划指定边 zone_support[0].low；多突破 S := z_hi，取本计划指定边 zone_resistance[0].high。",
+    "track": "探索/Phase-0",
+    "excluded_incomplete_bars": true
+  }
+}

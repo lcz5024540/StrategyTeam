@@ -1,0 +1,27 @@
+{
+  "exp_id": "EXP-SPRT-20261102",
+  "track": "探索",
+  "phase": "phase-0",
+  "schema_version": "sprt-plan-v0.1",
+  "symbol": "BTC-USDT",
+  "description_only": true,
+  "formal_window": false,
+  "formal_m2_counted": false,
+  "orders_placed": 0,
+  "data_origin": "fixture_replay",
+  "primary_predicates": {
+    "REJECTION": "R1",
+    "BREAKOUT": "B2"
+  },
+  "dual_primary_forbidden": true,
+  "n0": {
+    "L1": 400,
+    "L2": 200,
+    "status": "design_target_description_only"
+  },
+  "plan_ids": [
+    "sprt-BTC-USDT-b6a1efb6a215cd5bff73",
+    "sprt-BTC-USDT-13f05e5ddeacb136cf81"
+  ],
+  "note": "Fixture replay for Phase-0 exploration. Not an exchange subscription."
+}
