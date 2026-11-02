@@ -1,0 +1,11 @@
+{
+  "degraded_class": "DEGRADED_EXPECTED_THIN",
+  "expected_thin_symbols": [
+    "ACE-USDT",
+    "BOME-USDT",
+    "PONS-USDT",
+    "RAY-USDT"
+  ],
+  "unexpected_failures": [],
+  "soft_accept": true
+}

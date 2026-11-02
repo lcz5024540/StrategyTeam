@@ -1,0 +1,5 @@
+# 登记占位。分类专用，不从扫描宇宙删除。
+PONS-USDT
+BOME-USDT
+RAY-USDT
+ACE-USDT
