@@ -33,6 +33,33 @@ def test_locked_hash_rejects_modified_input_and_forged_manifest(tmp_path, input_
         replay(tmp_path, profile=TimeframeProfile.INTRADAY_15M)
 
 
+def test_empty_locked_hashes_rejects_replay(tmp_path, monkeypatch):
+    """Empty LOCKED_HASHES_BY_PROFILE for a profile must reject replay."""
+    from htx_trend import scan_replay as scan_replay_module
+    
+    for name in ('klines.csv', 'trades_closed_window.csv', 'MANIFEST.json'):
+        shutil.copyfile(INPUTS / name, tmp_path / name)
+    
+    # Monkeypatch SWING_4H to be empty (simulating unregistered fixture)
+    original_hashes = scan_replay_module.LOCKED_HASHES_BY_PROFILE.copy()
+    scan_replay_module.LOCKED_HASHES_BY_PROFILE['SWING_4H'] = {}
+    
+    try:
+        with pytest.raises(ValueError, match="LOCKED_HASHES_BY_PROFILE\\['SWING_4H'\\] is empty"):
+            replay(tmp_path, strategy='HTX_TREND_4H_V2', profile=TimeframeProfile.SWING_4H)
+    finally:
+        scan_replay_module.LOCKED_HASHES_BY_PROFILE = original_hashes
+
+
+def test_invalid_strategy_profile_combination():
+    """Invalid (strategy, profile) pairs must be rejected."""
+    with pytest.raises(ValueError, match='Invalid .* combination'):
+        replay(INPUTS, strategy='HTX_TREND_4H_V2', profile=TimeframeProfile.INTRADAY_15M)
+    
+    with pytest.raises(ValueError, match='Invalid .* combination'):
+        replay(INPUTS, strategy='HTX_TREND_15M_V2', profile=TimeframeProfile.SWING_4H)
+
+
 def test_deterministic_offline_and_ignores_ambient_settings(report, monkeypatch):
     import pymysql
     from htx_trend.paper_worker import PaperFileLedger

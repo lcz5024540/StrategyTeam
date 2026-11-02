@@ -79,17 +79,21 @@ python -m htx_trend.scan_replay \
 ### LOCKED_HASHES 分组
 
 - **15m 路径**: 使用 `LOCKED_HASHES_BY_PROFILE['INTRADAY_15M']` 锁定哈希，保持原有夹具校验
-- **4H 路径**: 使用 `LOCKED_HASHES_BY_PROFILE['SWING_4H']`（当前为空，信任 MANIFEST 声明哈希）
+- **4H 路径**: 使用 `LOCKED_HASHES_BY_PROFILE['SWING_4H']`。**当锁表为空时会拒绝回放**，必须先将 4H 夹具文件哈希写入该锁表才能运行
 - **禁止**: 复用 `replay_inputs/20261021` 15m 夹具作为 4H 输入
+- **禁止**: 运行时信任 MANIFEST 声明（空锁表路径已废弃，方案 B 已否决）
 
 ### 夹具要求
 
-4H 回放需要准备专门的 4H 夹具：
+4H 回放需要准备专门的 4H 夹具，并将夹具文件哈希写入 `LOCKED_HASHES_BY_PROFILE['SWING_4H']`：
 
 1. **MANIFEST.json**: 必须包含 `sha256` 字段声明文件哈希
 2. **klines.csv**: 包含 `period=4hour` 和 `period=1day` 的 K 线数据
 3. **trades_closed_window.csv**: 4H 策略的已平仓位参考数据
-4. **optional_book (可选)**: 如需严格对齐 profit-at-risk 退出，提供盘口数据
+4. **LOCKED_HASHES 注册**: 将上述文件的 SHA256 哈希值写入 `scan_replay.py` 中的 `LOCKED_HASHES_BY_PROFILE['SWING_4H']` 字典
+5. **optional_book (可选)**: 如需严格对齐 profit-at-risk 退出，提供盘口数据
+
+**注意**: 在 4H 夹具哈希未注册到 `LOCKED_HASHES_BY_PROFILE['SWING_4H']` 前，任何 4H 回放尝试都会被明确拒绝并报错。
 
 ### 行为差异
 

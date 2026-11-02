@@ -41,6 +41,11 @@ LOCKED_HASHES_BY_PROFILE = {
     },
     'SWING_4H': {},
 }
+
+VALID_STRATEGY_PROFILE_PAIRS = {
+    ('HTX_TREND_15M_V2', 'INTRADAY_15M'),
+    ('HTX_TREND_4H_V2', 'SWING_4H'),
+}
 BOOK_COLUMNS = ('ts_ms', 'ts_cst', 'contract', 'bid', 'ask', 'mid', 'last', 'source')
 BOOK_KINDS = frozenset({'book', 'tick', 'mid'})
 BOOK_PROVENANCE = frozenset({'synthetic', 'evidence'})
@@ -170,14 +175,13 @@ class OfflineMarket:
 def load_inputs(inputs: Path, profile: TimeframeProfile):
     manifest = json.loads((inputs / 'MANIFEST.json').read_text())
     locked_hashes = LOCKED_HASHES_BY_PROFILE.get(profile.value, {})
-    if locked_hashes:
-        hashes = {name: hashlib.sha256((inputs / name).read_bytes()).hexdigest() for name in locked_hashes}
-        if hashes != locked_hashes or manifest.get('sha256') != locked_hashes:
-            raise ValueError(f'input SHA256 mismatch for {profile.value}: refusing replay (including rewritten manifest)')
-    else:
-        hashes = manifest.get('sha256', {})
-        if not isinstance(hashes, dict):
-            raise ValueError('MANIFEST.sha256 must be a dict when LOCKED_HASHES not enforced')
+    if not locked_hashes:
+        raise ValueError(
+            f'LOCKED_HASHES_BY_PROFILE[{profile.value!r}] is empty: refusing replay. '
+            f'Fixture file hashes must be added to the hardcoded LOCKED_HASHES_BY_PROFILE table before running {profile.value} replay.')
+    hashes = {name: hashlib.sha256((inputs / name).read_bytes()).hexdigest() for name in locked_hashes}
+    if hashes != locked_hashes or manifest.get('sha256') != locked_hashes:
+        raise ValueError(f'input SHA256 mismatch for {profile.value}: refusing replay (including rewritten manifest)')
     candles = {}
     with (inputs / 'klines.csv').open(newline='') as stream:
         for row in csv.DictReader(stream):
@@ -409,6 +413,9 @@ def compare(live, trades, bars, *, coverage_end=None, entry_period_seconds=900):
 
 def replay(inputs: Path, assumptions: Assumptions = Assumptions(), 
            strategy: str = 'HTX_TREND_15M_V2', profile: TimeframeProfile = TimeframeProfile.INTRADAY_15M):
+    if (strategy, profile.value) not in VALID_STRATEGY_PROFILE_PAIRS:
+        valid = ', '.join(f'({s}, {p})' for s, p in sorted(VALID_STRATEGY_PROFILE_PAIRS))
+        raise ValueError(f'Invalid (strategy, profile) combination: ({strategy!r}, {profile.value!r}). Valid pairs: {valid}')
     entry_period = profile.contract.entry_period
     trend_period = profile.contract.trend_period
     entry_period_seconds = period_seconds(entry_period)
@@ -604,9 +611,10 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions(),
 def markdown(report):
     h, s = report['header'], report['summary']
     profile_info = f"；profile `{h['profile']}`（entry={h['entry_period']}, trend={h['trend_period']}）" if 'profile' in h else ''
+    entry_period_label = h.get('entry_period', '15min')
     lines = ['# 完整 runtime.scan 离线重放', '', f"包版本 `{h['package_version']}`；配置 `{h['strategy']}`{profile_info}；现网版本（输入描述）`{h['reported_live_version']}`。", '',
              f"完整对齐 **{s['full_matches']}/{s['live_count']}**；方向/模型入场对齐 **{s['entry_matches']}/{s['live_count']}**；多发 **{s['extra_count']}**；漏发 **{s['missing_count']}**。", '',
-             '完整对齐=position入场与每腿数量、15m退出桶、原因均相同；逐腿参考缺失不能记为完整通过。入场按12个position统计。', '',
+             f'完整对齐=position入场与每腿数量、{entry_period_label}退出桶、原因均相同；逐腿参考缺失不能记为完整通过。入场按12个position统计。', '',
              '## 输入哈希', '']
     lines += [f'- `{k}`: `{v}`' for k, v in h['input_sha256'].items()]
     if h['book_fixture']['loaded']:
