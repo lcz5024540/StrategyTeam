@@ -32,7 +32,8 @@ def owners_from_env(instance: RuntimeInstance) -> tuple[RuntimeInstance, ...]:
 
 class OwnedPositionManagers:
     """One profile, one manager per original owner; never broaden SQL filters."""
-    def __init__(self, manager, owners):
+    def __init__(self, manager, owners, allowed_profiles=None):
+        self.allowed_profiles=set(allowed_profiles or (getattr(manager,'timeframe_profile',None),))
         self.managers = []
         for owner in owners:
             owned = copy(manager)
@@ -42,5 +43,11 @@ class OwnedPositionManagers:
     def manage(self, now_epoch, context):
         failures = []
         for manager in self.managers:
+            if hasattr(manager,'repo'):
+                from .timeframes import TimeframeProfile
+                for row in manager.repo.managed_positions(manager.instance):
+                    profile=TimeframeProfile(row.get('timeframe_profile') or 'INTRADAY_15M')
+                    if profile not in self.allowed_profiles:
+                        failures.append(f'position={row["id"]}:profile has no configured management worker')
             failures.extend(manager.manage(now_epoch, context))
         return failures

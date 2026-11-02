@@ -149,7 +149,7 @@ def test_failed_ledger_result_is_provisional_and_never_confirmed_after_crash(tmp
     abandoned=store.keys('compact_execution_result')[0]
     assert store.get(abandoned)['payload']['commit_status']=='PROVISIONAL'
     assert not store.keys('compact_ledger_commit')
-    worker.stop()
+    with pytest.raises(OSError): worker.stop()
     recovered=PaperTrendWorker(instance(),EvidenceMarket(store),tmp_path/'state',PaperWorkerConfig(contracts=('BTC-USDT',)),store)
     recovered.tick()
     receipts=[store.get(k)['payload'] for k in store.keys('compact_ledger_commit')]

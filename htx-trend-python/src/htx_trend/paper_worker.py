@@ -64,6 +64,7 @@ class PaperFileLedger:
         self.mirror = mirror if mirror is not None else mirror_checkpoint
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
+        self.loaded = path.exists()
         self.lock = path.with_suffix('.lock').open('a')
         try:
             fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -216,6 +217,17 @@ class PaperTrendWorker:
         self._checkpoint_failed = False
         self._failures = {}
 
+    def runtime_key(self):
+        return self.profile.value
+
+    def export_runtime(self):
+        return dict(ledger_path=str(self.ledger.path.resolve()),failures=self._failures)
+
+    def restore_runtime(self,state):
+        if state['ledger_path'] != str(self.ledger.path.resolve()) or not self.ledger.loaded:
+            raise ValueError('PAPER authoritative ledger missing or relocated; explicit migration required')
+        self._failures=state['failures']
+
     def _position_leverage(self, position):
         context = self.ledger.position_context(position.position_id)
         # Legacy holdings used the persisted original config, never the new env.
@@ -304,8 +316,13 @@ class PaperTrendWorker:
 
     def stop(self):
         if not self.stopped:
-            self.ledger.close()
-            self.stopped = True
+            try:
+                if self._checkpoint_failed:
+                    self.ledger.checkpoint()
+                    self._checkpoint_failed = False
+            finally:
+                self.ledger.close()
+                self.stopped = True
 
     def tick(self):
         if self.stopped:
@@ -326,7 +343,7 @@ class PaperTrendWorker:
             skipped.append('HOLDING_POLICY_RECOVERY_REQUIRED')
         log = logging.getLogger(__name__)
         management_contracts = tuple(p.contract_code for p in self.ledger.active_positions(self.account))
-        for contract in dict.fromkeys((*management_contracts, *self.config.contracts)):
+        for contract in dict.fromkeys((*self.config.contracts, *management_contracts)):
             # Per-contract snapshot lets one bad contract fail without undoing
             # progress made for healthy peers in the same tick.
             contract_before = copy.deepcopy(self.ledger.data)
@@ -393,6 +410,9 @@ class PaperTrendWorker:
                     if self.ledger.data['orders'][f['order_id']]['position_id'] is not None), Decimal('0'))
                 equity = self.config.equity + pnl + exit_fees - fees
                 if not had_position and contract in self.config.contracts:
+                    if getattr(self,'_drain_requested',lambda:False)():
+                        skipped.append('DRAINING')
+                        continue
                     if not policies_ready:
                         continue
                     if evidence_failed:

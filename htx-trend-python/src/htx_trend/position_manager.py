@@ -166,6 +166,8 @@ class LivePositionManager:
                 strategy_name=row.get('strategy_name', self.instance.strategy_name), mode='LIVE',
                 profile=self.timeframe_profile)
             config, java_config = policy.exit, policy.entry
+        if context is None:
+            raise ValueError('recovery market context unavailable; only known price stop allowed')
         window=self.market.kline_window(code,self.period,160,now_epoch=now_epoch)
         if not window.is_complete: raise ValueError('incomplete management candles')
         signal=evaluate(window.candles,java_config)

@@ -267,20 +267,92 @@ class LiveTrendWorker(StrategyWorker):
         self._last_context = MarketContext.neutral()
         self._position_manager, self._writer_guard = position_manager, writer_guard
 
+    def runtime_key(self):
+        return self._config.timeframe_profile.value
+
+    def export_runtime(self):
+        from .runtime_checkpoint import fingerprint
+        return dict(config=fingerprint((self._config,self._trend_config,self._instance.strategy_name)),
+            last_scanned=self._last_scanned_close_epoch, pending=self._pending, context=self._last_context,
+            context_at=getattr(self,'_context_at',None), diagnosis=self._diagnosis_rows,
+            failures=getattr(self,'_last_scan_failures',()), coverage=getattr(self,'_last_scan_coverage',0),
+            raw=self._raw_candidates, selected=self._policy_selected, regime_source=self._market_regime_source)
+
+    def restore_runtime(self, state):
+        from .runtime_checkpoint import fingerprint
+        self._last_scanned_close_epoch=state['last_scanned']
+        self._last_context=state['context']
+        self._context_at=state['context_at']
+        self._pending=state['pending']
+        if state['config'] != fingerprint((self._config,self._trend_config,self._instance.strategy_name)):
+            # Configuration changes do not resurrect a completed bar or execute
+            # an old candidate under a different policy.
+            self._pending={}
+        self._diagnosis_rows=state['diagnosis']
+        self._last_scan_failures=state['failures']
+        self._last_scan_coverage=state['coverage']
+        self._raw_candidates,self._policy_selected=state['raw'],state['selected']
+        self._market_regime_source=state['regime_source']
+        self._recovering=True
+
+    def _checkpoint(self):
+        save=getattr(self,'_save_runtime',None)
+        if save is not None:
+            save()
+
+    def _recovery_context(self, now_epoch):
+        if not hasattr(self,'_save_runtime') or not getattr(self,'_recovering',True):
+            return self._last_context
+        at=getattr(self,'_context_at',None)
+        if at is None or now_epoch-at > period_seconds(self._config.entry_period):
+            breadth=(self._repository.latest_breadth_stats(
+                datetime.fromtimestamp(now_epoch-self._config.market_breadth_lookback_seconds,UTC))
+                if self._config.adaptive_sizing_enabled else None)
+            anchor=(self._market_anchor_regime(now_epoch,strict=True)
+                    if self._config.market_anchor_enabled else MarketRegime.MIXED)
+            self._last_context=self.market_context_from_breadth(total_count=breadth.total_count if breadth else 0,
+                long_context_count=breadth.long_context_count if breadth else 0,
+                short_context_count=breadth.short_context_count if breadth else 0,
+                anchor_regime=anchor,config=self._config)
+            self._context_at=now_epoch
+        self._recovering=False
+        return self._last_context
+
     def stop(self) -> None:
         self._stopped = True
+
+    def prepare_management(self):
+        self._writer_guard()
+        recovered = self._executor.reconcile_pending()
+        now_epoch = int(datetime.now(UTC).timestamp())
+        context_error=None
+        try:
+            management_context=self._recovery_context(now_epoch)
+        except Exception as error:
+            management_context=None
+            context_error='recovery context unavailable:'+type(error).__name__
+        management_failures = self._position_manager.manage(now_epoch, management_context)
+        if context_error:
+            management_failures.append(context_error)
+        if any(status.startswith('ERROR:') or status in ('UNKNOWN','INTENT') for status in recovered.values()):
+            management_failures.append('pending order recovery incomplete; new risk blocked')
+        self._prepared_management=(recovered,management_failures)
+        return management_failures
 
     def tick(self) -> WorkerHealth:
         if self._stopped:
             return WorkerHealth("STOPPED", "worker has been stopped")
         if self._writer_guard is None or self._position_manager is None:
             raise RuntimeError("LIVE worker requires ownership and position management")
-        self._writer_guard()
-        recovered = self._executor.reconcile_pending()
+        prepared=getattr(self,'_prepared_management',None)
+        if prepared is None:
+            self.prepare_management()
+            prepared=self._prepared_management
+        recovered,management_failures=prepared
+        self._prepared_management=None
         now_epoch = int(datetime.now(UTC).timestamp())
-        management_failures = self._position_manager.manage(now_epoch, self._last_context)
-        if management_failures:
-            return WorkerHealth("DEGRADED", "; ".join(management_failures))
+        if management_failures or getattr(self,'_entry_recovery_blocked',False):
+            return WorkerHealth('DEGRADED','; '.join(management_failures) or 'another profile recovery incomplete')
         policies = tuple(StrategyPolicy(value.policy_code, value.policy_version, value.primary_model,
                                         value.confirmation_models, value.base_notional_usdt, value.max_notional_usdt,
                                         value.score_threshold, value.box_window_bars)
@@ -315,6 +387,7 @@ class LiveTrendWorker(StrategyWorker):
                 config=self._config,
             )
             self._last_context = context
+            self._context_at = now_epoch
             self._market_regime_source = ("BREADTH" if breadth and breadth.total_count >= max(1, self._config.market_breadth_min_symbols)
                                           else "UNCLASSIFIED")
             for scan in scans:
@@ -371,6 +444,7 @@ class LiveTrendWorker(StrategyWorker):
             if not self._candidate_fresh(policy.candidate, now_epoch):
                 self._diagnose(scan, stage="QUEUE", code=RejectCode.EXPIRED)
         self._expire_pending(now_epoch)
+        self._checkpoint()
         ranked = sorted(self._pending.values(), key=lambda item: (item[0].effective_score, item[0].base_score,
                                                                     item[0].candidate.expected_r), reverse=True)
         within_window = self._entry_window_open(now_epoch, stable_close_epoch)
@@ -406,6 +480,14 @@ class LiveTrendWorker(StrategyWorker):
                 self._diagnose(scan, stage="QUEUE", code=(RejectCode.CAPACITY_FULL if slots == 0
                                                          else RejectCode.EVALUATION_QUEUED))
             for policy, scan, factor_id in ranked[:slots]:
+                if getattr(self,'_drain_requested',lambda:False)():
+                    execution_block_reason='DRAINING'
+                    break
+                # Durable consumed-candidate boundary precedes any order intent.
+                # If submission is interrupted, the DB owns recovery of its
+                # original client id; the scan queue must never submit it again.
+                self._pending.pop(scan.contract, None)
+                self._checkpoint()
                 candidate = policy.candidate
                 run_id = f"trend-entry:{scan.contract}:{self._config.entry_period}:{candidate.bar_time}"
                 gate = self._executor.submit(run_id=run_id, candidate=candidate, period=self._config.entry_period,
@@ -547,7 +629,7 @@ class LiveTrendWorker(StrategyWorker):
         self._pending = {contract: item for contract, item in self._pending.items()
                          if self._candidate_fresh(item[0].candidate, now_epoch)}
 
-    def _market_anchor_regime(self, now_epoch: int) -> MarketRegime:
+    def _market_anchor_regime(self, now_epoch: int, *, strict=False) -> MarketRegime:
         """Exact Java BTC/ETH multi-timeframe anchor classification."""
         long_signals = short_signals = long_symbols = short_symbols = 0
         for contract in self._config.market_anchor_contracts:
@@ -558,6 +640,8 @@ class LiveTrendWorker(StrategyWorker):
                                                         now_epoch=now_epoch)
                     side = self._market_anchor_period_side(window.candles)
                 except Exception:
+                    if strict:
+                        raise
                     side = TrendSide.FLAT
                 if side is TrendSide.LONG:
                     long_signals += 1; symbol_long += 1

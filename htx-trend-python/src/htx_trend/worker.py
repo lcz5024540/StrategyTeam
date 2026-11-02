@@ -6,6 +6,9 @@ import json
 import logging
 import os
 import time
+import signal
+from threading import Event
+from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 
@@ -172,6 +175,12 @@ def main() -> None:
     paper_worker = None
     paper_client = None
     backfill = None
+    continuity = None
+    persistent_worker = None
+    stop_event = Event()
+    old_handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+    for sig in old_handlers:
+        signal.signal(sig, lambda _sig, _frame: stop_event.set())
     try:
         repository.validate_runtime_schema()
         instance = repository.runtime_instance(args.strategy_instance)
@@ -299,37 +308,57 @@ def main() -> None:
                     continuation_config=(live_continuation if scan_config.timeframe_profile is TimeframeProfile.INTRADAY_15M
                                          else ContinuationConfig(BASELINE)))
                 profile_workers.append(LiveTrendWorker(instance, repository, market, entry, scan_config,
-                    position_manager=OwnedPositionManagers(manager, owners), writer_guard=writer_lock.assert_owned, admission=admission))
+                    position_manager=OwnedPositionManagers(manager, owners, {c.timeframe_profile for c in scan_configs}), writer_guard=writer_lock.assert_owned, admission=admission))
             worker = (profile_workers[0] if len(profile_workers) == 1
                       else MultiTimeframeLiveTrendWorker(tuple(profile_workers)))
         elif family in {"CARRY_SINGLE", "CARRY_CROSS"}:
             worker = DisabledStrategyWorker(instance, repository)
         else:
             raise SystemExit(f"unsupported strategy family/mode: {instance.strategy_family}/{instance.execution_mode}")
+        if family == 'TREND':
+            from .runtime_checkpoint import RuntimeCheckpoint, PersistentWorker
+            state_dir = os.environ.get('HTX_RUNTIME_STATE_DIR', '').strip()
+            if not state_dir:
+                raise SystemExit('HTX_RUNTIME_STATE_DIR must name a stable absolute directory outside releases')
+            continuity = RuntimeCheckpoint(Path(state_dir), dict(instance_key=instance.instance_key,
+                account_id=str(getattr(instance,'account_id',None)), mode=instance.execution_mode,
+                strategy_family=instance.strategy_family),
+                initialize=os.environ.get('HTX_CONTINUITY_INITIALIZE','').lower() == 'true')
+            persistent_worker = PersistentWorker(worker, continuity, stop_event)
+            worker = persistent_worker
         repository.mark_runtime_started(instance.instance_key)
         started = True
         supervisor = StrategySupervisor(repository, {instance.instance_key: worker})
-        while True:
+        while not stop_event.is_set():
             supervisor.tick_all()
             if args.once:
                 return
-            time.sleep(max(5, args.interval_seconds))
+            stop_event.wait(max(5, args.interval_seconds))
     finally:
         try:
+            if persistent_worker is not None:
+                persistent_worker.stop()
             if started:
                 repository.mark_runtime_stopped(instance.instance_key)
         finally:
-            if backfill is not None:
-                backfill.close()
-            if paper_worker is not None:
-                paper_worker.stop()
-            if paper_client is not None:
-                paper_client.close()
-            repository.close()
-            if evidence_store is not None:
-                evidence_store.close()
-            if writer_lock is not None:
-                writer_lock.close()
+            # Every resource is closed even if an earlier close/checkpoint fails.
+            # Writer ownership is released after the trading resources stop.
+            with ExitStack() as cleanup:
+                for sig, handler in old_handlers.items():
+                    cleanup.callback(signal.signal, sig, handler)
+                if continuity is not None:
+                    cleanup.callback(continuity.close)
+                if writer_lock is not None:
+                    cleanup.callback(writer_lock.close)
+                cleanup.callback(repository.close)
+                if evidence_store is not None:
+                    cleanup.callback(evidence_store.close)
+                if paper_client is not None:
+                    cleanup.callback(paper_client.close)
+                if paper_worker is not None:
+                    cleanup.callback(paper_worker.stop)
+                if backfill is not None:
+                    cleanup.callback(backfill.close)
 
 
 if __name__ == "__main__":

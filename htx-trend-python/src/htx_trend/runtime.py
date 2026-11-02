@@ -69,12 +69,12 @@ class PaperTrendRuntime:
         self._holding_policy = holding_policy or HoldingPolicy.create(
             instance_key=self._evidence_context.get('instance', account_id), account_id=account_id,
             strategy_family='TREND', strategy_name=strategy_version, mode='PAPER',
-            profile=profile_for_version(strategy_version) or TimeframeProfile.INTRADAY_15M,
+            profile=TimeframeProfile(self._evidence_context['timeframe_profile']) if 'timeframe_profile' in self._evidence_context else profile_for_version(strategy_version) or TimeframeProfile.INTRADAY_15M,
             entry_config=entry_config, exit_config=paper_exit_config(),
             continuation_version=continuation_config.version)
         self._holding_policy.require_owner(instance_key=self._evidence_context.get('instance', account_id),
             account_id=account_id, strategy_family='TREND', strategy_name=strategy_version, mode='PAPER',
-            profile=profile_for_version(strategy_version) or TimeframeProfile.INTRADAY_15M)
+            profile=TimeframeProfile(self._evidence_context['timeframe_profile']) if 'timeframe_profile' in self._evidence_context else profile_for_version(strategy_version) or TimeframeProfile.INTRADAY_15M)
         if self._holding_policy.continuation_version != continuation_config.version:
             raise HoldingPolicyError('new entry continuation differs from its holding policy')
         self._require_holding_policy = require_holding_policy

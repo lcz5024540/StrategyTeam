@@ -135,6 +135,8 @@ def test_worker_main_paper_never_loads_live_or_credentials(monkeypatch, tmp_path
     client = Mock()
     monkeypatch.setattr(entry, 'HtxV5Client', lambda **kw: client)
     monkeypatch.setenv('HTX_PAPER_STATE_DIR', str(tmp_path/'state'))
+    monkeypatch.setenv('HTX_RUNTIME_STATE_DIR', str(tmp_path/'runtime'))
+    monkeypatch.setenv('HTX_CONTINUITY_INITIALIZE', 'true')
     monkeypatch.setenv('HTX_PYTHON_EVIDENCE_DIR', str(tmp_path/'evidence'))
     monkeypatch.setattr(sys, 'argv', ['worker', '--strategy-instance', 'paper-primary', '--once'])
     entry.main()

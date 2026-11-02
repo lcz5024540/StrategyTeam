@@ -176,7 +176,7 @@ def make_worker(monkeypatch, *, period='15min', policies=None, active=0,
     market.funding_rate.return_value = None
     market.order_book.return_value = NS(top=NS(spread_rate=D(0)))
     executor = Mock()
-    executor.reconcile_pending.return_value = []
+    executor.reconcile_pending.return_value = {}
     executor.submit.return_value = NS(accepted=False, gate=NS(stage='gate.model_score'), reason='score')
     manager = Mock()
     manager.manage.return_value = []
