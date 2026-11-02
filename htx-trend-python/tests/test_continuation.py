@@ -212,7 +212,7 @@ def test_confirmation_crash_reloads_last_durable_count(tmp_path,monkeypatch):
     with pytest.raises(OSError):w.tick()
     assert w._checkpoint_failed
     assert json.loads(w.ledger.path.read_text())['contexts'][p.position_id]['continuation_breach_count']==1
-    w.stop()
+    with pytest.raises(OSError): w.stop()
     restarted=PaperTrendWorker(instance(),EvidenceMarket(store),tmp_path/'state',cfg,store,ContinuationConfig())
     assert restarted.tick().status=='HEALTHY'
     assert restarted.ledger.position(p.position_id).status=='CLOSED'

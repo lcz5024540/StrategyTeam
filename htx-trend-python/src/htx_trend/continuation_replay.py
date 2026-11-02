@@ -269,6 +269,9 @@ def replay_group(tape, policy):
     excluded={f['fill_id'] for f in ledger.data['fills']}
     market=TapeMarket();worker=PaperTrendWorker.__new__(PaperTrendWorker)
     worker.account='offline';worker.profile=TimeframeProfile.INTRADAY_15M
+    worker.require_holding_policy=False;worker.holding_adoption=None
+    from types import SimpleNamespace
+    worker.instance=SimpleNamespace(instance_key='offline',strategy_family='TREND',strategy_name='HTX_TREND_15M_V2')
     worker.ledger=ledger;worker.market=market;worker.stopped=False;worker._checkpoint_failed=False;worker._failures={}
     worker.continuation=policy;worker.exchange=WorkerPaperExchange(ledger)
     curve=[];decisions=[];funding=D(0);errors=[];tracked={};funding_by_id={}
@@ -286,6 +289,7 @@ def replay_group(tape, policy):
             market.set_frame(frame)
             cfg=tape['configurations'][frame['config_ref']]
             worker.config=configuration(PaperWorkerConfig,cfg['worker'])
+            ledger.data.setdefault('identity',{'config':cfg['worker']})
             worker.entry_config=configuration(JavaEntryConfig,cfg['entry'])
             execution=configuration(ExecutionConfig,cfg['execution'])
             maker=configuration(MakerExecutionConfig,cfg['maker'])

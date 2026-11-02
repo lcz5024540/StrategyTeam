@@ -433,6 +433,9 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions(),
         max_active_positions=assumptions.max_active_positions, leverage=assumptions.leverage)
     worker.account, worker.profile, worker.entry_config = 'offline', profile, JavaEntryConfig()
     worker.ledger, worker.market, worker.stopped = ledger, market, False
+    worker.require_holding_policy = False
+    worker.holding_adoption = None
+    ledger.data['identity'] = {'config':json.loads(json.dumps(asdict(worker.config),default=str))}
     worker._checkpoint_failed = False
     worker._failures = {}
     worker.exchange = WorkerPaperExchange(ledger)
@@ -486,8 +489,11 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions(),
     with patch.dict(os.environ, {}, clear=True), patch.object(worker_module, 'datetime', Clock), \
             patch.object(runtime_module, 'evaluate_gate', observed_gate), \
             patch.object(runtime_module, 'decide', observed_exit):
+        from types import SimpleNamespace
+        worker.instance=SimpleNamespace(instance_key='offline',strategy_family='TREND',strategy_name=strategy)
         worker.runtime = ObservedRuntime(ledger, worker.exchange, account_id=worker.account,
-            entry_config=worker.entry_config, execution_config=execution_config, strategy_version=strategy)
+            entry_config=worker.entry_config, execution_config=execution_config, strategy_version=strategy,
+            evidence_context={'instance':'offline','timeframe_profile':profile.value})
         engine = HtxStrategyDecisionEngine(strategy_version=strategy, config=worker.entry_config)
         # Drive the clock, not the rows: gaps must fail worker completeness checks.
         alignment = entry_period_seconds - 1

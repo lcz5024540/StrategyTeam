@@ -4,10 +4,8 @@ A decision never decrements inventory: only the transactional order projection d
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal as D
-from os import environ
 from typing import Any
 
 from .account_facts import _position_volumes, _taker_fee
@@ -27,50 +25,8 @@ from .timeframes import TimeframeProfile
 ZERO = D(0)
 
 
-@dataclass(frozen=True)
-class ExitConfig:
-    engine_enabled: bool = False
-    engine_live: bool = False
-    trailing_atr: D = D('2')
-    swing_trailing_atr: D = D('3')
-    trailing_activation_r: D = D('1')
-    fee_rate: D = D('.0004')
-    max_adverse_funding_rate: D = D('.0012')
-    flat_bars: int = 3
-    flat_budget: D = D('.25')
-    flat_budget_rate: D = D('.003')
-    policy: ProfitProtectionPolicy = ProfitProtectionPolicy()
-    # MAINLINE-A A2 timeout and A1' minimum hold.
-    timeout_bars: int | None = 16
-    min_hold_bars: int | None = 0
-
-    @classmethod
-    def from_env(cls):
-        def flag(name): return environ.get(name,'false').lower() == 'true'
-        def dec(name, default): return D(environ.get(name,str(default)))
-        def optional_int(name, default):
-            value = environ.get(name)
-            if value is None or value.strip().lower() in ('','none','null'):
-                return default
-            return int(value)
-        default=cls()
-        return cls(engine_enabled=flag('HTX_TREND_EXIT_ENGINE_ENABLED'),
-            engine_live=flag('HTX_TREND_EXIT_ENGINE_LIVE_ENABLED'),
-            trailing_atr=dec('HTX_TREND_TRAILING_ATR_MULTIPLIER',default.trailing_atr),
-            swing_trailing_atr=dec('HTX_TREND_SWING_TRAILING_ATR_MULTIPLIER',default.swing_trailing_atr),
-            trailing_activation_r=dec('HTX_TREND_TRAILING_ACTIVATION_R',default.trailing_activation_r),
-            fee_rate=dec('HTX_TREND_ESTIMATED_TAKER_FEE_RATE',default.fee_rate),
-            max_adverse_funding_rate=dec('HTX_TREND_MAX_HOLD_FUNDING_COST_RATE',default.max_adverse_funding_rate),
-            flat_bars=int(environ.get('HTX_TREND_FLAT_LOSS_EXIT_CONFIRMATION_BARS','3')),
-            policy=ProfitProtectionPolicy(
-                dec('HTX_TREND_INTRADAY_PROFIT_ARM_ATR_MULTIPLIER',D('.50')),
-                dec('HTX_TREND_INTRADAY_PROFIT_LOCK_ATR_MULTIPLIER',D('.15')),
-                dec('HTX_TREND_INTRADAY_PROFIT_PARTIAL_ATR_MULTIPLIER',D('.75')),
-                dec('HTX_TREND_INTRADAY_PROFIT_PULLBACK_ATR_MULTIPLIER',D('.40')),
-                dec('HTX_TREND_INTRADAY_PROFIT_MIN_NET_FEE_MULTIPLE',D('2')),
-                int(environ.get('HTX_TREND_INTRADAY_PROFIT_PROTECTION_BREACH_CONFIRMATION_BARS','2'))),
-            timeout_bars=optional_int('HTX_TREND_A2_TIMEOUT_BARS', default.timeout_bars),
-            min_hold_bars=optional_int('HTX_TREND_A1_PRIME_MIN_HOLD_BARS', default.min_hold_bars))
+from .exit_config import ExitConfig
+from .holding_policy import resolve_holding_policy
 
 
 def decimal(row, key, default=ZERO):
@@ -115,7 +71,8 @@ class LivePositionManager:
     def __init__(self, repository, instance, account, market, client, executor, *,
                  period='15min', timeframe_profile: TimeframeProfile | None = None,
                  java_config=JavaEntryConfig(), config=ExitConfig(), evidence_store=None,
-                 continuation_config: ContinuationConfig | None = None):
+                 continuation_config: ContinuationConfig | None = None,
+                 require_holding_policy: bool = False, holding_adoption=None):
         self.repo,self.instance,self.account=repository,instance,account
         self.market,self.client,self.executor=market,client,executor
         self.period,self.java_config,self.config=period,java_config,config
@@ -123,6 +80,8 @@ class LivePositionManager:
         self.timeframe_profile.validate(period, self.timeframe_profile.contract.trend_period)
         self.evidence_store=evidence_store
         self._continuation = continuation_config or ContinuationConfig(BASELINE)
+        self.require_holding_policy = require_holding_policy
+        self.holding_adoption = holding_adoption
 
     def _evidence(self, kind, payload, refs=()):
         if self.evidence_store is None:
@@ -151,7 +110,17 @@ class LivePositionManager:
         if any(o['leg']!='ENTRY' or o['status']=='UNKNOWN' for o in pending):
             raise ValueError('pending close or unknown order requires reconciliation')
         quantity=int(decimal(row,'remaining_contract_volume'))
-        if quantity<=0: return
+        if quantity<=0:
+            state = self.repo.exit_state(row['id'])
+            if state.get('holding_policy') is None and self.holding_adoption is not None:
+                state = self.repo.adopt_holding_policy(row['id'], self.holding_adoption,
+                                                      instance_key=self.instance.instance_key)
+            policy = resolve_holding_policy(state, required=self.require_holding_policy)
+            if policy is not None:
+                policy.require_owner(instance_key=self.instance.instance_key, account_id=self.account.account_id,
+                    strategy_family=self.instance.strategy_family, strategy_name=self.instance.strategy_name,
+                    mode='LIVE', profile=self.timeframe_profile)
+            return
         side=TrendSide(row['side']); code=row['contract_code']
         same,opposite=_position_volumes(self.client.positions(code),side)
         if same!=quantity or opposite>ZERO:
@@ -185,9 +154,23 @@ class LivePositionManager:
                 return
             self.submit_close(row,quantity,run_id,'initial/model stop invalidated',mid=book.top.mid)
             return
+        state=self.repo.exit_state(row['id'])
+        if state.get('holding_policy') is None and self.holding_adoption is not None:
+            state = self.repo.adopt_holding_policy(row['id'], self.holding_adoption,
+                                                  instance_key=self.instance.instance_key)
+        policy = resolve_holding_policy(state, required=self.require_holding_policy)
+        config, java_config = self.config, self.java_config
+        if policy is not None:
+            policy.require_owner(instance_key=self.instance.instance_key, account_id=self.account.account_id,
+                strategy_family=self.instance.strategy_family,
+                strategy_name=row.get('strategy_name', self.instance.strategy_name), mode='LIVE',
+                profile=self.timeframe_profile)
+            config, java_config = policy.exit, policy.entry
+        if context is None:
+            raise ValueError('recovery market context unavailable; only known price stop allowed')
         window=self.market.kline_window(code,self.period,160,now_epoch=now_epoch)
         if not window.is_complete: raise ValueError('incomplete management candles')
-        signal=evaluate(window.candles,self.java_config)
+        signal=evaluate(window.candles,java_config)
         if signal.indicators is None: raise ValueError('missing exit indicators')
         last_bar=window.candles[-1].open_time
         if now_epoch-last_bar>2*period_seconds(self.period): raise ValueError('stale management candles')
@@ -200,8 +183,7 @@ class LivePositionManager:
             direction=timeframe_side(higher.candles)
             opposition += direction not in (side,TrendSide.FLAT)
         try: rate=_taker_fee(self.client.swap_fee(code)); fee_source='HTX_ACCOUNT'
-        except Exception: rate=self.config.fee_rate; fee_source='CONFIGURED_FALLBACK'
-        state=self.repo.exit_state(row['id'])
+        except Exception: rate=config.fee_rate; fee_source='CONFIGURED_FALLBACK'
         # New entries persist their policy before submission. Untagged legacy
         # positions retain baseline ownership, independent of current env.
         version = state.get('continuation_version', BASELINE)
@@ -223,7 +205,7 @@ class LivePositionManager:
         best=highest if side is TrendSide.LONG else lowest
         mfe=(best-entry)*size*quantity*(1 if side is TrendSide.LONG else -1)-entry_fee-best*size*quantity*rate
         funding=self.market.funding_rate(code).rate
-        funding_reason='adverse current funding rate' if (funding if side is TrendSide.LONG else -funding)>self.config.max_adverse_funding_rate else None
+        funding_reason='adverse current funding rate' if (funding if side is TrendSide.LONG else -funding)>config.max_adverse_funding_rate else None
         entry_epoch = _entry_epoch(row)
         bars_held = 0
         if entry_epoch is not None and now_epoch > entry_epoch:
@@ -235,10 +217,10 @@ class LivePositionManager:
             signal.indicators.ema_fast,signal.indicators.ema_slow,opposition,context.opposed(side),
             gross-entry_fee-close_fee,entry_fee,close_fee,armed,state.get('arm_reason') or row.get('trailing_arm_reason'),
             decimal(state,'max_r',decimal(row,'max_favorable_r')),datetime.fromtimestamp(now_epoch,UTC),
-            flat_streak=flat,required_flat_streak=self.config.flat_bars,
-            flat_loss_budget=max(self.config.flat_budget,entry*size*entry_quantity*self.config.flat_budget_rate),
-            policy=self.config.policy,protection_breach_bars=breach,funding_rate_exit_reason=funding_reason,observed_mfe_net_pnl=mfe,
-            bars_held=bars_held,timeout_bars=self.config.timeout_bars,min_hold_bars=self.config.min_hold_bars)
+            flat_streak=flat,required_flat_streak=config.flat_bars,
+            flat_loss_budget=max(config.flat_budget,entry*size*entry_quantity*config.flat_budget_rate),
+            policy=config.policy,protection_breach_bars=breach,funding_rate_exit_reason=funding_reason,observed_mfe_net_pnl=mfe,
+            bars_held=bars_held,timeout_bars=config.timeout_bars,min_hold_bars=config.min_hold_bars)
         evaluation_candle = window.candles[-1]
         candidate_policy = version in (CONFIRM, LINKED)
         if candidate_policy:
@@ -261,9 +243,9 @@ class LivePositionManager:
             decision = cont_decision
             use_v4 = False
         else:
-            use_v4=self.config.engine_enabled
-            decision=decide_v4(input_) if use_v4 else decide_legacy(input_,trailing_atr_multiplier=(self.config.swing_trailing_atr
-                if row.get('timeframe_profile') in {'SWING_4H','TREND_1D'} else self.config.trailing_atr),trailing_activation_r=self.config.trailing_activation_r)
+            use_v4=config.engine_enabled
+            decision=decide_v4(input_) if use_v4 else decide_legacy(input_,trailing_atr_multiplier=(config.swing_trailing_atr
+                if row.get('timeframe_profile') in {'SWING_4H','TREND_1D'} else config.trailing_atr),trailing_activation_r=config.trailing_activation_r)
         self._evidence('exit_decision_trace', {'position_id': row['id'], 'strategy_version': self.instance.strategy_name,
             'engine_version': 'exit-engine-v4' if use_v4 else 'legacy', 'input': input_, 'decision': decision,
             'conditions': {'hard_stop': False, 'management_data_complete': True,
@@ -275,7 +257,7 @@ class LivePositionManager:
         run_id=f'python-exit:{row["id"]}:{now_epoch}'
         # Java's exit-engine live flag blocks every v4 mutation while still
         # recording the decision. It must not fall back to executable legacy.
-        blocked='exit engine live disabled' if use_v4 and not self.config.engine_live else None
+        blocked='exit engine live disabled' if use_v4 and not config.engine_live else None
         self.repo.record_exit_decision(decision_key=decision_key(row['id'],run_id,decision.action.value),position_id=row['id'],run_id=run_id,
             account=self.account,contract_code=code,side=side.value,primary_model=row['primary_model'],engine_version='exit-engine-v4' if use_v4 else 'legacy',
             exit_phase=decision.phase.value,suggested_action=decision.action.value,executed_action='NONE',reference_price=reference,

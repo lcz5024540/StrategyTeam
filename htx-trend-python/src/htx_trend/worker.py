@@ -6,6 +6,9 @@ import json
 import logging
 import os
 import time
+import signal
+from threading import Event
+from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 
@@ -96,7 +99,12 @@ def _validate_live_approval(instance, account, admission, scan_configs) -> None:
     approvals = [runtime_guard(instance, account, enabled_profile)[1]
                  for enabled_profile in profiles]
     if not profiles:
-        raise ValueError("LIVE requires an enabled profile")
+        # Management-only still needs package/account authority for every managed
+        # profile. Disabling entries never removes authority checks for reductions.
+        profiles=tuple(item.timeframe_profile.value for item in scan_configs)
+        approvals=[runtime_guard(instance,account,profile)[1] for profile in profiles]
+        if not profiles:
+            raise ValueError('LIVE requires a managed profile')
     if instance.strategy_name == LEGACY_STRATEGY_VERSION:
         path = os.environ.get("HTX_TREND_LEGACY_LIVE_WAIVER_PATH", "").strip()
         if not path:
@@ -172,6 +180,12 @@ def main() -> None:
     paper_worker = None
     paper_client = None
     backfill = None
+    continuity = None
+    persistent_worker = None
+    stop_event = Event()
+    old_handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+    for sig in old_handlers:
+        signal.signal(sig, lambda _sig, _frame: stop_event.set())
     try:
         repository.validate_runtime_schema()
         instance = repository.runtime_instance(args.strategy_instance)
@@ -217,10 +231,13 @@ def main() -> None:
         elif family == "TREND" and instance.execution_mode == ExecutionMode.PAPER:
             from .paper_worker import PaperTrendWorker, PaperWorkerConfig
             paper_client = HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com"))
+            from .holding_adoption import HoldingAdoption
+            adoption_path = os.environ.get('HTX_HOLDING_ADOPTION_PATH', '').strip()
+            holding_adoption = HoldingAdoption.read(Path(adoption_path)) if adoption_path else None
             worker = paper_worker = PaperTrendWorker(instance,
                 HtxMarketData(paper_client, evidence_store=evidence_store, compact=compact),
                 Path(os.environ.get("HTX_PAPER_STATE_DIR", "./paper-state")), PaperWorkerConfig.from_env(),
-                evidence_store=evidence_store)
+                evidence_store=evidence_store, holding_adoption=holding_adoption, require_holding_policy=True)
             if compact is not None:
                 from .research.compact import CompactBackfill
                 periods = worker.profile.contract
@@ -265,51 +282,106 @@ def main() -> None:
                 "entry_plan=%s continuation=%s maker_timeout=%s wait_bars=%s",
                 instance.instance_key, account.account_id, instance.strategy_name,
                 entry_config.entry_order_type, entry_execution.entry_plan_version,
-                live_continuation.version, entry_config.maker_config.timeout_action.value,
+                live_continuation.version if live_continuation else BASELINE, entry_config.maker_config.timeout_action.value,
                 entry_config.maker_config.max_wait_bars)
 
+            from .holding_policy import HoldingPolicy
+            from .holding_adoption import HoldingAdoption
+            adoption_path = os.environ.get('HTX_HOLDING_ADOPTION_PATH', '').strip()
+            holding_adoption = HoldingAdoption.read(Path(adoption_path)) if adoption_path else None
+            exit_config = ExitConfig.from_env()
+            holding_policies = {config.timeframe_profile.value: HoldingPolicy.create(
+                instance_key=instance.instance_key, account_id=account.account_id,
+                strategy_family=instance.strategy_family, strategy_name=instance.strategy_name,
+                mode='LIVE', profile=config.timeframe_profile, entry_config=config.java_entry,
+                exit_config=exit_config,
+                continuation_version=(live_continuation.version if live_continuation is not None
+                                      and config.timeframe_profile is TimeframeProfile.INTRADAY_15M else BASELINE))
+                for config in scan_configs}
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
                 facts=HtxAccountFactsAdapter(private_client, AccountFactConfig(leverage=entry_config.leverage)), executor=live, execution=entry_execution,
-                config=entry_config, admission=admission, evidence_store=evidence_store)
+                config=entry_config, admission=admission, evidence_store=evidence_store, holding_policies=holding_policies)
+            from .ownership import owners_from_env, OwnedPositionManagers
+            owners = owners_from_env(instance)
+            entry._managed_instances = owners
             profile_workers = []
             for scan_config in scan_configs:
                 manager = LivePositionManager(repository, instance, account, market, private_client, live,
                     period=scan_config.entry_period, timeframe_profile=scan_config.timeframe_profile,
-                    java_config=scan_config.java_entry, config=ExitConfig.from_env(), evidence_store=evidence_store,
+                    java_config=scan_config.java_entry, config=exit_config, evidence_store=evidence_store,
+                    require_holding_policy=True, holding_adoption=holding_adoption,
                     continuation_config=(live_continuation if scan_config.timeframe_profile is TimeframeProfile.INTRADAY_15M
                                          else ContinuationConfig(BASELINE)))
                 profile_workers.append(LiveTrendWorker(instance, repository, market, entry, scan_config,
-                    position_manager=manager, writer_guard=writer_lock.assert_owned, admission=admission))
+                    position_manager=OwnedPositionManagers(manager, owners, {c.timeframe_profile for c in scan_configs}), writer_guard=writer_lock.assert_owned, admission=admission))
+            for profile_worker in profile_workers:
+                profile_worker._owned_strategy_names=tuple(owner.strategy_name for owner in owners)
+            if holding_adoption is not None:
+                adopted_owners={h['policy']['owner']['strategy_name'] for h in holding_adoption.to_dict()['holdings']}
+                if adopted_owners-set(owner.strategy_name for owner in owners):
+                    raise SystemExit('adopted old strategy requires an explicit managed alias')
             worker = (profile_workers[0] if len(profile_workers) == 1
                       else MultiTimeframeLiveTrendWorker(tuple(profile_workers)))
         elif family in {"CARRY_SINGLE", "CARRY_CROSS"}:
             worker = DisabledStrategyWorker(instance, repository)
         else:
             raise SystemExit(f"unsupported strategy family/mode: {instance.strategy_family}/{instance.execution_mode}")
+        if family == 'TREND':
+            from .runtime_checkpoint import RuntimeCheckpoint, PersistentWorker
+            state_dir = os.environ.get('HTX_RUNTIME_STATE_DIR', '').strip()
+            if not state_dir:
+                raise SystemExit('HTX_RUNTIME_STATE_DIR must name a stable absolute directory outside releases')
+            if Path(state_dir).resolve().is_relative_to(Path(__file__).resolve().parents[2]):
+                raise SystemExit('runtime state directory cannot be inside a release package')
+            if instance.execution_mode in ('LIVE','PAPER') and holding_adoption is not None:
+                header=holding_adoption.to_dict()
+                expected_account='paper:'+instance.instance_key if instance.execution_mode=='PAPER' else str(instance.account_id)
+                if (header['instance_key']!=instance.instance_key or header['account_id']!=expected_account
+                        or header['mode']!=instance.execution_mode):
+                    raise SystemExit('adoption manifest instance/account/mode mismatch')
+            initialize=os.environ.get('HTX_CONTINUITY_INITIALIZE','').lower() == 'true'
+            if initialize and instance.execution_mode in ('LIVE','PAPER') and holding_adoption is None:
+                raise SystemExit('first continuity initialization requires an old-instance adoption manifest, including an empty inventory')
+            continuity = RuntimeCheckpoint(Path(state_dir), dict(instance_key=instance.instance_key,
+                account_id=('paper:'+instance.instance_key if instance.execution_mode == 'PAPER'
+                            else str(getattr(instance,'account_id',None))), mode=instance.execution_mode,
+                strategy_family=instance.strategy_family),
+                initialize=initialize)
+            persistent_worker = PersistentWorker(worker, continuity, stop_event)
+            worker = persistent_worker
         repository.mark_runtime_started(instance.instance_key)
         started = True
         supervisor = StrategySupervisor(repository, {instance.instance_key: worker})
-        while True:
+        while not stop_event.is_set():
             supervisor.tick_all()
             if args.once:
                 return
-            time.sleep(max(5, args.interval_seconds))
+            stop_event.wait(max(5, args.interval_seconds))
     finally:
         try:
+            if persistent_worker is not None:
+                persistent_worker.stop()
             if started:
                 repository.mark_runtime_stopped(instance.instance_key)
         finally:
-            if backfill is not None:
-                backfill.close()
-            if paper_worker is not None:
-                paper_worker.stop()
-            if paper_client is not None:
-                paper_client.close()
-            repository.close()
-            if evidence_store is not None:
-                evidence_store.close()
-            if writer_lock is not None:
-                writer_lock.close()
+            # Every resource is closed even if an earlier close/checkpoint fails.
+            # Writer ownership is released after the trading resources stop.
+            with ExitStack() as cleanup:
+                for sig, handler in old_handlers.items():
+                    cleanup.callback(signal.signal, sig, handler)
+                if continuity is not None:
+                    cleanup.callback(continuity.close)
+                if writer_lock is not None:
+                    cleanup.callback(writer_lock.close)
+                cleanup.callback(repository.close)
+                if evidence_store is not None:
+                    cleanup.callback(evidence_store.close)
+                if paper_client is not None:
+                    cleanup.callback(paper_client.close)
+                if paper_worker is not None:
+                    cleanup.callback(paper_worker.stop)
+                if backfill is not None:
+                    cleanup.callback(backfill.close)
 
 
 if __name__ == "__main__":
