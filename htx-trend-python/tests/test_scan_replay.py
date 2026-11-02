@@ -60,6 +60,19 @@ def test_invalid_strategy_profile_combination():
         replay(INPUTS, strategy='HTX_TREND_15M_V2', profile=TimeframeProfile.SWING_4H)
 
 
+D1_DEEPEN_KLINES_SHA256 = 'b2cddb23d9dbd1b382ea7c1c9b74271ccfe73c09115ad19fe2a20debb95cd082'
+SWING_4H_TRADES_SHA256 = '307549210aad2ea6e9a1ffae3535f2e2df983e651ecd56e86ed2bb3e006c5053'
+
+
+def test_swing_4h_klines_lock_is_d1_btceth_deepen_fixture():
+    """SWING_4H klines lock is the D1 BTC/ETH deepen fixture; trades lock stays put."""
+    from htx_trend.scan_replay import LOCKED_HASHES_BY_PROFILE
+
+    swing = LOCKED_HASHES_BY_PROFILE['SWING_4H']
+    assert swing['klines.csv'] == D1_DEEPEN_KLINES_SHA256
+    assert swing['trades_closed_window.csv'] == SWING_4H_TRADES_SHA256
+
+
 def test_4h_locked_hashes_reject_modified_input(tmp_path, monkeypatch):
     """4H profile must reject modified fixtures even with updated MANIFEST, same as 15m."""
     from htx_trend import scan_replay as scan_replay_module

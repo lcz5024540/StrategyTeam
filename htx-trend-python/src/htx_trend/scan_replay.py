@@ -40,7 +40,7 @@ LOCKED_HASHES_BY_PROFILE = {
         'trades_closed_window.csv': '845643abcd4e8d9e153d823ae956f23f7c213684b906902dbd62641662337359',
     },
     'SWING_4H': {
-        'klines.csv': '61e04121a444be27d37774ce0d22d96358ebf065f9c00896dce12c12f085f059',
+        'klines.csv': 'b2cddb23d9dbd1b382ea7c1c9b74271ccfe73c09115ad19fe2a20debb95cd082',
         'trades_closed_window.csv': '307549210aad2ea6e9a1ffae3535f2e2df983e651ecd56e86ed2bb3e006c5053',
     },
 }
