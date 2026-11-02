@@ -8,6 +8,7 @@ import socket
 import pytest
 
 from htx_trend.scan_replay import Assumptions, OfflineMarket, compare, epoch, load_inputs, replay
+from htx_trend.timeframes import TimeframeProfile
 
 INPUTS = Path(__file__).parents[1] / 'replay_inputs' / '20261021'
 
@@ -24,12 +25,12 @@ def test_locked_hash_rejects_modified_input_and_forged_manifest(tmp_path, input_
     target = tmp_path / input_name
     target.write_bytes(target.read_bytes() + b'\n')
     with pytest.raises(ValueError, match='SHA256 mismatch'):
-        replay(tmp_path)
+        replay(tmp_path, profile=TimeframeProfile.INTRADAY_15M)
     manifest = json.loads((tmp_path / 'MANIFEST.json').read_text())
     manifest['sha256'][input_name] = hashlib.sha256(target.read_bytes()).hexdigest()
     (tmp_path / 'MANIFEST.json').write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match='SHA256 mismatch'):
-        replay(tmp_path)
+        replay(tmp_path, profile=TimeframeProfile.INTRADAY_15M)
 
 
 def test_deterministic_offline_and_ignores_ambient_settings(report, monkeypatch):
@@ -46,7 +47,7 @@ def test_deterministic_offline_and_ignores_ambient_settings(report, monkeypatch)
     monkeypatch.setattr(Path, 'write_text', forbidden)
     monkeypatch.setenv('HTX_TREND_15M_MIN_ADX', '99999')
     monkeypatch.setenv('HTX_TREND_MAX_ENTRY_SIGNAL_AGE_SECONDS', '1')
-    assert replay(INPUTS) == report
+    assert replay(INPUTS, profile=TimeframeProfile.INTRADAY_15M) == report
 
 
 def test_real_trade_alignment_and_reverse_evidence(report):
@@ -83,8 +84,8 @@ def test_reverse_comparison_detects_omission_extra_and_wrong_model(report):
 
 
 def test_no_lookahead_and_hourly_close_grace():
-    candles, _, _ = load_inputs(INPUTS)
-    market = OfflineMarket(candles, Assumptions())
+    candles, _, _ = load_inputs(INPUTS, TimeframeProfile.INTRADAY_15M)
+    market = OfflineMarket(candles, Assumptions(), entry_period='15min')
     for time in ('2026-10-20 09:00:09', '2026-10-20 09:00:30', '2026-10-20 09:15:30'):
         now = epoch(time)
         for period, seconds in (('15min', 900), ('60min', 3600)):
@@ -95,7 +96,8 @@ def test_no_lookahead_and_hourly_close_grace():
 
 def test_real_stale_gate_is_not_bypassed():
     stale = replay(INPUTS, Assumptions(scan_delay_seconds=601,
-        start_cst='2026-10-20 03:00:00', end_cst='2026-10-20 03:30:59'))
+        start_cst='2026-10-20 03:00:00', end_cst='2026-10-20 03:30:59'),
+        profile=TimeframeProfile.INTRADAY_15M)
     gates = [g for b in stale['bars'] for g in b['gates']]
     assert gates and not stale['trades']
     assert all(g['stage'] == 'DATA_FRESHNESS' for g in gates)
@@ -125,7 +127,8 @@ def test_worker_eth_seven_contracts_blocks_btc_two_before_eth_exit(monkeypatch):
             trailing_arm_reason='RISK_REWARD_MILESTONE', max_favorable_r='1.4'))
 
     monkeypatch.setattr(MemoryLedger, '__init__', seed)
-    r = replay(INPUTS, Assumptions(start_cst='2026-10-20 09:00:00', end_cst='2026-10-20 09:00:59'))
+    r = replay(INPUTS, Assumptions(start_cst='2026-10-20 09:00:00', end_cst='2026-10-20 09:00:59'),
+               profile=TimeframeProfile.INTRADAY_15M)
     btc = next(b for b in r['bars'] if b['contract'] == 'BTC-USDT')
     gate = next(g for g in btc['gates'] if g['candidate']['model'] == 'EMA_MOMENTUM_CONTINUATION')
     assert gate['size_plan']['contracts'] == 2
@@ -205,7 +208,7 @@ def test_book_uses_only_containing_bar_open_or_closed_fallback(now, mid):
         Candle(3600, D('999'), D('1000'), D('900'), D('950')),
     ]}
     for spread in (D('0'), D('.02')):
-        market = OfflineMarket(candles, Assumptions(spread_rate=spread))
+        market = OfflineMarket(candles, Assumptions(spread_rate=spread), entry_period='15min')
         market.now = now
         half = D(mid) * spread / 2
         assert market.top_of_book('BTC-USDT') == TopOfBook(D(mid) - half, D(mid) + half)
@@ -255,8 +258,8 @@ def test_absent_optional_book_keeps_forming_open_and_records_gap(report):
     assert '9/12' in report['header']['reachable_upper_bound']
     rendered = markdown(report)
     assert '夹具缺口' in rendered
-    candles, _, _ = load_inputs(INPUTS)
-    bare = OfflineMarket(candles, Assumptions())
+    candles, _, _ = load_inputs(INPUTS, TimeframeProfile.INTRADAY_15M)
+    bare = OfflineMarket(candles, Assumptions(), entry_period='15min')
     bare.now = epoch('2026-10-21 09:00:30')
     forming = next(c for c in candles[('BTC-USDT', '15min')]
                    if c.open_time <= bare.now < c.open_time + 900)
@@ -305,7 +308,7 @@ def test_optional_book_drives_quote_and_refuses_gaps_lookahead_and_bad_hash(tmp_
     candles = {('BTC-USDT', '15min'): [
         Candle(0, D('101'), D('250'), D('50'), D('202')),
     ]}
-    market = OfflineMarket(candles, Assumptions(spread_rate=D('.02')), book)
+    market = OfflineMarket(candles, Assumptions(spread_rate=D('.02')), book, entry_period='15min')
     # ts_ms=1000000 → 第 1000 秒；now=2000 只能看到该条，不能看到 5000000，也不能用 open=101。
     market.now = 2000
     assert market.top_of_book('BTC-USDT') == TopOfBook(D('10'), D('12'))
@@ -324,7 +327,7 @@ def test_optional_book_drives_quote_and_refuses_gaps_lookahead_and_bad_hash(tmp_
     manifest['optional_book'] = None
     (tmp_path / 'MANIFEST.json').write_text(json.dumps(manifest))
     assert load_optional_book(tmp_path) is None
-    bare = OfflineMarket(candles, Assumptions())
+    bare = OfflineMarket(candles, Assumptions(), entry_period='15min')
     bare.now = 100
     assert bare.top_of_book('BTC-USDT') == TopOfBook(D('101'), D('101'))
 
@@ -366,7 +369,7 @@ def test_replay_optional_book_changes_fill_without_touching_absent_inputs(tmp_pa
     for name in ('klines.csv', 'trades_closed_window.csv', 'MANIFEST.json'):
         shutil.copyfile(INPUTS / name, tmp_path / name)
     window = Assumptions(start_cst='2026-10-20 03:00:00', end_cst='2026-10-20 03:30:59')
-    baseline = replay_scan(tmp_path, window)
+    baseline = replay_scan(tmp_path, window, profile=TimeframeProfile.INTRADAY_15M)
     assert baseline['header']['book_fixture']['loaded'] is False
     eth = next(t for t in baseline['trades'] if t['contract'] == 'ETH-USDT' and t['side'] == 'SHORT')
     forming_entry = eth['entry_price']
@@ -376,7 +379,7 @@ def test_replay_optional_book_changes_fill_without_touching_absent_inputs(tmp_pa
         rows.append({'ts_cst': stamped, 'contract': contract, 'bid': '2401.01', 'ask': '2401.03',
                      'mid': '2401.02', 'source': 'SYNTHETIC_NOT_LIVE'})
     _write_book(tmp_path, rows, kind='book')
-    loaded = replay_scan(tmp_path, window)
+    loaded = replay_scan(tmp_path, window, profile=TimeframeProfile.INTRADAY_15M)
     assert loaded['header']['book_fixture']['loaded'] is True
     assert loaded['header']['book_fixture']['provenance'] == 'synthetic'
     eth_book = next(t for t in loaded['trades'] if t['contract'] == 'ETH-USDT' and t['side'] == 'SHORT')
