@@ -1,13 +1,13 @@
 """Frozen structures and deterministic, restart-safe two-trade trigger automata."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from decimal import Decimal as D
-from typing import Sequence
 import copy
 
 from ..indicators import ema, atr
-from ..market_data import Candle, ContractSpec, KlineWindow
+from ..market_data import ContractSpec, KlineWindow
 from ..models import TrendSide
 from ..research.store import primitive, digest
 from . import VERSION, MODELS
@@ -17,22 +17,30 @@ from .storage import TERMINAL
 
 @dataclass(frozen=True)
 class Parameters:
-    band_atr: D = D('.10')
-    min_net_r: D = D('1.5')
+    band_atr: D = D(".10")
+    min_net_r: D = D("1.5")
     max_age_ms: int = 2000
 
     def __post_init__(self):
-        if self.band_atr not in (D('.05'), D('.10')) or self.min_net_r not in (D(1), D('1.5'), D(2)):
-            raise ValueError('parameters outside the six preregistered combinations')
+        if self.band_atr not in (D(".05"), D(".10")) or self.min_net_r not in (
+            D(1),
+            D("1.5"),
+            D(2),
+        ):
+            raise ValueError("parameters outside the six preregistered combinations")
         if self.max_age_ms != 2000:
-            raise ValueError('realtime-v1 requires the registered 2-second freshness bound')
+            raise ValueError(
+                "realtime-v1 requires the registered 2-second freshness bound"
+            )
 
     @property
     def fingerprint(self):
-        return digest({'version': VERSION, 'parameters': self})
+        return digest({"version": VERSION, "parameters": self})
 
 
-GRID = tuple(Parameters(k, r) for k in (D('.05'), D('.10')) for r in (D(1), D('1.5'), D(2)))
+GRID = tuple(
+    Parameters(k, r) for k in (D(".05"), D(".10")) for r in (D(1), D("1.5"), D(2))
+)
 
 
 @dataclass(frozen=True)
@@ -61,12 +69,15 @@ class StructurePlan:
     @classmethod
     def load(cls, row):
         row = dict(row)
-        for name in ('line', 'band', 'atr', 'tick', 'target'):
+        for name in ("line", "band", "atr", "tick", "target"):
             row[name] = D(row[name])
-        row['side'] = TrendSide(row['side'])
-        row['sources'], row['evidence_refs'] = tuple(row['sources']), tuple(row['evidence_refs'])
-        if row['model'] not in MODELS:
-            raise ValueError('unknown realtime model')
+        row["side"] = TrendSide(row["side"])
+        row["sources"], row["evidence_refs"] = (
+            tuple(row["sources"]),
+            tuple(row["evidence_refs"]),
+        )
+        if row["model"] not in MODELS:
+            raise ValueError("unknown realtime model")
         return cls(**row)
 
 
@@ -99,62 +110,138 @@ class RealtimeTrigger:
         return self.plan.target
 
 
-def generate(entry: KlineWindow, trend: KlineWindow, contract: ContractSpec, *, now_ms: int,
-             parameters=Parameters(), signal_side=TrendSide.FLAT) -> tuple[StructurePlan, ...]:
-    if (entry.period != '15min' or trend.period != '60min' or not entry.is_complete or not trend.is_complete
-            or len(entry.candles) < 32 or len(trend.candles) < 60
-            or entry.contract_code != contract.contract_code or trend.contract_code != contract.contract_code):
+def generate(
+    entry: KlineWindow,
+    trend: KlineWindow,
+    contract: ContractSpec,
+    *,
+    now_ms: int,
+    parameters=Parameters(),
+    signal_side=TrendSide.FLAT,
+) -> tuple[StructurePlan, ...]:
+    if (
+        entry.period != "15min"
+        or trend.period != "60min"
+        or not entry.is_complete
+        or not trend.is_complete
+        or len(entry.candles) < 32
+        or len(trend.candles) < 60
+        or entry.contract_code != contract.contract_code
+        or trend.contract_code != contract.contract_code
+    ):
         return ()
     last, hour = entry.candles[-1], trend.candles[-1]
-    now = now_ms//1000
-    if not 0 <= now-(last.open_time+900) < 900 or not 0 <= now-(hour.open_time+3600) < 3600:
+    now = now_ms // 1000
+    if (
+        not 0 <= now - (last.open_time + 900) < 900
+        or not 0 <= now - (hour.open_time + 3600) < 3600
+    ):
         return ()
-    if any(not v.is_finite() or v <= 0 for v in (contract.price_tick, contract.contract_size)) or contract.contract_status != 1:
+    if (
+        any(
+            not v.is_finite() or v <= 0
+            for v in (contract.price_tick, contract.contract_size)
+        )
+        or contract.contract_status != 1
+    ):
         return ()
     fast, slow = (ema([c.close for c in trend.candles[-160:]], n) for n in (20, 60))
-    side = TrendSide.LONG if fast > slow else TrendSide.SHORT if fast < slow else TrendSide.FLAT
+    side = (
+        TrendSide.LONG
+        if fast > slow
+        else TrendSide.SHORT
+        if fast < slow
+        else TrendSide.FLAT
+    )
     if side is TrendSide.FLAT or signal_side not in (TrendSide.FLAT, side):
         return ()
     volatility = atr(entry.candles, 14)
     if volatility <= 0:
         return ()
-    band = max(2*contract.price_tick, volatility*parameters.band_atr)
+    band = max(2 * contract.price_tick, volatility * parameters.band_atr)
     levels = {}
     for n in (20, 32):
         bars = entry.candles[-n:]
-        for edge, field in (('HIGH', 'high'), ('LOW', 'low')):
-            level = max(getattr(c, field) for c in bars) if edge == 'HIGH' else min(getattr(c, field) for c in bars)
+        for edge, field in (("HIGH", "high"), ("LOW", "low")):
+            level = (
+                max(getattr(c, field) for c in bars)
+                if edge == "HIGH"
+                else min(getattr(c, field) for c in bars)
+            )
             anchor = min(c.open_time for c in bars if getattr(c, field) == level)
-            item = levels.setdefault((edge, level), {'anchor': anchor, 'sources': []})
-            item['anchor'] = min(anchor, item['anchor'])
-            item['sources'].append(str(n)+':'+edge)
+            item = levels.setdefault((edge, level), {"anchor": anchor, "sources": []})
+            item["anchor"] = min(anchor, item["anchor"])
+            item["sources"].append(str(n) + ":" + edge)
     box_high = max(c.high for c in entry.candles[-32:])
     box_low = min(c.low for c in entry.candles[-32:])
     output = []
     for model in sorted(MODELS):
-        rejection = model == 'RT_RANGE_REJECTION'
-        edge = ('LOW' if side is TrendSide.LONG else 'HIGH') if rejection else ('HIGH' if side is TrendSide.LONG else 'LOW')
-        candidates = [(price, item) for (kind, price), item in levels.items() if kind == edge]
+        rejection = model == "RT_RANGE_REJECTION"
+        edge = (
+            ("LOW" if side is TrendSide.LONG else "HIGH")
+            if rejection
+            else ("HIGH" if side is TrendSide.LONG else "LOW")
+        )
+        candidates = [
+            (price, item) for (kind, price), item in levels.items() if kind == edge
+        ]
         # One active candidate per model. Select the nearest boundary to the last closed price.
-        line, source = min(candidates, key=lambda item: (abs(item[0]-last.close), item[0]))
-        profit_levels = [price for (_, price) in levels if price > line+band] if side is TrendSide.LONG else [price for (_, price) in levels if price < line-band]
+        line, source = min(
+            candidates, key=lambda item: (abs(item[0] - last.close), item[0])
+        )
+        profit_levels = (
+            [price for (_, price) in levels if price > line + band]
+            if side is TrendSide.LONG
+            else [price for (_, price) in levels if price < line - band]
+        )
         if profit_levels:
-            target = min(profit_levels) if side is TrendSide.LONG else max(profit_levels)
-            target_kind = 'EXISTING_BOUNDARY'
+            target = (
+                min(profit_levels) if side is TrendSide.LONG else max(profit_levels)
+            )
+            target_kind = "EXISTING_BOUNDARY"
         elif not rejection:
-            target = 2*box_high-box_low if side is TrendSide.LONG else 2*box_low-box_high
-            target_kind = 'BOX32_MEASURED'
+            target = (
+                2 * box_high - box_low
+                if side is TrendSide.LONG
+                else 2 * box_low - box_high
+            )
+            target_kind = "BOX32_MEASURED"
         else:
             continue
         if target <= 0:
             continue
         # No polling time, current-bar hash or ordinary price revision in economic identity.
-        ident = digest({'version': VERSION, 'contract': contract.contract_code, 'side': side,
-                        'model': model, 'anchor_bar': source['anchor'], 'edge': edge})
-        output.append(StructurePlan(ident, contract.contract_code, model, side, line, band, volatility,
-                      contract.price_tick, target, target_kind, last.open_time, hour.open_time, source['anchor'],
-                      tuple(sorted(source['sources'])), tuple(entry.evidence_refs+trend.evidence_refs),
-                      parameters.fingerprint, now_ms))
+        ident = digest(
+            {
+                "version": VERSION,
+                "contract": contract.contract_code,
+                "side": side,
+                "model": model,
+                "anchor_bar": source["anchor"],
+                "edge": edge,
+            }
+        )
+        output.append(
+            StructurePlan(
+                ident,
+                contract.contract_code,
+                model,
+                side,
+                line,
+                band,
+                volatility,
+                contract.price_tick,
+                target,
+                target_kind,
+                last.open_time,
+                hour.open_time,
+                source["anchor"],
+                tuple(sorted(source["sources"])),
+                tuple(entry.evidence_refs + trend.evidence_refs),
+                parameters.fingerprint,
+                now_ms,
+            )
+        )
     return tuple(output)
 
 
@@ -174,19 +261,33 @@ class TriggerEngine:
     def refresh(self, contract, plans):
         wanted = {p.plan_id: p for p in plans}
         for ident, row in self.rows.items():
-            if row['plan']['contract'] == contract and ident not in wanted and row['phase'] not in TERMINAL:
-                row.update(phase='INVALIDATED', reason='STRUCTURE_REPLACED_OR_DIRECTION_INVALID')
+            if (
+                row["plan"]["contract"] == contract
+                and ident not in wanted
+                and row["phase"] not in TERMINAL
+            ):
+                row.update(
+                    phase="INVALIDATED",
+                    reason="STRUCTURE_REPLACED_OR_DIRECTION_INVALID",
+                )
                 self._save(ident)
         for ident, plan in wanted.items():
             row = self.rows.get(ident)
             if row is None:
-                self.rows[ident] = {'plan': plan.dump(), 'phase': 'WAITING', 'count': 0, 'prior_price': None,
-                                    'extreme': None, 'confirmations': [], 'last_trade_ms': None}
+                self.rows[ident] = {
+                    "plan": plan.dump(),
+                    "phase": "WAITING",
+                    "count": 0,
+                    "prior_price": None,
+                    "extreme": None,
+                    "confirmations": [],
+                    "last_trade_ms": None,
+                }
                 self._save(ident)
-            elif row['phase'] not in TERMINAL and row['phase'] != 'TRIGGERED':
+            elif row["phase"] not in TERMINAL and row["phase"] != "TRIGGERED":
                 # Preserve activated hypothesis; an ordinary revision cannot give it new life.
-                if row['phase'] == 'WAITING':
-                    row['plan'] = plan.dump()
+                if row["phase"] == "WAITING":
+                    row["plan"] = plan.dump()
                     self._save(ident)
 
     def disconnect(self):
@@ -194,23 +295,29 @@ class TriggerEngine:
         self.order.reset()
         self.books.clear()
         for ident, row in self.rows.items():
-            if row['phase'] not in TERMINAL:
+            if row["phase"] not in TERMINAL:
                 # A trigger not yet submitted is not durable executable evidence after a gap.
-                if row['phase'] == 'TRIGGERED':
-                    row.update(phase='REJECTED', reason='TRIGGER_INTERRUPTED')
+                if row["phase"] == "TRIGGERED":
+                    row.update(phase="REJECTED", reason="TRIGGER_INTERRUPTED")
                 else:
-                    row.update(phase='WAITING', count=0, prior_price=None, extreme=None,
-                               confirmations=[], last_trade_ms=None)
+                    row.update(
+                        phase="WAITING",
+                        count=0,
+                        prior_price=None,
+                        extreme=None,
+                        confirmations=[],
+                        last_trade_ms=None,
+                    )
                 self._save(ident)
 
     def terminal(self, ident, phase, **detail):
         if phase not in TERMINAL:
-            raise ValueError('invalid terminal state')
+            raise ValueError("invalid terminal state")
         row = self.rows[ident]
-        if row['phase'] in TERMINAL and row['phase'] != phase:
+        if row["phase"] in TERMINAL and row["phase"] != phase:
             # Execution recovery may resolve a previously submitted or unknown intent only.
-            if row['phase'] not in {'SUBMITTED', 'UNKNOWN'}:
-                raise ValueError('terminal plan cannot be reactivated')
+            if row["phase"] not in {"SUBMITTED", "UNKNOWN"}:
+                raise ValueError("terminal plan cannot be reactivated")
         row.update(phase=phase, **primitive(detail))
         self._save(ident)
 
@@ -218,75 +325,128 @@ class TriggerEngine:
         if self.epoch != event.epoch:
             self.disconnect()
             self.epoch = event.epoch
-        if not event.fresh(now_ms, self.parameters.max_age_ms) or not self.order.accept(event):
+        if not event.fresh(now_ms, self.parameters.max_age_ms) or not self.order.accept(
+            event
+        ):
             return ()
-        if event.kind == 'BBO':
+        if event.kind == "BBO":
             self.books[event.contract] = event
             return ()
-        if event.kind != 'TRADE':
+        if event.kind != "TRADE":
             return ()
         book = self.books.get(event.contract)
         triggers = []
         for ident, row in self.rows.items():
-            if row['plan']['contract'] != event.contract or row['phase'] in TERMINAL or row['phase'] == 'TRIGGERED':
+            if (
+                row["plan"]["contract"] != event.contract
+                or row["phase"] in TERMINAL
+                or row["phase"] == "TRIGGERED"
+            ):
                 continue
-            before=copy.deepcopy(row)
-            p = StructurePlan.load(row['plan'])
+            before = copy.deepcopy(row)
+            p = StructurePlan.load(row["plan"])
             if event.received_ms < p.created_ms:
                 continue
             long = p.side is TrendSide.LONG
             price = event.price
-            low, high = p.line-p.band, p.line+p.band
-            previous = D(row['prior_price']) if row['prior_price'] is not None else None
-            rejection = p.model == 'RT_RANGE_REJECTION'
+            low, high = p.line - p.band, p.line + p.band
+            previous = D(row["prior_price"]) if row["prior_price"] is not None else None
+            rejection = p.model == "RT_RANGE_REJECTION"
             favorable = price > high if long else price < low
             zone = low <= price <= high
-            phase = row['phase']
-            last_ms = row['last_trade_ms']
-            if last_ms is not None and event.exchange_ms-last_ms > self.parameters.max_age_ms:
+            phase = row["phase"]
+            last_ms = row["last_trade_ms"]
+            if (
+                last_ms is not None
+                and event.exchange_ms - last_ms > self.parameters.max_age_ms
+            ):
                 row.update(count=0, confirmations=[])
-            if phase == 'WAITING':
+            if phase == "WAITING":
                 if rejection:
-                    safe_approach = previous is not None and (previous > high if long else previous < low)
+                    safe_approach = previous is not None and (
+                        previous > high if long else previous < low
+                    )
                     if zone and safe_approach:
-                        row.update(phase='ARMED', extreme=str(price), count=0, confirmations=[])
+                        row.update(
+                            phase="ARMED", extreme=str(price), count=0, confirmations=[]
+                        )
                 elif favorable:
                     self._confirm(row, event)
-                    if row['count'] >= 2:
-                        row.update(phase='BROKEN', count=0, confirmations=[])
+                    if row["count"] >= 2:
+                        row.update(phase="BROKEN", count=0, confirmations=[])
                 else:
                     row.update(count=0, confirmations=[])
-            elif phase == 'BROKEN':
+            elif phase == "BROKEN":
                 if zone:
-                    row.update(phase='RETEST', extreme=str(price), count=0, confirmations=[])
-                elif (price < low if long else price > high):
-                    row.update(phase='INVALIDATED', reason='BREAKOUT_RECLAIMED')
-            elif phase == 'RETEST' and (price < low if long else price > high):
-                row.update(phase='INVALIDATED',reason='RETEST_FAILED',count=0,confirmations=[])
-            elif phase in ('ARMED', 'RETEST'):
-                extreme = D(row['extreme'])
-                row['extreme'] = str(min(extreme, price) if long else max(extreme, price))
+                    row.update(
+                        phase="RETEST", extreme=str(price), count=0, confirmations=[]
+                    )
+                elif price < low if long else price > high:
+                    row.update(phase="INVALIDATED", reason="BREAKOUT_RECLAIMED")
+            elif phase == "RETEST" and (price < low if long else price > high):
+                row.update(
+                    phase="INVALIDATED",
+                    reason="RETEST_FAILED",
+                    count=0,
+                    confirmations=[],
+                )
+            elif phase in ("ARMED", "RETEST"):
+                extreme = D(row["extreme"])
+                row["extreme"] = str(
+                    min(extreme, price) if long else max(extreme, price)
+                )
                 if favorable:
                     self._confirm(row, event)
-                    quote_ok = (book is not None and book.epoch == event.epoch and book.fresh(now_ms)
-                                and abs(book.exchange_ms-event.exchange_ms) <= self.parameters.max_age_ms
-                                and (book.bid > high if long else book.ask < low))
-                    if row['count'] >= 2 and quote_ok:
-                        raw_stop = D(row['extreme'])-p.band if long else D(row['extreme'])+p.band
+                    quote_ok = (
+                        book is not None
+                        and book.epoch == event.epoch
+                        and book.fresh(now_ms)
+                        and abs(book.exchange_ms - event.exchange_ms)
+                        <= self.parameters.max_age_ms
+                        and (book.bid > high if long else book.ask < low)
+                    )
+                    if row["count"] >= 2 and quote_ok:
+                        raw_stop = (
+                            D(row["extreme"]) - p.band
+                            if long
+                            else D(row["extreme"]) + p.band
+                        )
                         reference = book.ask if long else book.bid
-                        stop = min(raw_stop, reference-D('1.25')*p.atr) if long else max(raw_stop, reference+D('1.25')*p.atr)
-                        triggers.append(RealtimeTrigger(p, event.received_ms, event.exchange_ms, reference,
-                            raw_stop, stop, tuple(row['confirmations'][-2:]), digest(book), event.epoch))
-                        row.update(phase='TRIGGERED', trigger=primitive(triggers[-1]))
+                        stop = (
+                            min(raw_stop, reference - D("1.25") * p.atr)
+                            if long
+                            else max(raw_stop, reference + D("1.25") * p.atr)
+                        )
+                        triggers.append(
+                            RealtimeTrigger(
+                                p,
+                                event.received_ms,
+                                event.exchange_ms,
+                                reference,
+                                raw_stop,
+                                stop,
+                                tuple(row["confirmations"][-2:]),
+                                digest(book),
+                                event.epoch,
+                            )
+                        )
+                        row.update(phase="TRIGGERED", trigger=primitive(triggers[-1]))
                 else:
                     row.update(count=0, confirmations=[])
             # The next approach only needs the side of the zone, not every tick.
-            row['prior_price'] = str(low-p.tick if price<low else high+p.tick if price>high else p.line)
-            row['last_trade_ms'] = event.exchange_ms if row['count'] else None
-            if row != before:self._save(ident)
+            row["prior_price"] = str(
+                low - p.tick
+                if price < low
+                else high + p.tick
+                if price > high
+                else p.line
+            )
+            row["last_trade_ms"] = event.exchange_ms if row["count"] else None
+            if row != before:
+                self._save(ident)
         return tuple(triggers)
 
     @staticmethod
     def _confirm(row, event):
-        row['count'] += 1
-        row['confirmations'] = (row['confirmations']+[digest(event)])[-2:]
+        row["count"] += 1
+        row["confirmations"] = (row["confirmations"] + [digest(event)])[-2:]

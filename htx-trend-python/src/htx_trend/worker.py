@@ -197,6 +197,8 @@ def main() -> None:
         admission = _load_admission(instance.strategy_name) if family == "TREND" and instance.execution_mode != ExecutionMode.PAPER else None
         compact = None
         from .realtime import VERSION as RT_VERSION
+        if instance.strategy_name == RT_VERSION and instance.execution_mode == ExecutionMode.OBSERVE:
+            raise SystemExit("realtime shadow uses PAPER with HTX_RT_ENTRY_ENABLED=false; candle OBSERVE is unsupported")
         if family == "TREND":
             paper_format = os.environ.get("HTX_PAPER_EVIDENCE_FORMAT", "legacy-v1") if instance.execution_mode == ExecutionMode.PAPER else "legacy-v1"
             if instance.strategy_name == RT_VERSION:
@@ -349,6 +351,12 @@ def main() -> None:
             worker = DisabledStrategyWorker(instance, repository)
         else:
             raise SystemExit(f"unsupported strategy family/mode: {instance.strategy_family}/{instance.execution_mode}")
+        if instance.strategy_name == RT_VERSION and compact is not None:
+            from .research.compact import CompactBackfill
+            backfill = CompactBackfill(compact,
+                HtxV5Client(base_url=os.environ.get('HTX_PUBLIC_BASE_URL', 'https://api.hbdm.com')),
+                worker.loader.contracts, ('15min', '60min', '4hour'))
+            backfill.start()
         if family == 'TREND':
             from .runtime_checkpoint import RuntimeCheckpoint, PersistentWorker
             state_dir = os.environ.get('HTX_RUNTIME_STATE_DIR', '').strip()

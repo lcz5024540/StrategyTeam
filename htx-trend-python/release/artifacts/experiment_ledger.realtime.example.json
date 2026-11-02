@@ -1,0 +1,17 @@
+{
+  "id": "SYNTHETIC-realtime-experiments",
+  "version": "1",
+  "synthetic": true,
+  "candidate": true,
+  "experiments": [
+    {
+      "experiment_id": "SYNTHETIC-RT-SIX-COMBINATIONS",
+      "hypothesis": "band ATR .05/.10 x min netR 1/1.5/2; diagnose70%, select once, holdout30%",
+      "feature_keys": [
+        "rt_structure_20_32"
+      ],
+      "status": "SYNTHETIC_ONLY",
+      "conclusion": "NOT_ELIGIBLE: no complete actual opportunity tape; no trading authority"
+    }
+  ]
+}

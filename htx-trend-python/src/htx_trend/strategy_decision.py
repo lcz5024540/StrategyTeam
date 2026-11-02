@@ -56,6 +56,9 @@ class HtxStrategyDecisionEngine:
 
     def decide(self, *, contract_code: str, period: str, candles: Sequence[Candle],
                surface: DecisionSurface | str, evidence_refs: tuple[str, ...] = ()) -> StrategyDecision:
+        from .realtime import VERSION as REALTIME_VERSION
+        if self.strategy_version == REALTIME_VERSION:
+            raise ValueError("realtime strategy requires StructurePlan/RealtimeTrigger, not candle candidates")
         self._authorize(DecisionSurface(surface))
         period_profile = TimeframeProfile.for_period(period)
         if self.profile_spec is not None and period_profile is not self.profile_spec.timeframe_profile:
