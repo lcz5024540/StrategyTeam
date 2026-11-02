@@ -151,6 +151,16 @@ class TrendObservationWorker:
                                                    config=entry_config, admission=admission,
                                                    evidence_store=market.evidence_store)
 
+    def runtime_key(self):
+        return self._config.entry_period
+
+    def export_runtime(self):
+        return dict(completed=getattr(self,'_completed',{}),last_health=getattr(self,'_last_health',None))
+
+    def restore_runtime(self,state):
+        self._completed=state['completed']
+        self._last_health=state['last_health']
+
     def tick(self) -> WorkerHealth:
         if self._stopped:
             return WorkerHealth("STOPPED", "worker has been stopped")
@@ -176,11 +186,21 @@ class TrendObservationWorker:
             eth_anchor=anchors.get("ETH-USDT", TrendSide.FLAT),
         )
         candidate_count = 0
+        completed=getattr(self,'_completed',{})
         for result in results:
+            bar=result.signal.bar_time
+            if hasattr(self,'_save_runtime') and completed.get(result.contract)==bar:
+                continue
             candidate_count += self._persist(run_id, result, context)
+            if bar is not None:
+                completed[result.contract]=bar
+            self._completed=completed
+            if hasattr(self,'_save_runtime'):
+                self._save_runtime()
         detail = f"observed={len(results)}/{len(contracts)} candidates={candidate_count}"
         if failures:
             detail += " failures=" + ",".join(failures[:8])
+        self._last_health=dict(at=now_epoch,failures=failures,coverage=len(results))
         return WorkerHealth("DEGRADED" if failures else "HEALTHY", detail, candidate_count, 0)
 
     def stop(self) -> None:
