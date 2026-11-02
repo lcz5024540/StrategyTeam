@@ -1,0 +1,29 @@
+[
+  {
+    "archive": "/tmp/hot-deploy-continuity-frozen/0.1.7-evidence-v2-8b985cba/htx-trend-python-0.1.7-evidence-v2-8b985cba.tar.gz",
+    "version": "0.1.7-evidence-v2-8b985cba",
+    "source_commit": "8b985cba7989bc0dabf6009cd727fb7bea71059e",
+    "clean": true,
+    "status": "PASS",
+    "current_holding_decoder": "PASS",
+    "files": 114
+  },
+  {
+    "archive": "/tmp/hot-deploy-continuity-frozen/0.1.7-evidence-v2-8b985cba-4h/htx-trend-python-0.1.7-evidence-v2-8b985cba-4h.tar.gz",
+    "version": "0.1.7-evidence-v2-8b985cba-4h",
+    "source_commit": "8b985cba7989bc0dabf6009cd727fb7bea71059e",
+    "clean": true,
+    "status": "PASS",
+    "current_holding_decoder": "PASS",
+    "files": 114
+  },
+  {
+    "archive": "/tmp/hot-deploy-continuity-frozen/0.1.7-live-8b985cba/htx-trend-python-0.1.7-live-8b985cba.tar.gz",
+    "version": "0.1.7-live-8b985cba",
+    "source_commit": "8b985cba7989bc0dabf6009cd727fb7bea71059e",
+    "clean": true,
+    "status": "PASS",
+    "current_holding_decoder": "PASS",
+    "files": 124
+  }
+]
