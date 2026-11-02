@@ -74,3 +74,12 @@ PYTHONPATH=src python -m htx_trend.entry_plan_audit ../docs/htx-trend-python/evi
 3. 补齐测试环境真实下单/部分成交/超时撤单/重启与MySQL持久化矩阵，完成策略准入及净R完整回放。由用户另批生产更新，不顺带改4H、TradeX、LIVE资金或账本。
 4. 更新获批后核对启动日志instance/account/strategy/order_type/entry_plan/continuation，并核对交易所订单type、post_only、price、成交均价与账本。PAPER成绩与LIVE分列，已有C钟不重开。
 5. 异常时先关闭新入场，保留本版本对既有仓与未决订单的管理。**存在本版本未决限价单/候选仓时不得直接退回缺恢复能力的旧包**；确认挂单终态、仓位已妥善处理后，按批准的空仓回滚恢复包与配置。保留exit_state、MySQL、paper-state与全部证据。
+
+## 本地候选包回执
+
+源码commit：`f748bae7cad31cebb01d3e2091bce1c631b941bd`，工作树干净构建，两个包verify均PASS；[完整绑定与SHA](evidence/entry-fixes-20261102/packages.json)。包仅保存在本机 `/tmp/htx-entry-fixes-20261102-f748bae7/`，未上传或冻结到服务器。
+
+- LIVE：`0.1.7-live-f748bae7`，SHA256 `451b2c9cd20486236b8292b40345433f3b1ae4b1512eb6f494dfaa389adc23c7`。
+- PAPER compact-v2：`0.1.7-evidence-v2-f748bae7`，SHA256 `f51216e0def07b8af3943e3017fec719b758a0b9c035bbf1e08df72794feb9f3`。
+
+业务检查点：8231dd4e（精度/诊断）、4a568564（限价恢复/重入）、7ff1cdc5（结构成本）、f748bae7（最终回归/账本风险终态）。根治理检查被历史H-10阻断，未绕过或伪造commit；业务提交独立完成。

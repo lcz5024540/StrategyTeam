@@ -1,0 +1,18 @@
+[
+  {
+    "archive": "/tmp/htx-entry-fixes-20261102-f748bae7/0.1.7-evidence-v2-f748bae7/htx-trend-python-0.1.7-evidence-v2-f748bae7.tar.gz",
+    "sha256": "f51216e0def07b8af3943e3017fec719b758a0b9c035bbf1e08df72794feb9f3",
+    "source_commit": "f748bae7cad31cebb01d3e2091bce1c631b941bd",
+    "version": "0.1.7-evidence-v2-f748bae7",
+    "dirty": false,
+    "verify": "{\"status\": \"PASS\", \"archive\": \"htx-trend-python-0.1.7-evidence-v2-f748bae7.tar.gz\", \"archive_path\": \"/private/tmp/htx-entry-fixes-20261102-f748bae7/0.1.7-evidence-v2-f748bae7/htx-trend-python-0.1.7-evidence-v2-f748bae7.tar.gz\", \"bindings\": {\"config_fingerprint\": \"c0e7106e83f89dee402a8b1a1360f02d624a275016faabcbf624eab89694439f\", \"config_hash\": \"c0e7106e83f89dee402a8b1a1360f02d624a275016faabcbf624eab89694439f\", \"config_path\": \"release/config.example.json\", \"instance_key\": \"htx-trend-paper-primary\", \"package_sha256\": \"f51216e0def07b8af3943e3017fec719b758a0b9c035bbf1e08df72794feb9f3\", \"source_commit\": \"f748bae7cad31cebb01d3e2091bce1c631b941bd\", \"strategy_spec_hash\": \"d8cb5f01bd83382b7770ca3992284fe80ebf636a5865d6795db4b95ae956be9c\", \"strategy_version\": \"HTX_TREND_15M_V2\", \"timeframe_profile\": \"INTRADAY_15M\"}, \"build\": {\"created_at\": \"2026-11-02T09:38:36.850425+00:00\", \"source_note\": \"HEAD plus working-tree payload; per-file hashes bind actual bytes\", \"version_note\": \"tip8 is based on HEAD; for an uncommitted working tree, the executor may rebuild after commit to align tip8\", \"working_tree_dirty\": false}, \"candidate\": true, \"disclaimer\": \"候选包 ≠ 可以热更 ≠ 可装现网\", \"frozen_path\": \"/private/tmp/htx-entry-fixes-20261102-f748bae7/0.1.7-evidence-v2-f748bae7\", \"manifest_sha256\": \"2bf6a4507a90befb15946b1114bdcf2fddb0dd15741002fb7ab4d2d270e75a9d\", \"package_sha256\": \"f51216e0def07b8af3943e3017fec719b758a0b9c035bbf1e08df72794feb9f3\", \"schema\": \"htx-candidate-build-g3\", \"synthetic\": true, \"version\": \"0.1.7-evidence-v2-f748bae7\"}"
+  },
+  {
+    "archive": "/tmp/htx-entry-fixes-20261102-f748bae7/0.1.7-live-f748bae7/htx-trend-python-0.1.7-live-f748bae7.tar.gz",
+    "sha256": "451b2c9cd20486236b8292b40345433f3b1ae4b1512eb6f494dfaa389adc23c7",
+    "source_commit": "f748bae7cad31cebb01d3e2091bce1c631b941bd",
+    "version": "0.1.7-live-f748bae7",
+    "dirty": false,
+    "verify": "{\"status\": \"PASS\", \"archive\": \"htx-trend-python-0.1.7-live-f748bae7.tar.gz\", \"archive_path\": \"/private/tmp/htx-entry-fixes-20261102-f748bae7/0.1.7-live-f748bae7/htx-trend-python-0.1.7-live-f748bae7.tar.gz\", \"bindings\": {\"config_fingerprint\": \"d523c6ee349c097bdd7bc68e9c20036bc5ca06d077be1d6277101cf36abf57ae\", \"config_hash\": \"d523c6ee349c097bdd7bc68e9c20036bc5ca06d077be1d6277101cf36abf57ae\", \"config_path\": \"release/config.example.json\", \"instance_key\": \"htx-trend-live-primary\", \"package_sha256\": \"451b2c9cd20486236b8292b40345433f3b1ae4b1512eb6f494dfaa389adc23c7\", \"source_commit\": \"f748bae7cad31cebb01d3e2091bce1c631b941bd\", \"strategy_spec_hash\": \"d8cb5f01bd83382b7770ca3992284fe80ebf636a5865d6795db4b95ae956be9c\", \"strategy_version\": \"HTX_TREND_15M_V2\", \"timeframe_profile\": \"INTRADAY_15M\"}, \"candidate\": false, \"disclaimer\": \"LIVE encode tarball ≠ deployment authority ≠ start trading\", \"frozen_path\": \"/private/tmp/htx-entry-fixes-20261102-f748bae7/0.1.7-live-f748bae7\", \"live\": true, \"manifest_sha256\": \"84329eb1fac79cf0754d98265bed5289cb68b1ebb4569343e890dd3437782d4b\", \"package_sha256\": \"451b2c9cd20486236b8292b40345433f3b1ae4b1512eb6f494dfaa389adc23c7\", \"schema\": \"htx-live-build-g3\", \"synthetic\": true, \"version\": \"0.1.7-live-f748bae7\"}"
+  }
+]

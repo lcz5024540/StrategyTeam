@@ -1,6 +1,6 @@
 # 15m部署分支：开仓执行与证据修复
 
-日期：2026-11-02；作者：Codex；状态：执行中；WIP=1。
+日期：2026-11-02；作者：Codex；状态：候选交付完成，生产验收未执行；WIP=0。
 
 ## 目标
 基于实际打包主线support_htx_python修复已确认缺陷，并澄清限价/重入部署差异。基线4cbd5ae7dc6cc344b7099849ed7011909907e967，分支codex/15m-entry-execution-fixes。17:04 CST服务器15m仍dead38c5，maker flag未配置，4H PAPER仍dbfee173。仅Python，不自动部署、下单或改生产。
@@ -19,7 +19,7 @@
 - [x] M2 修复真实tick/改单价/VWAP、账户计数、队列终态及缓存健康误报。111项相关测试通过；服务器25次公开周期读取确认4合约仅日线不足121根。
 - [x] M3 补齐限价配置、持久化撤单期限、成交终态对账和LIVE linked重入。62项定向测试通过；真实下单/撤单验收未执行。
 - [x] M4 新增显式structure-cost-v1，共享实际限价/近端结构/成本/风险与候选质量输入。47份真实候选输入复算完成（42 PAPER、5 LIVE）；不作为阈值或收益验收。
-- [ ] M5 验证 / 自检：全Python回归、真实公开API检查、打包验证、交付记录（进行中）。
+- [x] M5 验证 / 自检：708项Python测试通过，47份输入复算，25次真实公开API读取；f748bae7双候选包verify PASS。根结构校验历史H-10、真实交易矩阵及完整收益回放限制如实记录，不宣称上线验收。
 
 ## 风险与缓解
 历史PAPER78笔缺直接输入关联：不声称完整收益反事实已验证。LIVE限价未决生命周期未闭环：不能仅开flag，部分成交/撤单未知必须维持预算占用。根治理H-10既有48条阻塞：不伪造提交，不混入无关修复。时间/工作量依接入核验更新，不编造上线天数。
@@ -47,3 +47,6 @@ PAPER共享已有counter-market/candidate-state/mixed/Fib质量门，传实际EM
 ## M5验证进展
 2026-11-02：全Python回归708通过（81条SQLite datetime弃用警告），compileall、worker --help、文档链接及draw.io XML通过。结构价格复算47条。修正基线测试的load_inputs必填profile与哈希检查边界；未改4H运行公式。补测同account_id的PAPER排除、上一合约手续费缩放不影响新计划、部分平仓/开仓仍在途不提前释放风险。
 根check-docs-sync本轮实测50项历史H-10，均为已有trace缺提交；与此前48的快照分列，不更改历史或绕过hooks。codegraph工具不可用，仅源码/测试证据；真实交易测试、生产部署、净R标定保持未验收。
+
+## 交付检查点
+8231dd4e → 4a568564 → 7ff1cdc5 → f748bae7。构建来源f748bae7工作树干净；LIVE/PAPER独立包及SHA见docs/htx-trend-python/evidence/entry-fixes-20261102/packages.json。未merge、未push、未部署；原checkout与生产状态不变。下一步由用户审阅候选及缺失验证材料，不自动改选阈值。
