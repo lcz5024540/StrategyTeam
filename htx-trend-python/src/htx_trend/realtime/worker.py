@@ -209,7 +209,31 @@ class RealtimeWorker:
             else None,
         }
 
+    @staticmethod
+    def validate_runtime_state(state):
+        from pathlib import Path
+        from . import VERSION
+
+        required = {"instance", "strategy", "parameters", "failures", "ledger_path"}
+        if set(state) != required or state["strategy"] != VERSION:
+            raise ValueError("unsupported realtime runtime state")
+        if not isinstance(state["instance"], str) or not state["instance"]:
+            raise ValueError("missing realtime instance identity")
+        fingerprint = state["parameters"]
+        if (
+            not isinstance(fingerprint, str)
+            or len(fingerprint) != 64
+            or any(char not in "0123456789abcdef" for char in fingerprint)
+        ):
+            raise ValueError("invalid realtime parameters fingerprint")
+        if (
+            state["ledger_path"] is not None
+            and not Path(state["ledger_path"]).is_absolute()
+        ):
+            raise ValueError("realtime ledger path must be absolute")
+
     def restore_runtime(self, state):
+        self.validate_runtime_state(state)
         if (
             state["instance"] != self.instance.instance_key
             or state["strategy"] != self.instance.strategy_name

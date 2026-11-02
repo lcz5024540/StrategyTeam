@@ -240,3 +240,26 @@ def test_rapid_scheduler_does_not_insert_a_heartbeat_for_every_tick():
     worker.tick = lambda: WorkerHealth("DEGRADED", "feed lost")
     supervisor.tick_all()
     assert len(beats) == 2
+
+
+def test_current_package_decodes_realtime_checkpoint_and_rejects_unknown_version(
+    tmp_path,
+):
+    from pathlib import Path
+    from htx_trend.tools.holding_preflight import target_accepts
+    from htx_trend.runtime_checkpoint import SCHEMA, encode
+    from htx_trend.realtime.plans import Parameters
+    from htx_trend.realtime.worker import RealtimeWorker
+
+    state = dict(
+        instance="p",
+        strategy=VERSION,
+        parameters=Parameters().fingerprint,
+        failures=None,
+        ledger_path=str(tmp_path / "p.json"),
+    )
+    checkpoint = dict(schema=SCHEMA, profiles={"REALTIME_STRUCTURE_15M": encode(state)})
+    root = Path(__file__).parents[1]
+    assert target_accepts(root, [], checkpoint=checkpoint)
+    with pytest.raises(ValueError):
+        RealtimeWorker.validate_runtime_state({**state, "strategy": "unknown"})
