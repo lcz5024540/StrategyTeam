@@ -202,8 +202,8 @@ class LivePositionManager:
         try: rate=_taker_fee(self.client.swap_fee(code)); fee_source='HTX_ACCOUNT'
         except Exception: rate=self.config.fee_rate; fee_source='CONFIGURED_FALLBACK'
         state=self.repo.exit_state(row['id'])
-        if not state and self._continuation.version != BASELINE:
-            state = {'continuation_version': self._continuation.version}
+        # New entries persist their policy before submission. Untagged legacy
+        # positions retain baseline ownership, independent of current env.
         version = state.get('continuation_version', BASELINE)
         if version not in (BASELINE, CONFIRM, LINKED):
             raise ValueError('unknown position continuation version')

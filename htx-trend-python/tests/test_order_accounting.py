@@ -50,6 +50,10 @@ def store():
     db.raw.execute('CREATE TABLE coin_strategy_ledger_event (' + ','.join(c+' TEXT'+(' UNIQUE' if c=='event_key' else '') for c in columns) + ')')
     db.raw.execute("INSERT INTO htx_trend_position(id,position_key,account_id,strategy_family,strategy_name,model_name,contract_code,side,contract_size,contract_volume,invalidation_price,status) VALUES(1,'p',7,'TREND','HTX_TREND_V1','DONCHIAN_BREAKOUT','BTC-USDT','LONG','0.01',10,90,'ENTRY_SENT')")
     db.raw.execute("INSERT INTO htx_trend_order(id,position_id,leg,client_order_id,request_volume,status,filled_contracts,fee) VALUES(1,1,'ENTRY','123',10,'ACCEPTED',0,0)")
+    db.raw.execute("CREATE TABLE strategy_risk_reservation (reservation_key TEXT,account_id INT,position_key TEXT,strategy_name TEXT,status TEXT,notional_usdt NUMERIC,margin_usdt NUMERIC,risk_usdt NUMERIC,position_count INT,released_at TEXT,reason TEXT)")
+    from hashlib import sha256
+    key = sha256(b"p:p").hexdigest()
+    db.raw.execute("INSERT INTO strategy_risk_reservation VALUES(?,7,'p','HTX_TREND_V1','RESERVED',100,5,10,1,NULL,NULL)", (key,))
     db.commit()
     return db, HtxTrendMySqlRepository(db)
 
@@ -156,3 +160,37 @@ def test_each_close_insert_failure_rolls_back_entire_snapshot(store, monkeypatch
     monkeypatch.setattr(repo, 'record_ledger_event', original)
     apply(repo, **args)
     assert db.raw.execute("SELECT count(*) FROM coin_strategy_ledger_event WHERE client_order_id='456'").fetchone()[0] == 3
+
+
+def test_partial_cancel_releases_only_unfilled_budget_once(store):
+    db, repo = store
+    apply(repo, status='PARTIALLY_CANCELLED')
+    apply(repo, status='PARTIALLY_CANCELLED')
+    row = dict(db.raw.execute('SELECT * FROM strategy_risk_reservation').fetchone())
+    assert row['notional_usdt'] == 40 and row['risk_usdt'] == 4
+    assert row['position_count'] == 1 and row['status'] == 'RESERVED'
+
+
+def test_zero_fill_cancel_releases_budget_with_order_projection(store):
+    db, repo = store
+    apply(repo, status='CANCELLED', filled_contracts=D(0), average_price=None, fee=D(0))
+    row = dict(db.raw.execute('SELECT * FROM strategy_risk_reservation').fetchone())
+    assert row['status'] == 'RELEASED'
+    assert db.raw.execute('SELECT status FROM htx_trend_position').fetchone()[0] == 'REJECTED'
+
+
+def test_late_terminal_quantity_correction_keeps_reservation_equal_to_cumulative_fill(store):
+    db, repo = store
+    apply(repo, status='PARTIALLY_CANCELLED')
+    apply(repo, status='PARTIALLY_CANCELLED', filled_contracts=D(6))
+    apply(repo, status='PARTIALLY_CANCELLED', filled_contracts=D(6))
+    row = db.raw.execute('SELECT notional_usdt,risk_usdt FROM strategy_risk_reservation').fetchone()
+    assert D(str(row[0])) == 60 and D(str(row[1])) == 6
+
+
+def test_late_fill_after_zero_cancel_restores_reservation(store):
+    db, repo = store
+    apply(repo, status='CANCELLED', filled_contracts=D(0), average_price=None, fee=D(0))
+    apply(repo, status='PARTIALLY_CANCELLED', filled_contracts=D(4))
+    row = db.raw.execute('SELECT status,notional_usdt FROM strategy_risk_reservation').fetchone()
+    assert row[0] == 'RESERVED' and D(str(row[1])) == 40

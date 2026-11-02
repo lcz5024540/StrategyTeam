@@ -22,10 +22,12 @@ from .account_facts import HtxAccountFactsAdapter
 from .execution import ExecutionConfig, GateResult, PriorTrade, evaluate_gate
 from .htx_v5 import SwapOrderRequest
 from .maker_execution import (
-    MakerExecutionConfig, maker_limit_price, maker_reference_price,
+    MakerExecutionConfig, MakerTimeoutAction, maker_limit_price, maker_reference_price,
     shadow_evidence, as_dict, p_shadow_taker_evidence, p_shadow_taker_as_dict,
 )
 from .live import HtxLiveExecutor
+from .continuation import BASELINE, LINKED, ContinuationConfig, reentry_gate
+from .market_data import period_seconds
 from .market_data import ContractSpec, FundingRate, OrderBook
 from .models import ModelCandidate, TrendSide
 from .policy import PolicySelection, StrategyPolicy, select_policy
@@ -56,6 +58,17 @@ class EntryExecutionConfig:
     # MAINLINE-B maker path.  Default disabled; PAPER remains taker.
     maker_config: MakerExecutionConfig = MakerExecutionConfig()
 
+    def __post_init__(self):
+        if self.entry_order_type not in ("market", "limit"):
+            raise ValueError("entry_order_type must be market or limit")
+        if self.entry_order_type == "limit" and not self.maker_config.enabled:
+            raise ValueError("limit entry requires maker execution configuration")
+        if self.maker_config.enabled:
+            if self.maker_config.timeout_action is not MakerTimeoutAction.CANCEL:
+                raise ValueError("LIVE passive entry requires timeout_action=CANCEL")
+            if self.maker_config.max_wait_bars < 1 or self.maker_config.max_amends not in (None, 0):
+                raise ValueError("LIVE passive entry requires positive wait and no amendments")
+
     @classmethod
     def from_env(cls) -> "EntryExecutionConfig":
         defaults = cls()
@@ -63,10 +76,24 @@ class EntryExecutionConfig:
         def dec(name: str, default: Decimal) -> Decimal:
             return Decimal(environ.get(name, str(default)))
 
+        mode = environ.get("HTX_TREND_ENTRY_ORDER_TYPE", "").strip().lower()
+        if mode not in ("", "market", "limit"):
+            raise ValueError("HTX_TREND_ENTRY_ORDER_TYPE must be market or limit")
+        maker = MakerExecutionConfig.from_env()
+        if mode == "limit":
+            if "HTX_TREND_MAKER_ENABLED" in environ and not maker.enabled:
+                raise ValueError("limit conflicts with HTX_TREND_MAKER_ENABLED=false")
+            maker = replace(maker, enabled=True)
+        elif mode == "market" and maker.enabled:
+            raise ValueError("market conflicts with HTX_TREND_MAKER_ENABLED=true")
+        if maker.enabled:
+            maker = replace(maker,
+                timeout_action=(maker.timeout_action if "HTX_TREND_MAKER_TIMEOUT_ACTION" in environ else MakerTimeoutAction.CANCEL),
+                max_amends=(maker.max_amends if "HTX_TREND_MAKER_MAX_AMENDS" in environ else 0))
         return cls(
             leverage=int(environ.get("HTX_TREND_LEVERAGE", str(defaults.leverage))),
             allow_legacy_swing_live=environ.get("HTX_TREND_ALLOW_LEGACY_4H_LIVE", "false").strip().lower() in {"1", "true", "yes", "on"},
-            entry_order_type="market",
+            entry_order_type="limit" if maker.enabled else "market",
             margin_safety_ratio=dec("HTX_CONTRACT_MARGIN_SAFETY_RATIO", defaults.margin_safety_ratio),
             strong_quality_multiplier=dec("HTX_TREND_STRONG_QUALITY_POSITION_MULTIPLIER", defaults.strong_quality_multiplier),
             breadth_aligned_multiplier=dec("HTX_TREND_MARKET_BREADTH_ALIGNED_POSITION_MULTIPLIER", defaults.breadth_aligned_multiplier),
@@ -75,7 +102,7 @@ class EntryExecutionConfig:
             min_adaptive_multiplier=dec("HTX_TREND_MIN_ADAPTIVE_POSITION_MULTIPLIER", defaults.min_adaptive_multiplier),
             max_adaptive_multiplier=dec("HTX_TREND_MAX_ADAPTIVE_POSITION_MULTIPLIER", defaults.max_adaptive_multiplier),
             max_active_positions=int(environ.get("HTX_TREND_MAX_ACTIVE_POSITIONS", str(defaults.max_active_positions))),
-            maker_config=MakerExecutionConfig.from_env(),
+            maker_config=maker,
         )
 
 
@@ -133,6 +160,8 @@ class HtxTrendEntryExecutor:
         self._on_confirmed_entry, self._on_confirmed_reduction = on_confirmed_entry, on_confirmed_reduction
         self._admission = admission
         self._evidence_store = evidence_store
+        self._continuation = (ContinuationConfig.from_live_env() if instance.strategy_name == "HTX_TREND_15M_V2"
+                              else ContinuationConfig())
 
     def submit(self, *, run_id: str, candidate: ModelCandidate, period: str, atr: Decimal,
                ema_fast: Decimal, ema_slow: Decimal, adx: Decimal, recent_candles, book: OrderBook, contract: ContractSpec,
@@ -171,12 +200,16 @@ class HtxTrendEntryExecutor:
             except (ValueError, KeyError, TypeError, OSError) as error:
                 gate = GateResult(False, "LIVE_APPROVAL", str(error))
                 return EntrySubmission(False, gate, None, None, None, gate.reason)
-        # Java loads the latest completed trade before its cooldown gate.  Live
-        # Python used to leave this as None, which silently disabled cooldown.
-        if prior_trade is None:
+        latest_done = None
+        if prior_trade is None or self._continuation.version == LINKED:
             latest_done = getattr(self._repository, "latest_done_trade", lambda **_: None)(
                 account_id=self._account.account_id, contract_code=contract.contract_code,
                 timeframe_profile=timeframe_profile)
+        previous_exit = None
+        if self._continuation.version == LINKED:
+            prior_trade = None  # Linked price recovery does not add fixed-time cooldown.
+            previous_exit = _complete_exit_facts(self._repository, latest_done)
+        elif prior_trade is None:
             prior_trade = _prior_trade(latest_done)
         # Java resolves only the enabled strategy-policy ledger here. Account
         # allocation/reservation rows belong to Python's platform ledger and
@@ -257,6 +290,12 @@ class HtxTrendEntryExecutor:
                              momentum_quality=momentum_quality, ema_fast=ema_fast, ema_slow=ema_slow, adx=adx,
                              condition_trace=condition_trace,
                              config=effective)
+        if gate.allowed and self._continuation.version == LINKED and previous_exit is not None:
+            if not recent_candles or previous_exit.get('side') not in ('LONG', 'SHORT'):
+                gate = GateResult(False, 'REENTRY_EVIDENCE_MISSING', 'verified prior exit side/bar unavailable')
+            else:
+                candle = max(recent_candles, key=lambda item: item.open_time)
+                gate = reentry_gate(candidate, candle, book.top, previous_exit) or gate
         gate_ref = None
         if self._evidence_store is not None:
             gate_ref = self._evidence_store.put("entry_gate_trace", {
@@ -265,6 +304,7 @@ class HtxTrendEntryExecutor:
                 "market_context": market_context, "contract": contract, "funding": funding,
                 "order_book": book, "execution_facts": snapshot.facts, "policy": policy,
                 "conditions": condition_results, "result": gate,
+                "continuation_version": self._continuation.version, "previous_complete_exit": previous_exit,
             }, refs=evidence_refs)
         if not gate.allowed:
             return EntrySubmission(False, gate, None, None, None, gate.reason, gate_ref)
@@ -382,6 +422,17 @@ class HtxTrendEntryExecutor:
                 total_multiplier, sizing_reason, gate.reason, fee_rate, estimated_entry_fee, estimated_close_fee,
                 signal_px=candidate.entry_price, signal_ts=datetime.fromtimestamp(candidate.bar_time, UTC),
                 **order_px_fields(request.type, limit=request.price, mid=book.top.mid)))
+            if self._config.maker_config.enabled or self._instance.strategy_name == "HTX_TREND_15M_V2":
+                initial_state = {"continuation_version": self._continuation.version}
+                if self._config.maker_config.enabled:
+                    submitted_epoch = int(time.time())
+                    initial_state['entry_execution'] = {
+                        'schema': 'passive-entry-v1', 'client_order_id': client_order_id,
+                        'type': 'limit', 'time_in_force': 'post_only', 'price': request.price,
+                        'submitted_epoch': submitted_epoch,
+                        'cancel_at_epoch': submitted_epoch + self._config.maker_config.max_wait_bars * period_seconds(period),
+                        'timeout_action': 'CANCEL'}
+                self._repository.initialize_entry_state(position_id, initial_state)
             # V5 returns ids under slightly different keys depending on API version.
             submission_started = True
             order_ts = datetime.now(UTC)
@@ -415,7 +466,8 @@ class HtxTrendEntryExecutor:
 
     def reconcile(self, *, client_order_id: str, contract_code: str, position_id: int, leg: str,
                   factor_snapshot_id: int | None, model: str, contract_size: Decimal,
-                  position_key: str | None = None, run_id: str | None = None, side: str | None = None) -> str:
+                  position_key: str | None = None, run_id: str | None = None, side: str | None = None,
+                  entry_execution: dict | None = None, now_epoch: int | None = None) -> str:
         """Reconcile a persisted intent using the exact Java V5 status semantics.
 
         A restart only queries by client id.  It never creates another order,
@@ -439,6 +491,20 @@ class HtxTrendEntryExecutor:
             self._repository.release_risk(_reservation_key(self._instance, position_key),
                                           "full close confirmed by exchange")
 
+        if leg == "ENTRY" and entry_execution and status in ("ACCEPTED", "PARTIALLY_FILLED", "UNKNOWN"):
+            if entry_execution.get('client_order_id') != client_order_id:
+                raise ValueError("entry recovery identity mismatch")
+            current = int(time.time()) if now_epoch is None else now_epoch
+            if current >= int(entry_execution['cancel_at_epoch']):
+                if exchange_id is None:
+                    raise ValueError("cannot cancel without exchange-confirmed order id")
+                # A cancel acknowledgement is not a fill/terminal record. Query
+                # again; a race or timeout retains the persisted pending budget.
+                self._executor.cancel(contract_code, str(exchange_id))
+                return self.reconcile(client_order_id=client_order_id, contract_code=contract_code,
+                    position_id=position_id, leg=leg, factor_snapshot_id=factor_snapshot_id,
+                    model=model, contract_size=contract_size, position_key=position_key,
+                    run_id=run_id, side=side)
         return status
 
     def reconcile_pending(self) -> dict[str, str]:
@@ -450,7 +516,9 @@ class HtxTrendEntryExecutor:
                 result[client_order_id] = self.reconcile(client_order_id=client_order_id, contract_code=item["contract_code"],
                     position_id=int(item["position_id"]), leg=str(item["leg"]), factor_snapshot_id=item.get("factor_snapshot_id"),
                     model=str(item["model_name"]), contract_size=Decimal(str(item["contract_size"])),
-                    position_key=str(item["position_key"]), run_id=item.get("run_id"), side=item.get("trend_side"))
+                    position_key=str(item["position_key"]), run_id=item.get("run_id"), side=item.get("trend_side"),
+                    entry_execution=(getattr(self._repository, 'exit_state', lambda _: {})(int(item['position_id'])).get('entry_execution')
+                                     if item['leg'] == 'ENTRY' else None))
             except Exception as error:
                 # Preserve the intent and continue. A single unavailable HTX
                 # order lookup must not suppress protection of other positions.
@@ -487,6 +555,18 @@ def _entry_cycle_key(contract_code: str, side: TrendSide, model: str | object, r
     if not run_id:
         return None
     return f"{contract_code}:{side.value}:{model_value}:ENTRY_CYCLE:{run_id}"
+
+
+def _complete_exit_facts(repository, row):
+    if row is None:
+        return None
+    previous = {'side': row.get('side'), 'reason': row.get('exit_reason')}
+    state = getattr(repository, 'exit_state', lambda _: {})(row['id'])
+    facts = state.get('complete_exit') or {}
+    if (facts.get('position_id') == row['id'] and facts.get('side') == row.get('side')
+            and facts.get('reason') == row.get('exit_reason')):
+        previous.update(facts)
+    return previous
 
 
 def _prior_trade(row: dict[str, Any] | None):

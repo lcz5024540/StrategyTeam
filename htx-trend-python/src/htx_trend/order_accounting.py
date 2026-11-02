@@ -125,6 +125,23 @@ def apply_exchange_order(repo, *, account, instance, position_id: int, leg: str,
               final_net_profit=%s,final_pnl_source=%s,final_pnl_calculated_at=CURRENT_TIMESTAMP(3) WHERE id=%s''',
               (gross,total_fee,gross-total_fee if gross is not None else None,
                'EXCHANGE_ORDERS' if gross is not None else 'INCOMPLETE',position_id))
+        if leg == 'ENTRY' and status in TERMINAL:
+            # Scope by the immutable reservation identity, not a mutable label.
+            reservation_key = sha256(f'{instance.instance_key}:{position["position_key"]}'.encode()).hexdigest()[:160]
+            if entered == ZERO:
+                repo._write("UPDATE strategy_risk_reservation SET status='RELEASED',released_at=CURRENT_TIMESTAMP(3),"
+                            "reason='entry terminal without fill' WHERE reservation_key=%s AND status='RESERVED'",
+                            (reservation_key,))
+            elif remaining > ZERO:
+                # A late authoritative fill can correct an earlier terminal
+                # snapshot. Reopen the reservation and scale from its last
+                # cumulative quantity, never repeatedly by filled/requested.
+                denominator = previous if old['status'] in TERMINAL and previous > ZERO else number(old, 'request_volume')
+                fraction = filled_contracts / denominator
+                repo._write("UPDATE strategy_risk_reservation SET notional_usdt=notional_usdt*%s,"
+                            "margin_usdt=margin_usdt*%s,risk_usdt=risk_usdt*%s,"
+                            "status='RESERVED',released_at=NULL WHERE reservation_key=%s",
+                            (fraction, fraction, fraction, reservation_key))
         repo._connection.commit()
     except Exception:
         repo._connection.rollback()

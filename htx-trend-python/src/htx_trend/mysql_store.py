@@ -454,7 +454,7 @@ class HtxTrendMySqlRepository:
     def latest_done_trade(self, *, account_id: int, contract_code: str,
                           timeframe_profile: str = "INTRADAY_15M") -> dict[str, Any] | None:
         """Profile-local cooldown; a 15m close cannot cool down a 4h lifecycle."""
-        return self._one("""SELECT id,contract_code,updated_at,realized_profit,entry_fee,close_fee,message
+        return self._one("""SELECT id,contract_code,side,exit_reason,updated_at,realized_profit,entry_fee,close_fee,message
           FROM htx_trend_position WHERE contract_code=%s AND source_position_id IS NULL
           AND account_id=%s AND account_label <> 'paper' AND timeframe_profile=%s AND status='DONE'
           ORDER BY updated_at DESC,id DESC LIMIT 1""", (contract_code, account_id, timeframe_profile))
@@ -688,6 +688,11 @@ class HtxTrendMySqlRepository:
     def exit_state(self, position_id: int) -> dict[str, Any]:
         row = self._one("SELECT state_json FROM python_trend_exit_state WHERE position_id=%s", (position_id,))
         return json.loads(row['state_json']) if row else {}
+
+    def initialize_entry_state(self, position_id: int, state: dict[str, Any]) -> None:
+        """Create immutable entry identity/deadline before exchange submission."""
+        self._write("INSERT INTO python_trend_exit_state(position_id,state_json) VALUES(%s,%s)",
+                    (position_id, json.dumps(state, default=str, sort_keys=True)))
 
     def save_exit_state(self, position_id: int, state: dict[str, Any], decision) -> None:
         self._write("""INSERT INTO python_trend_exit_state(position_id,state_json) VALUES(%s,%s)

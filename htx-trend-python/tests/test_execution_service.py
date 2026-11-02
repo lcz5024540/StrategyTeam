@@ -15,6 +15,7 @@ from htx_trend.execution import ExecutionConfig, ExecutionFacts
 from htx_trend.execution_service import HtxTrendEntryExecutor
 from htx_trend.market_data import Candle, ContractSpec, FundingRate, OrderBook
 from htx_trend.mirror import ConfirmedPrimaryFill, HtxTrendMirrorFollower
+from htx_trend.maker_execution import MakerTimeoutAction
 from htx_trend.models import ModelCandidate, ModelCode, PriceStructure, TrendSide
 from htx_trend.mysql_store import AccountRiskLimit, CapitalAllocation, RiskReservationTotals, RuntimeInstance, TradeAccount, StrategyPolicyRecord
 from htx_trend.strategy_context import MarketContext, MarketRegime
@@ -30,6 +31,7 @@ def candidate() -> ModelCandidate:
 
 class Repository:
     def __init__(self): self.calls = []
+    def initialize_entry_state(self, position_id, state): self.calls.append(("entry_state", state))
     def capital_allocation(self, **_): return CapitalAllocation(7, "primary", "TREND", "HTX_TREND_V1", Decimal("100"), 2, None)
     def enabled_strategy_policies(self):
         return [StrategyPolicyRecord("DONCHIAN_BOX", "combo-v2", "DONCHIAN_BREAKOUT", "BOX_BREAKOUT",
@@ -90,9 +92,9 @@ def executor(repo: Repository, live: Executor, *, strategy_name="HTX_TREND_V1", 
     return HtxTrendEntryExecutor(**kwargs)
 
 
-def full_admission():
+def full_admission(strategy_version="HTX_TREND_V2"):
     digest="a"*64
-    return build_artifact(strategy_id="htx-trend",strategy_version="HTX_TREND_V2",
+    return build_artifact(strategy_id="htx-trend",strategy_version=strategy_version,
         experiment_id="EXP-20261011-002",source_commit="test",policy_hash=digest,config_hash=digest,
         dataset_manifest_hash=digest,stages=tuple(StageEvidence(stage,StageStatus.PASS,f"e/{stage.name}",digest,"passed")
             for stage in ResearchStage),allowed_surfaces=(DecisionSurface.RANKING,DecisionSurface.GATE,DecisionSurface.SIZING),
@@ -321,7 +323,7 @@ def test_maker_enabled_produces_limit_order_with_offset() -> None:
     from htx_trend.maker_execution import MakerExecutionConfig
     from htx_trend.execution import ExecutionConfig
     repo, live = Repository(), Executor()
-    cfg = MakerExecutionConfig(enabled=True, offset_bps=Decimal("5"))
+    cfg = MakerExecutionConfig(timeout_action=MakerTimeoutAction.CANCEL, enabled=True, offset_bps=Decimal("5"))
     base_entry = executor(repo, live)._config
     from dataclasses import replace
     entry_cfg = replace(base_entry, maker_config=cfg)
@@ -364,7 +366,7 @@ def test_maker_enabled_with_zero_offset_uses_best_bid_for_long() -> None:
     from htx_trend.maker_execution import MakerExecutionConfig
     from htx_trend.execution import ExecutionConfig
     repo, live = Repository(), Executor()
-    cfg = MakerExecutionConfig(enabled=True, offset_bps=Decimal("0"))
+    cfg = MakerExecutionConfig(timeout_action=MakerTimeoutAction.CANCEL, enabled=True, offset_bps=Decimal("0"))
     base_entry = executor(repo, live)._config
     from dataclasses import replace
     entry_cfg = replace(base_entry, maker_config=cfg)
@@ -389,7 +391,7 @@ def test_maker_enabled_limit_uses_post_only_time_in_force() -> None:
     from htx_trend.maker_execution import MakerExecutionConfig
     from htx_trend.execution import ExecutionConfig
     repo, live = Repository(), Executor()
-    cfg = MakerExecutionConfig(enabled=True, offset_bps=Decimal("0"))
+    cfg = MakerExecutionConfig(timeout_action=MakerTimeoutAction.CANCEL, enabled=True, offset_bps=Decimal("0"))
     base_entry = executor(repo, live)._config
     from dataclasses import replace
     entry_cfg = replace(base_entry, maker_config=cfg)
@@ -414,7 +416,7 @@ def test_maker_enabled_records_p_shadow_taker_evidence_with_legs() -> None:
     from htx_trend.execution import ExecutionConfig
     repo, live = Repository(), Executor()
     store = MemoryEvidenceStore()
-    cfg = MakerExecutionConfig(enabled=True, offset_bps=Decimal("0"))
+    cfg = MakerExecutionConfig(timeout_action=MakerTimeoutAction.CANCEL, enabled=True, offset_bps=Decimal("0"))
     base_entry = executor(repo, live)._config
     from dataclasses import replace
     entry_cfg = replace(base_entry, maker_config=cfg)
