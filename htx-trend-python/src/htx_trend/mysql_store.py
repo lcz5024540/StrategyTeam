@@ -427,8 +427,8 @@ class HtxTrendMySqlRepository:
         after an exchange/ledger ambiguity.
         """
         row = self._one("""SELECT COUNT(*) AS count FROM htx_trend_position
-            WHERE source_position_id IS NULL AND account_label='primary'
-            AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT','UNKNOWN')""", ())
+            WHERE source_position_id IS NULL AND account_id=%s
+            AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT','UNKNOWN')""", (account_id,))
         return int(row["count"]) if row else 0
 
     def active_direction_position_count(self, *, account_id: int, side: str) -> int:
@@ -706,10 +706,10 @@ class HtxTrendMySqlRepository:
                                reject_code: str | None = None, raw_candidate_count: int = 0,
                                policy_selected_count: int = 0, flags: dict | None = None,
                                decision_hash: str | None = None, package_version: str | None = None) -> bool:
-        """One row per instance/contract/bar; retain the first rejection on retries.
+        """One row per instance/contract/bar; retain the first terminal rejection.
 
-        Successful scans can later acquire a queue/EXEC rejection. A rejection
-        already recorded is immutable, including across process restarts.
+        Successful scans can later acquire a queue/EXEC rejection. Queue observations
+        can be replaced by the eventual gate result, including after restart.
         Missing DDL (or any diagnostic write failure) degrades to a safe log.
         """
         compact_flags = dict(flags or {})
@@ -725,7 +725,9 @@ class HtxTrendMySqlRepository:
                   signal_score, score_gap, regime, market_regime_source, stage, raw_candidate_count,
                   policy_selected_count, encoded, decision_hash, package_version, reject_code)
         # reject_code must be assigned last: MySQL evaluates assignments left to right.
-        updates = ",".join(f"{name}=IF(reject_code IS NULL,VALUES({name}),{name})" for name in columns[5:])
+        replaceable = ("reject_code IS NULL OR reject_code IN ('CAPACITY_FULL','EVALUATION_QUEUED') "
+                       "OR (VALUES(stage)='EXEC' AND VALUES(reject_code) IS NULL)")
+        updates = ",".join(f"{name}=IF({replaceable},VALUES({name}),{name})" for name in columns[5:])
         query = ("INSERT INTO htx_trend_entry_diagnosis (" + ",".join(columns) + ") VALUES ("
                  + ",".join(["%s"] * len(columns)) + ") ON DUPLICATE KEY UPDATE " + updates)
         try:

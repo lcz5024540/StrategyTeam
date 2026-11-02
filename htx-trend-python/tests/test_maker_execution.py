@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from htx_trend.maker_execution import (
     MakerExecutionConfig, MakerTimeoutAction, MakerLifecycleResult,
     maker_limit_price, maker_reference_price, should_amend,
@@ -17,20 +19,20 @@ def test_default_maker_config_is_disabled() -> None:
 
 def test_maker_limit_price_is_better_than_reference() -> None:
     # LONG buy limit should be below reference
-    assert maker_limit_price(TrendSide.LONG, Decimal("100"), Decimal("10")) < Decimal("100")
+    assert maker_limit_price(TrendSide.LONG, Decimal("100"), Decimal("10"), price_tick=Decimal("0.01")) < Decimal("100")
     # SHORT sell limit should be above reference
-    assert maker_limit_price(TrendSide.SHORT, Decimal("100"), Decimal("10")) > Decimal("100")
+    assert maker_limit_price(TrendSide.SHORT, Decimal("100"), Decimal("10"), price_tick=Decimal("0.01")) > Decimal("100")
 
 
 def test_maker_limit_price_respects_offset() -> None:
-    price = maker_limit_price(TrendSide.LONG, Decimal("10000"), Decimal("5"))
+    price = maker_limit_price(TrendSide.LONG, Decimal("10000"), Decimal("5"), price_tick=Decimal("0.01"))
     # 5 bps below reference, quantized to 0.01
     assert price == Decimal("9995.00")
 
 
 def test_maker_limit_price_with_zero_offset_equals_reference() -> None:
-    assert maker_limit_price(TrendSide.LONG, Decimal("10000"), Decimal("0")) == Decimal("10000.00")
-    assert maker_limit_price(TrendSide.SHORT, Decimal("10000"), Decimal("0")) == Decimal("10000.00")
+    assert maker_limit_price(TrendSide.LONG, Decimal("10000"), Decimal("0"), price_tick=Decimal("0.01")) == Decimal("10000.00")
+    assert maker_limit_price(TrendSide.SHORT, Decimal("10000"), Decimal("0"), price_tick=Decimal("0.01")) == Decimal("10000.00")
 
 
 def test_maker_reference_price_uses_best_same_side_book_price() -> None:
@@ -200,3 +202,26 @@ def test_p_shadow_taker_evidence_has_distinct_legs() -> None:
 def test_maker_timeout_action_default_is_taker_fallback() -> None:
     cfg = MakerExecutionConfig()
     assert cfg.timeout_action is MakerTimeoutAction.TAKER
+
+
+@pytest.mark.parametrize('reference,tick', [('0.074276','0.000001'), ('0.332151','0.000001'), ('1.23808','0.00001')])
+def test_real_subdollar_contract_ticks_preserve_limit_and_fill_average(reference, tick):
+    price = Decimal(reference)
+    limit = maker_limit_price(TrendSide.SHORT, price, Decimal('0'), price_tick=Decimal(tick))
+    assert limit == price
+    result = evaluate_maker_lifecycle(side=TrendSide.SHORT, quantity=3, placed_price=limit,
+        candles=(Candle(0, price, price, price, price),), max_wait_bars=1, max_amends=0,
+        amend_threshold_bps=Decimal('0'), partial_accept=False, timeout_action=MakerTimeoutAction.CANCEL,
+        price_tick=Decimal(tick))
+    assert result.average_price == price and result.filled_quantity == 3
+
+
+@pytest.mark.parametrize('side,expected', [(TrendSide.LONG, '99.75'), (TrendSide.SHORT, '100.00')])
+def test_non_decimal_tick_rounds_away_from_crossing(side, expected):
+    assert maker_limit_price(side, Decimal('99.99'), Decimal('0'), price_tick=Decimal('0.25')) == Decimal(expected)
+
+
+@pytest.mark.parametrize('tick', ['0', '-0.01', 'NaN', 'Infinity'])
+def test_invalid_contract_tick_cannot_produce_order(tick):
+    with pytest.raises(ValueError, match='price_tick'):
+        maker_limit_price(TrendSide.LONG, Decimal('1'), Decimal('0'), price_tick=Decimal(tick))

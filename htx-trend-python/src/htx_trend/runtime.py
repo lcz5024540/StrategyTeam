@@ -177,13 +177,13 @@ class PaperTrendRuntime:
                 "candidate": selected.model.value, "side": selected.side.value,
                 "reason": "missing same-side book price; maker reference unavailable"})
             return ScanOutcome(run_id, output, gates, selected, None)
-        limit_price = maker_limit_price(selected.side, reference, cfg.offset_bps)
+        limit_price = maker_limit_price(selected.side, reference, cfg.offset_bps, price_tick=contract.price_tick)
         fill_candle = execution_candle or entry_window.candles[-1]
         lifecycle = evaluate_maker_lifecycle(
             side=selected.side, quantity=gate.size_plan.contracts, placed_price=limit_price,
             candles=(fill_candle,), max_wait_bars=cfg.max_wait_bars,
             max_amends=cfg.max_amends, amend_threshold_bps=cfg.amend_threshold_bps,
-            partial_accept=cfg.partial_accept, timeout_action=cfg.timeout_action)
+            partial_accept=cfg.partial_accept, timeout_action=cfg.timeout_action, price_tick=contract.price_tick)
         # P-SHADOW-TAKER: record maker_live vs taker_shadow cost pair for every signal.
         taker_shadow_price = book.ask if selected.side is TrendSide.LONG else book.bid
         p_evidence = p_shadow_taker_evidence(

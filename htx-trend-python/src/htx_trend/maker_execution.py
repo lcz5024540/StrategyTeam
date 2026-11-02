@@ -7,7 +7,7 @@ orders.  The PAPER default remains taker; enable the maker path only via config.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal, ROUND_DOWN, ROUND_CEILING, ROUND_FLOOR
 from enum import StrEnum
 from os import environ
 from typing import Any
@@ -100,18 +100,25 @@ def maker_reference_price(side: TrendSide, book: OrderBook | TopOfBook) -> Decim
     return top.ask
 
 
-def maker_limit_price(side: TrendSide, reference: Decimal, offset_bps: Decimal) -> Decimal:
-    """Passive limit price: better than the reference price by offset_bps.
-
-    The reference price is typically the best same-side book price.  When
-    offset_bps is 0 the limit price equals the reference price.
-    """
-    if reference <= ZERO:
-        raise ValueError("reference must be positive")
+def maker_limit_price(side: TrendSide, reference: Decimal, offset_bps: Decimal,
+                      *, price_tick: Decimal) -> Decimal:
+    """Round to a contract tick away from crossing; never guess its precision."""
+    if not reference.is_finite() or reference <= ZERO:
+        raise ValueError("reference must be finite and positive")
+    if not price_tick.is_finite() or price_tick <= ZERO:
+        raise ValueError("price_tick must be finite and positive")
+    if not offset_bps.is_finite() or offset_bps < ZERO:
+        raise ValueError("passive offset_bps must be finite and nonnegative")
+    if side not in (TrendSide.LONG, TrendSide.SHORT):
+        raise ValueError("passive order requires LONG or SHORT")
     multiplier = Decimal("1") + offset_bps / Decimal("10000")
-    if side is TrendSide.LONG:
-        return (reference / multiplier).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
-    return (reference * multiplier).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+    raw = reference / multiplier if side is TrendSide.LONG else reference * multiplier
+    rounding = ROUND_FLOOR if side is TrendSide.LONG else ROUND_CEILING
+    # Decimal-place quantization alone does not enforce ticks such as 0.25.
+    price = (raw / price_tick).to_integral_value(rounding=rounding) * price_tick
+    if price <= ZERO:
+        raise ValueError("passive price rounds to zero")
+    return price
 
 
 def should_amend(limit_price: Decimal, reference: Decimal, amend_threshold_bps: Decimal) -> bool:
@@ -174,7 +181,8 @@ def evaluate_maker_lifecycle(*, side: TrendSide, quantity: int, placed_price: De
                             candles: tuple[Candle, ...], max_wait_bars: int,
                             max_amends: int | None, amend_threshold_bps: Decimal,
                             partial_accept: bool,
-                            timeout_action: MakerTimeoutAction) -> MakerLifecycleResult:
+                            timeout_action: MakerTimeoutAction,
+                            price_tick: Decimal = Decimal("0.01")) -> MakerLifecycleResult:
     """Minimal deterministic maker state machine.
 
     place -> wait <= max_wait_bars -> (amend if amends remain and threshold
@@ -209,13 +217,13 @@ def evaluate_maker_lifecycle(*, side: TrendSide, quantity: int, placed_price: De
             remaining -= fill.filled_quantity
             total_cost += current_price * fill.filled_quantity
         if remaining == 0:
-            avg = (total_cost / filled_total).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+            avg = (total_cost / filled_total)
             return MakerLifecycleResult(
                 filled_total, 0, avg, "FILLED", bars_held, amends_done,
                 f"filled within {bars_held} bar(s)")
         if fill.status == "PARTIAL" and not partial_accept:
             # partial_accept=False: remainder is cancelled, never re-hung.
-            avg = (total_cost / filled_total).quantize(Decimal("0.01"), rounding=ROUND_DOWN) if filled_total > 0 else None
+            avg = (total_cost / filled_total) if filled_total > 0 else None
             return MakerLifecycleResult(
                 filled_total, remaining, avg, "PARTIAL_CANCELLED", bars_held, amends_done,
                 "partial fill with partial_accept=False; remainder cancelled")
@@ -224,12 +232,12 @@ def evaluate_maker_lifecycle(*, side: TrendSide, quantity: int, placed_price: De
         if bars_held < max_wait_bars and amend_budget > 0:
             new_reference = candle.close
             if should_amend(current_price, new_reference, amend_threshold_bps):
-                current_price = maker_limit_price(side, new_reference, Decimal("0"))
+                current_price = maker_limit_price(side, new_reference, Decimal("0"), price_tick=price_tick)
                 amends_done += 1
                 amend_budget -= 1
 
     # Wait window exhausted.
-    avg = (total_cost / filled_total).quantize(Decimal("0.01"), rounding=ROUND_DOWN) if filled_total > 0 else None
+    avg = (total_cost / filled_total) if filled_total > 0 else None
     if timeout_action is MakerTimeoutAction.CANCEL:
         status = "PARTIAL_CANCELLED" if filled_total > 0 else "CANCELLED"
         return MakerLifecycleResult(

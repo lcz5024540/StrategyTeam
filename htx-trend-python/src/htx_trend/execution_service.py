@@ -344,7 +344,7 @@ class HtxTrendEntryExecutor:
                                                           position_id=position_id)
             request = _order_request(contract.contract_code, candidate.side, client_order_id, gate.size_plan.contracts,
                                      self._config.entry_order_type,
-                                     maker_config=self._config.maker_config, book=book)
+                                     maker_config=self._config.maker_config, book=book, price_tick=contract.price_tick)
             # MAINLINE-B shadow/pair logging: record taker vs maker cost difference
             # when maker path is enabled.  This is evidence only; it does not pass
             # the ORDERPX gate (σ_d≥200 still owed).
@@ -508,15 +508,18 @@ def _prior_trade(row: dict[str, Any] | None):
 
 def _order_request(contract: str, side: TrendSide, client_order_id: str, volume: int, type_: str,
                    *, maker_config: MakerExecutionConfig | None = None,
-                   book: OrderBook | None = None) -> SwapOrderRequest:
+                   book: OrderBook | None = None, price_tick: Decimal | None = None) -> SwapOrderRequest:
     long = side is TrendSide.LONG
     cfg = maker_config or MakerExecutionConfig()
-    if cfg.enabled and book is not None:
+    if cfg.enabled:
+        if book is None or price_tick is None:
+            raise ValueError("maker entry requires book and contract price_tick")
         reference = maker_reference_price(side, book)
         if reference is not None and reference > ZERO:
-            limit = maker_limit_price(side, reference, cfg.offset_bps)
+            limit = maker_limit_price(side, reference, cfg.offset_bps, price_tick=price_tick)
             return SwapOrderRequest(contract, "long" if long else "short", "buy" if long else "sell", "limit",
                                     client_order_id, str(volume), price=str(limit), time_in_force="post_only")
+        raise ValueError("maker entry requires a positive same-side quote")
     return SwapOrderRequest(contract, "long" if long else "short", "buy" if long else "sell", type_, client_order_id, str(volume))
 
 

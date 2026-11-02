@@ -332,7 +332,7 @@ def test_maker_enabled_produces_limit_order_with_offset() -> None:
         run_id="run", candidate=candidate(), period="15min", atr=Decimal("2"),
         ema_fast=Decimal("101"), ema_slow=Decimal("99"), adx=Decimal("30"), recent_candles=bars,
         book=OrderBook(((Decimal("99.99"), Decimal("100")),), ((Decimal("100.01"), Decimal("100")),)),
-        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1),
+        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.01"), 1),
         funding=FundingRate("BTC-USDT", Decimal("0.0001")),
         market_context=MarketContext(MarketRegime.BROAD_UP, TrendSide.LONG, Decimal("0.8")), now_epoch=10_000)
     assert result.accepted
@@ -376,7 +376,7 @@ def test_maker_enabled_with_zero_offset_uses_best_bid_for_long() -> None:
         run_id="run", candidate=candidate(), period="15min", atr=Decimal("2"),
         ema_fast=Decimal("101"), ema_slow=Decimal("99"), adx=Decimal("30"), recent_candles=bars,
         book=OrderBook(((best_bid, Decimal("100")),), ((Decimal("100.01"), Decimal("100")),)),
-        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1),
+        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.01"), 1),
         funding=FundingRate("BTC-USDT", Decimal("0.0001")),
         market_context=MarketContext(MarketRegime.BROAD_UP, TrendSide.LONG, Decimal("0.8")), now_epoch=10_000)
     assert result.accepted
@@ -400,7 +400,7 @@ def test_maker_enabled_limit_uses_post_only_time_in_force() -> None:
         run_id="run", candidate=candidate(), period="15min", atr=Decimal("2"),
         ema_fast=Decimal("101"), ema_slow=Decimal("99"), adx=Decimal("30"), recent_candles=bars,
         book=OrderBook(((Decimal("99.99"), Decimal("100")),), ((Decimal("100.01"), Decimal("100")),)),
-        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1),
+        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.01"), 1),
         funding=FundingRate("BTC-USDT", Decimal("0.0001")),
         market_context=MarketContext(MarketRegime.BROAD_UP, TrendSide.LONG, Decimal("0.8")), now_epoch=10_000)
     assert result.accepted
@@ -425,7 +425,7 @@ def test_maker_enabled_records_p_shadow_taker_evidence_with_legs() -> None:
         run_id="run", candidate=candidate(), period="15min", atr=Decimal("2"),
         ema_fast=Decimal("101"), ema_slow=Decimal("99"), adx=Decimal("30"), recent_candles=bars,
         book=OrderBook(((Decimal("99.99"), Decimal("100")),), ((Decimal("100.01"), Decimal("100")),)),
-        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.1"), 1),
+        contract=ContractSpec("BTC-USDT", Decimal("0.01"), Decimal("0.01"), 1),
         funding=FundingRate("BTC-USDT", Decimal("0.0001")),
         market_context=MarketContext(MarketRegime.BROAD_UP, TrendSide.LONG, Decimal("0.8")), now_epoch=10_000)
     assert result.accepted

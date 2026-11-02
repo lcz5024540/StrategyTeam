@@ -210,6 +210,13 @@ class _EvidenceUnavailable(RuntimeError):
     pass
 
 
+class _ContextUnavailable(RuntimeError):
+    def __init__(self, windows, missing_periods):
+        self.flags = {"required_bars": 121, "missing_periods": list(missing_periods),
+                      "closed_bars": {p: len(windows.get(p, ())) for p in missing_periods}}
+        super().__init__("required closed-bar profile context unavailable")
+
+
 @dataclass(frozen=True, slots=True)
 class _Scan:
     contract: str
@@ -286,7 +293,7 @@ class LiveTrendWorker(StrategyWorker):
         stable_close_epoch = self._stable_candle_close_epoch(now_epoch)
         fresh_scan = stable_close_epoch != self._last_scanned_close_epoch
         scans: list[_Scan] = []
-        failures: list[str] = []
+        failures: list[str] = list(getattr(self, "_last_scan_failures", ()))
         if fresh_scan:
             self._diagnosis_rows = {}
             self._raw_candidates = self._policy_selected = 0
@@ -296,6 +303,8 @@ class LiveTrendWorker(StrategyWorker):
                 datetime.fromtimestamp(now_epoch - self._config.market_breadth_lookback_seconds, UTC))
                 if self._config.adaptive_sizing_enabled else None)
             scans, failures = self._scan_all(now_epoch, java_config)
+            self._last_scan_failures = tuple(failures)
+            self._last_scan_coverage = len(scans)
             self._last_scanned_close_epoch = stable_close_epoch
             anchor_regime = self._market_anchor_regime(now_epoch) if self._config.market_anchor_enabled else MarketRegime.MIXED
             context = self.market_context_from_breadth(
@@ -394,7 +403,8 @@ class LiveTrendWorker(StrategyWorker):
             active = self._repository.active_position_count(account_id=self._instance.account_id or -1)
             slots = self._remaining_slots(len(ranked), active)
             for _, scan, _ in ranked[slots:]:
-                self._diagnose(scan, stage="QUEUE", code=RejectCode.CAPACITY_FULL)
+                self._diagnose(scan, stage="QUEUE", code=(RejectCode.CAPACITY_FULL if slots == 0
+                                                         else RejectCode.EVALUATION_QUEUED))
             for policy, scan, factor_id in ranked[:slots]:
                 candidate = policy.candidate
                 run_id = f"trend-entry:{scan.contract}:{self._config.entry_period}:{candidate.bar_time}"
@@ -417,6 +427,7 @@ class LiveTrendWorker(StrategyWorker):
                 # a new completed candle is required for another attempt.
                 self._pending.pop(scan.contract, None)
         detail = (f"scan={'fresh' if fresh_scan else 'cached'} contracts={len(scans) if fresh_scan else 0}/{len(self._config.contracts)} "
+                  f"coverage={getattr(self, '_last_scan_coverage', len(scans))}/{len(self._config.contracts)} "
                   f"pending={len(self._pending)} entriesAttempted={attempted} entriesAccepted={accepted} recovered={len(recovered)} "
                   f"entryWindow={'OPEN' if within_window else 'CLOSED'} anchor={context.anchor_regime.value}")
         if execution_block_reason:
@@ -469,8 +480,9 @@ class LiveTrendWorker(StrategyWorker):
             bar_time = (self._last_scanned_close_epoch or 0) - period_seconds(self._config.entry_period)
         key = (contract, bar_time)
         previous = self._diagnosis_rows.get(key)
-        if previous and previous["reject_code"]:
-            return  # First rejecting stage wins; queue observations never mutate pending.
+        if previous and previous["reject_code"] and previous["reject_code"] not in (
+                RejectCode.CAPACITY_FULL, RejectCode.EVALUATION_QUEUED) and not (stage == "EXEC" and code is None):
+            return  # Preserve terminal rejection; a queue observation is not a final decision.
         signal = scan.signal if scan else None
         self._diagnosis_rows[key] = dict(
             instance_key=self._instance.instance_key,
@@ -589,11 +601,13 @@ class LiveTrendWorker(StrategyWorker):
                 try:
                     scans.append(future.result())
                 except Exception as error:
-                    failures.append(f"{contract}:{'RuntimeError' if isinstance(error, _EvidenceUnavailable) else type(error).__name__}")
-                    code = (RejectCode.EVIDENCE_UNAVAILABLE if isinstance(error, _EvidenceUnavailable)
+                    failures.append(f"{contract}:{'CONTEXT_UNAVAILABLE' if isinstance(error, _ContextUnavailable) else 'RuntimeError' if isinstance(error, _EvidenceUnavailable) else type(error).__name__}")
+                    code = (RejectCode.CONTEXT_UNAVAILABLE if isinstance(error, _ContextUnavailable) else
+                            RejectCode.EVIDENCE_UNAVAILABLE if isinstance(error, _EvidenceUnavailable)
                             else RejectCode.SCAN_FAILED)
                     self._diagnose(None, contract=contract, bar_time=self._stable_candle_close_epoch(now_epoch)
-                                   - period_seconds(self._config.entry_period), stage="SCAN", code=code)
+                                   - period_seconds(self._config.entry_period), stage="SCAN", code=code,
+                                   flags=error.flags if isinstance(error, _ContextUnavailable) else None)
         return scans, failures
 
     def _scan_one(self, contract: str, now_epoch: int, java_config: JavaEntryConfig) -> _Scan:
@@ -622,9 +636,7 @@ class LiveTrendWorker(StrategyWorker):
                     book.executable_contracts("LONG"), book.executable_contracts("SHORT")),
             )
             if regime.status is RegimeStatus.UNKNOWN:
-                raise _EvidenceUnavailable(
-                    "required multi-timeframe context unavailable: " + ",".join(regime.missing_periods)
-                )
+                raise _ContextUnavailable(windows, regime.missing_periods)
         decision = HtxStrategyDecisionEngine(
             strategy_version=self._instance.strategy_name or LEGACY_STRATEGY_VERSION,
             config=java_config, admission=self._admission, evidence_store=self._market.evidence_store,

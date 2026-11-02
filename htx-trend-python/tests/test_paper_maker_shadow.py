@@ -59,7 +59,7 @@ def _book(bid: str = "99.99", ask: str = "100.01") -> TopOfBook:
 
 
 def _contract() -> ContractSpec:
-    return ContractSpec("BTC-USDT", D("0.01"), D("0.1"), 1)
+    return ContractSpec("BTC-USDT", D("0.01"), D("0.01"), 1)
 
 
 def _execution_config() -> ExecutionConfig:

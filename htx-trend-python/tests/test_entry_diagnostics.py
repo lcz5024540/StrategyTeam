@@ -114,7 +114,8 @@ class MemoryConnection:
         columns = query.split('(', 1)[1].split(')', 1)[0].split(',')
         row = dict(zip(columns, params))
         key = tuple(row[name] for name in ('instance_key', 'contract_code', 'period', 'bar_time'))
-        if key not in self.rows or self.rows[key]['reject_code'] is None:
+        if (key not in self.rows or self.rows[key]['reject_code'] in (None, R.CAPACITY_FULL, R.EVALUATION_QUEUED)
+                or (row['stage'] == 'EXEC' and row['reject_code'] is None)):
             self.rows[key] = row
     def commit(self):
         pass
@@ -129,9 +130,12 @@ def test_repository_idempotency_first_rejection_and_valid_bounded_json():
     assert repo.record_entry_diagnosis(**row, stage='EXEC', reject_code='gate.model_score')
     assert len(connection.rows) == 1
     stored = next(iter(connection.rows.values()))
-    assert stored['reject_code'] == R.CAPACITY_FULL
-    assert len(stored['flags_json']) <= 512 and json.loads(stored['flags_json'])['truncated']
-    assert connection.queries[-1].endswith('reject_code=IF(reject_code IS NULL,VALUES(reject_code),reject_code)')
+    assert stored['reject_code'] == 'gate.model_score'
+    assert len(stored['flags_json']) <= 512
+    queued_flags = json.loads(connection.rows[next(iter(connection.rows))]['flags_json'])
+    assert isinstance(queued_flags, dict)
+    assert "reject_code IN ('CAPACITY_FULL','EVALUATION_QUEUED')" in connection.queries[-1]
+    assert connection.queries[-1].endswith('VALUES(reject_code),reject_code)')
     assert repo.record_entry_diagnosis(**{**row, 'instance_key': 'two'})
     assert len(connection.rows) == 2
 
@@ -311,7 +315,7 @@ def test_closed_window_keeps_existing_fresh_candidate_carryover(monkeypatch):
     assert next(iter(connection.rows.values()))['reject_code'] == 'gate.model_score'
 
 
-def test_cached_capacity_then_expiry_preserves_first_rejection(monkeypatch):
+def test_cached_capacity_then_expiry_records_terminal_result(monkeypatch):
     worker, _, market, executor, connection = make_worker(monkeypatch, active=1)
     worker.tick()
     assert worker._pending
@@ -319,6 +323,49 @@ def test_cached_capacity_then_expiry_preserves_first_rejection(monkeypatch):
     worker.tick()
     assert not worker._pending
     assert len(connection.rows) == 1
-    assert next(iter(connection.rows.values()))['reject_code'] == R.CAPACITY_FULL
+    assert next(iter(connection.rows.values()))['reject_code'] == R.EXPIRED
     assert market.kline_window.call_count == 2
     executor.submit.assert_not_called()
+
+
+def test_missing_history_is_distinct_from_write_failure_and_stays_degraded_on_cached_tick(monkeypatch):
+    from htx_trend.live_worker import _ContextUnavailable
+    worker, _, market, executor, connection = make_worker(monkeypatch, observe_only=False)
+    worker._scan_one = Mock(side_effect=_ContextUnavailable({'1day': tuple(range(63))}, ('1day',)))
+    first = worker.tick()
+    second = worker.tick()
+    row = next(iter(connection.rows.values()))
+    assert first.status == second.status == 'DEGRADED'
+    assert row['reject_code'] == R.CONTEXT_UNAVAILABLE
+    assert json.loads(row['flags_json']) == {'closed_bars': {'1day': 63}, 'missing_periods': ['1day'], 'required_bars': 121}
+    assert 'coverage=0/1' in second.detail
+    worker._scan_one.assert_called_once()
+    executor.submit.assert_not_called()
+
+
+def test_queue_observation_can_be_replaced_by_actual_execution_after_restart():
+    connection = MemoryConnection()
+    repo = HtxTrendMySqlRepository(connection)
+    row = dict(instance_key='one', run_id='r', contract_code='BTC-USDT', period='15min', bar_time=900)
+    repo.record_entry_diagnosis(**row, stage='QUEUE', reject_code=R.EVALUATION_QUEUED)
+    recovered = HtxTrendMySqlRepository(connection)
+    recovered.record_entry_diagnosis(**row, stage='EXEC', reject_code=None)
+    result = next(iter(connection.rows.values()))
+    assert result['stage'] == 'EXEC' and result['reject_code'] is None
+
+
+def test_position_count_uses_account_id_not_historical_label():
+    import sqlite3
+    conn = sqlite3.connect(':memory:')
+    conn.row_factory = sqlite3.Row
+    conn.execute('CREATE TABLE htx_trend_position (account_id INT, account_label TEXT, source_position_id INT, status TEXT)')
+    conn.executemany('INSERT INTO htx_trend_position VALUES(?,?,?,?)', [
+        (7,'primary-live-15m',None,'ACTIVE'), (7,'primary-live-15m',None,'UNKNOWN'),
+        (7,'primary-live-15m',None,'DONE'), (7,'mirror-copy',123,'ACTIVE'),
+        (1,'primary',None,'ACTIVE'), (3,'paper',None,'ACTIVE')])
+    repo = HtxTrendMySqlRepository(None)
+    repo._one = lambda query, params: conn.execute(query.replace('%s','?'),params).fetchone()
+    assert repo.active_position_count(account_id=7) == 2
+    assert repo.active_position_count(account_id=1) == 1
+    assert repo.active_position_count(account_id=2) == 0
+    conn.close()
