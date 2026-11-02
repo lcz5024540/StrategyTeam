@@ -11,6 +11,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_DOWN
 from enum import StrEnum
 
+from .realtime.ownership import supported_models
 from .models import ModelCode, TrendSide
 
 ZERO = Decimal("0")
@@ -91,6 +92,7 @@ class ExitInput:
     bars_held: int = 0
     timeout_bars: int | None = None
     min_hold_bars: int | None = None
+    mfe_coverage_complete: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +122,7 @@ def evaluate_holding(input_: ExitInput) -> HoldingState:
 
 def decide_v4(input_: ExitInput) -> ExitDecision:
     """Return the V4 decision policy for all primary models."""
-    if input_.primary_model not in tuple(ModelCode) or not _valid(input_):
+    if input_.primary_model not in supported_models() or not _valid(input_):
         return _decision(input_, ExitPhase.THESIS_INTACT, ExitAction.HOLD, None, input_.protection_price,
                          ZERO if input_.max_favorable_r is None else input_.max_favorable_r,
                          input_.trailing_armed_at, input_.trailing_arm_reason, "unsupported-or-incomplete")
@@ -142,7 +144,7 @@ def decide_v4(input_: ExitInput) -> ExitDecision:
     milestone = ((profitable and (structure_reached or max_r >= Decimal("1") or (cost_covered and favorable >= arm_distance)))
                  or net_mfe_floor)
     armed_at, arm_reason, newly_armed = input_.trailing_armed_at, input_.trailing_arm_reason, False
-    if armed_at is None and milestone:
+    if armed_at is None and milestone and input_.mfe_coverage_complete:
         armed_at, newly_armed = input_.evaluated_at, True
         arm_reason = ("STRUCTURE_TARGET" if structure_reached else "RISK_REWARD_MILESTONE" if max_r >= Decimal("1")
                       else "NET_COST_AND_ATR_MILESTONE" if cost_covered and favorable >= arm_distance

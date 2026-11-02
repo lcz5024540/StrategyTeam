@@ -76,6 +76,8 @@ class SegmentRecorder:
         self.failure = None
         self.lock = threading.RLock()
         self.last_ref = None
+        manifest=self.root/'segments.jsonl'
+        self.indexed={json.loads(line)['hash'] for line in manifest.read_text().splitlines()} if manifest.exists() else set()
 
     def append(self, event):
         with self.lock:
@@ -113,6 +115,11 @@ class SegmentRecorder:
                         f.flush()
                         os.fsync(f.fileno())
                     os.replace(temporary, path)
+                    self.used += len(packed)
+                if sha not in self.indexed:
+                    # A crash after object rename but before manifest append is recoverable.
+                    if digest(json.loads(gzip.decompress(path.read_bytes()))) != sha:
+                        raise OSError('orphan segment hash mismatch')
                     with (self.root/'segments.jsonl').open('ab') as f:
                         f.write(line)
                         f.flush()
@@ -122,7 +129,8 @@ class SegmentRecorder:
                         os.fsync(fd)
                     finally:
                         os.close(fd)
-                    self.used += len(packed)+len(line)
+                    self.used += len(line)
+                    self.indexed.add(sha)
                 self.last_ref = sha
                 self.pending.clear()
                 self.pending_bytes = 0
@@ -141,4 +149,7 @@ class SegmentRecorder:
             if digest(obj) != row['hash'] or len(obj['events']) != row['count']:
                 raise ValueError('realtime segment integrity failure')
             result.extend(obj['events'])
+        listed={json.loads(line)['hash'] for line in manifest.read_text().splitlines()} if manifest.exists() else set()
+        orphans={p.name.removesuffix('.json.gz') for p in self.root.glob('*.json.gz')}-listed
+        if orphans:raise ValueError('unindexed realtime segments: incomplete coverage')
         return result

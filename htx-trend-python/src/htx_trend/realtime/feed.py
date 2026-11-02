@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import deque
 from decimal import Decimal
 import gzip
 import json
@@ -92,18 +93,23 @@ class EventOrder:
     """Monotone per-channel timestamps/IDs; versions need not be contiguous."""
     def __init__(self):
         self.seen: dict[tuple, tuple] = {}
+        self.ids={};self.id_queues={}
 
     def accept(self, event: MarketEvent) -> bool:
         key = (event.epoch, event.contract, event.kind)
+        recent=self.ids.setdefault(key,set());order=self.id_queues.setdefault(key,deque())
+        if event.event_id in recent:return False
         ident = int(event.event_id) if event.event_id.isdigit() else event.event_id
         marker = (event.exchange_ms, str(ident).zfill(32))
         if marker <= self.seen.get(key, (-1, '')):
             return False
         self.seen[key] = marker
+        recent.add(event.event_id);order.append(event.event_id)
+        if len(order)>4096:recent.remove(order.popleft())
         return True
 
     def reset(self):
-        self.seen.clear()
+        self.seen.clear();self.ids.clear();self.id_queues.clear()
 
 
 class PublicStream:
@@ -142,12 +148,23 @@ class PublicStream:
                     self.epoch = uuid.uuid4().hex
                     self.observed.clear()
                     self.connected = True
-                    for code in self.contracts:
-                        for channel in ('trade.detail', 'bbo'):
-                            socket.send(json.dumps({'sub': f'market.{code}.{channel}', 'id': f'{code}-{channel}'}))
+                    subscriptions=iter((code,channel) for code in self.contracts for channel in ('trade.detail','bbo'))
+                    next_subscription=next(subscriptions,None)
+                    send_after=0.0;last_message=time.monotonic()
                     order = EventOrder()
                     while not self.stop_event.is_set():
-                        raw = socket.recv(timeout=15)
+                        current=time.monotonic()
+                        if next_subscription is not None and current>=send_after:
+                            code,channel=next_subscription
+                            socket.send(json.dumps({'sub': f'market.{code}.{channel}', 'id': f'{code}-{channel}'}))
+                            send_after=current+.05  # <=20 subscriptions/s; keep heartbeat receive active.
+                            next_subscription=next(subscriptions,None)
+                        timeout=max(.001,send_after-time.monotonic()) if next_subscription is not None else 15
+                        try:raw=socket.recv(timeout=timeout)
+                        except TimeoutError:
+                            if time.monotonic()-last_message>=15:raise
+                            continue
+                        last_message=time.monotonic()
                         events, pong = decode(raw, epoch=self.epoch, received_ms=int(self.clock()*1000))
                         if pong:
                             socket.send(json.dumps(pong))
@@ -157,6 +174,7 @@ class PublicStream:
                             self.events.put_nowait(event)
                             self.observed.add((event.contract, event.kind))
                         if events:
+                            self.failure = None
                             delay = 1
             except Exception as error:
                 with self._status_lock:

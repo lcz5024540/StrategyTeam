@@ -328,6 +328,7 @@ class StrategySupervisor:
     """One process may host several safe workers, while systemd can isolate each one."""
     def __init__(self, repository: HtxTrendMySqlRepository, workers: dict[str, StrategyWorker]) -> None:
         self._repository, self._workers = repository, workers
+        self._heartbeat_at={};self._heartbeat_health={}
 
     def tick_all(self) -> dict[str, WorkerHealth]:
         results: dict[str, WorkerHealth] = {}
@@ -337,8 +338,13 @@ class StrategySupervisor:
             except Exception as error:
                 health = WorkerHealth("FAILED", f"{type(error).__name__}: {error}")
             results[instance_key] = health
-            self._repository.heartbeat(instance_key=instance_key, status=health.status, detail=health.detail,
-                                       candidate_count=health.candidate_count, active_position_count=health.active_position_count)
+            import time
+            now=time.monotonic();fingerprint=(health.status,health.detail,health.active_position_count)
+            if (fingerprint!=self._heartbeat_health.get(instance_key) or
+                    now-self._heartbeat_at.get(instance_key,0)>=getattr(worker,'heartbeat_interval_seconds',0)):
+                self._repository.heartbeat(instance_key=instance_key, status=health.status, detail=health.detail,
+                                           candidate_count=health.candidate_count, active_position_count=health.active_position_count)
+                self._heartbeat_at[instance_key]=now;self._heartbeat_health[instance_key]=fingerprint
         return results
 
     def stop(self) -> None:

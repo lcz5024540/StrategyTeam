@@ -446,7 +446,7 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions(),
     gate_calls = []
     original_gate = runtime_module.evaluate_gate
     original_exit = runtime_module.decide
-    condition_ids = list(dict.fromkeys(re.findall(r'emit\("([^"\n]+)"', inspect.getsource(original_gate))))
+    condition_ids = list(dict.fromkeys(re.findall(r'emit\("([^"\n]+)"', inspect.getsource(original_gate)+inspect.getsource(__import__('htx_trend.execution',fromlist=['account_risk_gate']).account_risk_gate))))
     exit_calls = []
     scan_contract = None
     scan_positions = []

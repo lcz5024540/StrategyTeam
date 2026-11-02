@@ -14,6 +14,7 @@ import fcntl
 import gzip
 import json
 import os
+import time
 from pathlib import Path
 
 SCHEMA = 'htx-runtime-continuity-v1'
@@ -146,6 +147,9 @@ class PersistentWorker:
     """Persist at action boundaries and release the continuity lock last."""
     def __init__(self, worker, checkpoint, stop_event):
         self.worker,self.checkpoint,self.stop_event=worker,checkpoint,stop_event
+        self.interval_seconds=getattr(worker,"interval_seconds",None)
+        self.heartbeat_interval_seconds=getattr(worker,"heartbeat_interval_seconds",0)
+        self._last_capture=0.0
         self.restart_gap_seconds=((datetime.now(UTC)-datetime.fromisoformat(checkpoint.previous_at)).total_seconds()
                                   if checkpoint.previous_at else None)
         self.children=getattr(worker,'_workers',(worker,))
@@ -164,6 +168,7 @@ class PersistentWorker:
             if hasattr(child,'export_runtime'):
                 self.checkpoint.data['profiles'][child.runtime_key()]=encode(child.export_runtime())
         self.checkpoint.save(status)
+        self._last_capture=time.monotonic()
 
     def tick(self):
         from .strategy_platform import WorkerHealth
@@ -181,7 +186,10 @@ class PersistentWorker:
         for child in self.children:
             child._entry_recovery_blocked=bool(failures)
         result=self.worker.tick()
-        self.capture('DRAINING' if self.stop_event.is_set() else 'READY' if result.status=='HEALTHY' else 'DEGRADED')
+        status='DRAINING' if self.stop_event.is_set() else 'READY' if result.status=='HEALTHY' else 'DEGRADED'
+        if (status!=self.checkpoint.data['status']
+                or time.monotonic()-self._last_capture>=getattr(self.worker,'checkpoint_interval_seconds',0)):
+            self.capture(status)
         gap=self.restart_gap_seconds
         return WorkerHealth(result.status,result.detail+f' continuity={self.checkpoint.data["status"]} previous={self.checkpoint.previous_status} restartGapSeconds={gap}',
                             result.candidate_count,result.active_position_count)

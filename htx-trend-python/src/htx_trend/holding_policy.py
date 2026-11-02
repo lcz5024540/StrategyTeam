@@ -23,7 +23,8 @@ from .timeframes import TimeframeProfile
 SCHEMA = 'htx-holding-policy-v1'
 IMPLEMENTATION = 'htx-exit-20261102-v1'
 _SOURCES = ('exits.py', 'continuation.py', 'java_entry_contract.py', 'indicators.py', 'models.py',
-            'timeframes.py', 'position_manager.py', 'runtime.py')
+            'timeframes.py', 'position_manager.py', 'runtime.py', 'realtime/ownership.py',
+            'realtime/management.py')
 # Audited deployment baseline 44d3150b (also the 8e0a0cc4 management implementations).
 # All pure calculations must still match. These two legacy orchestration sources
 # are adapted by the policy-aware manager/runtime and covered by equivalence tests.
@@ -35,7 +36,8 @@ LEGACY_MANAGEMENT = {
 
 def supports_observed_implementation(hashes: dict) -> bool:
     current = implementation_hashes()
-    return hashes == current or hashes == {**current, **LEGACY_MANAGEMENT}
+    from .realtime.legacy_implementations import LEGACY_IMPLEMENTATIONS
+    return hashes == current or hashes in LEGACY_IMPLEMENTATIONS
 
 
 class HoldingPolicyError(ValueError):
@@ -137,7 +139,11 @@ class HoldingPolicy:
         if value['schema'] != SCHEMA or value['implementation'] != IMPLEMENTATION:
             raise HoldingPolicyError('unsupported holding policy implementation')
         if value['implementation_hashes'] != implementation_hashes():
-            raise HoldingPolicyError('holding policy implementation changed; compatible adapter required')
+            from .realtime.legacy_implementations import LEGACY_IMPLEMENTATIONS
+            from .realtime import VERSION
+            if (value['implementation_hashes'] not in LEGACY_IMPLEMENTATIONS
+                    or value.get('owner', {}).get('strategy_name') == VERSION):
+                raise HoldingPolicyError('holding policy implementation changed; compatible adapter required')
         owner = value['owner']
         names = {'instance_key','account_id','strategy_family','strategy_name','execution_mode','timeframe_profile'}
         if not isinstance(owner, dict) or set(owner) != names or any(not isinstance(v,str) or not v for v in owner.values()):
@@ -151,7 +157,8 @@ class HoldingPolicy:
                                                                     live=owner['execution_mode']=='LIVE')
         _decode_config(JavaEntryConfig, value['entry'])
         exit_config = _decode_config(ExitConfig, value['exit'])
-        if owner['execution_mode'] == 'PAPER' and exit_config != paper_exit_config():
+        if (owner['execution_mode'] == 'PAPER' and owner['strategy_name'] != 'HTX_REALTIME_STRUCTURE_15M_V1'
+                and exit_config != paper_exit_config()):
             raise HoldingPolicyError('unsupported PAPER exit semantics; compatible adapter required')
         return cls(canonical({**value, 'hash': claimed}))
 

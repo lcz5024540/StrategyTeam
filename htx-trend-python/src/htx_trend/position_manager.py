@@ -17,6 +17,7 @@ from .htx_v5 import SwapOrderRequest
 from .indicators import ema
 from .java_entry_contract import JavaEntryConfig, evaluate
 from .market_data import period_seconds
+from .realtime.ownership import parse_model, supports_continuation, is_realtime
 from .models import ModelCode, TrendSide
 from .order_px_fields import order_px_fields
 from .mysql_store import TrendOrderIntent, decision_key
@@ -166,6 +167,20 @@ class LivePositionManager:
                 strategy_name=row.get('strategy_name', self.instance.strategy_name), mode='LIVE',
                 profile=self.timeframe_profile)
             config, java_config = policy.exit, policy.entry
+        pending_exit=state.get('pending_realtime_exit') if is_realtime(row['primary_model']) else None
+        if pending_exit:
+            if pending:
+                for order in pending:
+                    if order.get('exchange_order_id') is None:raise ValueError('entry identity not confirmed')
+                    self.executor.cancel(code,str(order['exchange_order_id']))
+                return
+            target=int(pending_exit['target_remaining'])
+            volume=quantity-target
+            if volume>0:
+                self.submit_close(row,volume,pending_exit['run_id'],pending_exit['reason'],mid=book.top.mid)
+                return
+            state.pop('pending_realtime_exit')
+            self.repo.save_management_state(row['id'],state)
         if context is None:
             raise ValueError('recovery market context unavailable; only known price stop allowed')
         window=self.market.kline_window(code,self.period,160,now_epoch=now_epoch)
@@ -210,7 +225,10 @@ class LivePositionManager:
         bars_held = 0
         if entry_epoch is not None and now_epoch > entry_epoch:
             bars_held = max(0, (now_epoch - entry_epoch) // period_seconds(self.period))
-        input_=ExitInput(ModelCode(row['primary_model']),side,quantity,size,entry,
+        if is_realtime(row['primary_model']):
+            first=state.get('first_fill_ms') or state.get('first_fill_bound_ms')
+            bars_held=max(0,((last_bar+900)*1000-int(first))//900000) if first is not None else 0
+        input_=ExitInput(parse_model(row['primary_model']),side,quantity,size,entry,
             decimal(row,'stop_price',decimal(row,'invalidation_price')),decimal(row,'invalidation_price'),
             decimal(row,'target_zone_low' if side is TrendSide.LONG else 'target_zone_high') or None,
             reference,protection,highest,lowest,signal.indicators.atr,signal.side,
@@ -220,11 +238,12 @@ class LivePositionManager:
             flat_streak=flat,required_flat_streak=config.flat_bars,
             flat_loss_budget=max(config.flat_budget,entry*size*entry_quantity*config.flat_budget_rate),
             policy=config.policy,protection_breach_bars=breach,funding_rate_exit_reason=funding_reason,observed_mfe_net_pnl=mfe,
-            bars_held=bars_held,timeout_bars=config.timeout_bars,min_hold_bars=config.min_hold_bars)
+            bars_held=bars_held,timeout_bars=config.timeout_bars,min_hold_bars=config.min_hold_bars,
+            mfe_coverage_complete=state.get("extrema_coverage", "COMPLETE") == "COMPLETE")
         evaluation_candle = window.candles[-1]
         candidate_policy = version in (CONFIRM, LINKED)
         if candidate_policy:
-            if self.instance.strategy_name != 'HTX_TREND_15M_V2':
+            if not supports_continuation(self.instance.strategy_name):
                 raise ValueError('candidate position policy requires 15m')
             count, last_bar = advance_confirmation(input_, evaluation_candle, state)
             cont_decision = decide_continuation(input_, count)
@@ -253,6 +272,9 @@ class LivePositionManager:
         state.update(highest=highest,lowest=lowest,protection=decision.protection_price,
             armed_at=decision.trailing_armed_at.isoformat() if decision.trailing_armed_at else None,
             arm_reason=decision.trailing_arm_reason,max_r=decision.max_favorable_r,last_bar=last_bar,flat=flat,breach=breach)
+        if is_realtime(row['primary_model']) and decision.action in {ExitAction.FULL_CLOSE,ExitAction.PARTIAL_CLOSE}:
+            state['pending_realtime_exit']={'target_remaining':int(decision.target_remaining_contracts),
+                'reason':decision.reason,'run_id':f'rt-exit:{row["id"]}:{last_bar}'}
         self.repo.save_exit_state(row['id'],state,decision)
         run_id=f'python-exit:{row["id"]}:{now_epoch}'
         # Java's exit-engine live flag blocks every v4 mutation while still

@@ -24,9 +24,10 @@ class EntryIntent:
 
 
 def evaluate(trigger: RealtimeTrigger, *, now_ms, book, contract, funding, facts: ExecutionFacts,
-             instance_key, parameters=Parameters(), config=ExecutionConfig(), evidence_ref=None):
+             instance_key, parameters=Parameters(), config=ExecutionConfig(), evidence_ref=None, recent_candles=()):
     p = trigger.plan
-    if not 0 <= now_ms-trigger.trigger_ms <= parameters.max_age_ms:
+    if not (0 <= now_ms-trigger.trigger_ms <= parameters.max_age_ms
+            and 0 <= now_ms-trigger.exchange_ms <= parameters.max_age_ms):
         return GateResult(False, 'DATA_FRESHNESS', 'realtime trigger expired'), None
     if p.parameter_fingerprint != parameters.fingerprint:
         return GateResult(False, 'PARAMETERS', 'plan parameter mismatch'), None
@@ -38,6 +39,13 @@ def evaluate(trigger: RealtimeTrigger, *, now_ms, book, contract, funding, facts
                 facts.used_margin_usdt, facts.reserved_margin_usdt, facts.active_position_count, facts.same_direction_position_count)
     if any(v is None for v in required) or facts.account_equity_usdt <= 0 or facts.leverage <= 0:
         return GateResult(False, 'ACCOUNT_FACTS', 'fresh account, fee and risk facts required'), None
+    numeric=(*required,facts.reserved_risk_usdt)
+    if any(not D(str(v)).is_finite() or D(str(v))<0 for v in numeric):
+        return GateResult(False,'ACCOUNT_FACTS','account facts must be finite and nonnegative'),None
+    if config.min_average_turnover>0:
+        values=[c.turnover for c in recent_candles[-config.liquidity_lookback:] if c.turnover is not None]
+        if not values or sum(values,D(0))/len(values)<config.min_average_turnover:
+            return GateResult(False,'LIQUIDITY','historical average turnover insufficient or missing'),None
     if facts.active_position_count >= min(config.max_active_positions, facts.max_active_positions or config.max_active_positions):
         return GateResult(False, 'RISK_LIMIT', 'active position limit reached'), None
     if funding is None or funding.contract_code != p.contract or not funding.rate.is_finite():
@@ -47,6 +55,8 @@ def evaluate(trigger: RealtimeTrigger, *, now_ms, book, contract, funding, facts
     top = book.top
     if top.bid <= 0 or top.ask < top.bid or top.spread_rate > config.max_spread_rate:
         return GateResult(False, 'SPREAD', 'executable spread invalid'), None
+    if top.bid % p.tick != 0 or top.ask % p.tick != 0:
+        return GateResult(False,'CONTRACT','quote not aligned with current contract tick'),None
     long = p.side is TrendSide.LONG
     if not (top.bid > p.line+p.band if long else top.ask < p.line-p.band):
         return GateResult(False, 'RECOVERED', 'price no longer confirms trigger'), None
@@ -58,6 +68,8 @@ def evaluate(trigger: RealtimeTrigger, *, now_ms, book, contract, funding, facts
                         account_equity_usdt=facts.account_equity_usdt)
     # Worst fill comes from the shared slippage formula; round toward a tighter limit.
     proposed = quote+sign*p.atr*config.slippage_atr_fraction
+    chase_cap=trigger.reference+sign*config.max_entry_chase_atr_multiplier*p.atr
+    proposed=min(proposed,chase_cap) if long else max(proposed,chase_cap)
     limit = (proposed/p.tick).to_integral_value(rounding=ROUND_FLOOR if long else ROUND_CEILING)*p.tick
     if (limit < quote if long else limit > quote):
         return GateResult(False, 'PRICE_PLAN', 'tick leaves no marketable IOC price'), None

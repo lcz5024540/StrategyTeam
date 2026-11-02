@@ -57,3 +57,9 @@ def test_segment_hash_restart_quota_and_no_deletion(tmp_path):
     assert again.verify()==[e.dump()]
     (tmp_path/(ref+'.json.gz')).write_bytes(gzip.compress(b'{}'))
     with pytest.raises(ValueError):again.verify()
+
+
+def test_same_trade_id_with_changed_timestamp_is_still_duplicate():
+    order=EventOrder()
+    assert order.accept(MarketEvent('TRADE','ETH-USDT',100,100,'7','a',price=D(10)))
+    assert not order.accept(MarketEvent('TRADE','ETH-USDT',101,101,'7','a',price=D(10)))

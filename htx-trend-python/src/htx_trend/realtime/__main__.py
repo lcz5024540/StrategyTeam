@@ -24,7 +24,7 @@ def main():
         return
     stream=PublicStream(tuple(args.contracts.split(',')))
     recorder=SegmentRecorder(args.output,max_bytes=args.max_bytes)
-    counts={};epochs=set();deadline=time.monotonic()+args.seconds
+    counts={};epochs=set();deadline=time.monotonic()+args.seconds;last_flush=time.monotonic()
     stream.start()
     try:
         while time.monotonic()<deadline and not recorder.failure:
@@ -32,7 +32,8 @@ def main():
                 counts[event.kind]=counts.get(event.kind,0)+1
                 epochs.add(event.epoch)
                 recorder.append(event)
-            recorder.flush()
+            if time.monotonic()-last_flush>=10:
+                recorder.flush();last_flush=time.monotonic()
             time.sleep(.1)
     finally:
         stream.close()

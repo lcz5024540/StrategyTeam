@@ -129,7 +129,7 @@ def _validate_live_approval(instance, account, admission, scan_configs) -> None:
         profile = profile_for_version(instance.strategy_name)
         if profile is None or len(profiles) != 1 or profiles[0] != profile.value:
             raise SystemExit("new strategy LIVE instance must own exactly its versioned profile")
-        spec = profile_strategy(profile)
+        spec = profile_strategy(profile, strategy_version=instance.strategy_name)
         expected = {
             "strategy_version": instance.strategy_name,
             "timeframe_profile": profile.value,
@@ -150,7 +150,7 @@ def _validate_live_approval(instance, account, admission, scan_configs) -> None:
     profile = profile_for_version(instance.strategy_name)
     if profile is None or len(profiles) != 1 or profiles[0] != profile.value:
         raise SystemExit("new strategy LIVE instance must own exactly its versioned profile")
-    spec = profile_strategy(profile)
+    spec = profile_strategy(profile, strategy_version=instance.strategy_name)
     expected = {
         "strategy_version": instance.strategy_name,
         "timeframe_profile": profile.value,
@@ -196,8 +196,11 @@ def main() -> None:
         family = instance.strategy_family.upper()
         admission = _load_admission(instance.strategy_name) if family == "TREND" and instance.execution_mode != ExecutionMode.PAPER else None
         compact = None
+        from .realtime import VERSION as RT_VERSION
         if family == "TREND":
             paper_format = os.environ.get("HTX_PAPER_EVIDENCE_FORMAT", "legacy-v1") if instance.execution_mode == ExecutionMode.PAPER else "legacy-v1"
+            if instance.strategy_name == RT_VERSION:
+                paper_format = "compact-v2"
             if paper_format not in {"legacy-v1", "compact-v2"}:
                 raise SystemExit("unknown PAPER evidence format")
             evidence_store = FileEvidenceStore(Path(os.environ.get(
@@ -234,17 +237,25 @@ def main() -> None:
             from .holding_adoption import HoldingAdoption
             adoption_path = os.environ.get('HTX_HOLDING_ADOPTION_PATH', '').strip()
             holding_adoption = HoldingAdoption.read(Path(adoption_path)) if adoption_path else None
-            worker = paper_worker = PaperTrendWorker(instance,
-                HtxMarketData(paper_client, evidence_store=evidence_store, compact=compact),
-                Path(os.environ.get("HTX_PAPER_STATE_DIR", "./paper-state")), PaperWorkerConfig.from_env(),
-                evidence_store=evidence_store, holding_adoption=holding_adoption, require_holding_policy=True)
-            if compact is not None:
-                from .research.compact import CompactBackfill
-                periods = worker.profile.contract
-                backfill = CompactBackfill(compact,
-                    HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com")),
-                    worker.config.contracts, (periods.entry_period, periods.trend_period))
-                backfill.start()
+            if instance.strategy_name == RT_VERSION:
+                from .realtime.factory import paper as build_realtime_paper, BreadthContext
+                worker = paper_worker = build_realtime_paper(instance,
+                    HtxMarketData(paper_client,evidence_store=evidence_store,compact=compact),
+                    Path(os.environ.get("HTX_PAPER_STATE_DIR", "./paper-state")),evidence_store,
+                    compact=compact,holding_adoption=holding_adoption,
+                    context_provider=BreadthContext(repository,LiveTrendWorkerConfig.profiles_from_env(strategy_version=RT_VERSION)[0]))
+            else:
+                worker = paper_worker = PaperTrendWorker(instance,
+                    HtxMarketData(paper_client, evidence_store=evidence_store, compact=compact),
+                    Path(os.environ.get("HTX_PAPER_STATE_DIR", "./paper-state")), PaperWorkerConfig.from_env(),
+                    evidence_store=evidence_store, holding_adoption=holding_adoption, require_holding_policy=True)
+                if compact is not None:
+                    from .research.compact import CompactBackfill
+                    periods = worker.profile.contract
+                    backfill = CompactBackfill(compact,
+                        HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL", "https://api.hbdm.com")),
+                        worker.config.contracts, (periods.entry_period, periods.trend_period))
+                    backfill.start()
         elif family == "TREND" and instance.execution_mode == ExecutionMode.LIVE:
             if instance.account_id is None:
                 raise SystemExit("LIVE trend instance requires an account-bound runtime instance")
@@ -258,8 +269,9 @@ def main() -> None:
                 raise SystemExit("first Python cutover is primary-only; mirror recovery acceptance is still required")
             scan_configs = LiveTrendWorkerConfig.profiles_from_env(strategy_version=instance.strategy_name)
             live_continuation = None
-            if instance.strategy_name == 'HTX_TREND_15M_V2':
-                live_continuation = ContinuationConfig.from_live_env()
+            if instance.strategy_name in ('HTX_TREND_15M_V2',RT_VERSION):
+                live_continuation = (ContinuationConfig('linked-v1') if instance.strategy_name == RT_VERSION
+                                     else ContinuationConfig.from_live_env())
                 for scan_config in scan_configs:
                     if not scan_config.entry_enabled:
                         continue
@@ -312,6 +324,16 @@ def main() -> None:
                     require_holding_policy=True, holding_adoption=holding_adoption,
                     continuation_config=(live_continuation if scan_config.timeframe_profile is TimeframeProfile.INTRADAY_15M
                                          else ContinuationConfig(BASELINE)))
+                if instance.strategy_name == RT_VERSION:
+                    from .realtime.factory import live as build_realtime_live
+                    from .admission import runtime_guard
+                    paper_client=HtxV5Client(base_url=os.environ.get("HTX_PUBLIC_BASE_URL","https://api.hbdm.com"))
+                    public=HtxMarketData(paper_client,evidence_store=evidence_store,compact=compact)
+                    worker=build_realtime_live(instance,entry,manager,owners,public,evidence_store,
+                        contracts=scan_config.contracts,execution=entry_execution,leverage=entry_config.leverage,
+                        policy=holding_policies[scan_config.timeframe_profile.value],guard=writer_lock.assert_owned,
+                        admission_guard=lambda: runtime_guard(instance,account,'INTRADAY_15M'),scan_config=scan_config)
+                    break
                 profile_workers.append(LiveTrendWorker(instance, repository, market, entry, scan_config,
                     position_manager=OwnedPositionManagers(manager, owners, {c.timeframe_profile for c in scan_configs}), writer_guard=writer_lock.assert_owned, admission=admission))
             for profile_worker in profile_workers:
@@ -320,8 +342,9 @@ def main() -> None:
                 adopted_owners={h['policy']['owner']['strategy_name'] for h in holding_adoption.to_dict()['holdings']}
                 if adopted_owners-set(owner.strategy_name for owner in owners):
                     raise SystemExit('adopted old strategy requires an explicit managed alias')
-            worker = (profile_workers[0] if len(profile_workers) == 1
-                      else MultiTimeframeLiveTrendWorker(tuple(profile_workers)))
+            if instance.strategy_name != RT_VERSION:
+                worker = (profile_workers[0] if len(profile_workers) == 1
+                          else MultiTimeframeLiveTrendWorker(tuple(profile_workers)))
         elif family in {"CARRY_SINGLE", "CARRY_CROSS"}:
             worker = DisabledStrategyWorker(instance, repository)
         else:
@@ -356,7 +379,7 @@ def main() -> None:
             supervisor.tick_all()
             if args.once:
                 return
-            stop_event.wait(max(5, args.interval_seconds))
+            stop_event.wait(.05 if instance.strategy_name == RT_VERSION else max(5, args.interval_seconds))
     finally:
         try:
             if persistent_worker is not None:

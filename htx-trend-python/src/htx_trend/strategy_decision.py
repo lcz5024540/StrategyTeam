@@ -48,7 +48,7 @@ class HtxStrategyDecisionEngine:
                  config: JavaEntryConfig | None = None,
                  admission: StrategyAdmissionArtifact | None = None, evidence_store=None) -> None:
         profile = profile_for_version(strategy_version)
-        self.profile_spec = profile_strategy(profile) if profile is not None else None
+        self.profile_spec = profile_strategy(profile, strategy_version=strategy_version) if profile is not None else None
         self.strategy_version = strategy_version
         self.config = config or (self.profile_spec.entry_config if self.profile_spec else JavaEntryConfig())
         self.admission = admission

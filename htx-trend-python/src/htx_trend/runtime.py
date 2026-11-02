@@ -26,6 +26,7 @@ from .maker_execution import (
 )
 from .market_data import Candle, ContractSpec, FundingRate, KlineWindow, TopOfBook
 from .java_entry_contract import JavaEntryConfig
+from .realtime.ownership import parse_model, supports_continuation, is_realtime
 from .models import ModelCandidate, ModelCode, TrendSide, route_candidates
 from .strategy_context import FibonacciQuality, MarketContext
 from .strategy_admission import DecisionSurface, StrategyAdmissionArtifact
@@ -63,7 +64,7 @@ class PaperTrendRuntime:
         self._compact = compact
         self._evidence_context = evidence_context or {}
         self.evidence_error = None
-        continuation_config.require_15m(strategy_version == "HTX_TREND_15M_V2")
+        continuation_config.require_15m(supports_continuation(strategy_version))
         self._continuation = continuation_config
         from .strategy_profiles import profile_for_version
         self._holding_policy = holding_policy or HoldingPolicy.create(
@@ -287,7 +288,8 @@ class PaperTrendRuntime:
                lowest_price: Decimal, atr: Decimal, signal_side, ema_fast: Decimal | None, ema_slow: Decimal | None,
                major_timeframe_opposition: int, market_context_opposes: bool, at: datetime,
                flat_streak: int = 0, protection_breach_bars: int = 0,
-               evidence_windows: tuple[KlineWindow, ...] = (), evaluation_candle: Candle | None = None, market_snapshot: dict | None = None) -> object:
+               evidence_windows: tuple[KlineWindow, ...] = (), evaluation_candle: Candle | None = None, market_snapshot: dict | None = None,
+               funding_rate_exit_reason: str | None = None) -> object:
         position = self._ledger.position(position_id)
         context = self._ledger.position_context(position_id)
         context_before = copy.deepcopy(context)
@@ -304,7 +306,7 @@ class PaperTrendRuntime:
         except HoldingPolicyError:
             return self._known_price_stop(position, context, reference_price, contract_size, at, run_id,
                                           evaluation_candle)
-        model = ModelCode(context["model"])
+        model = parse_model(context["model"])
         exit_config = policy.exit if policy is not None else paper_exit_config()
         if policy is not None:
             policy.require_owner(instance_key=self._evidence_context.get('instance', self._account_id),
@@ -312,23 +314,36 @@ class PaperTrendRuntime:
                 strategy_name=policy.owner['strategy_name'], mode='PAPER',
                 profile=TimeframeProfile(self._holding_policy.owner['timeframe_profile']))
         estimated_close_fee = reference_price * contract_size * Decimal(position.quantity) * exit_config.fee_rate
+        realtime = is_realtime(model)
+        entry_fee = Decimal(context.get("entry_fee", "0"))
+        flat_budget = exit_config.flat_budget
+        bars_held = 0
+        if realtime:
+            original_quantity = int(context['original_quantity'])
+            entry_fee = entry_fee * position.quantity / original_quantity
+            flat_budget = max(flat_budget,position.entry_price*contract_size*original_quantity*exit_config.flat_budget_rate)
+            if evaluation_candle is not None and context.get('first_fill_ms') is not None:
+                bars_held=max(0,((evaluation_candle.open_time+900)*1000-int(context['first_fill_ms']))//900000)
+
         exit_input = ExitInput(model, side, position.quantity, contract_size, position.entry_price,
             Decimal(context["initial_stop"]), Decimal(context["invalidation"]), Decimal(context["structure_target"]),
             reference_price, Decimal(context["protection"]) if context.get("protection") else None, highest_price, lowest_price,
             atr, signal_side, ema_fast, ema_slow, major_timeframe_opposition, market_context_opposes,
-            gross - Decimal(context.get("entry_fee", "0")) - estimated_close_fee, Decimal(context.get("entry_fee", "0")),
+            gross - entry_fee - estimated_close_fee, entry_fee,
             estimated_close_fee, datetime.fromisoformat(context["trailing_armed_at"]) if context.get("trailing_armed_at") else None,
             context.get("trailing_arm_reason"), Decimal(context.get("max_favorable_r", "0")), at, flat_streak=flat_streak,
             protection_breach_bars=protection_breach_bars, policy=exit_config.policy,
-            required_flat_streak=exit_config.flat_bars, flat_loss_budget=exit_config.flat_budget,
-            timeout_bars=exit_config.timeout_bars, min_hold_bars=exit_config.min_hold_bars)
+            required_flat_streak=exit_config.flat_bars, flat_loss_budget=flat_budget,
+            bars_held=bars_held,funding_rate_exit_reason=funding_rate_exit_reason if realtime else None,
+            timeout_bars=exit_config.timeout_bars, min_hold_bars=exit_config.min_hold_bars,
+            mfe_coverage_complete=context.get("extrema_coverage", "COMPLETE") == "COMPLETE")
         version = context.get('continuation_version', BASELINE)
         if version not in (BASELINE, CONFIRM, LINKED):
             raise ValueError('unknown position continuation version')
         candidate_policy = version in (CONFIRM, LINKED)
         if candidate_policy:
             if (policy.owner['timeframe_profile'] != 'INTRADAY_15M' if policy is not None
-                    else self._decision.strategy_version != 'HTX_TREND_15M_V2'):
+                    else not supports_continuation(self._decision.strategy_version)):
                 raise ValueError('candidate position policy requires 15m')
             count, last_bar = advance_confirmation(exit_input, evaluation_candle, context)
             decision = decide_continuation(exit_input, count)

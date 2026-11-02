@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from decimal import Decimal as D
 from typing import Sequence
+import copy
 
 from ..indicators import ema, atr
 from ..market_data import Candle, ContractSpec, KlineWindow
@@ -149,7 +150,7 @@ def generate(entry: KlineWindow, trend: KlineWindow, contract: ContractSpec, *, 
             continue
         # No polling time, current-bar hash or ordinary price revision in economic identity.
         ident = digest({'version': VERSION, 'contract': contract.contract_code, 'side': side,
-                        'model': model, 'anchor_bar': source['anchor'], 'sources': sorted(source['sources'])})
+                        'model': model, 'anchor_bar': source['anchor'], 'edge': edge})
         output.append(StructurePlan(ident, contract.contract_code, model, side, line, band, volatility,
                       contract.price_tick, target, target_kind, last.open_time, hour.open_time, source['anchor'],
                       tuple(sorted(source['sources'])), tuple(entry.evidence_refs+trend.evidence_refs),
@@ -229,6 +230,7 @@ class TriggerEngine:
         for ident, row in self.rows.items():
             if row['plan']['contract'] != event.contract or row['phase'] in TERMINAL or row['phase'] == 'TRIGGERED':
                 continue
+            before=copy.deepcopy(row)
             p = StructurePlan.load(row['plan'])
             if event.received_ms < p.created_ms:
                 continue
@@ -243,7 +245,6 @@ class TriggerEngine:
             last_ms = row['last_trade_ms']
             if last_ms is not None and event.exchange_ms-last_ms > self.parameters.max_age_ms:
                 row.update(count=0, confirmations=[])
-            row['last_trade_ms'] = event.exchange_ms
             if phase == 'WAITING':
                 if rejection:
                     safe_approach = previous is not None and (previous > high if long else previous < low)
@@ -260,6 +261,8 @@ class TriggerEngine:
                     row.update(phase='RETEST', extreme=str(price), count=0, confirmations=[])
                 elif (price < low if long else price > high):
                     row.update(phase='INVALIDATED', reason='BREAKOUT_RECLAIMED')
+            elif phase == 'RETEST' and (price < low if long else price > high):
+                row.update(phase='INVALIDATED',reason='RETEST_FAILED',count=0,confirmations=[])
             elif phase in ('ARMED', 'RETEST'):
                 extreme = D(row['extreme'])
                 row['extreme'] = str(min(extreme, price) if long else max(extreme, price))
@@ -277,8 +280,10 @@ class TriggerEngine:
                         row.update(phase='TRIGGERED', trigger=primitive(triggers[-1]))
                 else:
                     row.update(count=0, confirmations=[])
-            row['prior_price'] = str(price)
-            self._save(ident)
+            # The next approach only needs the side of the zone, not every tick.
+            row['prior_price'] = str(low-p.tick if price<low else high+p.tick if price>high else p.line)
+            row['last_trade_ms'] = event.exchange_ms if row['count'] else None
+            if row != before:self._save(ident)
         return tuple(triggers)
 
     @staticmethod

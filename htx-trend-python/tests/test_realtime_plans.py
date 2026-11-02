@@ -120,3 +120,20 @@ def test_ioc_geometry_fees_budget_and_stable_intent():
     assert evaluate(t,**{**args,'facts':replace(f,reserved_risk_usdt=D('4.49'))})[0].allowed is False
     assert evaluate(t,**{**args,'facts':replace(f,actual_taker_fee_rate=None)})[0].stage=='ACCOUNT_FACTS'
     assert evaluate(t,**{**args,'facts':replace(f,contract_open_order=True)})[0].stage=='EXPOSURE'
+
+
+def test_retest_reclaims_opposite_side_is_terminal(engine):
+    engine.rows.clear();engine.refresh('ETH-USDT',[plan('RT_BREAKOUT_RETEST')])
+    push(engine,book(1,'98.3','98.4'))
+    for i,p in enumerate(['98.5','98.4','100','102','100','98.5','98.4'],2):
+        assert not push(engine,trade(i,p))
+    assert engine.rows['p']['phase']=='INVALIDATED'
+    assert engine.rows['p']['reason']=='RETEST_FAILED'
+
+
+def test_unchanged_approach_does_not_rewrite_plan_for_every_trade(engine):
+    writes=[];save=engine.store.save
+    engine.store.save=lambda *args:(writes.append(args),save(*args))[-1]
+    push(engine,book(1,'98','98.01'))
+    for i in range(2,1002):push(engine,trade(i,'98'))
+    assert len(writes)<=2
