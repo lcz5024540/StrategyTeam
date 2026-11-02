@@ -60,6 +60,57 @@ def test_invalid_strategy_profile_combination():
         replay(INPUTS, strategy='HTX_TREND_15M_V2', profile=TimeframeProfile.SWING_4H)
 
 
+def test_4h_locked_hashes_reject_modified_input(tmp_path, monkeypatch):
+    """4H profile must reject modified fixtures even with updated MANIFEST, same as 15m."""
+    from htx_trend import scan_replay as scan_replay_module
+    
+    # Create minimal 4H fixtures
+    for name in ('klines.csv', 'trades_closed_window.csv'):
+        (tmp_path / name).write_text('dummy_4h_content\n')
+    
+    # Compute actual hashes
+    actual_hashes = {
+        name: hashlib.sha256((tmp_path / name).read_bytes()).hexdigest()
+        for name in ('klines.csv', 'trades_closed_window.csv')
+    }
+    
+    # Create MANIFEST with correct hashes
+    manifest = {'sha256': actual_hashes}
+    (tmp_path / 'MANIFEST.json').write_text(json.dumps(manifest))
+    
+    # Temporarily patch LOCKED_HASHES to use actual hashes
+    original_hashes = scan_replay_module.LOCKED_HASHES_BY_PROFILE.copy()
+    scan_replay_module.LOCKED_HASHES_BY_PROFILE['SWING_4H'] = actual_hashes.copy()
+    
+    try:
+        # Should work with matching hashes
+        # (Will fail on other validation but not on hash mismatch)
+        try:
+            replay(tmp_path, strategy='HTX_TREND_4H_V2', profile=TimeframeProfile.SWING_4H)
+        except ValueError as e:
+            # Should not be a hash mismatch error
+            assert 'SHA256 mismatch' not in str(e)
+        
+        # Now modify a file
+        (tmp_path / 'klines.csv').write_text('modified_4h_content\n')
+        
+        # Should reject due to hash mismatch
+        with pytest.raises(ValueError, match='SHA256 mismatch'):
+            replay(tmp_path, strategy='HTX_TREND_4H_V2', profile=TimeframeProfile.SWING_4H)
+        
+        # Forge MANIFEST to match modified content
+        forged_hashes = actual_hashes.copy()
+        forged_hashes['klines.csv'] = hashlib.sha256((tmp_path / 'klines.csv').read_bytes()).hexdigest()
+        manifest['sha256'] = forged_hashes
+        (tmp_path / 'MANIFEST.json').write_text(json.dumps(manifest))
+        
+        # Should still reject (MANIFEST forgery doesn't bypass LOCKED_HASHES)
+        with pytest.raises(ValueError, match='SHA256 mismatch'):
+            replay(tmp_path, strategy='HTX_TREND_4H_V2', profile=TimeframeProfile.SWING_4H)
+    finally:
+        scan_replay_module.LOCKED_HASHES_BY_PROFILE = original_hashes
+
+
 def test_deterministic_offline_and_ignores_ambient_settings(report, monkeypatch):
     import pymysql
     from htx_trend.paper_worker import PaperFileLedger
