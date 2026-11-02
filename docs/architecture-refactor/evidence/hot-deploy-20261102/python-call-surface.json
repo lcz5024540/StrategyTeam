@@ -1,906 +1,549 @@
 {
-  "worker": {
-    "imports": [
-      "account_facts",
-      "admission",
-      "continuation",
-      "credentials",
-      "execution",
-      "execution_service",
-      "holding_adoption",
-      "holding_policy",
-      "htx_v5",
-      "java_entry_contract",
-      "live",
-      "live_approval",
-      "live_worker",
-      "market_data",
-      "mysql_store",
-      "paper_worker",
-      "position_manager",
-      "product_live_waiver",
-      "research.compact",
-      "research.store",
-      "strategy_admission",
-      "strategy_decision",
-      "strategy_platform",
-      "strategy_profiles",
-      "timeframes",
-      "writer_lock"
-    ],
-    "functions": [
-      {
-        "name": "_account_client",
-        "line": 37
-      },
-      {
-        "name": "_validate_first_live_cutover",
-        "line": 46
-      },
-      {
-        "name": "_load_admission",
-        "line": 56
-      },
-      {
-        "name": "_validate_live_approval",
-        "line": 73
-      },
-      {
-        "name": "main",
-        "line": 161
-      }
-    ]
-  },
-  "live_worker": {
-    "imports": [
-      "diagnostics",
-      "execution_service",
-      "indicators",
-      "java_entry_contract",
-      "market_data",
-      "models",
-      "mysql_store",
-      "policy",
-      "research.regime",
-      "strategy_admission",
-      "strategy_context",
-      "strategy_decision",
-      "strategy_platform",
-      "strategy_profiles",
-      "timeframes"
-    ],
-    "functions": [
-      {
-        "name": "_initial_candidate_gate",
-        "line": 677
-      },
-      {
-        "name": "from_env",
-        "line": 97
-      },
-      {
-        "name": "profiles_from_env",
-        "line": 157
-      },
-      {
-        "name": "__init__",
-        "line": 214
-      },
-      {
-        "name": "__init__",
-        "line": 238
-      },
-      {
-        "name": "stop",
-        "line": 270
-      },
-      {
-        "name": "tick",
-        "line": 273
-      },
-      {
-        "name": "_record_candidate",
-        "line": 449
-      },
-      {
-        "name": "_diagnose",
-        "line": 471
-      },
-      {
-        "name": "_remaining_slots",
-        "line": 500
-      },
-      {
-        "name": "market_context_from_breadth",
-        "line": 512
-      },
-      {
-        "name": "_stable_candle_close_epoch",
-        "line": 534
-      },
-      {
-        "name": "_entry_window_open",
-        "line": 539
-      },
-      {
-        "name": "_candidate_fresh",
-        "line": 543
-      },
-      {
-        "name": "_expire_pending",
-        "line": 546
-      },
-      {
-        "name": "_market_anchor_regime",
-        "line": 550
-      },
-      {
-        "name": "_market_anchor_period_side",
-        "line": 580
-      },
-      {
-        "name": "_scan_all",
-        "line": 594
-      },
-      {
-        "name": "_scan_one",
-        "line": 613
-      },
-      {
-        "name": "_persist_observation",
-        "line": 653
-      },
-      {
-        "name": "__init__",
-        "line": 695
-      },
-      {
-        "name": "stop",
-        "line": 703
-      },
-      {
-        "name": "tick",
-        "line": 707
-      },
-      {
-        "name": "integer",
-        "line": 104
-      },
-      {
-        "name": "decimal",
-        "line": 107
-      },
-      {
-        "name": "flag",
-        "line": 110
-      },
-      {
-        "name": "values",
-        "line": 113
-      },
-      {
-        "name": "flag",
-        "line": 159
-      }
-    ]
-  },
-  "position_manager": {
-    "imports": [
-      "account_facts",
-      "continuation",
-      "execution_service",
-      "exit_config",
-      "exits",
-      "holding_policy",
-      "htx_v5",
-      "indicators",
-      "java_entry_contract",
-      "market_data",
-      "models",
-      "mysql_store",
-      "order_px_fields",
-      "timeframes"
-    ],
-    "functions": [
-      {
-        "name": "decimal",
-        "line": 32
-      },
-      {
-        "name": "timestamp",
-        "line": 36
-      },
-      {
-        "name": "_entry_epoch",
-        "line": 42
-      },
-      {
-        "name": "timeframe_side",
-        "line": 62
-      },
-      {
-        "name": "__init__",
-        "line": 71
-      },
-      {
-        "name": "_evidence",
-        "line": 86
-      },
-      {
-        "name": "manage",
-        "line": 95
-      },
-      {
-        "name": "_manage",
-        "line": 106
-      },
-      {
-        "name": "submit_close",
-        "line": 265
-      }
-    ]
-  },
-  "runtime": {
-    "imports": [
-      "continuation",
-      "execution",
-      "exits",
-      "holding_policy",
-      "java_entry_contract",
-      "ledger",
-      "maker_execution",
-      "market_data",
-      "models",
-      "paper",
-      "research.store",
-      "strategy_admission",
-      "strategy_context",
-      "strategy_decision",
-      "strategy_profiles",
-      "timeframes"
-    ],
-    "functions": [
-      {
-        "name": "__init__",
-        "line": 48
-      },
-      {
-        "name": "_version_ref",
-        "line": 77
-      },
-      {
-        "name": "scan",
-        "line": 91
-      },
-      {
-        "name": "_submit_maker_entry",
-        "line": 189
-      },
-      {
-        "name": "_mirror",
-        "line": 265
-      },
-      {
-        "name": "manage",
-        "line": 278
-      },
-      {
-        "name": "_mirror_reduction",
-        "line": 364
-      }
-    ]
-  },
-  "paper_worker": {
-    "imports": [
-      "continuation",
-      "execution",
-      "holding_policy",
-      "java_entry_contract",
-      "ledger",
-      "maker_execution",
-      "market_data",
-      "paper",
-      "paper_db_persist",
-      "runtime",
-      "strategy_decision",
-      "strategy_platform",
-      "strategy_profiles",
-      "timeframes"
-    ],
-    "functions": [
-      {
-        "name": "from_env",
-        "line": 44
-      },
-      {
-        "name": "__init__",
-        "line": 62
-      },
-      {
-        "name": "checkpoint",
-        "line": 79
-      },
-      {
-        "name": "close",
-        "line": 92
-      },
-      {
-        "name": "record_order",
-        "line": 95
-      },
-      {
-        "name": "record_fill",
-        "line": 98
-      },
-      {
-        "name": "update_order_status",
-        "line": 102
-      },
-      {
-        "name": "open_position",
-        "line": 105
-      },
-      {
-        "name": "position",
-        "line": 108
-      },
-      {
-        "name": "active_positions",
-        "line": 117
-      },
-      {
-        "name": "position_context",
-        "line": 121
-      },
-      {
-        "name": "save_position_context",
-        "line": 124
-      },
-      {
-        "name": "reduce_position",
-        "line": 133
-      },
-      {
-        "name": "mirrored_positions",
-        "line": 139
-      },
-      {
-        "name": "decision",
-        "line": 142
-      },
-      {
-        "name": "__init__",
-        "line": 149
-      },
-      {
-        "name": "fee_rate",
-        "line": 154
-      },
-      {
-        "name": "submit",
-        "line": 159
-      },
-      {
-        "name": "__init__",
-        "line": 175
-      },
-      {
-        "name": "_failure",
-        "line": 207
-      },
-      {
-        "name": "_recovered",
-        "line": 215
-      },
-      {
-        "name": "_confirm_evidence",
-        "line": 220
-      },
-      {
-        "name": "_record_run_evidence",
-        "line": 231
-      },
-      {
-        "name": "stop",
-        "line": 259
-      },
-      {
-        "name": "tick",
-        "line": 264
-      }
-    ]
-  },
-  "execution_service": {
-    "imports": [
-      "account_facts",
-      "admission",
-      "continuation",
-      "execution",
-      "holding_policy",
-      "htx_v5",
-      "live",
-      "maker_execution",
-      "market_data",
-      "models",
-      "mysql_store",
-      "order_px_fields",
-      "policy",
-      "strategy_admission",
-      "strategy_context",
-      "strategy_decision",
-      "timeframes"
-    ],
-    "functions": [
-      {
-        "name": "_entry_cycle_key",
-        "line": 567
-      },
-      {
-        "name": "_complete_exit_facts",
-        "line": 583
-      },
-      {
-        "name": "_prior_trade",
-        "line": 595
-      },
-      {
-        "name": "_order_request",
-        "line": 612
-      },
-      {
-        "name": "_numeric_client_order_id",
-        "line": 629
-      },
-      {
-        "name": "_decimal",
-        "line": 633
-      },
-      {
-        "name": "_order_id",
-        "line": 640
-      },
-      {
-        "name": "_client_id",
-        "line": 645
-      },
-      {
-        "name": "_reservation_key",
-        "line": 653
-      },
-      {
-        "name": "_exchange_state",
-        "line": 657
-      },
-      {
-        "name": "_terminal_status",
-        "line": 669
-      },
-      {
-        "name": "__post_init__",
-        "line": 63
-      },
-      {
-        "name": "from_env",
-        "line": 75
-      },
-      {
-        "name": "__init__",
-        "line": 152
-      },
-      {
-        "name": "submit",
-        "line": 169
-      },
-      {
-        "name": "reconcile",
-        "line": 495
-      },
-      {
-        "name": "reconcile_pending",
-        "line": 533
-      },
-      {
-        "name": "_sizing_multiplier",
-        "line": 551
-      },
-      {
-        "name": "dec",
-        "line": 78
-      },
-      {
-        "name": "condition_trace",
-        "line": 286
-      }
-    ]
-  },
-  "mysql_store": {
-    "imports": [
-      "holding_adoption",
-      "holding_policy",
-      "live_approval",
-      "order_accounting",
-      "order_px_fields"
-    ],
-    "functions": [
-      {
-        "name": "connect",
-        "line": 52
-      },
-      {
-        "name": "_clip",
-        "line": 793
-      },
-      {
-        "name": "_symbol",
-        "line": 794
-      },
-      {
-        "name": "decision_key",
-        "line": 796
-      },
-      {
-        "name": "execute",
-        "line": 23
-      },
-      {
-        "name": "fetchone",
-        "line": 24
-      },
-      {
-        "name": "fetchall",
-        "line": 25
-      },
-      {
-        "name": "__enter__",
-        "line": 26
-      },
-      {
-        "name": "__exit__",
-        "line": 27
-      },
-      {
-        "name": "cursor",
-        "line": 30
-      },
-      {
-        "name": "commit",
-        "line": 31
-      },
-      {
-        "name": "rollback",
-        "line": 32
-      },
-      {
-        "name": "close",
-        "line": 33
-      },
-      {
-        "name": "from_env",
-        "line": 44
-      },
-      {
-        "name": "__init__",
-        "line": 247
-      },
-      {
-        "name": "close",
-        "line": 250
-      },
-      {
-        "name": "validate_runtime_schema",
-        "line": 252
-      },
-      {
-        "name": "enabled_trend_accounts",
-        "line": 264
-      },
-      {
-        "name": "trade_account",
-        "line": 270
-      },
-      {
-        "name": "account_credentials",
-        "line": 276
-      },
-      {
-        "name": "enabled_strategy_policies",
-        "line": 284
-      },
-      {
-        "name": "latest_breadth_stats",
-        "line": 293
-      },
-      {
-        "name": "runtime_instance",
-        "line": 324
-      },
-      {
-        "name": "mark_runtime_started",
-        "line": 333
-      },
-      {
-        "name": "mark_runtime_stopped",
-        "line": 337
-      },
-      {
-        "name": "capital_allocation",
-        "line": 341
-      },
-      {
-        "name": "account_risk_limit",
-        "line": 351
-      },
-      {
-        "name": "active_risk_reservation_totals",
-        "line": 360
-      },
-      {
-        "name": "reserve_risk",
-        "line": 369
-      },
-      {
-        "name": "release_risk",
-        "line": 418
-      },
-      {
-        "name": "active_position_count",
-        "line": 422
-      },
-      {
-        "name": "active_direction_position_count",
-        "line": 434
-      },
-      {
-        "name": "active_contract_position",
-        "line": 447
-      },
-      {
-        "name": "latest_done_trade",
-        "line": 454
-      },
-      {
-        "name": "claim_entry_cycle",
-        "line": 462
-      },
-      {
-        "name": "attach_entry_cycle_intent",
-        "line": 493
-      },
-      {
-        "name": "abandon_entry_cycle",
-        "line": 497
-      },
-      {
-        "name": "mark_entry_cycle_active",
-        "line": 502
-      },
-      {
-        "name": "mark_entry_cycle_terminal",
-        "line": 506
-      },
-      {
-        "name": "record_position_intent",
-        "line": 516
-      },
-      {
-        "name": "record_order_intent",
-        "line": 537
-      },
-      {
-        "name": "mark_order_accepted",
-        "line": 558
-      },
-      {
-        "name": "mark_order_rejected",
-        "line": 564
-      },
-      {
-        "name": "mark_order_unknown",
-        "line": 568
-      },
-      {
-        "name": "apply_exchange_order",
-        "line": 573
-      },
-      {
-        "name": "mark_position_status",
-        "line": 577
-      },
-      {
-        "name": "pending_orders",
-        "line": 581
-      },
-      {
-        "name": "mirror_position",
-        "line": 591
-      },
-      {
-        "name": "reconcile_order",
-        "line": 597
-      },
-      {
-        "name": "record_ledger_event",
-        "line": 607
-      },
-      {
-        "name": "record_signal",
-        "line": 619
-      },
-      {
-        "name": "record_factor_snapshot",
-        "line": 628
-      },
-      {
-        "name": "record_candidate",
-        "line": 636
-      },
-      {
-        "name": "mark_candidate_execution_gate",
-        "line": 664
-      },
-      {
-        "name": "record_exit_decision",
-        "line": 669
-      },
-      {
-        "name": "managed_positions",
-        "line": 682
-      },
-      {
-        "name": "exit_state",
-        "line": 688
-      },
-      {
-        "name": "initialize_entry_state",
-        "line": 692
-      },
-      {
-        "name": "adopt_holding_policy",
-        "line": 700
-      },
-      {
-        "name": "save_exit_state",
-        "line": 725
-      },
-      {
-        "name": "record_entry_diagnosis",
-        "line": 741
-      },
-      {
-        "name": "heartbeat",
-        "line": 780
-      },
-      {
-        "name": "_write",
-        "line": 784
-      },
-      {
-        "name": "_one",
-        "line": 788
-      },
-      {
-        "name": "_all",
-        "line": 790
-      }
-    ]
-  },
-  "order_accounting": {
-    "imports": [
-      "live_close_ledger",
-      "mysql_store"
-    ],
-    "functions": [
-      {
-        "name": "number",
-        "line": 16
-      },
-      {
-        "name": "apply_exchange_order",
-        "line": 20
-      }
-    ]
-  },
-  "holding_policy": {
-    "imports": [
-      "continuation",
-      "exit_config",
-      "exits",
-      "java_entry_contract",
-      "timeframes"
-    ],
-    "functions": [
-      {
-        "name": "canonical",
-        "line": 32
-      },
-      {
-        "name": "digest",
-        "line": 37
-      },
-      {
-        "name": "implementation_hashes",
-        "line": 42
-      },
-      {
-        "name": "_decode_config",
-        "line": 47
-      },
-      {
-        "name": "paper_exit_config",
-        "line": 160
-      },
-      {
-        "name": "resolve_holding_policy",
-        "line": 166
-      },
-      {
-        "name": "create",
-        "line": 85
-      },
-      {
-        "name": "load",
-        "line": 105
-      },
-      {
-        "name": "to_dict",
-        "line": 134
-      },
-      {
-        "name": "owner",
-        "line": 138
-      },
-      {
-        "name": "entry",
-        "line": 142
-      },
-      {
-        "name": "exit",
-        "line": 146
-      },
-      {
-        "name": "continuation_version",
-        "line": 150
-      },
-      {
-        "name": "require_owner",
-        "line": 153
-      }
-    ]
-  },
-  "holding_adoption": {
-    "imports": [
-      "continuation",
-      "holding_policy"
-    ],
-    "functions": [
-      {
-        "name": "holding_identity",
-        "line": 19
-      },
-      {
-        "name": "adopted_state",
-        "line": 99
-      },
-      {
-        "name": "create",
-        "line": 37
-      },
-      {
-        "name": "load",
-        "line": 45
-      },
-      {
-        "name": "read",
-        "line": 79
-      },
-      {
-        "name": "to_dict",
-        "line": 82
-      },
-      {
-        "name": "policy_for",
-        "line": 85
-      }
-    ]
+  "method": "Python AST imports and named definitions; not a codegraph tool run",
+  "modules": {
+    "worker": {
+      "imports": [
+        "__future__",
+        "account_facts",
+        "admission",
+        "contextlib",
+        "continuation",
+        "credentials",
+        "dataclasses",
+        "execution",
+        "execution_service",
+        "holding_adoption",
+        "holding_policy",
+        "htx_v5",
+        "java_entry_contract",
+        "live",
+        "live_approval",
+        "live_worker",
+        "market_data",
+        "mysql_store",
+        "ownership",
+        "paper_worker",
+        "pathlib",
+        "position_manager",
+        "product_live_waiver",
+        "research.compact",
+        "research.store",
+        "runtime_checkpoint",
+        "strategy_admission",
+        "strategy_decision",
+        "strategy_platform",
+        "strategy_profiles",
+        "threading",
+        "timeframes",
+        "writer_lock"
+      ],
+      "definitions": [
+        "_account_client",
+        "_load_admission",
+        "_validate_first_live_cutover",
+        "_validate_live_approval",
+        "main"
+      ]
+    },
+    "live_worker": {
+      "imports": [
+        "__future__",
+        "concurrent.futures",
+        "dataclasses",
+        "datetime",
+        "decimal",
+        "diagnostics",
+        "execution_service",
+        "hashlib",
+        "importlib.metadata",
+        "indicators",
+        "java_entry_contract",
+        "market_data",
+        "models",
+        "mysql_store",
+        "os",
+        "policy",
+        "research.regime",
+        "runtime_checkpoint",
+        "strategy_admission",
+        "strategy_context",
+        "strategy_decision",
+        "strategy_platform",
+        "strategy_profiles",
+        "timeframes",
+        "typing"
+      ],
+      "definitions": [
+        "LiveTrendWorker",
+        "LiveTrendWorkerConfig",
+        "MultiTimeframeLiveTrendWorker",
+        "_ContextUnavailable",
+        "_EvidenceUnavailable",
+        "_Scan",
+        "__init__",
+        "_candidate_fresh",
+        "_checkpoint",
+        "_diagnose",
+        "_entry_window_open",
+        "_expire_pending",
+        "_initial_candidate_gate",
+        "_market_anchor_period_side",
+        "_market_anchor_regime",
+        "_persist_observation",
+        "_record_candidate",
+        "_recovery_context",
+        "_remaining_slots",
+        "_scan_all",
+        "_scan_one",
+        "_stable_candle_close_epoch",
+        "decimal",
+        "export_runtime",
+        "flag",
+        "from_env",
+        "integer",
+        "market_context_from_breadth",
+        "prepare_management",
+        "profiles_from_env",
+        "restore_runtime",
+        "runtime_key",
+        "stop",
+        "tick",
+        "validate_runtime_state",
+        "values"
+      ]
+    },
+    "paper_worker": {
+      "imports": [
+        "__future__",
+        "continuation",
+        "dataclasses",
+        "datetime",
+        "decimal",
+        "execution",
+        "holding_adoption",
+        "holding_policy",
+        "java_entry_contract",
+        "ledger",
+        "maker_execution",
+        "market_data",
+        "paper",
+        "paper_db_persist",
+        "pathlib",
+        "runtime",
+        "strategy_decision",
+        "strategy_platform",
+        "strategy_profiles",
+        "timeframes"
+      ],
+      "definitions": [
+        "PaperFileLedger",
+        "PaperTrendWorker",
+        "PaperWorkerConfig",
+        "WorkerPaperExchange",
+        "__init__",
+        "_confirm_evidence",
+        "_failure",
+        "_position_leverage",
+        "_prepare_holding_policies",
+        "_record_run_evidence",
+        "_recovered",
+        "active_positions",
+        "checkpoint",
+        "close",
+        "decision",
+        "export_runtime",
+        "fee_rate",
+        "from_env",
+        "mirrored_positions",
+        "open_position",
+        "position",
+        "position_context",
+        "record_fill",
+        "record_order",
+        "reduce_position",
+        "restore_runtime",
+        "runtime_key",
+        "save_position_context",
+        "stop",
+        "submit",
+        "tick",
+        "update_order_status"
+      ]
+    },
+    "runtime": {
+      "imports": [
+        "__future__",
+        "continuation",
+        "dataclasses",
+        "datetime",
+        "decimal",
+        "execution",
+        "exits",
+        "holding_policy",
+        "java_entry_contract",
+        "ledger",
+        "maker_execution",
+        "market_data",
+        "models",
+        "paper",
+        "pathlib",
+        "research.store",
+        "strategy_admission",
+        "strategy_context",
+        "strategy_decision",
+        "strategy_profiles",
+        "timeframes",
+        "typing"
+      ],
+      "definitions": [
+        "PaperTrendRuntime",
+        "ScanOutcome",
+        "__init__",
+        "_known_price_stop",
+        "_mirror",
+        "_mirror_reduction",
+        "_submit_maker_entry",
+        "_version_ref",
+        "manage",
+        "scan"
+      ]
+    },
+    "position_manager": {
+      "imports": [
+        "__future__",
+        "account_facts",
+        "continuation",
+        "dataclasses",
+        "datetime",
+        "decimal",
+        "execution_service",
+        "exit_config",
+        "exits",
+        "holding_policy",
+        "htx_v5",
+        "indicators",
+        "java_entry_contract",
+        "market_data",
+        "models",
+        "mysql_store",
+        "order_px_fields",
+        "timeframes",
+        "typing"
+      ],
+      "definitions": [
+        "LivePositionManager",
+        "__init__",
+        "_entry_epoch",
+        "_evidence",
+        "_manage",
+        "decimal",
+        "manage",
+        "submit_close",
+        "timeframe_side",
+        "timestamp"
+      ]
+    },
+    "execution_service": {
+      "imports": [
+        "__future__",
+        "account_facts",
+        "admission",
+        "continuation",
+        "copy",
+        "dataclasses",
+        "datetime",
+        "decimal",
+        "execution",
+        "hashlib",
+        "holding_policy",
+        "htx_v5",
+        "live",
+        "maker_execution",
+        "market_data",
+        "models",
+        "mysql_store",
+        "order_px_fields",
+        "os",
+        "policy",
+        "strategy_admission",
+        "strategy_context",
+        "strategy_decision",
+        "timeframes",
+        "typing"
+      ],
+      "definitions": [
+        "ConfirmedEntryFill",
+        "ConfirmedReductionFill",
+        "EntryExecutionConfig",
+        "EntrySubmission",
+        "HtxTrendEntryExecutor",
+        "__init__",
+        "__post_init__",
+        "_client_id",
+        "_complete_exit_facts",
+        "_decimal",
+        "_entry_cycle_key",
+        "_exchange_state",
+        "_numeric_client_order_id",
+        "_order_id",
+        "_order_request",
+        "_prior_trade",
+        "_reservation_key",
+        "_sizing_multiplier",
+        "_terminal_status",
+        "condition_trace",
+        "dec",
+        "from_env",
+        "reconcile",
+        "reconcile_pending",
+        "submit"
+      ]
+    },
+    "mysql_store": {
+      "imports": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "decimal",
+        "holding_adoption",
+        "holding_policy",
+        "live_approval",
+        "order_accounting",
+        "order_px_fields",
+        "os",
+        "typing"
+      ],
+      "definitions": [
+        "AccountCredentialRecord",
+        "AccountRiskLimit",
+        "CapitalAllocation",
+        "Connection",
+        "Cursor",
+        "HtxTrendMySqlRepository",
+        "LedgerEvent",
+        "MySqlSettings",
+        "PositionIntent",
+        "RiskReservationTotals",
+        "RuntimeInstance",
+        "StrategyPolicyRecord",
+        "TradeAccount",
+        "TrendBreadthStats",
+        "TrendOrderIntent",
+        "__enter__",
+        "__exit__",
+        "__init__",
+        "_all",
+        "_clip",
+        "_one",
+        "_symbol",
+        "_write",
+        "abandon_entry_cycle",
+        "account_credentials",
+        "account_risk_limit",
+        "active_contract_position",
+        "active_direction_position_count",
+        "active_position_count",
+        "active_risk_reservation_totals",
+        "adopt_holding_policy",
+        "apply_exchange_order",
+        "attach_entry_cycle_intent",
+        "capital_allocation",
+        "claim_entry_cycle",
+        "close",
+        "commit",
+        "connect",
+        "cursor",
+        "decision_key",
+        "enabled_strategy_policies",
+        "enabled_trend_accounts",
+        "execute",
+        "exit_state",
+        "fetchall",
+        "fetchone",
+        "from_env",
+        "heartbeat",
+        "initialize_entry_state",
+        "latest_breadth_stats",
+        "latest_done_trade",
+        "managed_positions",
+        "mark_candidate_execution_gate",
+        "mark_entry_cycle_active",
+        "mark_entry_cycle_terminal",
+        "mark_order_accepted",
+        "mark_order_rejected",
+        "mark_order_unknown",
+        "mark_position_status",
+        "mark_runtime_started",
+        "mark_runtime_stopped",
+        "mirror_position",
+        "pending_orders",
+        "reconcile_order",
+        "record_candidate",
+        "record_entry_diagnosis",
+        "record_exit_decision",
+        "record_factor_snapshot",
+        "record_ledger_event",
+        "record_order_intent",
+        "record_position_intent",
+        "record_signal",
+        "release_risk",
+        "reserve_risk",
+        "rollback",
+        "runtime_instance",
+        "save_exit_state",
+        "trade_account",
+        "validate_runtime_schema"
+      ]
+    },
+    "order_accounting": {
+      "imports": [
+        "__future__",
+        "decimal",
+        "hashlib",
+        "live_close_ledger",
+        "mysql_store",
+        "typing"
+      ],
+      "definitions": [
+        "apply_exchange_order",
+        "number"
+      ]
+    },
+    "holding_policy": {
+      "imports": [
+        "__future__",
+        "continuation",
+        "dataclasses",
+        "decimal",
+        "exit_config",
+        "exits",
+        "functools",
+        "hashlib",
+        "java_entry_contract",
+        "pathlib",
+        "timeframes",
+        "typing"
+      ],
+      "definitions": [
+        "HoldingPolicy",
+        "HoldingPolicyError",
+        "_decode_config",
+        "_load",
+        "canonical",
+        "continuation_version",
+        "create",
+        "digest",
+        "entry",
+        "exit",
+        "implementation_hashes",
+        "load",
+        "owner",
+        "paper_exit_config",
+        "require_owner",
+        "resolve_holding_policy",
+        "supports_observed_implementation",
+        "to_dict"
+      ]
+    },
+    "holding_adoption": {
+      "imports": [
+        "__future__",
+        "continuation",
+        "dataclasses",
+        "holding_policy",
+        "pathlib"
+      ],
+      "definitions": [
+        "HoldingAdoption",
+        "adopted_state",
+        "create",
+        "holding_identity",
+        "load",
+        "policy_for",
+        "read",
+        "to_dict"
+      ]
+    },
+    "ownership": {
+      "imports": [
+        "__future__",
+        "copy",
+        "dataclasses",
+        "holding_policy",
+        "mysql_store",
+        "timeframes"
+      ],
+      "definitions": [
+        "OwnedPositionManagers",
+        "__init__",
+        "manage",
+        "managed_instances",
+        "owners_from_env"
+      ]
+    },
+    "runtime_checkpoint": {
+      "imports": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "decimal",
+        "enum",
+        "hashlib",
+        "pathlib",
+        "research",
+        "strategy_platform"
+      ],
+      "definitions": [
+        "PersistentWorker",
+        "RuntimeCheckpoint",
+        "__init__",
+        "canonical",
+        "capture",
+        "close",
+        "decode",
+        "encode",
+        "fingerprint",
+        "read",
+        "registry",
+        "save",
+        "stop",
+        "tick"
+      ]
+    },
+    "tools/holding_export": {
+      "imports": [
+        "__future__",
+        "continuation",
+        "exit_config",
+        "holding_adoption",
+        "holding_policy",
+        "java_entry_contract",
+        "pathlib",
+        "timeframes"
+      ],
+      "definitions": [
+        "_probe",
+        "environment_observation",
+        "from_observation",
+        "main",
+        "process_observation",
+        "verify_process_instance"
+      ]
+    },
+    "tools/holding_preflight": {
+      "imports": [
+        "__future__",
+        "holding_adoption",
+        "holding_export",
+        "holding_policy",
+        "pathlib",
+        "runtime_checkpoint"
+      ],
+      "definitions": [
+        "assess",
+        "main",
+        "target_accepts"
+      ]
+    }
   }
 }
