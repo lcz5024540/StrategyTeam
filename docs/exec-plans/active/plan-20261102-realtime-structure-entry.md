@@ -16,8 +16,8 @@
 ## 里程碑
 - [x] M1 基线、接口契约、冻结规则与选参协议（完成）。
 - [x] M2实时行情、持久状态、受控采样；真实公开API及恢复测试。
-- [ ] M3（in_progress） 两类计划、共享价格成本和风险检查。
-- [ ] M4 IOC、实时止损、成交时间边界与worker集成。
+- [x] M3 两类计划、共享价格成本和风险检查。
+- [ ] M4（in_progress） IOC、实时止损、成交时间边界与worker集成。
 - [ ] M5 全机会回放、六组选择、诊断/留出及不准入报告。
 - [ ] M6 验证 / 自检：Python回归、迁移/恢复演练、打包、部署/回滚材料。
 
@@ -46,3 +46,5 @@ StructurePlan / RealtimeTrigger / EntryIntent分别保存结构时钟、触发�
 - M1：已fetch最新远端，建立隔离工作树；主线#61为exp_sprt影子实验，非本计划完整交易能力。
 
 - M2：5项定向测试通过；真实ETH公开WS 15秒取得58 TRADE/265 BBO，共323事件哈希复验通过、无凭据/无交易。采样/tmp/htx-realtime-public-20261102；摘要docs/htx-trend-python/evidence/realtime-20261102/public-capture.json。
+
+- M3：26项相关测试通过；两模型状态机、真实时钟、结构锚点身份、两笔确认、同价不复活、费用/IOC最差价、共享账户风险与数量已实现。
