@@ -327,3 +327,210 @@ def test_alias_unmanaged_timeframe_is_not_reported_healthy():
     manager = SimpleNamespace(manage=lambda *_: [], instance=instance)
     m = LiveManagement(broker, manager, Market(), owners=(owner,))
     assert m.tick(45000) == ["position=7:profile has no realtime management worker"]
+
+
+def test_live_late_receipt_proves_only_postfill_bbo_and_preserves_bar_state(tmp_path):
+    from test_realtime_coverage import event
+    from htx_trend.realtime.storage import SegmentRecorder
+    from htx_trend.research.store import FileEvidenceStore
+
+    row = dict(
+        id=1,
+        contract_code="ETH-USDT",
+        side="LONG",
+        remaining_contract_volume=1,
+        stop_price="90",
+        entry_avg_price="100",
+    )
+    durable = dict(
+        position_boundary_initialized=True,
+        first_fill_observed_ms=1500,
+        first_fill_bound_ms=1500,
+        highest="100",
+        lowest="100",
+        last_bar=900,
+        continuation_last_bar=900,
+        continuation_breach_count=1,
+    )
+    repo = SimpleNamespace(
+        managed_positions=lambda _: [row],
+        exit_state=lambda _: dict(durable),
+        save_management_state=lambda _, value: (durable.clear(), durable.update(value)),
+    )
+    broker = SimpleNamespace(repo=repo, instance=SimpleNamespace())
+    market = Market()
+    market.kline_window = lambda *a, **k: SimpleNamespace(
+        candles=[SimpleNamespace(open_time=0)]
+    )
+    calls = []
+    m = LiveManagement(
+        broker, SimpleNamespace(_manage=lambda *a: calls.append(a)), market
+    )
+    m.coverage_recorder = SegmentRecorder(tmp_path / "capture")
+    store = m.coverage_evidence = FileEvidenceStore(tmp_path / "evidence")
+    for at, bid in [(900, 150), (1200, 110), (1400, 105)]:
+        b = event(at, bid)
+        m.coverage_recorder.append(b)
+        m.event(b, at)
+    broker.before_recovery()
+    durable.update(
+        first_fill_ms=1000,
+        fill_receipt_status="COMPLETE",
+        fill_receipt_ref=store.put("receipt", {}),
+        detail_max_fill_price="120",
+        detail_min_fill_price="80",
+    )
+    broker.after_recovery()
+    assert m.tick(1500) == []
+    assert durable["highest"] == "110" and durable["lowest"] == "100"
+    assert durable["extrema_coverage"] == "COMPLETE"
+    assert durable["first_fill_bound_ms"] == 1000
+    assert durable["last_bar"] == 900 and durable["continuation_breach_count"] == 1
+    m.gap()
+    b = event(1600, 105)
+    m.coverage_recorder.append(b)
+    m.event(b, 1600)
+    state = m.state(1)
+    m._prove_coverage(row, state, 1650)
+    assert state["extrema_coverage"] == "GAP"
+    market.price = D(80)
+    assert m.tick(1700) == [] and len(calls) == 1
+    store.close()
+
+
+def test_live_proof_io_failure_does_not_block_due_trend_exit(tmp_path, monkeypatch):
+    from test_realtime_coverage import event
+    from htx_trend.realtime.storage import SegmentRecorder
+    from htx_trend.research.store import FileEvidenceStore
+
+    row = dict(
+        id=1,
+        contract_code="ETH-USDT",
+        side="LONG",
+        remaining_contract_volume=1,
+        stop_price="90",
+        entry_avg_price="100",
+    )
+    state = dict(
+        first_fill_ms=1000,
+        position_boundary_initialized=True,
+        highest="100",
+        lowest="100",
+        fill_receipt_status="COMPLETE",
+        last_bar=-900,
+    )
+    repo = SimpleNamespace(
+        managed_positions=lambda _: [row],
+        exit_state=lambda _: dict(state),
+        save_management_state=lambda _, value: (state.clear(), state.update(value)),
+    )
+    market = Market()
+    market.kline_window = lambda *a, **k: SimpleNamespace(
+        candles=[SimpleNamespace(open_time=0)]
+    )
+    calls = []
+    m = LiveManagement(
+        SimpleNamespace(repo=repo, instance=SimpleNamespace()),
+        SimpleNamespace(_manage=lambda *a: calls.append(dict(state))),
+        market,
+    )
+    m.coverage_recorder = SegmentRecorder(tmp_path / "capture")
+    store = m.coverage_evidence = FileEvidenceStore(tmp_path / "evidence")
+    state["fill_receipt_ref"] = store.put("receipt", {})
+    for at in (900, 1200):
+        b = event(at, 105)
+        m.coverage_recorder.append(b)
+        m.event(b, at)
+    monkeypatch.setattr(
+        store, "put", lambda *a, **k: (_ for _ in ()).throw(OSError("full"))
+    )
+    assert m.tick(1500) == []
+    assert len(calls) == 1 and calls[0]["extrema_coverage"] == "GAP"
+    assert calls[0]["coverage_error"] == "OSError"
+    store.close()
+
+
+def test_partial_entry_average_never_enters_raw_bbo_extrema(tmp_path):
+    from test_realtime_coverage import event
+    from htx_trend.realtime.storage import SegmentRecorder
+    from htx_trend.research.store import FileEvidenceStore
+
+    repo = SimpleNamespace()
+    broker = SimpleNamespace(repo=repo, instance=SimpleNamespace())
+    m = LiveManagement(broker, SimpleNamespace(), Market())
+    store = m.coverage_evidence = FileEvidenceStore(tmp_path / "evidence")
+    m.coverage_recorder = SegmentRecorder(tmp_path / "capture")
+    row = dict(
+        contract_code="ETH-USDT",
+        side="LONG",
+        entry_avg_price="110",
+        entry_filled_contracts="1",
+    )
+    state = dict(
+        first_fill_ms=1000,
+        fill_receipt_status="COMPLETE",
+        detail_quantity="1",
+        fill_receipt_ref=store.put("receipt", {}),
+    )
+    for at in (900, 1200):
+        b = event(at, 100)
+        m.coverage_recorder.append(b)
+        m.coverage.append(b, at)
+    m._prove_coverage(row, state, 1300)
+    assert state["highest"] == "110"  # zero-PnL floor, not a realized quote
+    assert state["coverage_proof"]["highest"] == "100"
+    row.update(entry_avg_price="100", entry_filled_contracts="2")
+    state["detail_quantity"] = "2"
+    b = event(1400, 100)
+    m.coverage_recorder.append(b)
+    m.coverage.append(b, 1400)
+    m._prove_coverage(row, state, 1500)
+    assert state["highest"] == state["coverage_proof"]["highest"] == "100"
+    store.close()
+
+
+def test_actual_decision_rechecks_coverage_after_private_read_delay(monkeypatch):
+    from test_position_manager import (
+        Repo,
+        Market as ExitMarket,
+        Client,
+        manager,
+        position,
+    )
+    from htx_trend.strategy_context import MarketContext
+
+    repo, market, client = Repo(), ExitMarket(), Client()
+    market.price = D(100)
+    clock = [144900.0]
+    market.clock = lambda: clock[0]
+    row = dict(position(), primary_model="RT_RANGE_REJECTION", strategy_name=VERSION)
+    repo.state = dict(
+        extrema_coverage="COMPLETE",
+        detail_quantity="4",
+        fill_receipt_status="COMPLETE",
+        coverage_proof=dict(epoch="e", continuity_token="t", through_ms=144900000),
+    )
+    mgr = manager(repo=repo, market=market, client=client)
+    mgr.instance = replace(mgr.instance, strategy_name=VERSION)
+    m = LiveManagement(SimpleNamespace(repo=repo, instance=mgr.instance), mgr, market)
+    m.coverage_stream = SimpleNamespace(connected=True, epoch="e")
+    m.coverage_recorder = SimpleNamespace(failure=None)
+    m.coverage.tokens["BTC-USDT"] = "t"
+    assert m.coverage_valid(row, repo.state)
+
+    def delayed_positions(_):
+        clock[0] += 3
+        m.coverage_stream.connected = False
+        return [{"position_side": "long", "volume": 4}]
+
+    client.positions = delayed_positions
+    captured = []
+    from htx_trend.exits import decide_v4
+
+    def capture(input_):
+        captured.append(input_)
+        return decide_v4(input_)
+
+    monkeypatch.setattr("htx_trend.position_manager.decide_v4", capture)
+    mgr._manage(row, 144900, MarketContext())
+    assert captured and not captured[0].mfe_coverage_complete

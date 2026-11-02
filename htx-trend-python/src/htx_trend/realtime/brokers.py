@@ -305,6 +305,18 @@ class LiveBroker:
         self.repo = entry_executor._repository
         self.instance, self.account = entry_executor._instance, entry_executor._account
         self.executor = entry_executor._executor
+        from .fills import FillRecovery
+
+        evidence = getattr(entry_executor, "_evidence_store", None)
+        self.receipts = (
+            FillRecovery(
+                self.executor, self.repo, engine, self.account.account_id, evidence
+            )
+            if evidence is not None and hasattr(self.executor, "order_details")
+            else None
+        )
+        self.before_recovery = lambda: None
+        self.after_recovery = lambda: None
 
     def facts(self, contract, side, book, config, leverage):
         totals = self.repo.active_risk_reservation_totals(self.account.account_id)
@@ -523,8 +535,21 @@ class LiveBroker:
             return phase
 
     def recover(self):
+        self.before_recovery()
+        try:
+            return self._recover()
+        finally:
+            self.after_recovery()
+
+    def close(self):
+        if self.receipts is not None:
+            self.receipts.close()
+
+    def _recover(self):
         self.guard()
         results = self.entry.reconcile_pending()
+        if self.receipts is not None:
+            self.receipts.poll()
         for ident, row in list(self.engine.rows.items()):
             if row["phase"] not in {"SUBMITTED", "UNKNOWN"}:
                 continue

@@ -91,8 +91,13 @@ def _common(
         root,
         max_bytes=int(os.environ.get("HTX_RT_CAPTURE_MAX_BYTES", str(2 * 1024**3))),
     )
+    if isinstance(management, LiveManagement):
+        management.coverage_recorder = recorder
+        management.coverage_evidence = evidence
     loader = FrameLoader(public, contracts, frames)
     stream = PublicStream(contracts)
+    if isinstance(management, LiveManagement):
+        management.coverage_stream = stream
     worker = RealtimeWorker(
         instance,
         engine,

@@ -127,14 +127,17 @@ class EventOrder:
         self.id_queues = {}
 
     def accept(self, event: MarketEvent) -> bool:
+        self.rejection = None
         key = (event.epoch, event.contract, event.kind)
         recent = self.ids.setdefault(key, set())
         order = self.id_queues.setdefault(key, deque())
         if event.event_id in recent:
+            self.rejection = "DUPLICATE"
             return False
         ident = int(event.event_id) if event.event_id.isdigit() else event.event_id
         marker = (event.exchange_ms, str(ident).zfill(32))
         if marker <= self.seen.get(key, (-1, "")):
+            self.rejection = "OUT_OF_ORDER"
             return False
         self.seen[key] = marker
         recent.add(event.event_id)
@@ -243,9 +246,13 @@ class PublicStream:
                         if pong:
                             socket.send(json.dumps(pong))
                         for event in events:
-                            if event.contract not in self.contracts or not order.accept(
-                                event
-                            ):
+                            if event.contract not in self.contracts:
+                                continue
+                            if not order.accept(event):
+                                if order.rejection == "OUT_OF_ORDER":
+                                    raise ValueError(
+                                        "out-of-order market event: coverage interrupted"
+                                    )
                                 continue
                             self.events.put_nowait(event)
                             self.observed.add((event.contract, event.kind))

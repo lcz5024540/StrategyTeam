@@ -15,12 +15,13 @@
         "import time",
         "from pathlib import Path",
         "from .feed import PublicStream",
-        "from .storage import SegmentRecorder"
+        "from .storage import SegmentRecorder",
+        "from .replay import audit_capture, load, replay as run_replay, write_report"
       ]
     },
     {
       "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "functions": 15,
+      "functions": 17,
       "imports": [
         "from __future__ import annotations",
         "from dataclasses import replace",
@@ -37,7 +38,19 @@
         "from ..execution_service import _order_id, _client_id, _reservation_key",
         "from ..research.store import primitive",
         "from . import VERSION",
-        "from ..paper import PaperExchange"
+        "from ..paper import PaperExchange",
+        "from .fills import FillRecovery"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/coverage.py",
+      "functions": 4,
+      "imports": [
+        "from collections import deque",
+        "from decimal import Decimal as D",
+        "import uuid",
+        "import gzip, json",
+        "from ..research.store import digest"
       ]
     },
     {
@@ -64,7 +77,9 @@
         "from .management import PaperManagement, LiveManagement",
         "from .plans import Parameters, TriggerEngine",
         "from .storage import PaperPlanStore, MySqlPlanStore, SegmentRecorder",
-        "from .worker import RealtimeWorker, FrameLoader, MarketView"
+        "from .worker import RealtimeWorker, FrameLoader, MarketView",
+        "from ..live_worker import LiveTrendWorker",
+        "from ..strategy_context import MarketRegime"
       ]
     },
     {
@@ -82,7 +97,17 @@
         "import threading",
         "import time",
         "import uuid",
-        "from ..research.store import primitive"
+        "from ..research.store import primitive",
+        "from websockets.sync.client import connect"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/fills.py",
+      "functions": 5,
+      "imports": [
+        "from concurrent.futures import ThreadPoolExecutor",
+        "from decimal import Decimal as D",
+        "import time"
       ]
     },
     {
@@ -92,7 +117,7 @@
     },
     {
       "file": "htx-trend-python/src/htx_trend/realtime/management.py",
-      "functions": 14,
+      "functions": 17,
       "imports": [
         "from __future__ import annotations",
         "from dataclasses import dataclass",
@@ -106,7 +131,10 @@
         "from ..models import TrendSide",
         "from ..position_manager import timeframe_side, decimal",
         "from ..strategy_context import MarketContext",
-        "from . import VERSION"
+        "from . import VERSION",
+        "from .coverage import Coverage",
+        "import time",
+        "from ..timeframes import TimeframeProfile"
       ]
     },
     {
@@ -168,7 +196,14 @@
         "from .management import PaperManagement",
         "from .plans import GRID, TriggerEngine",
         "from .storage import PlanStore",
-        "from .worker import RealtimeWorker, MarketView"
+        "from .worker import RealtimeWorker, MarketView",
+        "from datetime import timedelta",
+        "from . import MODELS",
+        "from .storage import SegmentRecorder",
+        "from hashlib import sha256",
+        "from .. import paper_worker",
+        "from ..models import TrendSide",
+        "from ..strategy_context import MarketRegime"
       ]
     },
     {
@@ -200,7 +235,7 @@
     },
     {
       "file": "htx-trend-python/src/htx_trend/realtime/worker.py",
-      "functions": 18,
+      "functions": 19,
       "imports": [
         "from __future__ import annotations",
         "from concurrent.futures import ThreadPoolExecutor, as_completed",
@@ -215,9 +250,12 @@
         "from .plans import Parameters, generate",
         "from .risk import evaluate",
         "from .storage import TERMINAL",
-        "from .management import paper_reentry, check_reentry"
+        "from .management import paper_reentry, check_reentry",
+        "from pathlib import Path",
+        "from . import VERSION",
+        "from itertools import groupby",
+        "from ..execution_service import _complete_exit_facts"
       ]
     }
-  ],
-  "drawio_xml_valid": true
+  ]
 }

@@ -422,8 +422,22 @@ class RealtimeWorker:
             now = int(self.clock() * 1000)
             if not self.stream.connected or event.epoch != self.stream.epoch:
                 continue
-            self.recorder.append(event)
+            if not self.recorder.append(event):
+                failures.append(self.recorder.failure or "CAPTURE_FAILED")
+                try:
+                    self.management.gap()
+                except Exception as error:
+                    failures.append("GAP_STATE:" + type(error).__name__)
             if event.kind == "BBO" and not event.fresh(now):
+                self.recorder.append(
+                    {
+                        "kind": "GAP",
+                        "contract": event.contract,
+                        "received_ms": now,
+                        "epoch": event.epoch,
+                        "reason": "STALE_BBO",
+                    }
+                )
                 self.management.gap(contract=event.contract)
                 failures.append("STALE_BBO:" + event.contract)
             try:
@@ -536,6 +550,8 @@ class RealtimeWorker:
         self.stream.close()
         self.loader.close()
         self.recorder.flush()
+        if hasattr(self.broker, "close"):
+            self.broker.close()
         if hasattr(self.management, "flush"):
             self.management.flush()
         if hasattr(self.broker, "ledger"):

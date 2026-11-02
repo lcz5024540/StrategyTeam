@@ -111,3 +111,14 @@ def test_private_fee_and_margin_reads_match_java_contract_endpoints() -> None:
     assert client.account_balance()["available_margin"] == "50"
     assert seen == [("POST", "/linear-swap-api/v1/swap_fee", {"contract_code": "BTC-USDT", "business_type": "swap"}),
                     ("GET", "/v5/account/balance", {})]
+
+
+def test_v5_fill_details_is_signed_read_with_query_cursor():
+    def handler(request):
+        assert request.method=='GET' and request.url.path=='/v5/trade/order/details'
+        q=dict(request.url.params)
+        assert q['order_id']=='77' and q['from']=='12' and q['direct']=='next' and q['limit']=='100'
+        assert q['AccessKeyId']=='read-key' and q['Signature']
+        return httpx.Response(200,json={'code':200,'data':[{'trade_id':'1'}]})
+    client=HtxV5Client('read-key','read-secret',client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert client.order_details('ETH-USDT','77',from_id='12')==[{'trade_id':'1'}]

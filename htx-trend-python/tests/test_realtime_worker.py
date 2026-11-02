@@ -263,3 +263,23 @@ def test_current_package_decodes_realtime_checkpoint_and_rejects_unknown_version
     assert target_accepts(root, [], checkpoint=checkpoint)
     with pytest.raises(ValueError):
         RealtimeWorker.validate_runtime_state({**state, "strategy": "unknown"})
+
+
+def test_quota_reached_inside_batch_blocks_that_batch_but_keeps_stop_checks(worker):
+    w, events, management = worker
+    w.recorder.max_bytes = 1
+    w.recorder.segment_bytes = 1
+    events.extend(
+        [
+            book(1, "98.3", "98.4"),
+            trade(2, "98"),
+            trade(3, "100"),
+            trade(4, "98.5"),
+            trade(5, "98.4"),
+        ]
+    )
+    w._preflight = lambda _: pytest.fail("same-batch new risk must be blocked")
+    health = w.tick()
+    assert health.status == "DEGRADED"
+    assert any(c[0] == "book" for c in management.calls)
+    assert sum(c[0] == "stop" for c in management.calls) >= 2

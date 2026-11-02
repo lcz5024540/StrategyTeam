@@ -107,11 +107,12 @@ class SegmentRecorder:
         self.lock = threading.RLock()
         self.last_ref = None
         manifest = self.root / "segments.jsonl"
-        self.indexed = (
-            {json.loads(line)["hash"] for line in manifest.read_text().splitlines()}
+        self.records = (
+            [json.loads(line) for line in manifest.read_text().splitlines()]
             if manifest.exists()
-            else set()
+            else []
         )
+        self.indexed = {record["hash"] for record in self.records}
 
     def append(self, event):
         with self.lock:
@@ -177,6 +178,7 @@ class SegmentRecorder:
                         os.close(fd)
                     self.used += len(line)
                     self.indexed.add(sha)
+                    self.records.append(record)
                 self.last_ref = sha
                 self.pending.clear()
                 self.pending_bytes = 0

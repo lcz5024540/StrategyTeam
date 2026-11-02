@@ -274,7 +274,17 @@ class LiveManagement:
     def __init__(self, broker, manager, market, *, owners=None, context_provider=None):
         self.broker, self.manager, self.market = broker, manager, market
         self.repo = broker.repo
+        from .coverage import Coverage
+
+        self.coverage = Coverage()
+        self.coverage_recorder = None
+        self.coverage_evidence = None
+        self.coverage_attempt_at = {}
+        broker.before_recovery = self.flush
+        broker.after_recovery = self.invalidate
         self.context_provider = context_provider or (lambda _: None)
+        self.coverage_stream = None
+        manager.mfe_coverage_validator = self.coverage_valid
         self.last_bar = {}
         self.old_managers = []
         self.last_old_ms = 0
@@ -299,7 +309,13 @@ class LiveManagement:
             self.cached_state[ident] = self.repo.exit_state(ident)
         return dict(self.cached_state[ident])
 
+    def invalidate(self):
+        self.cached_state.clear()
+        self.cached_rows = []
+        self.inventory_at = None
+
     def event(self, event, now_ms):
+        self.coverage.append(event, now_ms)
         if event.kind != "BBO" or not event.fresh(now_ms):
             return
         for row in self.inventory(now_ms):
@@ -315,6 +331,7 @@ class LiveManagement:
             self._state(row["id"], state, now_ms=now_ms)
 
     def gap(self, *, contract=None):
+        self.coverage.gap(contract)
         for row in self.repo.managed_positions(self.broker.instance):
             if contract is not None and row["contract_code"] != contract:
                 continue
@@ -335,6 +352,81 @@ class LiveManagement:
     def flush(self):
         for ident, state in self.cached_state.items():
             self._state(ident, state, force=True)
+
+    def coverage_valid(self, row, state):
+        import time
+
+        proof = state.get("coverage_proof")
+        if not proof or self.coverage_stream is None:
+            return False
+        now = int(getattr(self.market, "clock", time.time)() * 1000)
+        return (
+            state.get("fill_receipt_status") == "COMPLETE"
+            and D(str(state.get("detail_quantity", 0)))
+            == decimal(row, "entry_filled_contracts")
+            and self.coverage_recorder is not None
+            and not self.coverage_recorder.failure
+            and self.coverage_stream.connected
+            and self.coverage_stream.epoch == proof["epoch"]
+            and self.coverage.tokens.get(row["contract_code"])
+            == proof["continuity_token"]
+            and 0 <= now - proof["through_ms"] <= 2000
+        )
+
+    def _prove_coverage(self, row, state, now_ms):
+        if self.coverage_recorder is None or self.coverage_evidence is None:
+            state["extrema_coverage"] = "GAP"
+            return
+        first = state.get("first_fill_ms")
+        if (
+            first is None
+            or state.get("fill_receipt_status") != "COMPLETE"
+            or (
+                row.get("entry_filled_contracts") is not None
+                and D(str(state.get("detail_quantity", 0)))
+                != decimal(row, "entry_filled_contracts")
+            )
+        ):
+            state["extrema_coverage"] = "GAP"
+            return
+        previous = state.get("coverage_proof")
+        # A gap after established coverage can never be repaired by merely
+        # observing later prices. A newly known first fill can be reconstructed
+        # only while the complete original interval is still in the buffer.
+        start = previous["through_ms"] if previous else first
+        # Entry executions use the opposite side of the spread. Their extremes
+        # are not realizable exit prices and must not create fictitious profit.
+        baseline = decimal(row, "entry_avg_price")
+        high = previous["highest"] if previous else None
+        low = previous["lowest"] if previous else None
+        try:
+            proof = self.coverage.prove(
+                row["contract_code"],
+                row["side"],
+                start,
+                now_ms,
+                self.coverage_recorder,
+                seed_high=high,
+                seed_low=low,
+                fill_ref=state["fill_receipt_ref"],
+                evidence=self.coverage_evidence,
+                previous=previous,
+            )
+            state.pop("coverage_error", None)
+        except Exception as error:
+            # Proof evidence is not the authoritative trading ledger. A proof
+            # failure disables MFE-based protection, never ordinary trend exits.
+            proof = None
+            state["coverage_error"] = type(error).__name__
+        state["extrema_coverage"] = "COMPLETE" if proof else "GAP"
+        if proof:
+            state.update(
+                coverage_proof=proof,
+                highest=str(max(baseline, D(proof["highest"]))),
+                lowest=str(min(baseline, D(proof["lowest"]))),
+            )
+        state["first_fill_bound_ms"] = first
+        state["first_fill_source"] = "EXCHANGE_RECEIPT"
 
     def tick(self, now_ms, *, contract=None):
         failures = []
@@ -408,6 +500,14 @@ class LiveManagement:
                 state["highest"] = str(max(D(state["highest"]), price))
                 state["lowest"] = str(min(D(state["lowest"]), price))
                 self._state(row["id"], state, now_ms=now_ms)
+                if state.get(
+                    "first_fill_ms"
+                ) is not None and now_ms - self.coverage_attempt_at.get(
+                    row["id"], 0
+                ) >= (10000 if state.get("coverage_proof") else 1000):
+                    self.coverage_attempt_at[row["id"]] = now_ms
+                    self._prove_coverage(row, state, now_ms)
+                    self._state(row["id"], state, force=True)
                 if state.get("pending_realtime_exit"):
                     self._state(row["id"], state, force=True)
                     try:
@@ -426,6 +526,7 @@ class LiveManagement:
                     "first_fill_bound_ms", state.get("first_fill_ms", now_ms)
                 )
                 if due:
+                    self._prove_coverage(row, state, now_ms)
                     self._state(row["id"], state, force=True)
                     try:
                         self.manager._manage(

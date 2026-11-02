@@ -228,6 +228,14 @@ class LivePositionManager:
         if is_realtime(row['primary_model']):
             first=state.get('first_fill_ms') or state.get('first_fill_bound_ms')
             bars_held=max(0,((last_bar+900)*1000-int(first))//900000) if first is not None else 0
+        if is_realtime(row['primary_model']):
+            validator = getattr(self, 'mfe_coverage_validator', None)
+            try:
+                valid_coverage = validator is not None and validator(row, state)
+            except Exception:
+                valid_coverage = False
+            if not valid_coverage:
+                state['extrema_coverage'] = 'GAP'
         input_=ExitInput(parse_model(row['primary_model']),side,quantity,size,entry,
             decimal(row,'stop_price',decimal(row,'invalidation_price')),decimal(row,'invalidation_price'),
             decimal(row,'target_zone_low' if side is TrendSide.LONG else 'target_zone_high') or None,
