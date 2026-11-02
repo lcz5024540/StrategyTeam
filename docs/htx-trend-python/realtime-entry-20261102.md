@@ -27,7 +27,7 @@
 - 600个固定输入对旧v4/legacy退出实现逐项差分；默认15m、4H及既有LIVE回归通过。没有修改Java业务代码，也没有运行Java回归冒充Python结果。
 - 真实HTX公共WS最终15秒：35笔成交、562条BBO，共597事件；gzip原文哈希复验通过，无凭据/交易请求。[摘要](evidence/realtime-20261102/public-final-capture.json)。这仅证明协议数据接入，不证明成交或收益。
 - 新模块ruff检查、格式、compileall、diff-check及draw.io XML通过。代码关系采用Python AST审计，未调用不可用的codegraph：[模块记录](evidence/realtime-20261102/module-audit.json)。
-- 四包从干净源码 `47e58413` 构建，逐文件/整包hash验证；独立解释器启动CLI，新包解码旧/新持仓参数及实时检查点成功。旧热部署包不能解码新仓时明确拒绝回滚。[包清单与SHA256](evidence/realtime-20261102/m6-packages.json)。
+- 四包从干净源码 `b217c562` 构建，逐文件/整包hash验证；独立解释器启动CLI，新包解码旧/新持仓参数及实时检查点成功。旧热部署包不能解码新仓时明确拒绝回滚。[包清单与SHA256](evidence/realtime-20261102/m6-v5-packages.json)。
 
 ## 准入与生产边界
 
@@ -46,11 +46,11 @@ LIVE明细读取在单个后台线程运行，状态回写仍由唯一writer完�
 
 ## 包与后续操作
 
-冻结目录 `/tmp/htx-realtime-final-frozen/`：
+冻结目录 `/tmp/htx-realtime-v5-final-frozen/`：
 
-- 新实时候选：`0.1.7-realtime-candidate-47e58413`，策略 `HTX_REALTIME_STRUCTURE_15M_V1`；包内新入口false。
-- 原15m/4H PAPER兼容包：`0.1.7-evidence-v2-47e58413` / `0.1.7-evidence-v2-47e58413-4h`。
-- 原15m LIVE编码兼容包：`0.1.7-live-47e58413`，仍绑定旧15m策略，不能冒充新RT包或TradeX 4H包。
+- 新实时候选：`0.1.7-realtime-candidate-b217c562`，策略 `HTX_REALTIME_STRUCTURE_15M_V1`；包内新入口false。
+- 原15m/4H PAPER兼容包：`0.1.7-evidence-v2-b217c562` / `0.1.7-evidence-v2-b217c562-4h`。
+- 原15m LIVE编码兼容包：`0.1.7-live-b217c562`，仍绑定旧15m策略，不能冒充新RT包或TradeX 4H包。
 
 1. 评审候选分支、当前V5只读验收与故障矩阵；收益及真实IOC准入完成前保持新入口关闭。
 2. 继续采集完整实际输入并运行冻结六组协议；缺失/失败保持关闭，不放宽净R、杠杆、风险或留出标准。
