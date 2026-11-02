@@ -1,0 +1,17 @@
+{
+  "exp_id": "EXP-SPRT-20261102",
+  "track": "探索",
+  "phase": "phase-0",
+  "description_only": true,
+  "formal_m2_counted": false,
+  "record_type": "arm_a_close_trigger",
+  "plan_id": "sprt-BTC-USDT-b6a1efb6a215cd5bff73",
+  "symbol": "BTC-USDT",
+  "timeframe": "15min",
+  "bar_open_time": 1700018000,
+  "bar_close_time": 1700018900,
+  "trigger_price": "118",
+  "plan_generated_at": "2023-11-15T03:28:20Z",
+  "orders_placed": 0,
+  "research_ledger_only": true
+}

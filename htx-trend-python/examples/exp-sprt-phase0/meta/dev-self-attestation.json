@@ -1,0 +1,11 @@
+{
+  "exp_id": "EXP-SPRT-20261102",
+  "track": "探索",
+  "phase": "phase-0",
+  "orders_placed": 0,
+  "live_worker_imported": false,
+  "paper_worker_imported": false,
+  "mutation_endpoints_called": false,
+  "package_tip_modified": false,
+  "note": "Phase-0 writer does not import worker or execution modules and does not restart processes."
+}
