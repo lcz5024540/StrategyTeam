@@ -17,7 +17,28 @@ def main():
     capture.add_argument('--max-bytes',type=int,default=2*1024**3)
     verify=sub.add_parser('verify')
     verify.add_argument('--input',type=Path,required=True)
+    audit=sub.add_parser('audit-capture')
+    audit.add_argument('--input',type=Path,required=True)
+    audit.add_argument('--output',type=Path,required=True)
+    replay=sub.add_parser('replay')
+    replay.add_argument('--input',type=Path,required=True)
+    replay.add_argument('--sha256',required=True)
+    replay.add_argument('--evidence-root',type=Path)
+    replay.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
+    if args.command in ('audit-capture','replay'):
+        from .replay import audit_capture,load,replay as run_replay,write_report
+        try:
+            result=(audit_capture(args.input) if args.command=='audit-capture' else
+                    run_replay(load(args.input,args.sha256),evidence_root=args.evidence_root))
+        except (ValueError,KeyError) as error:
+            result={'status':'NOT_ELIGIBLE','blockers':['INPUT_REJECTED:'+type(error).__name__+':'+str(error)],
+                    'production_changes':False}
+            write_report(result,args.output)
+            raise SystemExit(2)
+        write_report(result,args.output)
+        print(json.dumps({'status':result['status'],'blockers':result['blockers'],'output':str(args.output)}))
+        return
     if args.command=='verify':
         recorder=SegmentRecorder(args.input)
         print(json.dumps({'events_verified':len(recorder.verify()),'bytes':recorder.used}))

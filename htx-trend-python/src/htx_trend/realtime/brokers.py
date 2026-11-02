@@ -29,6 +29,8 @@ def initial_context(intent, trigger, contract, holding_parameters):
             'initial_stop': str(intent.price.invalidation), 'invalidation': str(intent.price.invalidation),
             'structure_target': str(intent.price.structure_target), 'contract_size': str(contract.contract_size),
             'raw_structure_invalidation': str(trigger.raw_invalidation),
+            'structure_line':str(trigger.plan.line),'structure_atr':str(trigger.plan.atr),
+            'entry_net_r':str(intent.price.expected_net_r),'entry_net_risk_per_unit':str(intent.price.net_risk),
             'holding_policy': primitive(holding_parameters), 'trigger_ms': intent.trigger_ms,
             'continuation_last_bar': intent.structure_bar, 'continuation_breach_count': 0,
             'highest': str(trigger.reference), 'lowest': str(trigger.reference), 'entry_fee': '0',
@@ -50,7 +52,7 @@ class PaperBroker:
         # PAPER positions.realized_pnl includes exit fee; do not count it twice.
         exit_fee = sum((D(str(f['fee'])) for f in self.ledger.data['fills']
                         if self.ledger.data['orders'][f['order_id']].get('position_id') is not None), D(0))
-        equity = config.account_equity_usdt+realized-fees+exit_fee
+        equity = config.account_equity_usdt+realized-fees+exit_fee+D(str(self.ledger.data.get('cash_adjustment',0)))
         pending = self.ledger.data.get('realtime_pending', {})
         used = sum((p.entry_price*p.quantity*D(contexts[p.position_id]['contract_size'])/leverage for p in positions),D(0))
         reserved = sum((D(v['notional'])/leverage for v in pending.values()), D(0))
