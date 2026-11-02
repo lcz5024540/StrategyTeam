@@ -1,0 +1,3502 @@
+{
+  "schema": "entry-plan-audit-result-v1",
+  "inventory_sha256": "15db8c0cb8234ef5903fe91e572ebb426edd55b428c2bf9fbc97be08ea26a420",
+  "acceptance": "NOT_A_PROFIT_REPLAY",
+  "limitations": [
+    "Selected historical evidence only; not all historical opportunities.",
+    "No fill probability, future funding or portfolio equity simulation.",
+    "Offset 0 bps is a labeled repricing scenario; future limit fill is not assumed.",
+    "78 old PAPER entries have no direct input closure; no threshold acceptance."
+  ],
+  "samples": [
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-bf5c0ec1-577e-4b97-9fb4-359748331079:0",
+      "contract": "UBER-USDT",
+      "evidence_hash": "4ca59f0f35dd916a5a56f77f43e8a5d21691688e7f61abab211be5ac58e97d62",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "65.67",
+            "worst_acceptable_entry": "65.66057142857142857140",
+            "invalidation": "65.850918601881691781",
+            "target_low": "65.44",
+            "target_high": "65.44",
+            "expected_net_r": "0.8332900207635905555220289582",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "65.67",
+            "worst_acceptable_entry": "65.66057142857142857140",
+            "invalidation": "65.850918601881691781",
+            "target_low": "65.44",
+            "target_high": "65.44",
+            "expected_net_r": "0.6287989199174821002686656973",
+            "version": "structure-cost-v1",
+            "structure_target": "65.44",
+            "expected_net_reward": "0.158698857142857142800000",
+            "net_risk": "0.252384112179587314912400",
+            "entry_fee": "0.026264228571428571428560",
+            "target_exit_fee": "0.026179771428571428571440",
+            "stop_exit_fee": "0.026344138869324105283840",
+            "entry_slippage": "0.00942857142857142860",
+            "exit_slippage": "0.00942857142857142860",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "65.69",
+            "worst_acceptable_entry": "65.69",
+            "invalidation": "65.850918601881691781",
+            "target_low": "65.44",
+            "target_high": "65.44",
+            "expected_net_r": "0.8436916393885612556553727625",
+            "version": "structure-cost-v1",
+            "structure_target": "65.44",
+            "expected_net_reward": "0.188115657142857142828560",
+            "net_risk": "0.222967312179587314883840",
+            "entry_fee": "0.026276",
+            "target_exit_fee": "0.026179771428571428571440",
+            "stop_exit_fee": "0.026344138869324105283840",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00942857142857142860",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-fe7ccfd0-5787-4a94-b0a9-983b77b19966:0",
+      "contract": "NEAR-USDT",
+      "evidence_hash": "e0020a84c4765b53a25c2ac89eab928c984ddb57b682afaf8d1a23c82b2f647d",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "4.344",
+            "worst_acceptable_entry": "4.34027142857142857140",
+            "invalidation": "4.565864",
+            "target_low": "4.012136",
+            "target_high": "4.167144",
+            "expected_net_r": "1.422629468548863057367412115",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "4.344",
+            "worst_acceptable_entry": "4.34027142857142857140",
+            "invalidation": "4.565864",
+            "target_low": "4.012136",
+            "target_high": "4.167144",
+            "expected_net_r": "0.7127738432828196863522098113",
+            "version": "structure-cost-v1",
+            "structure_target": "4.167144",
+            "expected_net_reward": "0.165994399542857142800000",
+            "net_risk": "0.232885088457142857200000",
+            "entry_fee": "0.001736108571428571428560",
+            "target_exit_fee": "0.001668349028571428571440",
+            "stop_exit_fee": "0.001827837028571428571440",
+            "entry_slippage": "0.00372857142857142860",
+            "exit_slippage": "0.00372857142857142860",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "4.347",
+            "worst_acceptable_entry": "4.347",
+            "invalidation": "4.565864",
+            "target_low": "4.012136",
+            "target_high": "4.167144",
+            "expected_net_r": "0.7637110189815137023208844048",
+            "version": "structure-cost-v1",
+            "structure_target": "4.167144",
+            "expected_net_reward": "0.172720279542857142828560",
+            "net_risk": "0.226159208457142857171440",
+            "entry_fee": "0.0017388",
+            "target_exit_fee": "0.001668349028571428571440",
+            "stop_exit_fee": "0.001827837028571428571440",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00372857142857142860",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-fe7ccfd0-5787-4a94-b0a9-983b77b19966:1",
+      "contract": "NEAR-USDT",
+      "evidence_hash": "e0020a84c4765b53a25c2ac89eab928c984ddb57b682afaf8d1a23c82b2f647d",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "4.344",
+            "worst_acceptable_entry": "4.34027142857142857140",
+            "invalidation": "4.587224711299504651",
+            "target_low": "4.289",
+            "target_high": "4.289",
+            "expected_net_r": "0.1784573969341676455526116933",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "4.344",
+            "worst_acceptable_entry": "4.34027142857142857140",
+            "invalidation": "4.587224711299504651",
+            "target_low": "4.289",
+            "target_high": "4.289",
+            "expected_net_r": "0.1734076847698555540676357278",
+            "version": "structure-cost-v1",
+            "structure_target": "4.289",
+            "expected_net_reward": "0.044089657142857142800000",
+            "net_risk": "0.254254344041167310060400",
+            "entry_fee": "0.001736108571428571428560",
+            "target_exit_fee": "0.001717091428571428571440",
+            "stop_exit_fee": "0.001836381313091230431840",
+            "entry_slippage": "0.00372857142857142860",
+            "exit_slippage": "0.00372857142857142860",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "4.347",
+            "worst_acceptable_entry": "4.347",
+            "invalidation": "4.587224711299504651",
+            "target_low": "4.289",
+            "target_high": "4.289",
+            "expected_net_r": "0.2052916917644099149208698786",
+            "version": "structure-cost-v1",
+            "structure_target": "4.289",
+            "expected_net_reward": "0.050815537142857142828560",
+            "net_risk": "0.247528464041167310031840",
+            "entry_fee": "0.0017388",
+            "target_exit_fee": "0.001717091428571428571440",
+            "stop_exit_fee": "0.001836381313091230431840",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00372857142857142860",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-fe7ccfd0-5787-4a94-b0a9-983b77b19966:2",
+      "contract": "NEAR-USDT",
+      "evidence_hash": "e0020a84c4765b53a25c2ac89eab928c984ddb57b682afaf8d1a23c82b2f647d",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "4.344",
+            "worst_acceptable_entry": "4.34027142857142857140",
+            "invalidation": "4.565864",
+            "target_low": "4.012136",
+            "target_high": "4.167144",
+            "expected_net_r": "1.422629468548863057367412115",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "4.344",
+            "worst_acceptable_entry": "4.34027142857142857140",
+            "invalidation": "4.565864",
+            "target_low": "4.012136",
+            "target_high": "4.167144",
+            "expected_net_r": "0.7127738432828196863522098113",
+            "version": "structure-cost-v1",
+            "structure_target": "4.167144",
+            "expected_net_reward": "0.165994399542857142800000",
+            "net_risk": "0.232885088457142857200000",
+            "entry_fee": "0.001736108571428571428560",
+            "target_exit_fee": "0.001668349028571428571440",
+            "stop_exit_fee": "0.001827837028571428571440",
+            "entry_slippage": "0.00372857142857142860",
+            "exit_slippage": "0.00372857142857142860",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "4.347",
+            "worst_acceptable_entry": "4.347",
+            "invalidation": "4.565864",
+            "target_low": "4.012136",
+            "target_high": "4.167144",
+            "expected_net_r": "0.7637110189815137023208844048",
+            "version": "structure-cost-v1",
+            "structure_target": "4.167144",
+            "expected_net_reward": "0.172720279542857142828560",
+            "net_risk": "0.226159208457142857171440",
+            "entry_fee": "0.0017388",
+            "target_exit_fee": "0.001668349028571428571440",
+            "stop_exit_fee": "0.001827837028571428571440",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00372857142857142860",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-fe7ccfd0-5787-4a94-b0a9-983b77b19966:3",
+      "contract": "NEAR-USDT",
+      "evidence_hash": "e0020a84c4765b53a25c2ac89eab928c984ddb57b682afaf8d1a23c82b2f647d",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "4.344",
+            "worst_acceptable_entry": "4.34027142857142857140",
+            "invalidation": "4.565864",
+            "target_low": "4.012136",
+            "target_high": "4.167144",
+            "expected_net_r": "1.422629468548863057367412115",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "4.344",
+            "worst_acceptable_entry": "4.34027142857142857140",
+            "invalidation": "4.565864",
+            "target_low": "4.012136",
+            "target_high": "4.167144",
+            "expected_net_r": "0.7127738432828196863522098113",
+            "version": "structure-cost-v1",
+            "structure_target": "4.167144",
+            "expected_net_reward": "0.165994399542857142800000",
+            "net_risk": "0.232885088457142857200000",
+            "entry_fee": "0.001736108571428571428560",
+            "target_exit_fee": "0.001668349028571428571440",
+            "stop_exit_fee": "0.001827837028571428571440",
+            "entry_slippage": "0.00372857142857142860",
+            "exit_slippage": "0.00372857142857142860",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "4.347",
+            "worst_acceptable_entry": "4.347",
+            "invalidation": "4.565864",
+            "target_low": "4.012136",
+            "target_high": "4.167144",
+            "expected_net_r": "0.7637110189815137023208844048",
+            "version": "structure-cost-v1",
+            "structure_target": "4.167144",
+            "expected_net_reward": "0.172720279542857142828560",
+            "net_risk": "0.226159208457142857171440",
+            "entry_fee": "0.0017388",
+            "target_exit_fee": "0.001668349028571428571440",
+            "stop_exit_fee": "0.001827837028571428571440",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00372857142857142860",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-9e831e88-3ade-4c38-a768-56f6a2e034f9:0",
+      "contract": "AAPL-USDT",
+      "evidence_hash": "0e9b065abdbbd796c9f4f26ee929c13b30b16e0b6a3ef201ce23fff101403b6b",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "347.99",
+            "worst_acceptable_entry": "348.02528571428571428570",
+            "invalidation": "346.57",
+            "target_low": "349.1",
+            "target_high": "349.1",
+            "expected_net_r": "0.5229271031707077648230463051",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "347.99",
+            "worst_acceptable_entry": "348.02528571428571428570",
+            "invalidation": "346.57",
+            "target_low": "349.1",
+            "target_high": "349.1",
+            "expected_net_r": "0.4301032219038275860962917024",
+            "version": "structure-cost-v1",
+            "structure_target": "349.1",
+            "expected_net_reward": "0.760592571428571428600000",
+            "net_risk": "1.768395428571428571400000",
+            "entry_fee": "0.139210114285714285714280",
+            "target_exit_fee": "0.139625885714285714285720",
+            "stop_exit_fee": "0.138613885714285714285720",
+            "entry_slippage": "0.03528571428571428570",
+            "exit_slippage": "0.03528571428571428570",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "347.79",
+            "worst_acceptable_entry": "347.79",
+            "invalidation": "346.57",
+            "target_low": "349.1",
+            "target_high": "349.1",
+            "expected_net_r": "0.6496818427679405219513470422",
+            "version": "structure-cost-v1",
+            "structure_target": "349.1",
+            "expected_net_reward": "0.995972400000000000014280",
+            "net_risk": "1.533015599999999999985720",
+            "entry_fee": "0.139116",
+            "target_exit_fee": "0.139625885714285714285720",
+            "stop_exit_fee": "0.138613885714285714285720",
+            "entry_slippage": "0",
+            "exit_slippage": "0.03528571428571428570",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-9e831e88-3ade-4c38-a768-56f6a2e034f9:1",
+      "contract": "AAPL-USDT",
+      "evidence_hash": "0e9b065abdbbd796c9f4f26ee929c13b30b16e0b6a3ef201ce23fff101403b6b",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "347.99",
+            "worst_acceptable_entry": "348.02528571428571428570",
+            "invalidation": "346.571728715299871048",
+            "target_low": "347.96",
+            "target_high": "347.96",
+            "expected_net_r": "-0.2607339494820514371689373361",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "INVALID_GEOMETRY",
+          "reason": "target or invalidation is on wrong side of planned entry"
+        },
+        "structure_limit": {
+          "status": "NON_POSITIVE_REWARD",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "347.79",
+            "worst_acceptable_entry": "347.79",
+            "invalidation": "346.571728715299871048",
+            "target_low": "347.96",
+            "target_high": "347.96",
+            "expected_net_r": "-0.09375874410055132387075935884",
+            "version": "structure-cost-v1",
+            "structure_target": "347.96",
+            "expected_net_reward": "-0.143571599999999999985720",
+            "net_risk": "1.531287576186248900404920",
+            "entry_fee": "0.139116",
+            "target_exit_fee": "0.139169885714285714285720",
+            "stop_exit_fee": "0.138614577200405662704920",
+            "entry_slippage": "0",
+            "exit_slippage": "0.03528571428571428570",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-4d6e19ef-21f7-44f9-bf81-ccebd5f818ed:0",
+      "contract": "BNB-USDT",
+      "evidence_hash": "7014f498bc204a2a8fcb1c381ad0f8986baf7428f522f07f044c2430418dcb0c",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "741.536",
+            "worst_acceptable_entry": "741.30389285714285714290",
+            "invalidation": "749.22207298632782725",
+            "target_low": "738.466",
+            "target_high": "738.466",
+            "expected_net_r": "0.2541925754607927248100461012",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "741.536",
+            "worst_acceptable_entry": "741.30389285714285714290",
+            "invalidation": "749.22207298632782725",
+            "target_low": "738.466",
+            "target_high": "738.466",
+            "expected_net_r": "0.2302365606347974793852352628",
+            "version": "structure-cost-v1",
+            "structure_target": "738.466",
+            "expected_net_reward": "2.013784914285714285800000",
+            "net_risk": "8.746590501236644095100000",
+            "entry_fee": "0.296521557142857142857160",
+            "target_exit_fee": "0.295479242857142857142840",
+            "stop_exit_fee": "0.299781672051673988042840",
+            "entry_slippage": "0.23210714285714285710",
+            "exit_slippage": "0.23210714285714285710",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "741.943",
+            "worst_acceptable_entry": "741.943",
+            "invalidation": "749.22207298632782725",
+            "target_low": "738.466",
+            "target_high": "738.466",
+            "expected_net_r": "0.3271733850684040582737583812",
+            "version": "structure-cost-v1",
+            "structure_target": "738.466",
+            "expected_net_reward": "2.652636414285714285757160",
+            "net_risk": "8.107739001236644095142840",
+            "entry_fee": "0.2967772",
+            "target_exit_fee": "0.295479242857142857142840",
+            "stop_exit_fee": "0.299781672051673988042840",
+            "entry_slippage": "0",
+            "exit_slippage": "0.23210714285714285710",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-66bff883-3c57-456b-92f3-0093d139945f:0",
+      "contract": "GOOGL-USDT",
+      "evidence_hash": "8d3cfc27c8a1364e9c350c8a2846fd04932f0ad858c6013d6c21584148395344",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "288.76",
+            "worst_acceptable_entry": "288.66957142857142857140",
+            "invalidation": "303.428287648623329794",
+            "target_low": "287.97",
+            "target_high": "287.97",
+            "expected_net_r": "0.02562602291154223290725996129",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "288.76",
+            "worst_acceptable_entry": "288.66957142857142857140",
+            "invalidation": "303.428287648623329794",
+            "target_low": "287.97",
+            "target_high": "287.97",
+            "expected_net_r": "0.02508619599272543579299475265",
+            "version": "structure-cost-v1",
+            "structure_target": "287.97",
+            "expected_net_reward": "0.378450857142857142800000",
+            "net_risk": "15.086020106539921983117600",
+            "entry_fee": "0.115467828571428571428560",
+            "target_exit_fee": "0.115224171428571428571440",
+            "stop_exit_fee": "0.121407486488020760489040",
+            "entry_slippage": "0.09042857142857142860",
+            "exit_slippage": "0.09042857142857142860",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "288.9",
+            "worst_acceptable_entry": "288.9",
+            "invalidation": "303.428287648623329794",
+            "target_low": "287.97",
+            "target_high": "287.97",
+            "expected_net_r": "0.04098009012367775106572508809",
+            "version": "structure-cost-v1",
+            "structure_target": "287.97",
+            "expected_net_reward": "0.608787257142857142828560",
+            "net_risk": "14.855683706539921983089040",
+            "entry_fee": "0.11556",
+            "target_exit_fee": "0.115224171428571428571440",
+            "stop_exit_fee": "0.121407486488020760489040",
+            "entry_slippage": "0",
+            "exit_slippage": "0.09042857142857142860",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-b57f336d-0826-4035-865a-b694314693ef:0",
+      "contract": "SNDK-USDT",
+      "evidence_hash": "6f49370907c99e8da171d27b9b211c4a5e6afaaff31bb5617267c0ea5d2fa70e",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1362.77",
+            "worst_acceptable_entry": "1363.5120",
+            "invalidation": "1350",
+            "target_low": "1417.22",
+            "target_high": "1417.22",
+            "expected_net_r": "3.839194079336885731201894612",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1362.77",
+            "worst_acceptable_entry": "1363.5120",
+            "invalidation": "1350",
+            "target_low": "1417.22",
+            "target_high": "1417.22",
+            "expected_net_r": "3.380509740201320702611911983",
+            "version": "structure-cost-v1",
+            "structure_target": "1417.22",
+            "expected_net_reward": "51.85400400",
+            "net_risk": "15.33910800",
+            "entry_fee": "0.54540480",
+            "target_exit_fee": "0.56659120",
+            "stop_exit_fee": "0.53970320",
+            "entry_slippage": "0.7420",
+            "exit_slippage": "0.7420",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "1362.76",
+            "worst_acceptable_entry": "1362.76",
+            "invalidation": "1350",
+            "target_low": "1417.22",
+            "target_high": "1417.22",
+            "expected_net_r": "3.606430391429318404921400483",
+            "version": "structure-cost-v1",
+            "structure_target": "1417.22",
+            "expected_net_reward": "52.60630480",
+            "net_risk": "14.58680720",
+            "entry_fee": "0.545104",
+            "target_exit_fee": "0.56659120",
+            "stop_exit_fee": "0.53970320",
+            "entry_slippage": "0",
+            "exit_slippage": "0.7420",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-b57f336d-0826-4035-865a-b694314693ef:1",
+      "contract": "SNDK-USDT",
+      "evidence_hash": "6f49370907c99e8da171d27b9b211c4a5e6afaaff31bb5617267c0ea5d2fa70e",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1362.77",
+            "worst_acceptable_entry": "1363.5120",
+            "invalidation": "1360.705935630592439252",
+            "target_low": "1384.09",
+            "target_high": "1384.09",
+            "expected_net_r": "6.680242479240644738873168864",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1362.77",
+            "worst_acceptable_entry": "1363.5120",
+            "invalidation": "1360.705935630592439252",
+            "target_low": "1384.09",
+            "target_high": "1384.09",
+            "expected_net_r": "4.040418081840489747028910730",
+            "version": "structure-cost-v1",
+            "structure_target": "1384.09",
+            "expected_net_reward": "18.73725600",
+            "net_risk": "4.6374547436597977237008",
+            "entry_fee": "0.54540480",
+            "target_exit_fee": "0.55333920",
+            "stop_exit_fee": "0.5439855742522369757008",
+            "entry_slippage": "0.7420",
+            "exit_slippage": "0.7420",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "1362.76",
+            "worst_acceptable_entry": "1362.76",
+            "invalidation": "1360.705935630592439252",
+            "target_low": "1384.09",
+            "target_high": "1384.09",
+            "expected_net_r": "5.016418160676774685129667223",
+            "version": "structure-cost-v1",
+            "structure_target": "1384.09",
+            "expected_net_reward": "19.48955680",
+            "net_risk": "3.8851539436597977237008",
+            "entry_fee": "0.545104",
+            "target_exit_fee": "0.55333920",
+            "stop_exit_fee": "0.5439855742522369757008",
+            "entry_slippage": "0",
+            "exit_slippage": "0.7420",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-7cb326c8-4e5f-49cd-913e-0f031375ca12:0",
+      "contract": "AMZNX-USDT",
+      "evidence_hash": "65ab4a138279c5ade0bfa4b1c30bc3ccb1bdc9e63a93eb6073eb0a14d6331ec7",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "246.24",
+            "worst_acceptable_entry": "246.11928571428571428570",
+            "invalidation": "249.31486",
+            "target_low": "235.38514",
+            "target_high": "239.28456",
+            "expected_net_r": "3.259675747976442419000658608",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "246.24",
+            "worst_acceptable_entry": "246.11928571428571428570",
+            "invalidation": "249.31486",
+            "target_low": "235.38514",
+            "target_high": "239.28456",
+            "expected_net_r": "1.855109431583641647490380247",
+            "version": "structure-cost-v1",
+            "structure_target": "239.28456",
+            "expected_net_reward": "6.519801604571428571400000",
+            "net_risk": "3.514510515428571428600000",
+            "entry_fee": "0.098447714285714285714280",
+            "target_exit_fee": "0.095762109714285714285720",
+            "stop_exit_fee": "0.099774229714285714285720",
+            "entry_slippage": "0.12071428571428571430",
+            "exit_slippage": "0.12071428571428571430",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "246.39",
+            "worst_acceptable_entry": "246.39",
+            "invalidation": "249.31486",
+            "target_low": "235.38514",
+            "target_high": "239.28456",
+            "expected_net_r": "2.093282207375425051734707024",
+            "version": "structure-cost-v1",
+            "structure_target": "239.28456",
+            "expected_net_reward": "6.790407604571428571414280",
+            "net_risk": "3.243904515428571428585720",
+            "entry_fee": "0.098556",
+            "target_exit_fee": "0.095762109714285714285720",
+            "stop_exit_fee": "0.099774229714285714285720",
+            "entry_slippage": "0",
+            "exit_slippage": "0.12071428571428571430",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-7cb326c8-4e5f-49cd-913e-0f031375ca12:1",
+      "contract": "AMZNX-USDT",
+      "evidence_hash": "65ab4a138279c5ade0bfa4b1c30bc3ccb1bdc9e63a93eb6073eb0a14d6331ec7",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "246.24",
+            "worst_acceptable_entry": "246.11928571428571428570",
+            "invalidation": "252.773993649136309542",
+            "target_low": "242.35",
+            "target_high": "242.35",
+            "expected_net_r": "0.5186818165112295831851786121",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "246.24",
+            "worst_acceptable_entry": "246.11928571428571428570",
+            "invalidation": "252.773993649136309542",
+            "target_low": "242.35",
+            "target_high": "242.35",
+            "expected_net_r": "0.4950712052571317436152905100",
+            "version": "structure-cost-v1",
+            "structure_target": "242.35",
+            "expected_net_reward": "3.453135428571428571400000",
+            "net_risk": "6.975027818024535494416800",
+            "entry_fee": "0.098447714285714285714280",
+            "target_exit_fee": "0.096988285714285714285720",
+            "stop_exit_fee": "0.101157883173940238102520",
+            "entry_slippage": "0.12071428571428571430",
+            "exit_slippage": "0.12071428571428571430",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "246.39",
+            "worst_acceptable_entry": "246.39",
+            "invalidation": "252.773993649136309542",
+            "target_low": "242.35",
+            "target_high": "242.35",
+            "expected_net_r": "0.5554157434665458830695227415",
+            "version": "structure-cost-v1",
+            "structure_target": "242.35",
+            "expected_net_reward": "3.723741428571428571414280",
+            "net_risk": "6.704421818024535494402520",
+            "entry_fee": "0.098556",
+            "target_exit_fee": "0.096988285714285714285720",
+            "stop_exit_fee": "0.101157883173940238102520",
+            "entry_slippage": "0",
+            "exit_slippage": "0.12071428571428571430",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-7cb326c8-4e5f-49cd-913e-0f031375ca12:2",
+      "contract": "AMZNX-USDT",
+      "evidence_hash": "65ab4a138279c5ade0bfa4b1c30bc3ccb1bdc9e63a93eb6073eb0a14d6331ec7",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "246.24",
+            "worst_acceptable_entry": "246.11928571428571428570",
+            "invalidation": "249.31486",
+            "target_low": "235.38514",
+            "target_high": "239.28456",
+            "expected_net_r": "3.259675747976442419000658608",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "246.24",
+            "worst_acceptable_entry": "246.11928571428571428570",
+            "invalidation": "249.31486",
+            "target_low": "235.38514",
+            "target_high": "239.28456",
+            "expected_net_r": "1.855109431583641647490380247",
+            "version": "structure-cost-v1",
+            "structure_target": "239.28456",
+            "expected_net_reward": "6.519801604571428571400000",
+            "net_risk": "3.514510515428571428600000",
+            "entry_fee": "0.098447714285714285714280",
+            "target_exit_fee": "0.095762109714285714285720",
+            "stop_exit_fee": "0.099774229714285714285720",
+            "entry_slippage": "0.12071428571428571430",
+            "exit_slippage": "0.12071428571428571430",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "246.39",
+            "worst_acceptable_entry": "246.39",
+            "invalidation": "249.31486",
+            "target_low": "235.38514",
+            "target_high": "239.28456",
+            "expected_net_r": "2.093282207375425051734707024",
+            "version": "structure-cost-v1",
+            "structure_target": "239.28456",
+            "expected_net_reward": "6.790407604571428571414280",
+            "net_risk": "3.243904515428571428585720",
+            "entry_fee": "0.098556",
+            "target_exit_fee": "0.095762109714285714285720",
+            "stop_exit_fee": "0.099774229714285714285720",
+            "entry_slippage": "0",
+            "exit_slippage": "0.12071428571428571430",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-7cb326c8-4e5f-49cd-913e-0f031375ca12:3",
+      "contract": "AMZNX-USDT",
+      "evidence_hash": "65ab4a138279c5ade0bfa4b1c30bc3ccb1bdc9e63a93eb6073eb0a14d6331ec7",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "246.24",
+            "worst_acceptable_entry": "246.11928571428571428570",
+            "invalidation": "249.31486",
+            "target_low": "235.38514",
+            "target_high": "239.28456",
+            "expected_net_r": "3.259675747976442419000658608",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "246.24",
+            "worst_acceptable_entry": "246.11928571428571428570",
+            "invalidation": "249.31486",
+            "target_low": "235.38514",
+            "target_high": "239.28456",
+            "expected_net_r": "1.855109431583641647490380247",
+            "version": "structure-cost-v1",
+            "structure_target": "239.28456",
+            "expected_net_reward": "6.519801604571428571400000",
+            "net_risk": "3.514510515428571428600000",
+            "entry_fee": "0.098447714285714285714280",
+            "target_exit_fee": "0.095762109714285714285720",
+            "stop_exit_fee": "0.099774229714285714285720",
+            "entry_slippage": "0.12071428571428571430",
+            "exit_slippage": "0.12071428571428571430",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "246.39",
+            "worst_acceptable_entry": "246.39",
+            "invalidation": "249.31486",
+            "target_low": "235.38514",
+            "target_high": "239.28456",
+            "expected_net_r": "2.093282207375425051734707024",
+            "version": "structure-cost-v1",
+            "structure_target": "239.28456",
+            "expected_net_reward": "6.790407604571428571414280",
+            "net_risk": "3.243904515428571428585720",
+            "entry_fee": "0.098556",
+            "target_exit_fee": "0.095762109714285714285720",
+            "stop_exit_fee": "0.099774229714285714285720",
+            "entry_slippage": "0",
+            "exit_slippage": "0.12071428571428571430",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-b51979a6-e6dd-4ccb-adfa-ecc2cf42a97a:0",
+      "contract": "AAPL-USDT",
+      "evidence_hash": "1006eb8c0fd9d6f12616dc42013ca83ea23dceb324a8aecd86bf88dba31046f2",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "349.24",
+            "worst_acceptable_entry": "349.32828571428571428570",
+            "invalidation": "347.459075654185152513",
+            "target_low": "351.22",
+            "target_high": "351.22",
+            "expected_net_r": "0.8152994547735073171594596635",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "349.24",
+            "worst_acceptable_entry": "349.32828571428571428570",
+            "invalidation": "347.459075654185152513",
+            "target_low": "351.22",
+            "target_high": "351.22",
+            "expected_net_r": "0.6811829556225629835107395100",
+            "version": "structure-cost-v1",
+            "structure_target": "351.22",
+            "expected_net_reward": "1.523244571428571428600000",
+            "net_risk": "2.236175404647950119405200",
+            "entry_fee": "0.139731314285714285714280",
+            "target_exit_fee": "0.140452685714285714285720",
+            "stop_exit_fee": "0.138948315975959775290920",
+            "entry_slippage": "0.08828571428571428570",
+            "exit_slippage": "0.08828571428571428570",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "349.04",
+            "worst_acceptable_entry": "349.04",
+            "invalidation": "347.459075654185152513",
+            "target_low": "351.22",
+            "target_high": "351.22",
+            "expected_net_r": "0.9301106032872600521611802826",
+            "version": "structure-cost-v1",
+            "structure_target": "351.22",
+            "expected_net_reward": "1.811645600000000000014280",
+            "net_risk": "1.947774376076521547990920",
+            "entry_fee": "0.139616",
+            "target_exit_fee": "0.140452685714285714285720",
+            "stop_exit_fee": "0.138948315975959775290920",
+            "entry_slippage": "0",
+            "exit_slippage": "0.08828571428571428570",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-96288b6b-4fd7-46bb-a8a3-0f4716aae272:0",
+      "contract": "GOOGL-USDT",
+      "evidence_hash": "70aa3c3f943e564a4b42b707985e7af9ea14af3f358940aa8ba4165e5c46bc3e",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "287.53",
+            "worst_acceptable_entry": "287.24007142857142857140",
+            "invalidation": "300.429403343784025275",
+            "target_low": "281.69",
+            "target_high": "281.69",
+            "expected_net_r": "0.3813954211128757229888962710",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "287.53",
+            "worst_acceptable_entry": "287.24007142857142857140",
+            "invalidation": "300.429403343784025275",
+            "target_low": "281.69",
+            "target_high": "281.69",
+            "expected_net_r": "0.3669455915346019920965990373",
+            "version": "structure-cost-v1",
+            "structure_target": "281.69",
+            "expected_net_reward": "5.032454857142857142800000",
+            "net_risk": "13.714444247978681742310000",
+            "entry_fee": "0.114896028571428571428560",
+            "target_exit_fee": "0.112791971428571428571440",
+            "stop_exit_fee": "0.120287732766085038681440",
+            "entry_slippage": "0.28992857142857142860",
+            "exit_slippage": "0.28992857142857142860",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "287.69",
+            "worst_acceptable_entry": "287.69",
+            "invalidation": "300.429403343784025275",
+            "target_low": "281.69",
+            "target_high": "281.69",
+            "expected_net_r": "0.4132928189708034095451120712",
+            "version": "structure-cost-v1",
+            "structure_target": "281.69",
+            "expected_net_reward": "5.482203457142857142828560",
+            "net_risk": "13.264695647978681742281440",
+            "entry_fee": "0.115076",
+            "target_exit_fee": "0.112791971428571428571440",
+            "stop_exit_fee": "0.120287732766085038681440",
+            "entry_slippage": "0",
+            "exit_slippage": "0.28992857142857142860",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-6e3b8ec8-feca-4472-ab8f-6a5f6c723d6c:0",
+      "contract": "ZEC-USDT",
+      "evidence_hash": "7b489abbfaa9ae40dc14ac60774ed7503c4fc1a65384ba858b3108327cc22005",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1344.91",
+            "worst_acceptable_entry": "1347.15678571428571428570",
+            "invalidation": "1283.945642625951165957",
+            "target_low": "1398.99",
+            "target_high": "1398.99",
+            "expected_net_r": "0.7674074660391531119842377390",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1344.91",
+            "worst_acceptable_entry": "1347.15678571428571428570",
+            "invalidation": "1283.945642625951165957",
+            "target_low": "1398.99",
+            "target_high": "1398.99",
+            "expected_net_r": "0.7290520853477479118201697124",
+            "version": "structure-cost-v1",
+            "structure_target": "1398.99",
+            "expected_net_reward": "48.488868571428571428600000",
+            "net_risk": "66.509471059670643080782800",
+            "entry_fee": "0.538862714285714285714280",
+            "target_exit_fee": "0.558697285714285714285720",
+            "stop_exit_fee": "0.512679542764666180668520",
+            "entry_slippage": "2.24678571428571428570",
+            "exit_slippage": "2.24678571428571428570",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "1343.93",
+            "worst_acceptable_entry": "1343.93",
+            "invalidation": "1283.945642625951165957",
+            "target_low": "1398.99",
+            "target_high": "1398.99",
+            "expected_net_r": "0.8172535593042075000456422288",
+            "version": "structure-cost-v1",
+            "structure_target": "1398.99",
+            "expected_net_reward": "51.716945000000000000014280",
+            "net_risk": "63.281394631099214509368520",
+            "entry_fee": "0.537572",
+            "target_exit_fee": "0.558697285714285714285720",
+            "stop_exit_fee": "0.512679542764666180668520",
+            "entry_slippage": "0",
+            "exit_slippage": "2.24678571428571428570",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-b06aa45b-813d-4cb5-901c-751ba2ff9164:0",
+      "contract": "BNB-USDT",
+      "evidence_hash": "ae5bd11d80344d0bab6cb6db863734953fc7047a60f20ff25bd12657fe774e96",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "745.195",
+            "worst_acceptable_entry": "744.91612142857142857140",
+            "invalidation": "749.1119821428571428575",
+            "target_low": "738.466",
+            "target_high": "738.466",
+            "expected_net_r": "1.328764308361727246359720043",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "745.195",
+            "worst_acceptable_entry": "744.91612142857142857140",
+            "invalidation": "749.1119821428571428575",
+            "target_low": "738.466",
+            "target_high": "738.466",
+            "expected_net_r": "1.099619547814094691201740004",
+            "version": "structure-cost-v1",
+            "structure_target": "738.466",
+            "expected_net_reward": "5.577778457142857142800000",
+            "net_risk": "5.072462078571428571843000",
+            "entry_fee": "0.297966448571428571428560",
+            "target_exit_fee": "0.295497951428571428571440",
+            "stop_exit_fee": "0.299756344285714285714440",
+            "entry_slippage": "0.27887857142857142860",
+            "exit_slippage": "0.27887857142857142860",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "745.348",
+            "worst_acceptable_entry": "745.348",
+            "invalidation": "749.1119821428571428575",
+            "target_low": "738.466",
+            "target_high": "738.466",
+            "expected_net_r": "1.294936416029909381210617197",
+            "version": "structure-cost-v1",
+            "structure_target": "738.466",
+            "expected_net_reward": "6.009484277142857142828560",
+            "net_risk": "4.640756258571428571814440",
+            "entry_fee": "0.2981392",
+            "target_exit_fee": "0.295497951428571428571440",
+            "stop_exit_fee": "0.299756344285714285714440",
+            "entry_slippage": "0",
+            "exit_slippage": "0.27887857142857142860",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-30747907-08d7-4240-bfb1-0066eef99cdb:0",
+      "contract": "ZEC-USDT",
+      "evidence_hash": "871ca9bd7a2daaa2f984605fc9a2d8fb828f6b8e62a20e2fedd6aeb9abe176c7",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1332.09",
+            "worst_acceptable_entry": "1334.22271428571428571430",
+            "invalidation": "1289.095780523442793028",
+            "target_low": "1398.99",
+            "target_high": "1398.99",
+            "expected_net_r": "1.364311468212721608607430188",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1332.09",
+            "worst_acceptable_entry": "1334.22271428571428571430",
+            "invalidation": "1289.095780523442793028",
+            "target_low": "1398.99",
+            "target_high": "1398.99",
+            "expected_net_r": "1.273950143822621761104122606",
+            "version": "structure-cost-v1",
+            "structure_target": "1398.99",
+            "expected_net_reward": "61.542139428571428571400000",
+            "net_risk": "48.308122360195155517811200",
+            "entry_fee": "0.533689085714285714285720",
+            "target_exit_fee": "0.558742914285714285714280",
+            "stop_exit_fee": "0.514785226495091402925480",
+            "entry_slippage": "2.13271428571428571430",
+            "exit_slippage": "2.13271428571428571430",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "1332.08",
+            "worst_acceptable_entry": "1332.08",
+            "invalidation": "1289.095780523442793028",
+            "target_low": "1398.99",
+            "target_high": "1398.99",
+            "expected_net_r": "1.379537100133323380750029109",
+            "version": "structure-cost-v1",
+            "structure_target": "1398.99",
+            "expected_net_reward": "63.685710799999999999985720",
+            "net_risk": "46.164550988766584089225480",
+            "entry_fee": "0.532832",
+            "target_exit_fee": "0.558742914285714285714280",
+            "stop_exit_fee": "0.514785226495091402925480",
+            "entry_slippage": "0",
+            "exit_slippage": "2.13271428571428571430",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-6e194583-ce34-4d7e-9bf7-4ab4723c02b4:0",
+      "contract": "XRP-USDT",
+      "evidence_hash": "b2fbb6e28a762dbd2400fdba3784515e2a2962994734f039284db1a9c4815681",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1.23767",
+            "worst_acceptable_entry": "1.23657521428571428570",
+            "invalidation": "1.299827139564871465",
+            "target_low": "1.22312",
+            "target_high": "1.22312",
+            "expected_net_r": "0.1797758463448232097212683664",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1.23767",
+            "worst_acceptable_entry": "1.23657521428571428570",
+            "invalidation": "1.299827139564871465",
+            "target_low": "1.22312",
+            "target_high": "1.22312",
+            "expected_net_r": "0.1740485767227190794930894019",
+            "version": "structure-cost-v1",
+            "structure_target": "1.22312",
+            "expected_net_reward": "0.011376112571428571400000",
+            "net_risk": "0.065361709849268842186000",
+            "entry_fee": "0.000494630085714285714280",
+            "target_exit_fee": "0.000489685914285714285720",
+            "stop_exit_fee": "0.000520368770111662871720",
+            "entry_slippage": "0.00109478571428571430",
+            "exit_slippage": "0.00109478571428571430",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "1.23808",
+            "worst_acceptable_entry": "1.23808",
+            "invalidation": "1.299827139564871465",
+            "target_low": "1.22312",
+            "target_high": "1.22312",
+            "expected_net_r": "0.2017036544994064739571902894",
+            "version": "structure-cost-v1",
+            "structure_target": "1.22312",
+            "expected_net_reward": "0.012880296371428571414280",
+            "net_risk": "0.063857526049268842171720",
+            "entry_fee": "0.000495232",
+            "target_exit_fee": "0.000489685914285714285720",
+            "stop_exit_fee": "0.000520368770111662871720",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00109478571428571430",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-65505584-400a-4958-b84a-1e2af4fc3326:0",
+      "contract": "AVGO-USDT",
+      "evidence_hash": "d1dcbace7b6ba1449606ab491ca5edd36c2686c96dff34133ecec8b0cc7d0bd4",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "335.99",
+            "worst_acceptable_entry": "335.81321428571428571430",
+            "invalidation": "342.853217770517106726",
+            "target_low": "333.93",
+            "target_high": "333.93",
+            "expected_net_r": "0.2042297284516571246080059969",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "335.99",
+            "worst_acceptable_entry": "335.81321428571428571430",
+            "invalidation": "342.853217770517106726",
+            "target_low": "333.93",
+            "target_high": "333.93",
+            "expected_net_r": "0.1920937306993880043445869374",
+            "version": "structure-cost-v1",
+            "structure_target": "333.93",
+            "expected_net_reward": "1.438460571428571428600000",
+            "net_risk": "7.488326486196742140090400",
+            "entry_fee": "0.134325285714285714285720",
+            "target_exit_fee": "0.133642714285714285714280",
+            "stop_exit_fee": "0.137212001393921128404680",
+            "entry_slippage": "0.17678571428571428570",
+            "exit_slippage": "0.17678571428571428570",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "336.19",
+            "worst_acceptable_entry": "336.19",
+            "invalidation": "342.853217770517106726",
+            "target_low": "333.93",
+            "target_high": "333.93",
+            "expected_net_r": "0.2552269843189254351012423835",
+            "version": "structure-cost-v1",
+            "structure_target": "333.93",
+            "expected_net_reward": "1.815095571428571428585720",
+            "net_risk": "7.111691486196742140104680",
+            "entry_fee": "0.134476",
+            "target_exit_fee": "0.133642714285714285714280",
+            "stop_exit_fee": "0.137212001393921128404680",
+            "entry_slippage": "0",
+            "exit_slippage": "0.17678571428571428570",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-ff5c638c-a031-460b-b75f-d578f9516b00:0",
+      "contract": "ZEC-USDT",
+      "evidence_hash": "c7ab9d51a2dbcf12e06f66b1cf17686a7911e6e1ceabf608d7f8ee967838e51b",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1229.01",
+            "worst_acceptable_entry": "1226.39228571428571428570",
+            "invalidation": "1285.010260635779480627",
+            "target_low": "1207.96",
+            "target_high": "1207.96",
+            "expected_net_r": "0.2530530544575489382098837860",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1229.01",
+            "worst_acceptable_entry": "1226.39228571428571428570",
+            "invalidation": "1285.010260635779480627",
+            "target_low": "1207.96",
+            "target_high": "1207.96",
+            "expected_net_r": "0.2384234273638530425859855867",
+            "version": "structure-cost-v1",
+            "structure_target": "1207.96",
+            "expected_net_reward": "14.839783428571428571400000",
+            "net_risk": "62.241297311462363847850800",
+            "entry_fee": "0.490556914285714285714280",
+            "target_exit_fee": "0.484231085714285714285720",
+            "stop_exit_fee": "0.515051189968597506536520",
+            "entry_slippage": "2.61771428571428571430",
+            "exit_slippage": "2.61771428571428571430",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "1229.45",
+            "worst_acceptable_entry": "1229.45",
+            "invalidation": "1285.010260635779480627",
+            "target_low": "1207.96",
+            "target_high": "1207.96",
+            "expected_net_r": "0.3023795430683255077627529765",
+            "version": "structure-cost-v1",
+            "structure_target": "1207.96",
+            "expected_net_reward": "17.896274628571428571414280",
+            "net_risk": "59.184806111462363847836520",
+            "entry_fee": "0.491780",
+            "target_exit_fee": "0.484231085714285714285720",
+            "stop_exit_fee": "0.515051189968597506536520",
+            "entry_slippage": "0",
+            "exit_slippage": "2.61771428571428571430",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-fb09750e-1d0b-479f-8c6d-969972dbccf9:0",
+      "contract": "DOGE-USDT",
+      "evidence_hash": "d4dbdf4b03db7e55eb8fccba8c5503f90c2ed31ee63f7dd4929a930c0d23017c",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.074275",
+            "worst_acceptable_entry": "0.07419204285714285710",
+            "invalidation": "0.078277852485281645",
+            "target_low": "0.071994",
+            "target_high": "0.071994",
+            "expected_net_r": "0.5031394673511622172522849695",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.074275",
+            "worst_acceptable_entry": "0.07419204285714285710",
+            "invalidation": "0.078277852485281645",
+            "target_low": "0.071994",
+            "target_high": "0.071994",
+            "expected_net_r": "0.4862130577412636950035213295",
+            "version": "structure-cost-v1",
+            "structure_target": "0.071994",
+            "expected_net_reward": "0.002056578114285714200000",
+            "net_risk": "0.004229787911990043458000",
+            "entry_fee": "0.000029676817142857142840",
+            "target_exit_fee": "0.000028830782857142857160",
+            "stop_exit_fee": "0.000031344323851255515160",
+            "entry_slippage": "0.00008295714285714290",
+            "exit_slippage": "0.00008295714285714290",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "0.074276",
+            "worst_acceptable_entry": "0.074276",
+            "invalidation": "0.078277852485281645",
+            "target_low": "0.071994",
+            "target_high": "0.071994",
+            "expected_net_r": "0.5162980485018181338130367241",
+            "version": "structure-cost-v1",
+            "structure_target": "0.071994",
+            "expected_net_reward": "0.002140501674285714242840",
+            "net_risk": "0.004145864351990043415160",
+            "entry_fee": "0.0000297104",
+            "target_exit_fee": "0.000028830782857142857160",
+            "stop_exit_fee": "0.000031344323851255515160",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00008295714285714290",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-449ea2af-e5ae-4543-ad12-104a62a03b26:0",
+      "contract": "AVGO-USDT",
+      "evidence_hash": "19f326a28c1f11c7bd0ca56c1bfac92a6d71c379b682b6873a5b04c9bc745773",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "332.27",
+            "worst_acceptable_entry": "332.15628571428571428570",
+            "invalidation": "340.548671059339296941",
+            "target_low": "329.91",
+            "target_high": "329.91",
+            "expected_net_r": "0.2224452671373469674609302773",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "332.27",
+            "worst_acceptable_entry": "332.15628571428571428570",
+            "invalidation": "340.548671059339296941",
+            "target_low": "329.91",
+            "target_high": "329.91",
+            "expected_net_r": "0.2128377314295929416261973126",
+            "version": "structure-cost-v1",
+            "structure_target": "329.91",
+            "expected_net_reward": "1.867699428571428571400000",
+            "net_risk": "8.775227099191604088376400",
+            "entry_fee": "0.132862514285714285714280",
+            "target_exit_fee": "0.132009485714285714285720",
+            "stop_exit_fee": "0.136264954138021433062120",
+            "entry_slippage": "0.11371428571428571430",
+            "exit_slippage": "0.11371428571428571430",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "332.47",
+            "worst_acceptable_entry": "332.47",
+            "invalidation": "340.548671059339296941",
+            "target_low": "329.91",
+            "target_high": "329.91",
+            "expected_net_r": "0.2577855672204543852972948771",
+            "version": "structure-cost-v1",
+            "structure_target": "329.91",
+            "expected_net_reward": "2.181288228571428571414280",
+            "net_risk": "8.461638299191604088362120",
+            "entry_fee": "0.132988",
+            "target_exit_fee": "0.132009485714285714285720",
+            "stop_exit_fee": "0.136264954138021433062120",
+            "entry_slippage": "0",
+            "exit_slippage": "0.11371428571428571430",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-b0f69a7b-24b5-48f1-90b9-8cb0ad135af8:0",
+      "contract": "MSFT-USDT",
+      "evidence_hash": "e9f3dfaf920cc5494f937dee1eb7282862abfd800adfb734237ff3dc10417db0",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "525.04",
+            "worst_acceptable_entry": "524.94664285714285714290",
+            "invalidation": "532.919803225395056933",
+            "target_low": "523.82",
+            "target_high": "523.82",
+            "expected_net_r": "0.07692412690483083877018738271",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "525.04",
+            "worst_acceptable_entry": "524.94664285714285714290",
+            "invalidation": "532.919803225395056933",
+            "target_low": "523.82",
+            "target_high": "523.82",
+            "expected_net_r": "0.07229249687668325823684038007",
+            "version": "structure-cost-v1",
+            "structure_target": "523.82",
+            "expected_net_reward": "0.613741714285714285800000",
+            "net_risk": "8.489701432399500669973200",
+            "entry_fee": "0.209978657142857142857160",
+            "target_exit_fee": "0.209565342857142857142840",
+            "stop_exit_fee": "0.213205264147300879916040",
+            "entry_slippage": "0.09335714285714285710",
+            "exit_slippage": "0.09335714285714285710",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "525.32",
+            "worst_acceptable_entry": "525.32",
+            "invalidation": "532.919803225395056933",
+            "target_low": "523.82",
+            "target_high": "523.82",
+            "expected_net_r": "0.1215980149785369531970593209",
+            "version": "structure-cost-v1",
+            "structure_target": "523.82",
+            "expected_net_reward": "0.986949514285714285757160",
+            "net_risk": "8.116493632399500670016040",
+            "entry_fee": "0.210128",
+            "target_exit_fee": "0.209565342857142857142840",
+            "stop_exit_fee": "0.213205264147300879916040",
+            "entry_slippage": "0",
+            "exit_slippage": "0.09335714285714285710",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-349df221-c123-4e0d-a2b7-a85e44899010:0",
+      "contract": "INTCX-USDT",
+      "evidence_hash": "74fdc574b703e66ffeec68971dade9b1b9b0768980f9a35b2a2ca4f4ee8506e1",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "71.85",
+            "worst_acceptable_entry": "71.88957142857142857140",
+            "invalidation": "69.78",
+            "target_low": "88.68",
+            "target_high": "88.68",
+            "expected_net_r": "7.913145418839303853320429951",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "71.85",
+            "worst_acceptable_entry": "71.88957142857142857140",
+            "invalidation": "69.78",
+            "target_low": "88.68",
+            "target_high": "88.68",
+            "expected_net_r": "7.564912525216047807801966626",
+            "version": "structure-cost-v1",
+            "structure_target": "88.68",
+            "expected_net_reward": "16.686645142857142857200000",
+            "net_risk": "2.205794857142857142800000",
+            "entry_fee": "0.028755828571428571428560",
+            "target_exit_fee": "0.035456171428571428571440",
+            "stop_exit_fee": "0.027896171428571428571440",
+            "entry_slippage": "0.03957142857142857140",
+            "exit_slippage": "0.03957142857142857140",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "71.8",
+            "worst_acceptable_entry": "71.8",
+            "invalidation": "69.78",
+            "target_low": "88.68",
+            "target_high": "88.68",
+            "expected_net_r": "7.927582790864099194350714353",
+            "version": "structure-cost-v1",
+            "structure_target": "88.68",
+            "expected_net_reward": "16.776252400000000000028560",
+            "net_risk": "2.116187599999999999971440",
+            "entry_fee": "0.02872",
+            "target_exit_fee": "0.035456171428571428571440",
+            "stop_exit_fee": "0.027896171428571428571440",
+            "entry_slippage": "0",
+            "exit_slippage": "0.03957142857142857140",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-f2abe8d9-9f7e-49a4-9c2e-1855971600e8:0",
+      "contract": "TSLAX-USDT",
+      "evidence_hash": "c78bc9cf0589640ed84b30a2614814174629f0217c3581ec0addf942ad6809d5",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "397.01",
+            "worst_acceptable_entry": "396.95250",
+            "invalidation": "400.20562203508231991",
+            "target_low": "394.11",
+            "target_high": "394.11",
+            "expected_net_r": "0.7584830736107204603050933860",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "397.01",
+            "worst_acceptable_entry": "396.95250",
+            "invalidation": "400.20562203508231991",
+            "target_low": "394.11",
+            "target_high": "394.11",
+            "expected_net_r": "0.6801340035377899579057345149",
+            "version": "structure-cost-v1",
+            "structure_target": "394.11",
+            "expected_net_reward": "2.468552000",
+            "net_risk": "3.629508283896352837964",
+            "entry_fee": "0.158781000",
+            "target_exit_fee": "0.157667000",
+            "stop_exit_fee": "0.160105248814032927964",
+            "entry_slippage": "0.05750",
+            "exit_slippage": "0.05750",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "397.07",
+            "worst_acceptable_entry": "397.07",
+            "invalidation": "400.20562203508231991",
+            "target_low": "394.11",
+            "target_high": "394.11",
+            "expected_net_r": "0.7363224069556866713105173289",
+            "version": "structure-cost-v1",
+            "structure_target": "394.11",
+            "expected_net_reward": "2.586005000",
+            "net_risk": "3.512055283896352837964",
+            "entry_fee": "0.158828",
+            "target_exit_fee": "0.157667000",
+            "stop_exit_fee": "0.160105248814032927964",
+            "entry_slippage": "0",
+            "exit_slippage": "0.05750",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-dd147013-8e15-4c79-8518-f8d8723de2d9:0",
+      "contract": "MU-USDT",
+      "evidence_hash": "ebc4b4c84d73011b87eb3faff85e877bcb2c24b09607e9323a3b20ee15d6f375",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "903.9",
+            "worst_acceptable_entry": "903.5640",
+            "invalidation": "925.119965214475445855",
+            "target_low": "888.56",
+            "target_high": "888.56",
+            "expected_net_r": "0.6469275980569607981284577673",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "903.9",
+            "worst_acceptable_entry": "903.5640",
+            "invalidation": "925.119965214475445855",
+            "target_low": "888.56",
+            "target_high": "888.56",
+            "expected_net_r": "0.6166583800146083509422595349",
+            "version": "structure-cost-v1",
+            "structure_target": "888.56",
+            "expected_net_reward": "13.95101600",
+            "net_risk": "22.6235732005612360333420",
+            "entry_fee": "0.36142560",
+            "target_exit_fee": "0.35555840",
+            "stop_exit_fee": "0.3701823860857901783420",
+            "entry_slippage": "0.3360",
+            "exit_slippage": "0.3360",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "904.14",
+            "worst_acceptable_entry": "904.14",
+            "invalidation": "925.119965214475445855",
+            "target_low": "888.56",
+            "target_high": "888.56",
+            "expected_net_r": "0.6588767690052452488148208534",
+            "version": "structure-cost-v1",
+            "structure_target": "888.56",
+            "expected_net_reward": "14.52678560",
+            "net_risk": "22.0478036005612360333420",
+            "entry_fee": "0.361656",
+            "target_exit_fee": "0.35555840",
+            "stop_exit_fee": "0.3701823860857901783420",
+            "entry_slippage": "0",
+            "exit_slippage": "0.3360",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-8ceaf486-3bae-4449-bd5f-e221197a11ac:0",
+      "contract": "SNDK-USDT",
+      "evidence_hash": "54e568b7b6cfd6a801f8d78479d16d5d3eaaf8f78de84b272c22aa8ce25dadff",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1277.2",
+            "worst_acceptable_entry": "1276.3220",
+            "invalidation": "1324.085957125393329135",
+            "target_low": "1262.43",
+            "target_high": "1262.43",
+            "expected_net_r": "0.2510877054954905998062932466",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1277.2",
+            "worst_acceptable_entry": "1276.3220",
+            "invalidation": "1324.085957125393329135",
+            "target_low": "1262.43",
+            "target_high": "1262.43",
+            "expected_net_r": "0.2414966010297862504217008730",
+            "version": "structure-cost-v1",
+            "structure_target": "1262.43",
+            "expected_net_reward": "11.99814800",
+            "net_risk": "49.6824715082434864666540",
+            "entry_fee": "0.51052880",
+            "target_exit_fee": "0.50532320",
+            "stop_exit_fee": "0.5299855828501573316540",
+            "entry_slippage": "0.8780",
+            "exit_slippage": "0.8780",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "1277.6",
+            "worst_acceptable_entry": "1277.6",
+            "invalidation": "1324.085957125393329135",
+            "target_low": "1262.43",
+            "target_high": "1262.43",
+            "expected_net_r": "0.2742617816851141383500246086",
+            "version": "structure-cost-v1",
+            "structure_target": "1262.43",
+            "expected_net_reward": "13.27563680",
+            "net_risk": "48.4049827082434864666540",
+            "entry_fee": "0.51104",
+            "target_exit_fee": "0.50532320",
+            "stop_exit_fee": "0.5299855828501573316540",
+            "entry_slippage": "0",
+            "exit_slippage": "0.8780",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-8133394c-2175-4f0d-9e9c-d2e34a253222:0",
+      "contract": "BTC-USDT",
+      "evidence_hash": "a5dd4b47c564650995e2e3af9c971fbbe2d4cda6567533439c21f2037bcf4869",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "77498.6",
+            "worst_acceptable_entry": "77473.8750",
+            "invalidation": "78912.029975659250436259",
+            "target_low": "77220",
+            "target_high": "77220",
+            "expected_net_r": "0.1162398370338139926295377595",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "77498.6",
+            "worst_acceptable_entry": "77473.8750",
+            "invalidation": "78912.029975659250436259",
+            "target_low": "77220",
+            "target_high": "77220",
+            "expected_net_r": "0.1096484269750897924123072329",
+            "version": "structure-cost-v1",
+            "structure_target": "77220",
+            "expected_net_reward": "167.26256000",
+            "net_risk": "1525.4442276495141364335036",
+            "entry_fee": "30.98955000",
+            "target_exit_fee": "30.89789000",
+            "stop_exit_fee": "31.5747019902637001745036",
+            "entry_slippage": "24.7250",
+            "exit_slippage": "24.7250",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "77498.7",
+            "worst_acceptable_entry": "77498.7",
+            "invalidation": "78912.029975659250436259",
+            "target_low": "77220",
+            "target_high": "77220",
+            "expected_net_r": "0.1279980660250915321116568821",
+            "version": "structure-cost-v1",
+            "structure_target": "77220",
+            "expected_net_reward": "192.07763000",
+            "net_risk": "1500.6291576495141364335036",
+            "entry_fee": "30.99948",
+            "target_exit_fee": "30.89789000",
+            "stop_exit_fee": "31.5747019902637001745036",
+            "entry_slippage": "0",
+            "exit_slippage": "24.7250",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-0e093a49-9788-479d-a4ab-30793f29a661:0",
+      "contract": "AAPL-USDT",
+      "evidence_hash": "83fc3ea5c790ddbe28711455078147804e33376e63ecb93e6fedda378a4bd0a0",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "345.62",
+            "worst_acceptable_entry": "345.52521428571428571430",
+            "invalidation": "348.682512117426194998",
+            "target_low": "342.03",
+            "target_high": "342.03",
+            "expected_net_r": "0.9894563536649757499670335168",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "345.62",
+            "worst_acceptable_entry": "345.52521428571428571430",
+            "invalidation": "348.682512117426194998",
+            "target_low": "342.03",
+            "target_high": "342.03",
+            "expected_net_r": "0.8854225570876860044420199013",
+            "version": "structure-cost-v1",
+            "structure_target": "342.03",
+            "expected_net_reward": "3.125368571428571428600000",
+            "net_risk": "3.529804550844594047399200",
+            "entry_fee": "0.138210085714285714285720",
+            "target_exit_fee": "0.136849914285714285714280",
+            "stop_exit_fee": "0.139510919132684763713480",
+            "entry_slippage": "0.09478571428571428570",
+            "exit_slippage": "0.09478571428571428570",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "345.73",
+            "worst_acceptable_entry": "345.73",
+            "invalidation": "348.682512117426194998",
+            "target_low": "342.03",
+            "target_high": "342.03",
+            "expected_net_r": "1.001495178930357091269442692",
+            "version": "structure-cost-v1",
+            "structure_target": "342.03",
+            "expected_net_reward": "3.330072371428571428585720",
+            "net_risk": "3.325100750844594047413480",
+            "entry_fee": "0.138292",
+            "target_exit_fee": "0.136849914285714285714280",
+            "stop_exit_fee": "0.139510919132684763713480",
+            "entry_slippage": "0",
+            "exit_slippage": "0.09478571428571428570",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-5b909880-0c31-48d6-ac4e-6d51b40f089e:0",
+      "contract": "AMD-USDT",
+      "evidence_hash": "dee365ffe3c766b1c0297e699670a271f291cf6b7e4bffce77e26a99e5a073b1",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "516.57",
+            "worst_acceptable_entry": "516.14214285714285714290",
+            "invalidation": "538.23393842417237749",
+            "target_low": "508.84",
+            "target_high": "508.84",
+            "expected_net_r": "0.2924783538031264245929084694",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "516.57",
+            "worst_acceptable_entry": "516.14214285714285714290",
+            "invalidation": "538.23393842417237749",
+            "target_low": "508.84",
+            "target_high": "508.84",
+            "expected_net_r": "0.2817645220816409626178817414",
+            "version": "structure-cost-v1",
+            "structure_target": "508.84",
+            "expected_net_reward": "6.464121714285714285800000",
+            "net_risk": "22.941574285256332155196000",
+            "entry_fee": "0.206456857142857142857160",
+            "target_exit_fee": "0.203707142857142857142840",
+            "stop_exit_fee": "0.215464718226811808138840",
+            "entry_slippage": "0.42785714285714285710",
+            "exit_slippage": "0.42785714285714285710",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "516.86",
+            "worst_acceptable_entry": "516.86",
+            "invalidation": "538.23393842417237749",
+            "target_low": "508.84",
+            "target_high": "508.84",
+            "expected_net_r": "0.3231502128106649838706828903",
+            "version": "structure-cost-v1",
+            "structure_target": "508.84",
+            "expected_net_reward": "7.181691714285714285757160",
+            "net_risk": "22.224004285256332155238840",
+            "entry_fee": "0.206744",
+            "target_exit_fee": "0.203707142857142857142840",
+            "stop_exit_fee": "0.215464718226811808138840",
+            "entry_slippage": "0",
+            "exit_slippage": "0.42785714285714285710",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-2eba0c0e-4063-42a0-8085-5780b81f2179:0",
+      "contract": "ETH-USDT",
+      "evidence_hash": "06a01441137239849ab311d99f39907adab59c91b3b898a891ede8a86a00ddb4",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "2217.19",
+            "worst_acceptable_entry": "2216.20042857142857142860",
+            "invalidation": "2267.055059902064874991",
+            "target_low": "2208",
+            "target_high": "2208",
+            "expected_net_r": "0.1069302177149803343505404668",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "2217.19",
+            "worst_acceptable_entry": "2216.20042857142857142860",
+            "invalidation": "2267.055059902064874991",
+            "target_low": "2208",
+            "target_high": "2208",
+            "expected_net_r": "0.1014353854907842824515581536",
+            "version": "structure-cost-v1",
+            "structure_target": "2208",
+            "expected_net_reward": "5.440781142857142857200000",
+            "net_risk": "53.637900783168558083796400",
+            "entry_fee": "0.886480171428571428571440",
+            "target_exit_fee": "0.883595828571428571428560",
+            "stop_exit_fee": "0.907217852532254521424960",
+            "entry_slippage": "0.98957142857142857140",
+            "exit_slippage": "0.98957142857142857140",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "2217.2",
+            "worst_acceptable_entry": "2217.2",
+            "invalidation": "2267.055059902064874991",
+            "target_low": "2208",
+            "target_high": "2208",
+            "expected_net_r": "0.1223424813400765614555844429",
+            "version": "structure-cost-v1",
+            "structure_target": "2208",
+            "expected_net_reward": "6.439952742857142857171440",
+            "net_risk": "52.638729183168558083824960",
+            "entry_fee": "0.88688",
+            "target_exit_fee": "0.883595828571428571428560",
+            "stop_exit_fee": "0.907217852532254521424960",
+            "entry_slippage": "0",
+            "exit_slippage": "0.98957142857142857140",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-97b57561-bc59-433c-aef8-c4dfb33f30f6:0",
+      "contract": "AVGO-USDT",
+      "evidence_hash": "82e7ec78b5204b685520e4b3afdd4836f44fc4b262f4a39c62293fd01eae7f12",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "328.59",
+            "worst_acceptable_entry": "328.48414285714285714290",
+            "invalidation": "335.705048817843327216",
+            "target_low": "327.82",
+            "target_high": "327.82",
+            "expected_net_r": "0.04092262128993782499824629144",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "328.59",
+            "worst_acceptable_entry": "328.48414285714285714290",
+            "invalidation": "335.705048817843327216",
+            "target_low": "327.82",
+            "target_high": "327.82",
+            "expected_net_r": "0.03894928541693436143058634520",
+            "version": "structure-cost-v1",
+            "structure_target": "327.82",
+            "expected_net_reward": "0.295721714285714285800000",
+            "net_risk": "7.592481123084750261086400",
+            "entry_fee": "0.131393657142857142857160",
+            "target_exit_fee": "0.131170342857142857142840",
+            "stop_exit_fee": "0.134324362384280188029240",
+            "entry_slippage": "0.10585714285714285710",
+            "exit_slippage": "0.10585714285714285710",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "328.79",
+            "worst_acceptable_entry": "328.79",
+            "invalidation": "335.705048817843327216",
+            "target_low": "327.82",
+            "target_high": "327.82",
+            "expected_net_r": "0.08254116276564646652361035682",
+            "version": "structure-cost-v1",
+            "structure_target": "327.82",
+            "expected_net_reward": "0.601456514285714285757160",
+            "net_risk": "7.286746323084750261129240",
+            "entry_fee": "0.131516",
+            "target_exit_fee": "0.131170342857142857142840",
+            "stop_exit_fee": "0.134324362384280188029240",
+            "entry_slippage": "0",
+            "exit_slippage": "0.10585714285714285710",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-cd7d2bb4-49f3-47d6-8f3a-f91d62584404:0",
+      "contract": "QQQ-USDT",
+      "evidence_hash": "513775f753042ce91866cc324e7255911913ea622e083bad288eb832e357e284",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "692.54",
+            "worst_acceptable_entry": "692.43192857142857142860",
+            "invalidation": "702.25273229917724727",
+            "target_low": "688.03",
+            "target_high": "688.03",
+            "expected_net_r": "0.3808152269078427576270773488",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "692.54",
+            "worst_acceptable_entry": "692.43192857142857142860",
+            "invalidation": "702.25273229917724727",
+            "target_low": "688.03",
+            "target_high": "688.03",
+            "expected_net_r": "0.3567944376058738836285466527",
+            "version": "structure-cost-v1",
+            "structure_target": "688.03",
+            "expected_net_reward": "3.741629142857142857200000",
+            "net_risk": "10.486792249239775311708000",
+            "entry_fee": "0.276972771428571428571440",
+            "target_exit_fee": "0.275255228571428571428560",
+            "stop_exit_fee": "0.280944321491099470336560",
+            "entry_slippage": "0.10807142857142857140",
+            "exit_slippage": "0.10807142857142857140",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "692.71",
+            "worst_acceptable_entry": "692.71",
+            "invalidation": "702.25273229917724727",
+            "target_low": "688.03",
+            "target_high": "688.03",
+            "expected_net_r": "0.3937364552056149293873514666",
+            "version": "structure-cost-v1",
+            "structure_target": "688.03",
+            "expected_net_reward": "4.019589342857142857171440",
+            "net_risk": "10.208832049239775311736560",
+            "entry_fee": "0.277084",
+            "target_exit_fee": "0.275255228571428571428560",
+            "stop_exit_fee": "0.280944321491099470336560",
+            "entry_slippage": "0",
+            "exit_slippage": "0.10807142857142857140",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-d3c578e6-ea5a-4196-b20e-759d74c528aa:0",
+      "contract": "TRX-USDT",
+      "evidence_hash": "96d6ab64e99d2a0c83f5c3792f7f119ad7b0d418d3ac0bd228fe9a26d0001142",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.33215",
+            "worst_acceptable_entry": "0.33206702142857142860",
+            "invalidation": "0.335971966",
+            "target_low": "0.326718034",
+            "target_high": "0.329308536",
+            "expected_net_r": "1.280518877677868654435035534",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.33215",
+            "worst_acceptable_entry": "0.33206702142857142860",
+            "invalidation": "0.335971966",
+            "target_low": "0.326718034",
+            "target_high": "0.329308536",
+            "expected_net_r": "0.5665866110288404124310844258",
+            "version": "structure-cost-v1",
+            "structure_target": "0.329308536",
+            "expected_net_reward": "0.002410923442742857200000",
+            "net_risk": "0.004255171929257142800000",
+            "entry_fee": "0.000132826808571428571440",
+            "target_exit_fee": "0.000131756605828571428560",
+            "stop_exit_fee": "0.000134421977828571428560",
+            "entry_slippage": "0.00008297857142857140",
+            "exit_slippage": "0.00008297857142857140",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "0.332151",
+            "worst_acceptable_entry": "0.332151",
+            "invalidation": "0.335971966",
+            "target_low": "0.326718034",
+            "target_high": "0.329308536",
+            "expected_net_r": "0.5981138051448316186509834800",
+            "version": "structure-cost-v1",
+            "structure_target": "0.329308536",
+            "expected_net_reward": "0.002494868422742857171440",
+            "net_risk": "0.004171226949257142828560",
+            "entry_fee": "0.0001328604",
+            "target_exit_fee": "0.000131756605828571428560",
+            "stop_exit_fee": "0.000134421977828571428560",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00008297857142857140",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-d3c578e6-ea5a-4196-b20e-759d74c528aa:1",
+      "contract": "TRX-USDT",
+      "evidence_hash": "96d6ab64e99d2a0c83f5c3792f7f119ad7b0d418d3ac0bd228fe9a26d0001142",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.33215",
+            "worst_acceptable_entry": "0.33206702142857142860",
+            "invalidation": "0.336667197234076969",
+            "target_low": "0.331345",
+            "target_high": "0.331345",
+            "expected_net_r": "0.08116847176864931044405776143",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.33215",
+            "worst_acceptable_entry": "0.33206702142857142860",
+            "invalidation": "0.336667197234076969",
+            "target_low": "0.331345",
+            "target_high": "0.331345",
+            "expected_net_r": "0.07547342230991290796041465619",
+            "version": "structure-cost-v1",
+            "structure_target": "0.331345",
+            "expected_net_reward": "0.000373644857142857200000",
+            "net_risk": "0.004950681255827742587600",
+            "entry_fee": "0.000132826808571428571440",
+            "target_exit_fee": "0.000132571191428571428560",
+            "stop_exit_fee": "0.000134700070322202216160",
+            "entry_slippage": "0.00008297857142857140",
+            "exit_slippage": "0.00008297857142857140",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "0.332151",
+            "worst_acceptable_entry": "0.332151",
+            "invalidation": "0.336667197234076969",
+            "target_low": "0.331345",
+            "target_high": "0.331345",
+            "expected_net_r": "0.09402396415347768754325326970",
+            "version": "structure-cost-v1",
+            "structure_target": "0.331345",
+            "expected_net_reward": "0.000457589837142857171440",
+            "net_risk": "0.004866736275827742616160",
+            "entry_fee": "0.0001328604",
+            "target_exit_fee": "0.000132571191428571428560",
+            "stop_exit_fee": "0.000134700070322202216160",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00008297857142857140",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-d3c578e6-ea5a-4196-b20e-759d74c528aa:2",
+      "contract": "TRX-USDT",
+      "evidence_hash": "96d6ab64e99d2a0c83f5c3792f7f119ad7b0d418d3ac0bd228fe9a26d0001142",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.33215",
+            "worst_acceptable_entry": "0.33206702142857142860",
+            "invalidation": "0.335971966",
+            "target_low": "0.326718034",
+            "target_high": "0.329308536",
+            "expected_net_r": "1.280518877677868654435035534",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.33215",
+            "worst_acceptable_entry": "0.33206702142857142860",
+            "invalidation": "0.335971966",
+            "target_low": "0.326718034",
+            "target_high": "0.329308536",
+            "expected_net_r": "0.5665866110288404124310844258",
+            "version": "structure-cost-v1",
+            "structure_target": "0.329308536",
+            "expected_net_reward": "0.002410923442742857200000",
+            "net_risk": "0.004255171929257142800000",
+            "entry_fee": "0.000132826808571428571440",
+            "target_exit_fee": "0.000131756605828571428560",
+            "stop_exit_fee": "0.000134421977828571428560",
+            "entry_slippage": "0.00008297857142857140",
+            "exit_slippage": "0.00008297857142857140",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "0.332151",
+            "worst_acceptable_entry": "0.332151",
+            "invalidation": "0.335971966",
+            "target_low": "0.326718034",
+            "target_high": "0.329308536",
+            "expected_net_r": "0.5981138051448316186509834800",
+            "version": "structure-cost-v1",
+            "structure_target": "0.329308536",
+            "expected_net_reward": "0.002494868422742857171440",
+            "net_risk": "0.004171226949257142828560",
+            "entry_fee": "0.0001328604",
+            "target_exit_fee": "0.000131756605828571428560",
+            "stop_exit_fee": "0.000134421977828571428560",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00008297857142857140",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-d3c578e6-ea5a-4196-b20e-759d74c528aa:3",
+      "contract": "TRX-USDT",
+      "evidence_hash": "96d6ab64e99d2a0c83f5c3792f7f119ad7b0d418d3ac0bd228fe9a26d0001142",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.33215",
+            "worst_acceptable_entry": "0.33206702142857142860",
+            "invalidation": "0.335971966",
+            "target_low": "0.326718034",
+            "target_high": "0.329308536",
+            "expected_net_r": "1.280518877677868654435035534",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.33215",
+            "worst_acceptable_entry": "0.33206702142857142860",
+            "invalidation": "0.335971966",
+            "target_low": "0.326718034",
+            "target_high": "0.329308536",
+            "expected_net_r": "0.5665866110288404124310844258",
+            "version": "structure-cost-v1",
+            "structure_target": "0.329308536",
+            "expected_net_reward": "0.002410923442742857200000",
+            "net_risk": "0.004255171929257142800000",
+            "entry_fee": "0.000132826808571428571440",
+            "target_exit_fee": "0.000131756605828571428560",
+            "stop_exit_fee": "0.000134421977828571428560",
+            "entry_slippage": "0.00008297857142857140",
+            "exit_slippage": "0.00008297857142857140",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "0.332151",
+            "worst_acceptable_entry": "0.332151",
+            "invalidation": "0.335971966",
+            "target_low": "0.326718034",
+            "target_high": "0.329308536",
+            "expected_net_r": "0.5981138051448316186509834800",
+            "version": "structure-cost-v1",
+            "structure_target": "0.329308536",
+            "expected_net_reward": "0.002494868422742857171440",
+            "net_risk": "0.004171226949257142828560",
+            "entry_fee": "0.0001328604",
+            "target_exit_fee": "0.000131756605828571428560",
+            "stop_exit_fee": "0.000134421977828571428560",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00008297857142857140",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-e92f2921-385e-4d24-bb50-2c8e1efd04fe:0",
+      "contract": "SNDK-USDT",
+      "evidence_hash": "785ca164d689a8450a84c7744a385d22c95ac546ae3b554ef4e96d705ab728cc",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1157.53",
+            "worst_acceptable_entry": "1157.17907142857142857140",
+            "invalidation": "1216.232035609623145848",
+            "target_low": "1117.49",
+            "target_high": "1117.49",
+            "expected_net_r": "0.6504736914175996504686416116",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1157.53",
+            "worst_acceptable_entry": "1157.17907142857142857140",
+            "invalidation": "1216.232035609623145848",
+            "target_low": "1117.49",
+            "target_high": "1117.49",
+            "expected_net_r": "0.6367186671580229257414594178",
+            "version": "structure-cost-v1",
+            "structure_target": "1117.49",
+            "expected_net_reward": "38.428134857142857142800000",
+            "net_risk": "60.353397566724137963539200",
+            "entry_fee": "0.462871628571428571428560",
+            "target_exit_fee": "0.447136371428571428571440",
+            "stop_exit_fee": "0.486633185672420686910640",
+            "entry_slippage": "0.35092857142857142860",
+            "exit_slippage": "0.35092857142857142860",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "1157.54",
+            "worst_acceptable_entry": "1157.54",
+            "invalidation": "1216.232035609623145848",
+            "target_low": "1117.49",
+            "target_high": "1117.49",
+            "expected_net_r": "0.6465615828407593787459816748",
+            "version": "structure-cost-v1",
+            "structure_target": "1117.49",
+            "expected_net_reward": "38.788919057142857142828560",
+            "net_risk": "59.992613366724137963510640",
+            "entry_fee": "0.463016",
+            "target_exit_fee": "0.447136371428571428571440",
+            "stop_exit_fee": "0.486633185672420686910640",
+            "entry_slippage": "0",
+            "exit_slippage": "0.35092857142857142860",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "PAPER_15M",
+      "identity": "paper-d66edf91-9e0b-43fc-94cb-f0cc7d2c3bff:0",
+      "contract": "ORCL-USDT",
+      "evidence_hash": "21eabab91371ff4169227c7cfc7183ea14381fdb532b197d6bf177735d7e7589",
+      "fee_source": "PAPER_EXCHANGE_CONFIG",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "130.52",
+            "worst_acceptable_entry": "130.50450",
+            "invalidation": "132.884497309705314747",
+            "target_low": "130.53",
+            "target_high": "130.53",
+            "expected_net_r": "-0.06109401863903934678793062400",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "INVALID_GEOMETRY",
+          "reason": "target or invalidation is on wrong side of planned entry"
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "130.65",
+            "worst_acceptable_entry": "130.65",
+            "invalidation": "132.884497309705314747",
+            "target_low": "130.53",
+            "target_high": "130.53",
+            "expected_net_r": "0.000009255260169879255741313061553",
+            "version": "structure-cost-v1",
+            "structure_target": "130.53",
+            "expected_net_reward": "0.000021800",
+            "net_risk": "2.3554173086291968728988",
+            "entry_fee": "0.052260",
+            "target_exit_fee": "0.052218200",
+            "stop_exit_fee": "0.0531599989238821258988",
+            "entry_slippage": "0",
+            "exit_slippage": "0.01550",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "LIVE_15M_ACCOUNT_7",
+      "identity": "654409",
+      "contract": "TRX-USDT",
+      "evidence_hash": "af205f8dd11d3eb5fa1f837226ea568afd84fe19c1fd012275e0175b322b8656",
+      "fee_source": "HTX_ACCOUNT_TAKER_CONSERVATIVE",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.303826",
+            "worst_acceptable_entry": "0.30363542142857142860",
+            "invalidation": "0.313334",
+            "target_low": "0.287632",
+            "target_high": "0.287632",
+            "expected_net_r": "1.605383139944660531564148620",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.303826",
+            "worst_acceptable_entry": "0.30363542142857142860",
+            "invalidation": "0.313334",
+            "target_low": "0.287632",
+            "target_high": "0.287632",
+            "expected_net_r": "1.536723280033748957321056891",
+            "version": "structure-cost-v1",
+            "structure_target": "0.287632",
+            "expected_net_reward": "0.015576259657142857200000",
+            "net_risk": "0.010136021142857142800000",
+            "entry_fee": "0.000121454168571428571440",
+            "target_exit_fee": "0.000115129031428571428560",
+            "stop_exit_fee": "0.000125409831428571428560",
+            "entry_slippage": "0.00019057857142857140",
+            "exit_slippage": "0.00019057857142857140",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "0.304056",
+            "worst_acceptable_entry": "0.304056",
+            "invalidation": "0.313334",
+            "target_low": "0.287632",
+            "target_high": "0.287632",
+            "expected_net_r": "1.646491437516063937890094628",
+            "version": "structure-cost-v1",
+            "structure_target": "0.287632",
+            "expected_net_reward": "0.015996669997142857171440",
+            "net_risk": "0.009715610802857142828560",
+            "entry_fee": "0.0001216224",
+            "target_exit_fee": "0.000115129031428571428560",
+            "stop_exit_fee": "0.000125409831428571428560",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00019057857142857140",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "LIVE_15M_ACCOUNT_7",
+      "identity": "657237",
+      "contract": "ETH-USDT",
+      "evidence_hash": "fd355225f4bfb3c2097b6e7b5a021b3ea337d18c73da3adb0a7208a74fda071d",
+      "fee_source": "HTX_ACCOUNT_TAKER_CONSERVATIVE",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "2265.48",
+            "worst_acceptable_entry": "2265.88521428571428571430",
+            "invalidation": "2258.82876",
+            "target_low": "2281.23896",
+            "target_high": "2289.95124",
+            "expected_net_r": "1.861533105051950412967697793",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "2265.48",
+            "worst_acceptable_entry": "2265.88521428571428571430",
+            "invalidation": "2258.82876",
+            "target_low": "2281.23896",
+            "target_high": "2289.95124",
+            "expected_net_r": "1.416167468461255820238269251",
+            "version": "structure-cost-v1",
+            "structure_target": "2281.23896",
+            "expected_net_reward": "13.129843844571428571400000",
+            "net_risk": "9.271392075428571428600000",
+            "entry_fee": "0.906354085714285714285720",
+            "target_exit_fee": "0.912333498285714285714280",
+            "stop_exit_fee": "0.903369418285714285714280",
+            "entry_slippage": "0.40521428571428571430",
+            "exit_slippage": "0.40521428571428571430",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "2265.47",
+            "worst_acceptable_entry": "2265.47",
+            "invalidation": "2258.82876",
+            "target_low": "2281.23896",
+            "target_high": "2289.95124",
+            "expected_net_r": "1.529494841327052518986133311",
+            "version": "structure-cost-v1",
+            "structure_target": "2281.23896",
+            "expected_net_reward": "13.545224215999999999985720",
+            "net_risk": "8.856011704000000000014280",
+            "entry_fee": "0.906188",
+            "target_exit_fee": "0.912333498285714285714280",
+            "stop_exit_fee": "0.903369418285714285714280",
+            "entry_slippage": "0",
+            "exit_slippage": "0.40521428571428571430",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "LIVE_15M_ACCOUNT_7",
+      "identity": "660373",
+      "contract": "SUI-USDT",
+      "evidence_hash": "78ad970560d5d7fddd5e5249e9e523489d6b2f5b4101b54b30673eeb0a6c39e3",
+      "fee_source": "HTX_ACCOUNT_TAKER_CONSERVATIVE",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.9061",
+            "worst_acceptable_entry": "0.90631142857142857140",
+            "invalidation": "0.90212",
+            "target_low": "0.91102",
+            "target_high": "0.91448",
+            "expected_net_r": "0.8999541922290388745791015149",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.9061",
+            "worst_acceptable_entry": "0.90631142857142857140",
+            "invalidation": "0.90212",
+            "target_low": "0.91102",
+            "target_high": "0.91448",
+            "expected_net_r": "0.7355029465750593733314161393",
+            "version": "structure-cost-v1",
+            "structure_target": "0.91102",
+            "expected_net_reward": "0.003770294857142857200000",
+            "net_risk": "0.005126145142857142800000",
+            "entry_fee": "0.000362524571428571428560",
+            "target_exit_fee": "0.000364323428571428571440",
+            "stop_exit_fee": "0.000360763428571428571440",
+            "entry_slippage": "0.00021142857142857140",
+            "exit_slippage": "0.00021142857142857140",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "0.906",
+            "worst_acceptable_entry": "0.906",
+            "invalidation": "0.90212",
+            "target_low": "0.91102",
+            "target_high": "0.91448",
+            "expected_net_r": "0.8478076646993140961421833675",
+            "version": "structure-cost-v1",
+            "structure_target": "0.91102",
+            "expected_net_reward": "0.004081848000000000028560",
+            "net_risk": "0.004814591999999999971440",
+            "entry_fee": "0.0003624",
+            "target_exit_fee": "0.000364323428571428571440",
+            "stop_exit_fee": "0.000360763428571428571440",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00021142857142857140",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "LIVE_15M_ACCOUNT_7",
+      "identity": "663326",
+      "contract": "ZEC-USDT",
+      "evidence_hash": "8dfa59c494fc4a0364cdd02e7629bff397831b15f0cd78e03c8582b6be10523b",
+      "fee_source": "HTX_ACCOUNT_TAKER_CONSERVATIVE",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1234.69",
+            "worst_acceptable_entry": "1234.21892857142857142860",
+            "invalidation": "1243.1792",
+            "target_low": "1206.8408",
+            "target_high": "1217.0132",
+            "expected_net_r": "2.892734021131375165627609923",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "1234.69",
+            "worst_acceptable_entry": "1234.21892857142857142860",
+            "invalidation": "1243.1792",
+            "target_low": "1206.8408",
+            "target_high": "1217.0132",
+            "expected_net_r": "1.511536595472488559759405313",
+            "version": "structure-cost-v1",
+            "structure_target": "1217.0132",
+            "expected_net_reward": "15.753975862857142857200000",
+            "net_risk": "10.422490537142857142800000",
+            "entry_fee": "0.493687571428571428571440",
+            "target_exit_fee": "0.486993708571428571428560",
+            "stop_exit_fee": "0.497460108571428571428560",
+            "entry_slippage": "0.47107142857142857140",
+            "exit_slippage": "0.47107142857142857140",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "1235.04",
+            "worst_acceptable_entry": "1235.04",
+            "invalidation": "1243.1792",
+            "target_low": "1206.8408",
+            "target_high": "1217.0132",
+            "expected_net_r": "1.726218982402988393158469772",
+            "version": "structure-cost-v1",
+            "structure_target": "1217.0132",
+            "expected_net_reward": "16.574718862857142857171440",
+            "net_risk": "9.601747537142857142828560",
+            "entry_fee": "0.494016",
+            "target_exit_fee": "0.486993708571428571428560",
+            "stop_exit_fee": "0.497460108571428571428560",
+            "entry_slippage": "0",
+            "exit_slippage": "0.47107142857142857140",
+            "funding_cost": null
+          }
+        }
+      }
+    },
+    {
+      "source": "LIVE_15M_ACCOUNT_7",
+      "identity": "672363",
+      "contract": "TRX-USDT",
+      "evidence_hash": "111dfa42915ae27e2e9025c8ba79d0b9b3edf48bbc725d7706bcc517e11bfef3",
+      "fee_source": "HTX_ACCOUNT_TAKER_CONSERVATIVE",
+      "plans": {
+        "legacy_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.314138",
+            "worst_acceptable_entry": "0.31416960714285714290",
+            "invalidation": "0.312751",
+            "target_low": "0.315927",
+            "target_high": "0.315927",
+            "expected_net_r": "1.039364588001309039344490179",
+            "version": "legacy",
+            "structure_target": null,
+            "expected_net_reward": null,
+            "net_risk": null,
+            "entry_fee": null,
+            "target_exit_fee": null,
+            "stop_exit_fee": null,
+            "entry_slippage": null,
+            "exit_slippage": null,
+            "funding_cost": null
+          }
+        },
+        "structure_taker": {
+          "status": "PRICED",
+          "plan": {
+            "style": "IOC_OR_MARKET",
+            "desired_entry": "0.314138",
+            "worst_acceptable_entry": "0.31416960714285714290",
+            "invalidation": "0.312751",
+            "target_low": "0.315927",
+            "target_high": "0.315927",
+            "expected_net_r": "0.8664231663730133796394161556",
+            "version": "structure-cost-v1",
+            "structure_target": "0.315927",
+            "expected_net_reward": "0.001473759714285714200000",
+            "net_risk": "0.001700969885714285800000",
+            "entry_fee": "0.000125667842857142857160",
+            "target_exit_fee": "0.000126358157142857142840",
+            "stop_exit_fee": "0.000125087757142857142840",
+            "entry_slippage": "0.00003160714285714290",
+            "exit_slippage": "0.00003160714285714290",
+            "funding_cost": null
+          }
+        },
+        "structure_limit": {
+          "status": "PRICED",
+          "plan": {
+            "style": "PASSIVE_LIMIT",
+            "desired_entry": "0.313993",
+            "worst_acceptable_entry": "0.313993",
+            "invalidation": "0.312751",
+            "target_low": "0.315927",
+            "target_high": "0.315927",
+            "expected_net_r": "1.082756710475636468085547726",
+            "version": "structure-cost-v1",
+            "structure_target": "0.315927",
+            "expected_net_reward": "0.001650437499999999957160",
+            "net_risk": "0.001524292100000000042840",
+            "entry_fee": "0.0001255972",
+            "target_exit_fee": "0.000126358157142857142840",
+            "stop_exit_fee": "0.000125087757142857142840",
+            "entry_slippage": "0",
+            "exit_slippage": "0.00003160714285714290",
+            "funding_cost": null
+          }
+        }
+      }
+    }
+  ]
+}

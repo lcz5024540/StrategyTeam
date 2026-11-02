@@ -37,6 +37,10 @@ class PaperExchange:
     def __init__(self, ledger: TrendLedger, *, fee_rate: Decimal = Decimal("0.0004")) -> None:
         self._ledger, self._fee_rate = ledger, fee_rate
 
+    @property
+    def fee_rate(self) -> Decimal:
+        return self._fee_rate
+
     def submit(self, request: PaperOrder, candle: Candle) -> Order:
         order = Order(str(uuid.uuid4()), request.account_id, request.position_id, request.contract_code, request.side,
                       request.position_side, request.order_type, request.quantity, request.client_order_id, "OPEN",

@@ -19,7 +19,7 @@ import time
 import uuid
 
 from .account_facts import HtxAccountFactsAdapter
-from .execution import ExecutionConfig, GateResult, PriorTrade, evaluate_gate
+from .execution import ExecutionConfig, GateResult, PriorTrade, evaluate_gate, structural_target
 from .htx_v5 import SwapOrderRequest
 from .maker_execution import (
     MakerExecutionConfig, MakerTimeoutAction, maker_limit_price, maker_reference_price,
@@ -283,12 +283,19 @@ class HtxTrendEntryExecutor:
         def condition_trace(condition_id, status, actual, threshold, reason):
             condition_results.append({"condition_id": condition_id, "status": status, "actual": actual,
                                       "threshold": threshold, "reason": reason})
+        planned_limit = None
+        if effective.entry_plan_version == "structure-cost-v1" and self._config.maker_config.enabled:
+            planned_limit = maker_limit_price(candidate.side, maker_reference_price(candidate.side, book.top),
+                self._config.maker_config.offset_bps, price_tick=contract.price_tick)
         gate = evaluate_gate(candidate, period=period, now_epoch=int(time.time()) if now_epoch is None else now_epoch, atr=atr, order_book=book.top,
                              contract=contract, funding=funding, recent_candles=recent_candles, prior_trade=prior_trade,
                              market_context=market_context, candidate_state=state, fibonacci_quality=quality,
                              execution_facts=snapshot.facts, claimed_structure_keys=claimed_structure_keys,
                              momentum_quality=momentum_quality, ema_fast=ema_fast, ema_slow=ema_slow, adx=adx,
-                             condition_trace=condition_trace,
+                             condition_trace=condition_trace, entry_limit_price=planned_limit,
+                             # Until the account maker fee is supplied, use its
+                             # taker rate conservatively, never a guessed rebate.
+                             entry_fee_rate=snapshot.facts.actual_taker_fee_rate,
                              config=effective)
         if gate.allowed and self._continuation.version == LINKED and previous_exit is not None:
             if not recent_candles or previous_exit.get('side') not in ('LONG', 'SHORT'):
@@ -363,11 +370,17 @@ class HtxTrendEntryExecutor:
         order_ts = None
         try:
             fee_rate = snapshot.facts.actual_taker_fee_rate
-            estimated_entry_fee = gate.size_plan.notional * fee_rate if fee_rate is not None else None
-            estimated_close_fee = gate.size_plan.notional * fee_rate if fee_rate is not None else None
-            gross_target = ((candidate.target_low - gate.price_plan.desired_entry) if candidate.side is TrendSide.LONG
-                            else (gate.price_plan.desired_entry - candidate.target_low)) * Decimal(gate.size_plan.contracts) * contract.contract_size
-            expected_net_after_fees = (gross_target - (estimated_entry_fee or Decimal("0")) - (estimated_close_fee or Decimal("0")))
+            units = Decimal(gate.size_plan.contracts) * contract.contract_size
+            plan = gate.price_plan
+            estimated_entry_fee = (plan.entry_fee * units if plan.entry_fee is not None else
+                                   gate.size_plan.notional * fee_rate if fee_rate is not None else None)
+            estimated_close_fee = (plan.target_exit_fee * units if plan.target_exit_fee is not None else
+                                   gate.size_plan.notional * fee_rate if fee_rate is not None else None)
+            target = plan.structure_target if plan.structure_target is not None else candidate.target_low
+            gross_target = ((target - plan.desired_entry) if candidate.side is TrendSide.LONG
+                            else (plan.desired_entry - target)) * units
+            expected_net_after_fees = (plan.expected_net_reward * units if plan.expected_net_reward is not None else
+                gross_target - (estimated_entry_fee or Decimal("0")) - (estimated_close_fee or Decimal("0")))
             sizing_reason = (f"policy={policy.policy.policy_code}@{policy.policy.policy_version}; baseScore={policy.base_score}; "
                              f"policyMultiplier={policy.sizing_multiplier}; adaptiveMultiplier={adaptive_multiplier}; "
                              f"plannedNotional={planned_notional}")
@@ -385,6 +398,8 @@ class HtxTrendEntryExecutor:
             request = _order_request(contract.contract_code, candidate.side, client_order_id, gate.size_plan.contracts,
                                      self._config.entry_order_type,
                                      maker_config=self._config.maker_config, book=book, price_tick=contract.price_tick)
+            if planned_limit is not None and Decimal(str(request.price)) != gate.price_plan.desired_entry:
+                raise ValueError("limit order differs from evaluated price plan")
             # MAINLINE-B shadow/pair logging: record taker vs maker cost difference
             # when maker path is enabled.  This is evidence only; it does not pass
             # the ORDERPX gate (σ_d≥200 still owed).
@@ -423,7 +438,8 @@ class HtxTrendEntryExecutor:
                 signal_px=candidate.entry_price, signal_ts=datetime.fromtimestamp(candidate.bar_time, UTC),
                 **order_px_fields(request.type, limit=request.price, mid=book.top.mid)))
             if self._config.maker_config.enabled or self._instance.strategy_name == "HTX_TREND_15M_V2":
-                initial_state = {"continuation_version": self._continuation.version}
+                initial_state = {"continuation_version": self._continuation.version,
+                                 "entry_plan_version": self._execution.entry_plan_version}
                 if self._config.maker_config.enabled:
                     submitted_epoch = int(time.time())
                     initial_state['entry_execution'] = {

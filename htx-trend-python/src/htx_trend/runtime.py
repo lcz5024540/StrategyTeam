@@ -14,7 +14,7 @@ import json
 import os
 from pathlib import Path
 
-from .execution import ExecutionConfig, ExecutionFacts, GateResult, PriorTrade, evaluate_gate
+from .execution import ExecutionConfig, ExecutionFacts, GateResult, PriorTrade, evaluate_gate, structural_target
 from .exits import ExitInput, ExitAction, decide
 from .continuation import (BASELINE, CONFIRM, LINKED, ContinuationConfig, advance_confirmation,
                            decide_continuation, reentry_gate)
@@ -95,6 +95,14 @@ class PaperTrendRuntime:
                                     contract=contract, funding=funding, recent_candles=entry_window.candles,
                                     prior_trade=prior_trade, market_context=context, execution_facts=execution_facts,
                                     claimed_structure_keys=claimed_structure_keys,
+                                    **(dict(ema_fast=signal.indicators.ema_fast, ema_slow=signal.indicators.ema_slow,
+                                        adx=signal.indicators.adx,
+                                        momentum_quality=min(Decimal("100"), (item.score + signal.indicators.adx) / Decimal("2")),
+                                        entry_limit_price=(maker_limit_price(item.side, maker_reference_price(item.side, book),
+                                            self._maker_config.offset_bps, price_tick=contract.price_tick)
+                                            if self._maker_config.enabled else None),
+                                        entry_fee_rate=self._exchange.fee_rate)
+                                       if self._execution_config.entry_plan_version == "structure-cost-v1" and signal.indicators else {}),
                                     fibonacci_quality=(FibonacciQuality.from_candles(entry_window.candles, item.side,
                                         signal.indicators.atr, signal.indicators.ema_fast) if item.model is ModelCode.FIB_PULLBACK_CONTINUATION
                                                        and signal.indicators is not None else None),
@@ -125,6 +133,7 @@ class PaperTrendRuntime:
             "candidates": [item.model.value for item in output], "gates": [item.reason for item in gates],
             "primary_model": route.primary.model.value if route.primary else None, "route": route.reason,
             "strategy_version": decision.strategy_version, "decision_hash": decision.decision_hash,
+            "entry_plan_version": self._execution_config.entry_plan_version,
             **({"continuation_version": self._continuation.version} if self._continuation.version != BASELINE else {}),
             **({"entry_block": asdict(entry_block)} if entry_block is not None else {}),
         })
@@ -155,7 +164,7 @@ class PaperTrendRuntime:
             self._ledger.save_position_context(position.position_id, {"model": selected.model.value,
                 "structure_key": selected.structure_key, "confirmation_models": [item.value for item in selected.confirmation_models],
                 "initial_stop": str(selected.invalidation_price), "invalidation": str(selected.invalidation_price),
-                "structure_target": str(selected.target_low), "contract_size": str(contract.contract_size),
+                "structure_target": str(structural_target(selected) if self._execution_config.entry_plan_version == "structure-cost-v1" else selected.target_low), "contract_size": str(contract.contract_size),
                 "entry_fee": str(entry_price * contract.contract_size * Decimal(gate.size_plan.contracts) * Decimal("0.0004")),
                 "highest": str(entry_price), "lowest": str(entry_price), "protection": None,
                 "trailing_armed_at": None, "trailing_arm_reason": None, "max_favorable_r": "0",
@@ -230,7 +239,7 @@ class PaperTrendRuntime:
             self._ledger.save_position_context(position.position_id, {"model": selected.model.value,
                 "structure_key": selected.structure_key, "confirmation_models": [item.value for item in selected.confirmation_models],
                 "initial_stop": str(selected.invalidation_price), "invalidation": str(selected.invalidation_price),
-                "structure_target": str(selected.target_low), "contract_size": str(contract.contract_size),
+                "structure_target": str(structural_target(selected) if self._execution_config.entry_plan_version == "structure-cost-v1" else selected.target_low), "contract_size": str(contract.contract_size),
                 "entry_fee": str(fill_price * contract.contract_size * Decimal(lifecycle.filled_quantity) * Decimal("0.0004")),
                 "highest": str(fill_price), "lowest": str(fill_price), "protection": None,
                 "trailing_armed_at": None, "trailing_arm_reason": None, "max_favorable_r": "0",

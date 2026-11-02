@@ -15,7 +15,7 @@ from typing import Any, Callable, Sequence
 from .market_data import Candle, ContractSpec, FundingRate, TopOfBook, period_seconds
 from .models import ModelCandidate, ModelCode, TrendSide
 from .strategy_context import (CandidateTrendState, EntryStateConfig, FibonacciQuality, MarketContext,
-                               evaluate_counter_market)
+                               evaluate_counter_market, evaluate_candidate_state)
 
 ZERO = Decimal("0")
 
@@ -33,7 +33,9 @@ class ExecutionConfig:
     min_average_turnover: Decimal = ZERO
     liquidity_lookback: int = 20
     max_adverse_funding_rate: Decimal = Decimal("0.0006")
+    # Retained legacy field; no calibrated net-R threshold is enabled.
     min_net_r: Decimal = Decimal("0.25")
+    entry_plan_version: str = "legacy"
     fee_rate: Decimal = Decimal("0.0004")
     slippage_atr_fraction: Decimal = Decimal("0.10")
     target_notional: Decimal = Decimal("190")
@@ -87,6 +89,10 @@ class ExecutionConfig:
     max_active_positions: int = 3
     max_same_direction_positions: int = 3
 
+    def __post_init__(self):
+        if self.entry_plan_version not in ("legacy", "structure-cost-v1"):
+            raise ValueError("unknown entry plan version")
+
     @classmethod
     def from_env(cls) -> "ExecutionConfig":
         """Read the same HTX_TREND entry knobs as Java application.yml."""
@@ -102,6 +108,7 @@ class ExecutionConfig:
             return environ.get(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
         return cls(
+            entry_plan_version=environ.get("HTX_TREND_ENTRY_PLAN_VERSION", defaults.entry_plan_version),
             max_spread_rate=dec("HTX_TREND_MAX_ENTRY_SPREAD_RATE", defaults.max_spread_rate),
             min_average_turnover=dec("HTX_TREND_MIN_ENTRY_AVG_TURNOVER_USDT", defaults.min_average_turnover),
             liquidity_lookback=integer("HTX_TREND_LIQUIDITY_LOOKBACK_BARS", defaults.liquidity_lookback),
@@ -171,6 +178,16 @@ class PricePlan:
     target_low: Decimal
     target_high: Decimal
     expected_net_r: Decimal
+    version: str = "legacy"
+    structure_target: Decimal | None = None
+    expected_net_reward: Decimal | None = None
+    net_risk: Decimal | None = None
+    entry_fee: Decimal | None = None
+    target_exit_fee: Decimal | None = None
+    stop_exit_fee: Decimal | None = None
+    entry_slippage: Decimal | None = None
+    exit_slippage: Decimal | None = None
+    funding_cost: Decimal | None = None  # Future holding duration/rates are unknown.
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,11 +257,51 @@ def cooldown(candidate: ModelCandidate, prior: PriorTrade | None, *, now_epoch: 
     return CooldownDecision(remaining == 0, f"{category} cooldown", remaining)
 
 
+def structural_target(candidate: ModelCandidate) -> Decimal:
+    """Nearest declared structural boundary; do not search farther to inflate R."""
+    return candidate.target_low if candidate.side is TrendSide.LONG else candidate.target_high
+
+
+def structured_price_plan(candidate, *, atr, execution_price, fee_rate, entry_fee_rate, passive, config):
+    desired = candidate.entry_price if execution_price is None else execution_price
+    close_rate = config.fee_rate if fee_rate is None else fee_rate
+    open_rate = close_rate if entry_fee_rate is None else entry_fee_rate
+    values = (desired, candidate.invalidation_price, candidate.target_low, candidate.target_high)
+    if not all(v.is_finite() and v > ZERO for v in values):
+        raise ValueError("non-positive or non-finite structure prices")
+    if candidate.side not in (TrendSide.LONG, TrendSide.SHORT) or candidate.target_low > candidate.target_high:
+        raise ValueError("invalid direction or target range")
+    if not all(v.is_finite() and v >= ZERO for v in (atr, config.slippage_atr_fraction, close_rate, open_rate)):
+        raise ValueError("invalid volatility or fee inputs")
+    sign = Decimal(1) if candidate.side is TrendSide.LONG else Decimal(-1)
+    slip = atr * config.slippage_atr_fraction
+    entry_slip = ZERO if passive else slip
+    worst = desired + sign * entry_slip
+    target = structural_target(candidate)
+    stop = candidate.invalidation_price
+    if sign * (target - worst) <= ZERO or sign * (worst - stop) <= ZERO:
+        raise ValueError("target or invalidation is on wrong side of planned entry")
+    target_fill, stop_fill = target - sign * slip, stop - sign * slip
+    if min(worst, target_fill, stop_fill) <= ZERO:
+        raise ValueError("slippage creates invalid execution price")
+    entry_fee, target_fee, stop_fee = worst * open_rate, target_fill * close_rate, stop_fill * close_rate
+    reward = sign * (target_fill - worst) - entry_fee - target_fee
+    risk = sign * (worst - stop_fill) + entry_fee + stop_fee
+    return PricePlan(ExecutionStyle.PASSIVE_LIMIT if passive else ExecutionStyle.IOC_OR_MARKET,
+        desired, worst, stop, candidate.target_low, candidate.target_high, reward / risk,
+        "structure-cost-v1", target, reward, risk, entry_fee, target_fee, stop_fee,
+        entry_slip, slip)
+
+
 def price_plan(candidate: ModelCandidate, *, atr: Decimal, execution_price: Decimal | None = None, fee_rate: Decimal | None = None,
-               config: ExecutionConfig = ExecutionConfig()) -> PricePlan:
+               config: ExecutionConfig = ExecutionConfig(), entry_fee_rate: Decimal | None = None,
+               passive: bool = False) -> PricePlan:
     # Java's current production trend path uses a V5 market order for every
     # model.  Passive Fibonacci probing is an experiment and must be selected
     # explicitly rather than silently changing parity.
+    if config.entry_plan_version == "structure-cost-v1":
+        return structured_price_plan(candidate, atr=atr, execution_price=execution_price,
+            fee_rate=fee_rate, entry_fee_rate=entry_fee_rate, passive=passive, config=config)
     style = (ExecutionStyle.IOC_OR_MARKET if config.java_market_order_compatibility
              else ExecutionStyle.PASSIVE_LIMIT if candidate.model is ModelCode.FIB_PULLBACK_CONTINUATION
              else ExecutionStyle.CONDITIONAL_OR_MARKET if candidate.model is ModelCode.DONCHIAN_BREAKOUT
@@ -267,7 +324,7 @@ def size_plan(candidate: ModelCandidate, contract: ContractSpec, price: PricePla
     stop_distance = abs(price.desired_entry - price.invalidation)
     if stop_distance <= ZERO or contract.contract_size <= ZERO:
         return SizePlan(0, ZERO, ZERO, "invalid stop distance or contract size")
-    risk_per_contract = stop_distance * contract.contract_size
+    risk_per_contract = (price.net_risk if price.net_risk is not None else stop_distance) * contract.contract_size
     by_target = int((config.target_notional / (price.desired_entry * contract.contract_size)).to_integral_value(rounding=ROUND_DOWN))
     by_max = int((config.max_notional / (price.desired_entry * contract.contract_size)).to_integral_value(rounding=ROUND_DOWN))
     risk_budget = (min(config.max_risk_per_trade_usdt,
@@ -292,7 +349,8 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
                   execution_facts: ExecutionFacts | None = None, claimed_structure_keys: frozenset[str] = frozenset(),
                   momentum_quality: Decimal | None = None, ema_fast: Decimal | None = None,
                   ema_slow: Decimal | None = None, adx: Decimal | None = None,
-                  strong_profit_reentry: bool = False,
+                  strong_profit_reentry: bool = False, entry_limit_price: Decimal | None = None,
+                  entry_fee_rate: Decimal | None = None,
                   condition_trace: Callable[[str, str, Any, Any, str], None] | None = None,
                   config: ExecutionConfig = ExecutionConfig()) -> GateResult:
     """Execute Java's combination-entry Gate in its production order.
@@ -303,6 +361,7 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
     """
     context = market_context or MarketContext.neutral()
     facts = execution_facts or ExecutionFacts()
+    shared_quality = config.require_execution_facts or config.entry_plan_version == "structure-cost-v1"
     quality_score = momentum_quality if momentum_quality is not None else candidate.score
     fast = ema_fast if ema_fast is not None else candidate.entry_price
     slow = ema_slow if ema_slow is not None else candidate.entry_price
@@ -313,7 +372,12 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
                                       expected_r=candidate.expected_r, momentum_score=quality_score,
                                       adx=current_adx, ema_fast=fast, ema_slow=slow,
                                       confirmations=confirmations, config=state_config)
-    state = candidate_state or CandidateTrendState.from_candidate(candidate.score, candidate.expected_r, context, candidate.side)
+    if config.entry_plan_version == "structure-cost-v1" and any(v is None for v in (momentum_quality, ema_fast, ema_slow, adx)):
+        return GateResult(False, "CANDIDATE_INPUTS", "actual indicator/quality inputs required")
+    state = candidate_state or (evaluate_candidate_state(candidate.score, candidate.expected_r, quality_score,
+        candidate.side, fast, slow, current_adx, context, counter_market_qualified=counter.qualified)
+        if config.entry_plan_version == "structure-cost-v1" else
+        CandidateTrendState.from_candidate(candidate.score, candidate.expected_r, context, candidate.side))
     def emit(condition_id: str, passed: bool, actual: Any = None, threshold: Any = None, reason: str = "",
              status: str | None = None) -> None:
         if condition_trace is not None:
@@ -321,7 +385,7 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
 
     # Historical paper tests retain their deliberately relaxed contract. Live
     # execution always sets require_execution_facts=True and follows Java below.
-    if not config.require_execution_facts and candidate.score < config.min_score:
+    if not shared_quality and candidate.score < config.min_score:
         emit("gate.model_score", False, candidate.score, config.min_score, "below minimum score")
         return GateResult(False, "MODEL_POLICY", f"candidate score {candidate.score} below {config.min_score}")
     emit("gate.model_score", True, candidate.score, config.min_score)
@@ -350,15 +414,15 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
         emit("gate.cooldown", False, cooldown_result.remaining_seconds, 0, cooldown_result.reason)
         return GateResult(False, "COOLDOWN", f"{cooldown_result.reason}; remaining={cooldown_result.remaining_seconds}s")
     emit("gate.cooldown", True, cooldown_result.remaining_seconds, 0, cooldown_result.override_reason or cooldown_result.reason)
-    if config.require_execution_facts and counter.blocks_entry:
+    if shared_quality and counter.blocks_entry:
         emit("gate.counter_market", False, counter.reason, "not blocked")
         return GateResult(False, "COUNTER_MARKET", f"counter-market candidate rejected: {counter.reason}")
     emit("gate.counter_market", True, counter.reason, "not blocked")
-    if config.require_execution_facts and config.candidate_trend_state_gate_enabled and not state.tradable:
+    if shared_quality and config.candidate_trend_state_gate_enabled and not state.tradable:
         emit("gate.candidate_state", False, state.reason, "tradable")
         return GateResult(False, "CANDIDATE_STATE", f"candidate trend state not tradable; {state.reason}")
     emit("gate.candidate_state", True, state.reason, "tradable")
-    if (config.require_execution_facts and config.mixed_market_requires_strong_candidate and context.regime.value == "MIXED"
+    if (shared_quality and config.mixed_market_requires_strong_candidate and context.regime.value == "MIXED"
             and not (candidate.score >= config.mixed_market_min_model_score
                      and candidate.expected_r >= config.mixed_market_min_expected_r
                      and quality_score >= config.mixed_market_min_momentum_score)):
@@ -368,7 +432,7 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
               "momentum": config.mixed_market_min_momentum_score})
         return GateResult(False, "MIXED_MARKET", "mixed market requires A-grade candidate")
     emit("gate.mixed_market_quality", True, context.regime.value, "A-grade when MIXED")
-    if candidate.model is ModelCode.FIB_PULLBACK_CONTINUATION and config.require_execution_facts:
+    if candidate.model is ModelCode.FIB_PULLBACK_CONTINUATION and shared_quality:
         quality = fibonacci_quality
         if quality is None:
             emit("gate.fib_quality", False, None, "complete", "evidence unavailable")
@@ -419,6 +483,12 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
         return GateResult(False, "POSITION_CAPACITY", "max active trend positions reached")
     emit("gate.position_capacity", True, facts.active_position_count, facts.max_active_positions)
     fill = order_book.ask if candidate.side is TrendSide.LONG else order_book.bid
+    if config.entry_plan_version == "structure-cost-v1" and entry_limit_price is not None:
+        if (not entry_limit_price.is_finite() or entry_limit_price <= ZERO
+                or contract.price_tick <= ZERO or entry_limit_price % contract.price_tick != ZERO
+                or (entry_limit_price >= order_book.ask if candidate.side is TrendSide.LONG else entry_limit_price <= order_book.bid)):
+            return GateResult(False, "PRICE_PLAN", "invalid passive limit/tick or crossing quote")
+        fill = entry_limit_price
     adverse = fill - candidate.entry_price if candidate.side is TrendSide.LONG else candidate.entry_price - fill
     if adverse > ZERO:
         max_chase = atr * config.max_entry_chase_atr_multiplier if atr > ZERO and config.max_entry_chase_atr_multiplier > ZERO else ZERO
@@ -429,8 +499,20 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
             emit("gate.entry_chase", False, adverse, max_chase)
             return GateResult(False, "CHASE", f"entry price chased signal too far entryPrice={fill} signalClose={candidate.entry_price}")
     emit("gate.entry_chase", True, adverse, max_chase if adverse > ZERO else ZERO)
-    planned_price = price_plan(candidate, atr=atr, execution_price=fill,
-                               fee_rate=facts.actual_taker_fee_rate or config.fee_rate, config=config)
+    try:
+        planned_price = price_plan(candidate, atr=atr, execution_price=fill,
+            fee_rate=facts.actual_taker_fee_rate if facts.actual_taker_fee_rate is not None else config.fee_rate,
+            entry_fee_rate=entry_fee_rate, passive=entry_limit_price is not None, config=config)
+    except ValueError as error:
+        emit("gate.price_geometry", False, None, "valid structure", str(error))
+        return GateResult(False, "PRICE_PLAN", str(error))
+    if config.entry_plan_version == "structure-cost-v1":
+        if planned_price.expected_net_reward <= ZERO:
+            emit("gate.net_reward", False, planned_price.expected_net_reward, ">0")
+            return GateResult(False, "COST", "structural reward cannot cover estimated costs", planned_price)
+        emit("gate.net_reward", True, planned_price.expected_net_reward, ">0")
+        emit("gate.net_r", True, planned_price.expected_net_r, None,
+             "threshold not calibrated; recorded only", status="SKIPPED")
     planned_size = size_plan(candidate, contract, planned_price, config=config)
     if planned_size.contracts <= 0:
         emit("sizing.valid_contracts", False, planned_size.contracts, ">0", planned_size.reason)

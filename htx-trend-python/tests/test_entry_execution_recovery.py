@@ -95,3 +95,30 @@ def test_previous_exit_facts_cannot_be_borrowed_from_different_position_or_reaso
     repo=Repository();repo.exit_state=lambda _: {'complete_exit':{'position_id':1,'side':'LONG','reason':'continuation-protection-confirmed','protection':'100'}}
     row={'id':2,'side':'LONG','exit_reason':'continuation-protection-confirmed'}
     assert _complete_exit_facts(repo,row)=={'side':'LONG','reason':'continuation-protection-confirmed'}
+
+
+def test_limit_env_plan_matches_request_and_state_failure_never_places(monkeypatch):
+    from htx_trend.execution import ExecutionConfig
+    monkeypatch.setattr('htx_trend.admission.runtime_guard', lambda *args: None)
+    monkeypatch.setenv('HTX_TREND_ENTRY_ORDER_TYPE', 'limit')
+    monkeypatch.setenv('HTX_TREND_MAKER_OFFSET_BPS', '0')
+    repo, api = Repository(), Executor()
+    ex = executor(repo, api, config=EntryExecutionConfig.from_env(),
+        execution=ExecutionConfig(entry_plan_version='structure-cost-v1', min_notional=D(1)))
+    args=dict(run_id='r',candidate=candidate(),period='15min',atr=D(2),ema_fast=D(101),ema_slow=D(99),adx=D(30),
+        recent_candles=(Candle(9000,D(99),D(101),D(98),D(100)),),
+        book=OrderBook(((D('99.99'),D(500)),),((D('100.01'),D(500)),)),
+        contract=ContractSpec('BTC-USDT',D('.01'),D('.01'),1),funding=FundingRate('BTC-USDT',D('.0001')),
+        market_context=MarketContext(MarketRegime.BROAD_UP,TrendSide.LONG,D('.8')),now_epoch=10000)
+    result=ex.submit(**args)
+    assert result.accepted
+    request=next(v for k,v in api.calls if k=='place')
+    assert request.type=='limit' and request.time_in_force=='post_only'
+    assert D(request.price)==result.gate.price_plan.desired_entry==D('99.99')
+    state=next(v for k,v in repo.calls if k=='entry_state')
+    assert state['entry_execution']['cancel_at_epoch']-state['entry_execution']['submitted_epoch']==3600
+    assert state['entry_plan_version']=='structure-cost-v1'
+    repo.initialize_entry_state=Mock(side_effect=OSError('state unavailable'))
+    api.calls.clear()
+    result=ex.submit(**args)
+    assert not result.accepted and not any(k=='place' for k,v in api.calls)
