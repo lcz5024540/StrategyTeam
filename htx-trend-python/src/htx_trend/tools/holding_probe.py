@@ -5,7 +5,7 @@ parent exporter validates the output; credentials are used only for the read-onl
 DB connection and never included in the explicitly selected output fields.
 """
 import argparse
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -51,15 +51,23 @@ def main():
         out=dict(instance_key=instance.instance_key,account_id=str(instance.account_id),mode=instance.execution_mode,
             strategy_family=instance.strategy_family,strategy_name=instance.strategy_name,
             source_commit=source,source_package=str(root),implementation_hashes=hashes,
-            observed_at=datetime.now(timezone.utc).isoformat(),holdings=[],profiles={})
+            observed_at=datetime.now(timezone.utc).isoformat(),holdings=[],profiles={},pending_orders=[])
         if instance.execution_mode=='LIVE':
             configs=LiveTrendWorkerConfig.profiles_from_env(strategy_version=instance.strategy_name)
             out['profiles']={c.timeframe_profile.value:dict(entry=asdict(c.java_entry),exit=asdict(ExitConfig.from_env()))
                              for c in configs}
-            for row in repo.managed_positions(instance):
-                identity={k:row[k] for k in ('id','position_key','account_id','strategy_family','strategy_name',
-                                             'contract_code','side','timeframe_profile')}
-                out['holdings'].append(dict(identity=identity,state=repo.exit_state(row['id'])))
+            old_names=json.loads(os.environ.get('HTX_MANAGED_PREVIOUS_STRATEGIES','[]'))
+            if not isinstance(old_names,list) or any(not isinstance(n,str) for n in old_names):
+                raise RuntimeError('invalid old managed strategy registration')
+            for name in dict.fromkeys((instance.strategy_name,*old_names)):
+                owner=replace(instance,strategy_name=name)
+                for row in repo.managed_positions(owner):
+                    identity={k:row[k] for k in ('id','position_key','account_id','strategy_family','strategy_name',
+                                                 'contract_code','side','timeframe_profile')}
+                    out['holdings'].append(dict(identity=identity,state=repo.exit_state(row['id'])))
+                for row in repo.pending_orders(account_id=instance.account_id,strategy_family=instance.strategy_family,strategy_name=name):
+                    out['pending_orders'].append({k:row.get(k) for k in ('position_id','position_key','client_order_id',
+                        'contract_code','leg','status','strategy_name','timeframe_profile')})
         else:
             profile=profile_for_version(instance.strategy_name) or TimeframeProfile.INTRADAY_15M
             config=JavaEntryConfig.from_env() if instance.strategy_name==LEGACY_STRATEGY_VERSION else profile_entry_config(profile)

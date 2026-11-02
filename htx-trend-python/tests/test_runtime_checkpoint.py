@@ -158,3 +158,38 @@ def test_all_profiles_must_recover_before_any_new_risk(tmp_path):
     wrapped=PersistentWorker(worker,state,Event());wrapped.tick()
     assert calls==['manage','manage','blocked','blocked']
     wrapped.stop();state.close()
+
+
+def test_omitted_previous_owner_is_rejected_before_ready(monkeypatch):
+    w,_,_,_=real_worker(monkeypatch)
+    w._owned_strategy_names=('HTX_TREND_V1','OLDER')
+    saved=w.export_runtime()
+    replacement,_,_,_=real_worker(monkeypatch)
+    with pytest.raises(ValueError,match='previous managed strategy'):
+        replacement.restore_runtime(saved)
+    replacement._owned_strategy_names=('HTX_TREND_V1','OLDER')
+    replacement.restore_runtime(saved)
+
+
+def test_restored_candidate_refreshes_execution_book_before_submission(tmp_path,monkeypatch):
+    from htx_trend.market_data import OrderBook
+    w,_,_,_=real_worker(monkeypatch,active=1)
+    state=RuntimeCheckpoint(tmp_path,IDENTITY,initialize=True);wrapped=PersistentWorker(w,state,Event())
+    wrapped.tick();wrapped.stop();state.close()
+    w2,_,market,ex=real_worker(monkeypatch,active=0)
+    fresh=OrderBook(((D(90),D(5)),),((D('90.5'),D(5)),))
+    market.order_book.return_value=fresh
+    state2=RuntimeCheckpoint(tmp_path,IDENTITY);wrapped2=PersistentWorker(w2,state2,Event())
+    wrapped2.tick()
+    assert ex.submit.call_args.kwargs['book']==fresh
+    assert market.contract_spec.call_count==1 and market.funding_rate.call_count==1
+    wrapped2.stop();state2.close()
+
+
+def test_successful_but_stale_anchor_response_is_not_recovery_context(monkeypatch):
+    from htx_trend.market_data import KlineWindow
+    w,_,market,_=real_worker(monkeypatch)
+    market.kline_window.return_value=KlineWindow('BTC-USDT','15min',(),80)
+    market.kline_window.side_effect=None
+    with pytest.raises(ValueError,match='incomplete or stale'):
+        w._market_anchor_regime(117015,strict=True)

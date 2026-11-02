@@ -1,0 +1,11 @@
+{
+  "account_id": "7",
+  "holdings": 1,
+  "instance_key": "htx-trend-live-primary",
+  "issues": [],
+  "mode": "LIVE",
+  "observed_at": "2026-11-02T12:04:07.800115+00:00",
+  "pending_orders": 0,
+  "ready": true,
+  "source_commit": "8e0a0cc40708edaccfdaf5e753866e82e1c9556e"
+}

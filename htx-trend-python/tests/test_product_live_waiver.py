@@ -165,7 +165,8 @@ def test_g2_formal_path_still_required_without_waiver(monkeypatch) -> None:
         runtime_guard(_instance(), _account(), TimeframeProfile.INTRADAY_15M.value)
 
 
-def test_validate_live_approval_waiver_branch(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize('entry_enabled',[True,False])
+def test_validate_live_approval_waiver_branch(tmp_path: Path, monkeypatch,entry_enabled) -> None:
     path = tmp_path / "waiver.json"
     _write_waiver(path, _waiver())
     monkeypatch.setenv("HTX_TREND_PRODUCT_LIVE_WAIVER_PATH", str(path))
@@ -173,4 +174,5 @@ def test_validate_live_approval_waiver_branch(tmp_path: Path, monkeypatch) -> No
     monkeypatch.setenv("HTX_PYTHON_SOURCE_COMMIT", COMMIT)
     monkeypatch.setenv("HTX_TREND_MAX_ACTIVE_POSITIONS", "3")
     admission = SimpleNamespace(artifact_hash=SHA)
-    _validate_live_approval(_instance(), _account(), admission, (_scan_config(),))
+    scan=_scan_config();scan.entry_enabled=entry_enabled
+    _validate_live_approval(_instance(), _account(), admission, (scan,))

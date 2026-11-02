@@ -99,7 +99,12 @@ def _validate_live_approval(instance, account, admission, scan_configs) -> None:
     approvals = [runtime_guard(instance, account, enabled_profile)[1]
                  for enabled_profile in profiles]
     if not profiles:
-        raise ValueError("LIVE requires an enabled profile")
+        # Management-only still needs package/account authority for every managed
+        # profile. Disabling entries never removes authority checks for reductions.
+        profiles=tuple(item.timeframe_profile.value for item in scan_configs)
+        approvals=[runtime_guard(instance,account,profile)[1] for profile in profiles]
+        if not profiles:
+            raise ValueError('LIVE requires a managed profile')
     if instance.strategy_name == LEGACY_STRATEGY_VERSION:
         path = os.environ.get("HTX_TREND_LEGACY_LIVE_WAIVER_PATH", "").strip()
         if not path:
@@ -309,6 +314,12 @@ def main() -> None:
                                          else ContinuationConfig(BASELINE)))
                 profile_workers.append(LiveTrendWorker(instance, repository, market, entry, scan_config,
                     position_manager=OwnedPositionManagers(manager, owners, {c.timeframe_profile for c in scan_configs}), writer_guard=writer_lock.assert_owned, admission=admission))
+            for profile_worker in profile_workers:
+                profile_worker._owned_strategy_names=tuple(owner.strategy_name for owner in owners)
+            if holding_adoption is not None:
+                adopted_owners={h['policy']['owner']['strategy_name'] for h in holding_adoption.to_dict()['holdings']}
+                if adopted_owners-set(owner.strategy_name for owner in owners):
+                    raise SystemExit('adopted old strategy requires an explicit managed alias')
             worker = (profile_workers[0] if len(profile_workers) == 1
                       else MultiTimeframeLiveTrendWorker(tuple(profile_workers)))
         elif family in {"CARRY_SINGLE", "CARRY_CROSS"}:
@@ -320,10 +331,22 @@ def main() -> None:
             state_dir = os.environ.get('HTX_RUNTIME_STATE_DIR', '').strip()
             if not state_dir:
                 raise SystemExit('HTX_RUNTIME_STATE_DIR must name a stable absolute directory outside releases')
+            if Path(state_dir).resolve().is_relative_to(Path(__file__).resolve().parents[2]):
+                raise SystemExit('runtime state directory cannot be inside a release package')
+            if instance.execution_mode in ('LIVE','PAPER') and holding_adoption is not None:
+                header=holding_adoption.to_dict()
+                expected_account='paper:'+instance.instance_key if instance.execution_mode=='PAPER' else str(instance.account_id)
+                if (header['instance_key']!=instance.instance_key or header['account_id']!=expected_account
+                        or header['mode']!=instance.execution_mode):
+                    raise SystemExit('adoption manifest instance/account/mode mismatch')
+            initialize=os.environ.get('HTX_CONTINUITY_INITIALIZE','').lower() == 'true'
+            if initialize and instance.execution_mode in ('LIVE','PAPER') and holding_adoption is None:
+                raise SystemExit('first continuity initialization requires an old-instance adoption manifest, including an empty inventory')
             continuity = RuntimeCheckpoint(Path(state_dir), dict(instance_key=instance.instance_key,
-                account_id=str(getattr(instance,'account_id',None)), mode=instance.execution_mode,
+                account_id=('paper:'+instance.instance_key if instance.execution_mode == 'PAPER'
+                            else str(getattr(instance,'account_id',None))), mode=instance.execution_mode,
                 strategy_family=instance.strategy_family),
-                initialize=os.environ.get('HTX_CONTINUITY_INITIALIZE','').lower() == 'true')
+                initialize=initialize)
             persistent_worker = PersistentWorker(worker, continuity, stop_event)
             worker = persistent_worker
         repository.mark_runtime_started(instance.instance_key)

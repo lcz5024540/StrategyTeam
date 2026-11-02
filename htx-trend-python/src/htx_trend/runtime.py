@@ -158,11 +158,12 @@ class PaperTrendRuntime:
             return ScanOutcome(run_id, output, gates, None, None)
         gate = gates[output.index(selected)]
         assert gate.price_plan is not None and gate.size_plan is not None
+        entry_leverage = execution_facts.leverage if execution_facts is not None else None
         if self._maker_config.enabled:
             return self._submit_maker_entry(
                 run_id=run_id, selected=selected, gate=gate, book=book,
                 entry_window=entry_window, contract=contract, at=at,
-                execution_candle=execution_candle, output=output, gates=gates)
+                execution_candle=execution_candle, output=output, gates=gates, entry_leverage=entry_leverage)
         order_type = "LIMIT" if gate.price_plan.style.value == "PASSIVE_LIMIT" else "MARKET"
         request = PaperOrder(self._account_id, entry_window.contract_code, selected.side.value,
                              "BUY" if selected.side.value == "LONG" else "SELL", gate.size_plan.contracts,
@@ -181,7 +182,7 @@ class PaperTrendRuntime:
                 "structure_key": selected.structure_key, "confirmation_models": [item.value for item in selected.confirmation_models],
                 "initial_stop": str(selected.invalidation_price), "invalidation": str(selected.invalidation_price),
                 "holding_policy": self._holding_policy.to_dict(),
-                "entry_leverage": str(getattr(self, '_paper_worker_config', {}).get('leverage', '10')),
+                "entry_leverage": str(entry_leverage) if entry_leverage is not None else None,
                 "structure_target": str(structural_target(selected) if self._execution_config.entry_plan_version == "structure-cost-v1" else selected.target_low), "contract_size": str(contract.contract_size),
                 "entry_fee": str(entry_price * contract.contract_size * Decimal(gate.size_plan.contracts) * Decimal("0.0004")),
                 "highest": str(entry_price), "lowest": str(entry_price), "protection": None,
@@ -195,7 +196,7 @@ class PaperTrendRuntime:
     def _submit_maker_entry(self, *, run_id: str, selected: ModelCandidate, gate: GateResult, book: TopOfBook,
                             entry_window: KlineWindow, contract: ContractSpec, at: datetime,
                             execution_candle: Candle | None, output: tuple[ModelCandidate, ...],
-                            gates: tuple[GateResult, ...]) -> ScanOutcome:
+                            gates: tuple[GateResult, ...], entry_leverage: Decimal | None = None) -> ScanOutcome:
         """PAPER maker path: LIMIT @ best same-side price, freeze-table lifecycle, no taker fallback."""
         cfg = self._maker_config
         reference = maker_reference_price(selected.side, book)
@@ -258,7 +259,7 @@ class PaperTrendRuntime:
                 "structure_key": selected.structure_key, "confirmation_models": [item.value for item in selected.confirmation_models],
                 "initial_stop": str(selected.invalidation_price), "invalidation": str(selected.invalidation_price),
                 "holding_policy": self._holding_policy.to_dict(),
-                "entry_leverage": str(getattr(self, '_paper_worker_config', {}).get('leverage', '10')),
+                "entry_leverage": str(entry_leverage) if entry_leverage is not None else None,
                 "structure_target": str(structural_target(selected) if self._execution_config.entry_plan_version == "structure-cost-v1" else selected.target_low), "contract_size": str(contract.contract_size),
                 "entry_fee": str(fill_price * contract.contract_size * Decimal(lifecycle.filled_quantity) * Decimal("0.0004")),
                 "highest": str(fill_price), "lowest": str(fill_price), "protection": None,

@@ -137,6 +137,11 @@ def test_worker_main_paper_never_loads_live_or_credentials(monkeypatch, tmp_path
     monkeypatch.setenv('HTX_PAPER_STATE_DIR', str(tmp_path/'state'))
     monkeypatch.setenv('HTX_RUNTIME_STATE_DIR', str(tmp_path/'runtime'))
     monkeypatch.setenv('HTX_CONTINUITY_INITIALIZE', 'true')
+    from htx_trend.holding_adoption import HoldingAdoption
+    adoption=HoldingAdoption.create(instance_key='paper-primary',account_id='paper:paper-primary',mode='PAPER',
+        observed_at='2026-11-02T10:00:00+00:00',source_commit='a'*40,source_package='old',holdings=[])
+    adoption_path=tmp_path/'adoption.json';adoption_path.write_text(json.dumps(adoption.to_dict()))
+    monkeypatch.setenv('HTX_HOLDING_ADOPTION_PATH',str(adoption_path))
     monkeypatch.setenv('HTX_PYTHON_EVIDENCE_DIR', str(tmp_path/'evidence'))
     monkeypatch.setattr(sys, 'argv', ['worker', '--strategy-instance', 'paper-primary', '--once'])
     entry.main()

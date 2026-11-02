@@ -262,6 +262,7 @@ class LiveTrendWorker(StrategyWorker):
         except PackageNotFoundError:
             self._package_version = None
         self._admission = admission
+        self._owned_strategy_names = (instance.strategy_name,)
         self._last_scanned_close_epoch: int | None = None
         self._pending: dict[str, tuple[PolicySelection, _Scan, int]] = {}
         self._last_context = MarketContext.neutral()
@@ -272,14 +273,26 @@ class LiveTrendWorker(StrategyWorker):
 
     def export_runtime(self):
         from .runtime_checkpoint import fingerprint
-        return dict(config=fingerprint((self._config,self._trend_config,self._instance.strategy_name)),
+        return dict(owners=self._owned_strategy_names, config=fingerprint((self._config,self._trend_config,self._instance.strategy_name)),
             last_scanned=self._last_scanned_close_epoch, pending=self._pending, context=self._last_context,
             context_at=getattr(self,'_context_at',None), diagnosis=self._diagnosis_rows,
             failures=getattr(self,'_last_scan_failures',()), coverage=getattr(self,'_last_scan_coverage',0),
             raw=self._raw_candidates, selected=self._policy_selected, regime_source=self._market_regime_source)
 
+    @staticmethod
+    def validate_runtime_state(state):
+        required={'owners','config','last_scanned','pending','context','context_at','diagnosis','failures',
+                  'coverage','raw','selected','regime_source'}
+        if not isinstance(state,dict) or set(state)!=required:
+            raise ValueError('incompatible LIVE runtime checkpoint fields')
+        if not isinstance(state['pending'],dict) or not isinstance(state['context'],MarketContext):
+            raise ValueError('invalid LIVE runtime checkpoint context')
+
     def restore_runtime(self, state):
         from .runtime_checkpoint import fingerprint
+        self.validate_runtime_state(state)
+        if set(state['owners'])-set(self._owned_strategy_names):
+            raise ValueError('previous managed strategy missing; retain its explicit alias until verified empty')
         self._last_scanned_close_epoch=state['last_scanned']
         self._last_context=state['context']
         self._context_at=state['context_at']
@@ -288,6 +301,7 @@ class LiveTrendWorker(StrategyWorker):
             # Configuration changes do not resurrect a completed bar or execute
             # an old candidate under a different policy.
             self._pending={}
+        self._restored_pending=set(self._pending)
         self._diagnosis_rows=state['diagnosis']
         self._last_scan_failures=state['failures']
         self._last_scan_coverage=state['coverage']
@@ -483,6 +497,18 @@ class LiveTrendWorker(StrategyWorker):
                 if getattr(self,'_drain_requested',lambda:False)():
                     execution_block_reason='DRAINING'
                     break
+                if scan.contract in getattr(self,'_restored_pending',set()):
+                    try:
+                        scan=replace(scan,book=self._market.order_book(scan.contract),
+                            contract_spec=self._market.contract_spec(scan.contract),
+                            funding=self._market.funding_rate(scan.contract))
+                        self._restored_pending.discard(scan.contract)
+                    except Exception as error:
+                        self._pending.pop(scan.contract,None)
+                        self._diagnose(scan,stage='EXEC',code='RECOVERY_MARKET_REFRESH_FAILED')
+                        failures.append(scan.contract+':RECOVERY_MARKET_REFRESH_FAILED')
+                        self._checkpoint()
+                        continue
                 # Durable consumed-candidate boundary precedes any order intent.
                 # If submission is interrupted, the DB owns recovery of its
                 # original client id; the scan queue must never submit it again.
@@ -638,6 +664,12 @@ class LiveTrendWorker(StrategyWorker):
                 try:
                     window = self._market.kline_window(contract, period, self._config.market_anchor_kline_size,
                                                         now_epoch=now_epoch)
+                    if strict:
+                        step=period_seconds(period)
+                        if (not window.is_complete or len(window.candles)<self._config.market_anchor_slow_ema_period+2
+                                or window.candles[-1].open_time+step>now_epoch
+                                or now_epoch-window.candles[-1].open_time>2*step):
+                            raise ValueError('recovery anchor incomplete or stale')
                     side = self._market_anchor_period_side(window.candles)
                 except Exception:
                     if strict:
