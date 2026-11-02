@@ -287,6 +287,9 @@ def main() -> None:
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
                 facts=HtxAccountFactsAdapter(private_client, AccountFactConfig(leverage=entry_config.leverage)), executor=live, execution=entry_execution,
                 config=entry_config, admission=admission, evidence_store=evidence_store, holding_policies=holding_policies)
+            from .ownership import owners_from_env, OwnedPositionManagers
+            owners = owners_from_env(instance)
+            entry._managed_instances = owners
             profile_workers = []
             for scan_config in scan_configs:
                 manager = LivePositionManager(repository, instance, account, market, private_client, live,
@@ -296,7 +299,7 @@ def main() -> None:
                     continuation_config=(live_continuation if scan_config.timeframe_profile is TimeframeProfile.INTRADAY_15M
                                          else ContinuationConfig(BASELINE)))
                 profile_workers.append(LiveTrendWorker(instance, repository, market, entry, scan_config,
-                    position_manager=manager, writer_guard=writer_lock.assert_owned, admission=admission))
+                    position_manager=OwnedPositionManagers(manager, owners), writer_guard=writer_lock.assert_owned, admission=admission))
             worker = (profile_workers[0] if len(profile_workers) == 1
                       else MultiTimeframeLiveTrendWorker(tuple(profile_workers)))
         elif family in {"CARRY_SINGLE", "CARRY_CROSS"}:

@@ -70,8 +70,18 @@ class PaperFileLedger:
             self.data = json.loads(path.read_text()) if path.exists() else {
                 'identity': identity, 'positions': {}, 'contexts': {}, 'orders': {},
                 'fills': [], 'decisions': [], 'bars': {}}
-            if self.data['identity'] != identity:
-                raise ValueError('PAPER state identity/config mismatch; use a new instance')
+            stored = self.data['identity']
+            if stored != identity:
+                stable = {k: v for k, v in stored.items() if k != 'config'}
+                requested = {k: v for k, v in identity.items() if k != 'config'}
+                old_config, new_config = stored.get('config', {}), identity.get('config', {})
+                mutable = {'contracts', 'margin_rate', 'max_active_positions', 'leverage'}
+                old_stable = {k: v for k, v in old_config.items() if k not in mutable}
+                new_stable = {k: v for k, v in new_config.items() if k not in mutable}
+                if stable != requested or old_stable != new_stable or not old_config or not new_config:
+                    raise ValueError('PAPER state identity/config mismatch; explicit migration required')
+                # The original identity is retained for ledger/mirror attribution.
+                self.data['entry_config'] = identity['config']
         except BaseException:
             self.lock.close()
             raise
@@ -206,6 +216,15 @@ class PaperTrendWorker:
         self._checkpoint_failed = False
         self._failures = {}
 
+    def _position_leverage(self, position):
+        context = self.ledger.position_context(position.position_id)
+        # Legacy holdings used the persisted original config, never the new env.
+        value = context.get('entry_leverage', self.ledger.data['identity']['config']['leverage'])
+        leverage = Decimal(str(value))
+        if not leverage.is_finite() or leverage <= 0:
+            raise ValueError('holding leverage is unavailable')
+        return leverage
+
     def _prepare_holding_policies(self):
         from .holding_policy import resolve_holding_policy
         from .holding_adoption import adopted_state
@@ -306,7 +325,8 @@ class PaperTrendWorker:
         if not policies_ready:
             skipped.append('HOLDING_POLICY_RECOVERY_REQUIRED')
         log = logging.getLogger(__name__)
-        for contract in self.config.contracts:
+        management_contracts = tuple(p.contract_code for p in self.ledger.active_positions(self.account))
+        for contract in dict.fromkeys((*management_contracts, *self.config.contracts)):
             # Per-contract snapshot lets one bad contract fail without undoing
             # progress made for healthy peers in the same tick.
             contract_before = copy.deepcopy(self.ledger.data)
@@ -366,13 +386,13 @@ class PaperTrendWorker:
                     contract_before = copy.deepcopy(self.ledger.data)
                 positions = self.ledger.active_positions(self.account)
                 used = sum((p.entry_price * p.quantity * Decimal(self.ledger.position_context(p.position_id)['contract_size'])
-                            / self.config.leverage for p in positions), Decimal('0'))
+                            / self._position_leverage(p) for p in positions), Decimal('0'))
                 pnl = sum((Decimal(str(p['realized_pnl'])) for p in self.ledger.data['positions'].values()), Decimal('0'))
                 fees = sum((Decimal(str(f['fee'])) for f in self.ledger.data['fills']), Decimal('0'))
                 exit_fees = sum((Decimal(str(f['fee'])) for f in self.ledger.data['fills']
                     if self.ledger.data['orders'][f['order_id']]['position_id'] is not None), Decimal('0'))
                 equity = self.config.equity + pnl + exit_fees - fees
-                if not had_position:
+                if not had_position and contract in self.config.contracts:
                     if not policies_ready:
                         continue
                     if evidence_failed:

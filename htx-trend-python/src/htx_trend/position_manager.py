@@ -110,7 +110,17 @@ class LivePositionManager:
         if any(o['leg']!='ENTRY' or o['status']=='UNKNOWN' for o in pending):
             raise ValueError('pending close or unknown order requires reconciliation')
         quantity=int(decimal(row,'remaining_contract_volume'))
-        if quantity<=0: return
+        if quantity<=0:
+            state = self.repo.exit_state(row['id'])
+            if state.get('holding_policy') is None and self.holding_adoption is not None:
+                state = self.repo.adopt_holding_policy(row['id'], self.holding_adoption,
+                                                      instance_key=self.instance.instance_key)
+            policy = resolve_holding_policy(state, required=self.require_holding_policy)
+            if policy is not None:
+                policy.require_owner(instance_key=self.instance.instance_key, account_id=self.account.account_id,
+                    strategy_family=self.instance.strategy_family, strategy_name=self.instance.strategy_name,
+                    mode='LIVE', profile=self.timeframe_profile)
+            return
         side=TrendSide(row['side']); code=row['contract_code']
         same,opposite=_position_volumes(self.client.positions(code),side)
         if same!=quantity or opposite>ZERO:

@@ -532,6 +532,19 @@ class HtxTrendEntryExecutor:
 
     def reconcile_pending(self) -> dict[str, str]:
         """Restart-safe reconciliation for persisted intents; no order is re-sent."""
+        owners = getattr(self, '_managed_instances', (self._instance,))
+        if len(owners) > 1:
+            from copy import copy
+            result = {}
+            for owner in owners:
+                owned = copy(self)
+                owned._instance = owner
+                owned._managed_instances = (owner,)
+                for client_id, status in owned.reconcile_pending().items():
+                    if client_id in result:
+                        raise ValueError('duplicate order identity across managed owners')
+                    result[client_id] = status
+            return result
         result: dict[str, str] = {}
         for item in self._repository.pending_orders(account_id=self._account.account_id, strategy_family=self._instance.strategy_family, strategy_name=self._instance.strategy_name):
             client_order_id = str(item["client_order_id"])
