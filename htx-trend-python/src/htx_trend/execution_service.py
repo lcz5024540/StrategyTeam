@@ -502,11 +502,6 @@ class HtxTrendEntryExecutor:
             exchange_client_order_id=_client_id(order), exchange_state=exchange_state,
             filled_contracts=filled, average_price=price, fee=fee,
             fee_currency=order.get("fee_currency"), realized_profit=_decimal(order, "real_profit"))
-        if (self._execution.hard_risk_limits_enabled and leg == "CLOSE" and status == "FILLED"
-                and position_key and hasattr(self._repository, "release_risk")):
-            self._repository.release_risk(_reservation_key(self._instance, position_key),
-                                          "full close confirmed by exchange")
-
         if leg == "ENTRY" and entry_execution and status in ("ACCEPTED", "PARTIALLY_FILLED", "UNKNOWN"):
             if entry_execution.get('client_order_id') != client_order_id:
                 raise ValueError("entry recovery identity mismatch")

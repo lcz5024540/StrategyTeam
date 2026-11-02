@@ -118,7 +118,11 @@ def apply_exchange_order(repo, *, account, instance, position_id: int, leg: str,
             emit_incomplete_close_alert(alert)
         if entered > ZERO:
             repo.mark_entry_cycle_active(position_id=position_id)
+        reservation_key = sha256(f'{instance.instance_key}:{position["position_key"]}'.encode()).hexdigest()[:160]
         if position_status == 'DONE':
+            repo._write("UPDATE strategy_risk_reservation SET status='RELEASED',released_at=CURRENT_TIMESTAMP(3),"
+                        "reason='position full close confirmed' WHERE reservation_key=%s AND status='RESERVED'",
+                        (reservation_key,))
             repo.mark_entry_cycle_terminal(position_id=position_id, reason=position.get('exit_reason') or 'confirmed full close')
             total_fee = entry_fee + close_fee
             repo._write('''UPDATE htx_trend_position SET final_gross_profit=%s,final_total_fee=%s,
@@ -127,7 +131,6 @@ def apply_exchange_order(repo, *, account, instance, position_id: int, leg: str,
                'EXCHANGE_ORDERS' if gross is not None else 'INCOMPLETE',position_id))
         if leg == 'ENTRY' and status in TERMINAL:
             # Scope by the immutable reservation identity, not a mutable label.
-            reservation_key = sha256(f'{instance.instance_key}:{position["position_key"]}'.encode()).hexdigest()[:160]
             if entered == ZERO:
                 repo._write("UPDATE strategy_risk_reservation SET status='RELEASED',released_at=CURRENT_TIMESTAMP(3),"
                             "reason='entry terminal without fill' WHERE reservation_key=%s AND status='RESERVED'",

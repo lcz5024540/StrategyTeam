@@ -194,3 +194,22 @@ def test_late_fill_after_zero_cancel_restores_reservation(store):
     apply(repo, status='PARTIALLY_CANCELLED', filled_contracts=D(4))
     row = db.raw.execute('SELECT status,notional_usdt FROM strategy_risk_reservation').fetchone()
     assert row[0] == 'RESERVED' and D(str(row[1])) == 40
+
+
+def test_filled_close_order_does_not_release_while_entry_is_pending(store):
+    db, repo = store
+    apply(repo)  # 4/10 entered, balance still able to fill
+    db.raw.execute("INSERT INTO htx_trend_order(id,position_id,leg,client_order_id,request_volume,status,filled_contracts,fee) VALUES(2,1,'CLOSE','456',4,'ACCEPTED',0,0)")
+    db.commit()
+    apply(repo, leg='CLOSE', client_order_id='456', status='FILLED', filled_contracts=D(4), average_price=D(110), realized_profit=D('.4'))
+    assert db.raw.execute('SELECT status FROM strategy_risk_reservation').fetchone()[0] == 'RESERVED'
+    apply(repo, status='PARTIALLY_CANCELLED')
+    assert db.raw.execute('SELECT status FROM strategy_risk_reservation').fetchone()[0] == 'RELEASED'
+
+
+def test_final_partial_close_releases_risk_in_same_position_transaction(store):
+    db, repo = prepare_close(store)
+    db.raw.execute("UPDATE htx_trend_order SET leg='PARTIAL_CLOSE' WHERE id=2"); db.commit()
+    apply(repo, leg='PARTIAL_CLOSE', client_order_id='456', status='FILLED', filled_contracts=D(10), average_price=D(110), realized_profit=D(1))
+    assert db.raw.execute('SELECT status FROM htx_trend_position').fetchone()[0] == 'DONE'
+    assert db.raw.execute('SELECT status FROM strategy_risk_reservation').fetchone()[0] == 'RELEASED'

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import time
 from dataclasses import replace
@@ -259,6 +260,14 @@ def main() -> None:
             # position-count boundaries, plus the formal 10% margin cap.
             entry_execution = replace(ExecutionConfig.from_env(), hard_risk_limits_enabled=True)
             entry_config = EntryExecutionConfig.from_env()
+            logging.getLogger(__name__).warning(
+                "LIVE entry configuration instance=%s account_id=%s strategy=%s order_type=%s "
+                "entry_plan=%s continuation=%s maker_timeout=%s wait_bars=%s",
+                instance.instance_key, account.account_id, instance.strategy_name,
+                entry_config.entry_order_type, entry_execution.entry_plan_version,
+                live_continuation.version, entry_config.maker_config.timeout_action.value,
+                entry_config.maker_config.max_wait_bars)
+
             entry = HtxTrendEntryExecutor(repository=repository, instance=instance, account=account,
                 facts=HtxAccountFactsAdapter(private_client, AccountFactConfig(leverage=entry_config.leverage)), executor=live, execution=entry_execution,
                 config=entry_config, admission=admission, evidence_store=evidence_store)

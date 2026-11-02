@@ -427,7 +427,7 @@ class HtxTrendMySqlRepository:
         after an exchange/ledger ambiguity.
         """
         row = self._one("""SELECT COUNT(*) AS count FROM htx_trend_position
-            WHERE source_position_id IS NULL AND account_id=%s
+            WHERE source_position_id IS NULL AND account_id=%s AND account_label <> 'paper'
             AND status IN ('INTENT','ENTRY_SENT','ACTIVE','PARTIAL_CLOSE_SENT','CLOSE_SENT','UNKNOWN')""", (account_id,))
         return int(row["count"]) if row else 0
 

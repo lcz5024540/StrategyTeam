@@ -85,3 +85,13 @@ def test_legacy_formula_remains_available_and_version_is_explicit(monkeypatch):
     assert ExecutionConfig.from_env().entry_plan_version == 'structure-cost-v1'
     monkeypatch.setenv('HTX_TREND_ENTRY_PLAN_VERSION','typo')
     with pytest.raises(ValueError): ExecutionConfig.from_env()
+
+
+def test_worker_paper_plan_fee_is_not_previous_contract_scaled_fee():
+    from htx_trend.paper_worker import WorkerPaperExchange
+    exchange = WorkerPaperExchange(None)
+    exchange.contract_size = D('.001')
+    exchange._fee_rate = D('.0000004')  # submit's per-contract accounting value
+    assert exchange.fee_rate == D('.0004')
+    exchange.contract_size = D(1000)
+    assert exchange.fee_rate == D('.0004')

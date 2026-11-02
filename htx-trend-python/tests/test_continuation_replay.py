@@ -8,6 +8,7 @@ import pytest
 from htx_trend.continuation_replay import replay, validate_tape, segments, events, net_equity, TapeMarket
 from htx_trend.continuation import ContinuationConfig
 from htx_trend.execution import ExecutionConfig
+from htx_trend.timeframes import TimeframeProfile
 from htx_trend.java_entry_contract import JavaEntryConfig
 from htx_trend.maker_execution import MakerExecutionConfig
 from htx_trend.paper_worker import PaperWorkerConfig, PaperFileLedger
@@ -19,7 +20,7 @@ from pathlib import Path
 def sample_tape():
     """Locked historical candles, explicitly synthetic books/funding: not acceptance."""
     assumptions=Assumptions()
-    candles,_,_=load_inputs(Path(__file__).parents[1]/'replay_inputs/20261021')
+    candles,_,_=load_inputs(Path(__file__).parents[1]/'replay_inputs/20261021', TimeframeProfile.INTRADAY_15M)
     market=OfflineMarket(candles,assumptions)
     worker=PaperWorkerConfig()
     execution=replace(ExecutionConfig(),account_equity_usdt=worker.equity,max_total_margin_rate=worker.margin_rate,

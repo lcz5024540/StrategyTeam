@@ -362,7 +362,7 @@ def test_position_count_uses_account_id_not_historical_label():
     conn.executemany('INSERT INTO htx_trend_position VALUES(?,?,?,?)', [
         (7,'primary-live-15m',None,'ACTIVE'), (7,'primary-live-15m',None,'UNKNOWN'),
         (7,'primary-live-15m',None,'DONE'), (7,'mirror-copy',123,'ACTIVE'),
-        (1,'primary',None,'ACTIVE'), (3,'paper',None,'ACTIVE')])
+        (1,'primary',None,'ACTIVE'), (3,'paper',None,'ACTIVE'), (7,'paper',None,'ACTIVE')])
     repo = HtxTrendMySqlRepository(None)
     repo._one = lambda query, params: conn.execute(query.replace('%s','?'),params).fetchone()
     assert repo.active_position_count(account_id=7) == 2

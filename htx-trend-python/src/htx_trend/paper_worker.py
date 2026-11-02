@@ -144,6 +144,12 @@ class WorkerPaperExchange(PaperExchange):
         super().__init__(ledger)
         self.contract_size = Decimal('1')
 
+    @property
+    def fee_rate(self) -> Decimal:
+        # _fee_rate is quantity-scaled by submit; plans need the rate per USDT,
+        # independent of the contract used by the previous simulated order.
+        return Decimal('.0004')
+
     def submit(self, request, candle):
         self._fee_rate = Decimal('.0004') * self.contract_size
         if getattr(self, "book", None) is not None and request.order_type == "MARKET":

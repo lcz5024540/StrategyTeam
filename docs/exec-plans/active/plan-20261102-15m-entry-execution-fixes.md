@@ -43,3 +43,7 @@ LIVE linked-v1仅对最近完整平仓的同方向保护退出执行原价格恢
 PAPER共享已有counter-market/candidate-state/mixed/Fib质量门，传实际EMA/ADX和与LIVE相同的momentum计算；不增新成交量/波动率阈值。净R字段和实际挂单价、仓位成本、风险预算采用同一计划；旧版保持可回放。候选包不证明盈利提升。
 
 输入复算：31份PAPER入场快照共42候选＋5笔LIVE绑定factor/gate，共47。包含未被选择的同快照候选，但不含全部历史拒绝机会；78笔旧PAPER输入缺直接闭包，挂单成交概率和逐时权益未重建，不形成新净R阈值或收益通过结论。材料plan-inventory.json / plan-audit.json，离线命令entry_plan_audit可复算。
+
+## M5验证进展
+2026-11-02：全Python回归708通过（81条SQLite datetime弃用警告），compileall、worker --help、文档链接及draw.io XML通过。结构价格复算47条。修正基线测试的load_inputs必填profile与哈希检查边界；未改4H运行公式。补测同account_id的PAPER排除、上一合约手续费缩放不影响新计划、部分平仓/开仓仍在途不提前释放风险。
+根check-docs-sync本轮实测50项历史H-10，均为已有trace缺提交；与此前48的快照分列，不更改历史或绕过hooks。codegraph工具不可用，仅源码/测试证据；真实交易测试、生产部署、净R标定保持未验收。

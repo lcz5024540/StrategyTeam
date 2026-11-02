@@ -46,19 +46,19 @@ TAR="$("$PY" release/package.py build-live --out-root /tmp/htx-live/build2)"  # 
 
 | # | 能力 | 状态 |
 |---|---|---|
-| 1 | 开单主路径（信号→闸门→下单） | **已对齐逻辑族**；`ProductLiveWaiver` 旁路 G2 PAPER≥14d 后 `LiveTrendWorker`→`runtime.scan`→`HtxTrendEntryExecutor.submit` 可走通 |
+| 1 | 开单主路径（信号→闸门→下单） | **已对齐逻辑族**；`ProductLiveWaiver` 旁路 G2 PAPER≥14d 后 `LiveTrendWorker`→`HtxTrendEntryExecutor.submit` 可走通 |
 | 2 | 出场 / 保护位 confirm-v1 | **保持**（`LivePositionManager` + `HTX_LIVE_CONTINUATION_VERSION=confirm-v1`） |
 | 3 | 杠杆 10 | **装机/交审须设** `HTX_TREND_LEVERAGE=10`（代码默认 5 未改） |
 | 4 | 最大活跃仓 | **故意不对齐**：LIVE 硬限 **3**（`LiveRiskPolicy`）；PAPER 默认可 5 |
-| 5 | linked `reentry_gate` | **confirm-v1 下非生效条件**（仅 `linked-v1` 在 PAPER 有意义）；LIVE 入场未接 reentry |
-| 6 | cooldown B 组 | **故意不对齐**（LIVE 无 env；confirm-v1 默认 cooldown=false 时行为等同） |
+| 5 | linked `reentry_gate` | `linked-v1` 在LIVE与PAPER均启用价格恢复重入门；confirm-v1不含此门 |
+| 6 | cooldown B 组 | LIVE baseline/confirm沿用已接入的完整交易冷却；LIVE linked不叠加固定冷却，PAPER B仍是独立对照 |
 | 7 | ProductLiveWaiver 启 LIVE | **`HTX_TREND_PRODUCT_LIVE_WAIVER_PATH`**；与 G2 三件套双挂 **fail-closed** |
 
 **当前 LIVE 生效范围（exit 侧）：**
 
-- **Exit / 持仓管理**：`HTX_LIVE_CONTINUATION_VERSION=confirm-v1`（或 `linked-v1`）在 `LivePositionManager` 对 **15m `HTX_TREND_15M_V2`** 持仓走 `advance_confirmation` / `decide_continuation`。
-- **Entry / 入场**：**未**接入 PAPER 的 `reentry_gate` / linked 再入逻辑；`HTX_LIVE_CONTINUATION_VERSION=linked-v1` 在 LIVE **不会**改变入场闸门（与 PAPER 全量不对齐）。
-- **Cooldown（B 组）**：仅 PAPER（`HTX_PAPER_COMPLETED_TRADE_COOLDOWN`）；LIVE 无对应 env。
+- **Exit / 持仓管理**：`HTX_LIVE_CONTINUATION_VERSION=confirm-v1`（或 `linked-v1`）在新仓提交前冻结到持仓状态，`LivePositionManager` 对带相应版本的 **15m `HTX_TREND_15M_V2`** 持仓走 `advance_confirmation` / `decide_continuation`。
+- **Entry / 入场**：LIVE linked调用同一价格恢复门，读取账户/合约/profile内最近DONE交易及匹配的complete_exit事实；缺失则拒绝同向保护重入。
+- **Cooldown（B 组）**：PAPER通过独立开关选择；LIVE baseline/confirm保留原冷却接线，linked关闭固定冷却。
 
 ```sh
 export HTX_LIVE_CONTINUATION_VERSION=confirm-v1   # baseline-v4 | confirm-v1 | linked-v1
@@ -144,3 +144,6 @@ PAPER 仍只读 `HTX_PAPER_CONTINUATION_VERSION`；LIVE **不会**单独读取 P
 - Path A stamp（历史 encode；**不可切机**）: `reports/product-stamp-live15m-path-A-encode-20261031.md`
 
 **本 PR = 路径 B encode + 交审材料**；≠ merge ≠装机 ≠启 LIVE ≠ build-live（待产品 Pass）。
+
+## 开仓修复候选
+限价、净R、重入及回滚条件见 [15m开仓修复说明](../../docs/htx-trend-python/entry-fixes-20261102.md)。订单类型必须按实际env确认；未配置仍默认market。`structure-cost-v1`为显式价格/质量合同，未自动部署或标定净R阈值。新仓保存策略归属；旧无标签仓按baseline管理，关闭新入场不改变已开仓归属。

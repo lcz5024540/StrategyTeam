@@ -99,7 +99,7 @@ def test_4h_locked_hashes_reject_modified_input(tmp_path, monkeypatch):
         # Should work with matching hashes
         # (Will fail on other validation but not on hash mismatch)
         try:
-            replay(tmp_path, strategy='HTX_TREND_4H_V2', profile=TimeframeProfile.SWING_4H)
+            scan_replay_module.load_inputs(tmp_path, TimeframeProfile.SWING_4H)
         except ValueError as e:
             # Should not be a hash mismatch error
             assert 'SHA256 mismatch' not in str(e)
@@ -109,7 +109,7 @@ def test_4h_locked_hashes_reject_modified_input(tmp_path, monkeypatch):
         
         # Should reject due to hash mismatch
         with pytest.raises(ValueError, match='SHA256 mismatch'):
-            replay(tmp_path, strategy='HTX_TREND_4H_V2', profile=TimeframeProfile.SWING_4H)
+            scan_replay_module.load_inputs(tmp_path, TimeframeProfile.SWING_4H)
         
         # Forge MANIFEST to match modified content
         forged_hashes = actual_hashes.copy()
@@ -119,7 +119,7 @@ def test_4h_locked_hashes_reject_modified_input(tmp_path, monkeypatch):
         
         # Should still reject (MANIFEST forgery doesn't bypass LOCKED_HASHES)
         with pytest.raises(ValueError, match='SHA256 mismatch'):
-            replay(tmp_path, strategy='HTX_TREND_4H_V2', profile=TimeframeProfile.SWING_4H)
+            scan_replay_module.load_inputs(tmp_path, TimeframeProfile.SWING_4H)
     finally:
         scan_replay_module.LOCKED_HASHES_BY_PROFILE = original_hashes
 
