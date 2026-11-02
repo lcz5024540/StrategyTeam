@@ -33,10 +33,21 @@ from .timeframes import TimeframeProfile
 
 D = Decimal
 CST = timezone(timedelta(hours=8))
-STRATEGY = 'HTX_TREND_15M_V2'
-LOCKED_HASHES = {
-    'klines.csv': 'c9317a85fcca1b9fce1a88409f2356dd668cc22688a3d173797f1712a8aef923',
-    'trades_closed_window.csv': '845643abcd4e8d9e153d823ae956f23f7c213684b906902dbd62641662337359',
+
+LOCKED_HASHES_BY_PROFILE = {
+    'INTRADAY_15M': {
+        'klines.csv': 'c9317a85fcca1b9fce1a88409f2356dd668cc22688a3d173797f1712a8aef923',
+        'trades_closed_window.csv': '845643abcd4e8d9e153d823ae956f23f7c213684b906902dbd62641662337359',
+    },
+    'SWING_4H': {
+        'klines.csv': '61e04121a444be27d37774ce0d22d96358ebf065f9c00896dce12c12f085f059',
+        'trades_closed_window.csv': '307549210aad2ea6e9a1ffae3535f2e2df983e651ecd56e86ed2bb3e006c5053',
+    },
+}
+
+VALID_STRATEGY_PROFILE_PAIRS = {
+    ('HTX_TREND_15M_V2', 'INTRADAY_15M'),
+    ('HTX_TREND_4H_V2', 'SWING_4H'),
 }
 BOOK_COLUMNS = ('ts_ms', 'ts_cst', 'contract', 'bid', 'ask', 'mid', 'last', 'source')
 BOOK_KINDS = frozenset({'book', 'tick', 'mid'})
@@ -71,9 +82,9 @@ class Assumptions:
     start_cst: str = '2026-10-19 21:35:46'
     end_cst: str = '2026-10-21 10:30:59'
 
-    def validate(self):
-        if not 0 <= self.scan_delay_seconds < 900:
-            raise ValueError('scan delay must be in [0,900)')
+    def validate(self, entry_period_seconds: int):
+        if not 0 <= self.scan_delay_seconds < entry_period_seconds:
+            raise ValueError(f'scan delay must be in [0,{entry_period_seconds})')
         for name in ('spread_rate', 'funding_rate', 'btc_contract_size', 'eth_contract_size',
                      'price_tick', 'equity', 'leverage', 'margin_rate'):
             if not getattr(self, name).is_finite():
@@ -120,8 +131,9 @@ class MemoryLedger(PaperFileLedger):
 
 
 class OfflineMarket:
-    def __init__(self, candles, assumptions, book: OptionalBook | None = None):
+    def __init__(self, candles, assumptions, book: OptionalBook | None = None, entry_period: str = '15min'):
         self.candles, self.assumptions, self.book = candles, assumptions, book
+        self.entry_period = entry_period
         self.now = 0
 
     def kline_window(self, contract, period, size, *, now_epoch):
@@ -134,10 +146,11 @@ class OfflineMarket:
         # 有夹具就只用锁定报价。无夹具才用形成中 bar 的 open，禁止用 high/low/close。
         if self.book is not None:
             return self._locked_book(contract)
-        forming = next((c for c in self.candles[(contract, '15min')]
-                        if c.open_time <= self.now < c.open_time + 900), None)
+        entry_seconds = period_seconds(self.entry_period)
+        forming = next((c for c in self.candles[(contract, self.entry_period)]
+                        if c.open_time <= self.now < c.open_time + entry_seconds), None)
         mid = (forming.open if forming is not None else
-               self.kline_window(contract, '15min', 1, now_epoch=self.now).candles[-1].close)
+               self.kline_window(contract, self.entry_period, 1, now_epoch=self.now).candles[-1].close)
         half = mid * self.assumptions.spread_rate / 2
         return TopOfBook(mid - half, mid + half)
 
@@ -162,11 +175,16 @@ class OfflineMarket:
         return ContractSpec(contract, size, self.assumptions.price_tick, 1)
 
 
-def load_inputs(inputs: Path):
+def load_inputs(inputs: Path, profile: TimeframeProfile):
     manifest = json.loads((inputs / 'MANIFEST.json').read_text())
-    hashes = {name: hashlib.sha256((inputs / name).read_bytes()).hexdigest() for name in LOCKED_HASHES}
-    if hashes != LOCKED_HASHES or manifest.get('sha256') != LOCKED_HASHES:
-        raise ValueError('input SHA256 mismatch: refusing replay (including rewritten manifest)')
+    locked_hashes = LOCKED_HASHES_BY_PROFILE.get(profile.value, {})
+    if not locked_hashes:
+        raise ValueError(
+            f'LOCKED_HASHES_BY_PROFILE[{profile.value!r}] is empty: refusing replay. '
+            f'Fixture file hashes must be added to the hardcoded LOCKED_HASHES_BY_PROFILE table before running {profile.value} replay.')
+    hashes = {name: hashlib.sha256((inputs / name).read_bytes()).hexdigest() for name in locked_hashes}
+    if hashes != locked_hashes or manifest.get('sha256') != locked_hashes:
+        raise ValueError(f'input SHA256 mismatch for {profile.value}: refusing replay (including rewritten manifest)')
     candles = {}
     with (inputs / 'klines.csv').open(newline='') as stream:
         for row in csv.DictReader(stream):
@@ -299,10 +317,10 @@ def load_optional_book(inputs: Path):
     return OptionalBook(file_name, digest, kind, provenance, quotes)
 
 
-def _fixture_notes(book: OptionalBook | None, full_matches: int, live_count: int):
+def _fixture_notes(book: OptionalBook | None, full_matches: int, live_count: int, entry_period: str):
     if book is None:
         gap = [
-            '夹具状态：MANIFEST.optional_book 为空，未加载 book/tick/mid；不虚构盘口。管理时刻继续用形成中 15m bar 的 open 作 mid。',
+            f'夹具状态：MANIFEST.optional_book 为空，未加载 book/tick/mid；不虚构盘口。管理时刻继续用形成中 {entry_period} bar 的 open 作 mid。',
             'schema：CSV 列 ts_ms,ts_cst,contract,bid,ask,mid,last,source。MANIFEST.optional_book 声明 file、sha256、kind(book|tick|mid)、provenance(synthetic|evidence)。'
             'kind=book 必须 bid 与 ask，mid 若填写则必须等于 (bid+ask)/2；kind=mid 必须 mid，bid/ask 可同时省略（此时 bid=ask=mid）；'
             'kind=tick 可用 last，或 bid 与 ask。取不晚于管理时刻所在秒的最近一条；未来报价不用；该合约尚无报价时拒绝，不回退 forming-open。',
@@ -327,7 +345,7 @@ def _fixture_notes(book: OptionalBook | None, full_matches: int, live_count: int
     return status, gap, bound
 
 
-def compare(live, trades, bars, *, coverage_end=None):
+def compare(live, trades, bars, *, coverage_end=None, entry_period_seconds=900):
     """One row per position; match entry bucket, then each ordered exit leg."""
     if len({r['position_key'] for r in live}) != len(live):
         raise ValueError('duplicate reference position: store exit legs within one position row')
@@ -370,7 +388,7 @@ def compare(live, trades, bars, *, coverage_end=None):
             matched = expected is not None and actual is not None and (
                 int(expected['quantity']) == int(actual['quantity']) and
                 expected['reason'] == actual['reason'] and
-                epoch(expected['at_cst']) // 900 == epoch(actual['at_cst']) // 900)
+                epoch(expected['at_cst']) // entry_period_seconds == epoch(actual['at_cst']) // entry_period_seconds)
             leg_alignment.append({'live': expected, 'replay': actual, 'match': matched})
         outside = bool(reference_legs and replay is not None and not replay_legs
                        and coverage_end is not None
@@ -396,17 +414,24 @@ def compare(live, trades, bars, *, coverage_end=None):
     return alignment, extras, missing
 
 
-def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
-    assumptions.validate()
-    candles, live, hashes = load_inputs(inputs)
+def replay(inputs: Path, assumptions: Assumptions = Assumptions(), 
+           strategy: str = 'HTX_TREND_15M_V2', profile: TimeframeProfile = TimeframeProfile.INTRADAY_15M):
+    if (strategy, profile.value) not in VALID_STRATEGY_PROFILE_PAIRS:
+        valid = ', '.join(f'({s}, {p})' for s, p in sorted(VALID_STRATEGY_PROFILE_PAIRS))
+        raise ValueError(f'Invalid (strategy, profile) combination: ({strategy!r}, {profile.value!r}). Valid pairs: {valid}')
+    entry_period = profile.contract.entry_period
+    trend_period = profile.contract.trend_period
+    entry_period_seconds = period_seconds(entry_period)
+    assumptions.validate(entry_period_seconds)
+    candles, live, hashes = load_inputs(inputs, profile)
     book = load_optional_book(inputs)
     ledger = MemoryLedger()
-    market = OfflineMarket(candles, assumptions, book)
+    market = OfflineMarket(candles, assumptions, book, entry_period)
     # Construct only inert dependencies. Production __init__ opens a persistent ledger.
     worker = PaperTrendWorker.__new__(PaperTrendWorker)
     worker.config = PaperWorkerConfig(equity=assumptions.equity, margin_rate=assumptions.margin_rate,
         max_active_positions=assumptions.max_active_positions, leverage=assumptions.leverage)
-    worker.account, worker.profile, worker.entry_config = 'offline', TimeframeProfile.INTRADAY_15M, JavaEntryConfig()
+    worker.account, worker.profile, worker.entry_config = 'offline', profile, JavaEntryConfig()
     worker.ledger, worker.market, worker.stopped = ledger, market, False
     worker._checkpoint_failed = False
     worker._failures = {}
@@ -462,11 +487,12 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
             patch.object(runtime_module, 'evaluate_gate', observed_gate), \
             patch.object(runtime_module, 'decide', observed_exit):
         worker.runtime = ObservedRuntime(ledger, worker.exchange, account_id=worker.account,
-            entry_config=worker.entry_config, execution_config=execution_config, strategy_version=STRATEGY)
-        engine = HtxStrategyDecisionEngine(strategy_version=STRATEGY, config=worker.entry_config)
+            entry_config=worker.entry_config, execution_config=execution_config, strategy_version=strategy)
+        engine = HtxStrategyDecisionEngine(strategy_version=strategy, config=worker.entry_config)
         # Drive the clock, not the rows: gaps must fail worker completeness checks.
-        first = ((epoch(assumptions.start_cst) - assumptions.scan_delay_seconds + 899) // 900) * 900
-        times = range(first, epoch(assumptions.end_cst) - assumptions.scan_delay_seconds + 1, 900)
+        alignment = entry_period_seconds - 1
+        first = ((epoch(assumptions.start_cst) - assumptions.scan_delay_seconds + alignment) // entry_period_seconds) * entry_period_seconds
+        times = range(first, epoch(assumptions.end_cst) - assumptions.scan_delay_seconds + 1, entry_period_seconds)
         for bucket in times:
             market.now = bucket + assumptions.scan_delay_seconds
             prior_bars = dict(ledger.data['bars'])
@@ -483,16 +509,16 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
             for item, details in zip((d for d in decisions if d['kind'] == 'EXIT_DECISION'), exit_calls, strict=True):
                 item['payload']['replay_observation'] = details
             for contract in worker.config.contracts:
-                window = market.kline_window(contract, '15min', 160, now_epoch=market.now)
-                diagnostic = engine.decide(contract_code=contract, period='15min', candles=window.candles, surface='PAPER')
+                window = market.kline_window(contract, entry_period, 160, now_epoch=market.now)
+                diagnostic = engine.decide(contract_code=contract, period=entry_period, candles=window.candles, surface='PAPER')
                 # Candidate trace ordered exactly as runtime evaluates its independent models.
                 relevant = [g for g in gate_calls if g['contract'] == contract]
                 scan = next((d['payload'] for d in decisions if d['kind'] == 'ENTRY_SCAN'
                              and d['payload']['decision_hash'] == diagnostic.decision_hash), None)
                 bars.append({'contract': contract, 'execution_bucket': bucket, 'at_cst': cst(market.now),
-                    'signal_bar_open_cst': cst(window.candles[-1].open_time), 'signal_age_seconds': market.now-window.candles[-1].open_time-900,
+                    'signal_bar_open_cst': cst(window.candles[-1].open_time), 'signal_age_seconds': market.now-window.candles[-1].open_time-entry_period_seconds,
                     'entry_window_hash': window.window_hash,
-                    'trend_window_hash': market.kline_window(contract, '60min', 160, now_epoch=market.now).window_hash,
+                    'trend_window_hash': market.kline_window(contract, trend_period, 160, now_epoch=market.now).window_hash,
                     'worker_gate': ('ALREADY_SCANNED_BAR' if prior_bars.get(contract) == window.candles[-1].open_time
                                     else 'HAD_POSITION_AT_TICK_START' if contract in active_before else 'SCAN'),
                     'candidate_diagnostics_only': scan is None,
@@ -533,16 +559,16 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
                           for (symbol, period), series in candles.items() if symbol == contract))
         for contract in {row['contract'] for row in live}
     }
-    aligned, extras, missing = compare(live, trades, bars, coverage_end=coverage_end)
+    aligned, extras, missing = compare(live, trades, bars, coverage_end=coverage_end, entry_period_seconds=entry_period_seconds)
     full_matches = sum(r['match'] for r in aligned)
-    book_fixture, fixture_gap, upper_bound = _fixture_notes(book, full_matches, len(live))
+    book_fixture, fixture_gap, upper_bound = _fixture_notes(book, full_matches, len(live), entry_period)
     if book is None:
         boundaries = [
             '默认假设重跑观察：BTC 36733c1f（02:15）：缺真实入场及管理时刻 bid/ask/mid、tick路径与实际评估时间。forming-open入场约82610，现网82633.5，MFE/武装时序级联偏移（重放04:45 ARM，05:00已非newly_armed）。不可凭OHLC唯一恢复；保留A，不回滚open-mid、不注入参考退出。',
             '默认假设重跑观察：ETH f56d3d17：缺真实管理盘口mid/tick路径及实际评估时间。参考19:30减5张trend-weakened-partial、19:45减2张trend-weakened；重放19:30减3张profit-at-risk、19:45减4张trend-weakened。原因与数量路径不可由固定K线唯一确定。',
-            'ETH 93cef710（23:00）：缺覆盖13:45退出的15m/60m行情；详见窗外。盘口、funding、contract_spec假设继续保留。',
+            f'ETH 93cef710（23:00）：缺覆盖13:45退出的{entry_period}/{trend_period}行情；详见窗外。盘口、funding、contract_spec假设继续保留。',
         ]
-        book_limit = '盘口取证不可得 → 假设：scan_delay 时刻用形成中 15m bar 的 open 作 mid（优于上一根 close）；无形成中 bar 时回退上一根 close；spread=0（默认，仍支持配置 spread）；没有真实盘口深度、滑点或tick路径。optional_book 未声明，不加载、不虚构。'
+        book_limit = f'盘口取证不可得 → 假设：scan_delay 时刻用形成中 {entry_period} bar 的 open 作 mid（优于上一根 close）；无形成中 bar 时回退上一根 close；spread=0（默认，仍支持配置 spread）；没有真实盘口深度、滑点或tick路径。optional_book 未声明，不加载、不虚构。'
     else:
         boundaries = [f'本次使用夹具 {book.file}（{book.provenance}），管理盘口不再使用 forming-open。']
         book_limit = (f'管理盘口来自哈希锁定夹具 {book.file}（kind={book.kind}, provenance={book.provenance}）。'
@@ -550,7 +576,7 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
     source_root = Path(__file__).parent
     report = {
         'header': {'schema_version': 3, 'package_version': tomllib.loads((source_root.parents[1] / 'pyproject.toml').read_text())['project']['version'], 'reported_live_version': '0.1.6-paper-db-c79afbaa',
-            'strategy': STRATEGY, 'input_sha256': hashes,
+            'strategy': strategy, 'profile': profile.value, 'entry_period': entry_period, 'trend_period': trend_period, 'input_sha256': hashes,
             'source_sha256': {str(p.relative_to(source_root)): hashlib.sha256(p.read_bytes()).hexdigest()
                               for p in sorted(source_root.rglob('*.py'))},
             'entry_config': asdict(worker.entry_config), 'execution_config': asdict(execution_config),
@@ -564,13 +590,13 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
                 book_limit,
                 '取证不可得 → 假设：funding / contract_spec：funding默认0；contract_size BTC=.001/ETH=.01，tick=.01，合约可交易。',
                 '假设/缺数据：初始空仓、无历史结构键/订单/手续费；300U、10倍、保证金上限10%、5仓，后续余额/风险按原worker动态计算。',
-                '假设/缺数据：固定收盘后30秒，每15m调用一次；10秒收盘宽限；窗口160根，60m仅完整性检查，scan不使用其趋势。',
+                f'假设/缺数据：固定收盘后30秒，每{entry_period}调用一次；10秒收盘宽限；窗口160根，{trend_period}仅完整性检查，scan不使用其趋势。',
                 '假设/缺数据：使用当前源码与默认配置；未证明等同现网构建及环境覆盖。源码哈希用于复跑。',
                 '假设/缺数据：book深度与turnover缺失；require_execution_facts=False，深度、独立可用保证金、FIB质量、逆市/混合市场等受该开关控制的门未启用；min_average_turnover=0、fee_protection_enabled=False。硬保证金上限与止损风险门仍执行。',
                 '原worker语义：prior_trade=None（cooldown无历史输入），市场context中性，退出opposition=0、flat_streak/breach_bars默认0。',
                 '原worker语义：同币tick开始有仓则仅管理，即使本tick平仓也不再开；所有历史结构键持续去重。',
                 '参考集：窗口内开仓且截至导出已平仓12个position；全部14腿来自预生成state close orders + EXIT_DECISION，BTC归因已交叉验证。ETH 23:00平仓晚于固定K线覆盖，不外推行情。',
-                'CSV signal_bar_cst按成交桶解释；真实候选bar开盘为该值减15m；同时输出两种时间。',
+                f'CSV signal_bar_cst按成交桶解释；真实候选bar开盘为该值减{entry_period}；同时输出两种时间。',
                 '退出使用原runtime.manage/exits.decide，包括部分平仓；数据末尾未平仓不强平。',
                 '门输出为原函数实际短路路径；失败之后未到达的门不能记为通过；没有候选或已有仓时不执行候选门。',
                 '只读固定CSV、MANIFEST和本包源码；内存ledger，无HTTP/数据库/密钥读取，不初始化生产worker。',
@@ -587,9 +613,11 @@ def replay(inputs: Path, assumptions: Assumptions = Assumptions()):
 
 def markdown(report):
     h, s = report['header'], report['summary']
-    lines = ['# 完整 runtime.scan 离线重放', '', f"包版本 `{h['package_version']}`；配置 `{h['strategy']}`；现网版本（输入描述）`{h['reported_live_version']}`。", '',
+    profile_info = f"；profile `{h['profile']}`（entry={h['entry_period']}, trend={h['trend_period']}）" if 'profile' in h else ''
+    entry_period_label = h.get('entry_period', '15min')
+    lines = ['# 完整 runtime.scan 离线重放', '', f"包版本 `{h['package_version']}`；配置 `{h['strategy']}`{profile_info}；现网版本（输入描述）`{h['reported_live_version']}`。", '',
              f"完整对齐 **{s['full_matches']}/{s['live_count']}**；方向/模型入场对齐 **{s['entry_matches']}/{s['live_count']}**；多发 **{s['extra_count']}**；漏发 **{s['missing_count']}**。", '',
-             '完整对齐=position入场与每腿数量、15m退出桶、原因均相同；逐腿参考缺失不能记为完整通过。入场按12个position统计。', '',
+             f'完整对齐=position入场与每腿数量、{entry_period_label}退出桶、原因均相同；逐腿参考缺失不能记为完整通过。入场按12个position统计。', '',
              '## 输入哈希', '']
     lines += [f'- `{k}`: `{v}`' for k, v in h['input_sha256'].items()]
     if h['book_fixture']['loaded']:
@@ -641,12 +669,22 @@ def main():
     parser.add_argument('--inputs', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--assumptions', type=Path, help='JSON assumption overrides; strategy thresholds are not configurable here')
+    parser.add_argument('--strategy', type=str, default='HTX_TREND_15M_V2', 
+                        help='Strategy version (default: HTX_TREND_15M_V2)')
+    parser.add_argument('--profile', type=str, default='INTRADAY_15M',
+                        help='Timeframe profile: INTRADAY_15M or SWING_4H (default: INTRADAY_15M)')
     args = parser.parse_args()
+    
+    try:
+        profile = TimeframeProfile[args.profile]
+    except KeyError:
+        parser.error(f'Invalid profile: {args.profile}. Must be one of: {", ".join(p.name for p in TimeframeProfile)}')
+    
     overrides = json.loads(args.assumptions.read_text()) if args.assumptions else {}
     for key, default in asdict(Assumptions()).items():
         if key in overrides and isinstance(default, Decimal):
             overrides[key] = D(str(overrides[key]))
-    report = replay(args.inputs, Assumptions(**overrides))
+    report = replay(args.inputs, Assumptions(**overrides), strategy=args.strategy, profile=profile)
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / 'report.json').write_text(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + '\n')
     (args.out / 'report.md').write_text(markdown(report))
