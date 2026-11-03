@@ -1,0 +1,28 @@
+{
+  "bucket": "rayquant-strategy-1253235498",
+  "region": "na-siliconvalley",
+  "prefix": "coinstrategy/archive/v1/",
+  "sources": {
+    "paper-15m": {
+      "kind": "segments",
+      "root": "/opt/coinstrategy/htx-trend-paper-primary/evidence"
+    },
+    "paper-4h": {
+      "kind": "segments",
+      "root": "/opt/coinstrategy/htx-trend-paper-4h/evidence"
+    },
+    "shared-klines": {
+      "kind": "segments",
+      "root": "/opt/coinstrategy/htx-trend-py-state/evidence"
+    },
+    "capture-long": {
+      "kind": "segments",
+      "root": "/home/ubuntu/coinstrategy-research/long-20261103-aaf3352c/capture/segments"
+    }
+  },
+  "schedule": {
+    "enabled": false,
+    "interval_seconds": 21600,
+    "audit_seconds": 604800
+  }
+}

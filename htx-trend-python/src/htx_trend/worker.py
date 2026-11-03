@@ -216,8 +216,12 @@ def main() -> None:
                 paper_format = "compact-v2"
             if paper_format not in {"legacy-v1", "compact-v2"}:
                 raise SystemExit("unknown PAPER evidence format")
+            segmented = os.environ.get('HTX_PAPER_EVIDENCE_SEGMENTED', '').lower() == 'true'
+            if segmented and (instance.execution_mode != ExecutionMode.PAPER or instance.strategy_name == RT_VERSION):
+                raise SystemExit('CAS segmentation currently supports classic 15m/4H PAPER; realtime/LIVE CAS remains protected')
             evidence_store = FileEvidenceStore(Path(os.environ.get(
-                "HTX_PYTHON_EVIDENCE_DIR", "./research-data/evidence")), compress=paper_format == "compact-v2")
+                "HTX_PYTHON_EVIDENCE_DIR", "./research-data/evidence")), compress=paper_format == "compact-v2",
+                segmented=segmented, segment_contract="paper" if segmented else None)
             if paper_format == "compact-v2":
                 from .research.compact import CompactEvidence
                 compact = CompactEvidence(evidence_store)

@@ -1,5 +1,6 @@
 """Independent, resumable HTX public collection; no account or order access."""
 from __future__ import annotations
+from ..sealing.consumers import collector_tick
 
 from datetime import datetime, timezone
 from typing import Callable
@@ -82,6 +83,8 @@ class ContinuousCollector:
 
     def collect(self, symbols: tuple[str, ...], *, start: int, end: int,
                 periods: tuple[str, ...] = PERIODS) -> str:
+        if getattr(self.store, 'segments', None):
+            raise ValueError('historical research must use a restored generation dataset, not the active segmented collector')
         refs, failures = [], []
         if not symbols or len(set(symbols)) != len(symbols) or not periods or len(set(periods)) != len(periods):
             raise ValueError('unique nonempty universe and periods required')
@@ -116,6 +119,7 @@ class ContinuousCollector:
             'pages': refs, 'version_selection': 'FIRST_OBSERVED_CLOSED',
             'created_at': datetime.now(timezone.utc)}, refs=tuple(refs))
 
+    @collector_tick
     def tick(self, symbols: tuple[str, ...], *, periods: tuple[str, ...] = PERIODS) -> dict:
         """Overlap last two closed bars to preserve exchange revisions, resume gaps."""
         failures, refs = [], []

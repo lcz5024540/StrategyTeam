@@ -5,6 +5,8 @@ committed. Remote delivery is retryable and never the durability boundary.
 """
 from __future__ import annotations
 
+from contextlib import nullcontext
+from functools import wraps
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -61,9 +63,33 @@ class EvidenceStore(Protocol):
     def get(self, key: str) -> dict: ...
 
 
+
+def segment_lease(method):
+    @wraps(method)
+    def guarded(self, *args, **kwargs):
+        control = getattr(self, 'segments', None)
+        with control.lease() if control else nullcontext():
+            writing = method.__name__ == 'put' or (method.__name__ == 'checkpoint' and (len(args) > 1 and args[1] is not None or kwargs.get('value') is not None))
+            with control.mutation() if control and writing else nullcontext():
+                return method(self, *args, **kwargs)
+    return guarded
+
+
 class FileEvidenceStore:
-    def __init__(self, root: Path, *, compress: bool = False):
+    def __init__(self, root: Path, *, compress: bool = False, segmented: bool = False, segment_contract=None):
         self.root = Path(root)
+        self.segments = None
+        marker = self.root / '.sealing/config.json'
+        if marker.exists() and not segmented:
+            raise IntegrityError('segmented source requires segment-aware configuration; restore old layout before rollback')
+        if segmented:
+            from ..sealing.control import Control, initialize
+            if segment_contract not in {'paper', 'collector'}:
+                raise IntegrityError('explicit paper/collector segment contract required')
+            if not marker.exists():
+                initialize(self.root, kind='cas', contract=segment_contract)
+            self.segments = Control(self.root, contract=segment_contract)
+            self.segments.begin('paper' if segment_contract == 'paper' else 'continuous-collector')
         self.compress = compress
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
@@ -82,6 +108,8 @@ class FileEvidenceStore:
     def close(self):
         with self._lock:
             self.db.close()
+            if self.segments:
+                self.segments.close()
 
     def __enter__(self):
         return self
@@ -94,6 +122,7 @@ class FileEvidenceStore:
             raise IntegrityError('invalid evidence digest')
         return self.root / 'objects' / key[:2] / (key + '.json')
 
+    @segment_lease
     def put(self, kind: str, payload: Any, *, refs: tuple[str, ...] = ()) -> str:
         if not kind:
             raise ValueError('evidence kind required')
@@ -132,11 +161,17 @@ class FileEvidenceStore:
                 self.db.execute('INSERT OR IGNORE INTO evidence VALUES (?,?,?)',
                                 (key, kind, datetime.now(timezone.utc).isoformat()))
                 self.db.execute('INSERT OR IGNORE INTO outbox(hash) VALUES (?)', (key,))
+            if self.segments:
+                for member in (plain, packed):
+                    if member.exists():
+                        self.segments.track(key, member.relative_to(self.root).as_posix(), value['refs'], kind)
             return key
 
+    @segment_lease
     def get(self, key: str) -> dict:
         return read_object(self.root, key)
 
+    @segment_lease
     def verify(self, key: str) -> dict:
         seen = set()
         def visit(current):
@@ -149,20 +184,25 @@ class FileEvidenceStore:
         visit(key)
         return {'root': key, 'objects': len(seen), 'integrity': 'VERIFIED'}
 
+    @segment_lease
     def keys(self, kind: str) -> tuple[str, ...]:
         with self._lock:
             return tuple(row[0] for row in self.db.execute(
                 'SELECT hash FROM evidence WHERE kind=? ORDER BY recorded_at, hash', (kind,)))
 
+    @segment_lease
     def checkpoint(self, name: str, value: Any = None) -> Any:
         with self._lock:
             if value is not None:
                 with self.db:
                     self.db.execute('INSERT INTO checkpoints VALUES (?,?) ON CONFLICT(name) '
                                     'DO UPDATE SET value=excluded.value', (name, canonical(value).decode()))
+                if self.segments:
+                    self.segments.checkpoint_changed()
             row = self.db.execute('SELECT value FROM checkpoints WHERE name=?', (name,)).fetchone()
             return json.loads(row[0]) if row else None
 
+    @segment_lease
     def deliver(self, sink, *, limit: int = 100) -> dict:
         """Sink must be idempotent by digest; acknowledgement follows remote commit."""
         with self._lock:
@@ -183,6 +223,12 @@ class FileEvidenceStore:
 
 
 def read_object(root: Path, key: str) -> dict:
+    from ..sealing.control import lease
+    with lease(root) if (Path(root) / '.sealing/config.json').exists() else nullcontext():
+        return _read_object(root, key)
+
+
+def _read_object(root: Path, key: str) -> dict:
     """Read without opening SQLite or creating directories (also used by audit)."""
     if not re.fullmatch('[0-9a-f]{64}', key):
         raise IntegrityError('invalid evidence digest')
@@ -208,5 +254,8 @@ def read_object(root: Path, key: str) -> dict:
         except (OSError, EOFError, ValueError) as error:
             raise IntegrityError(f'invalid evidence {key}: {type(error).__name__}') from error
     if found is None:
+        if (Path(root) / '.sealing/config.json').exists():
+            from ..sealing.control import NeedsRestore
+            raise NeedsRestore(f'evidence {key} is not local; use the sealed generation COS manifest to restore')
         raise IntegrityError(f'missing evidence {key}')
     return found

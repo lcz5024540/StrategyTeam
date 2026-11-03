@@ -1,6 +1,7 @@
 """Single-writer realtime scheduler. Public structure I/O runs off the execution loop."""
 
 from __future__ import annotations
+from ..sealing.consumers import realtime_capture_tick
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from decimal import Decimal as D
@@ -351,6 +352,7 @@ class RealtimeWorker:
         )
         return gate, intent, contract, facts, check_ms
 
+    @realtime_capture_tick
     def tick(self):
         if self.stopped:
             return WorkerHealth("STOPPED", "realtime worker stopped")

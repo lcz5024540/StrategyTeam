@@ -102,7 +102,7 @@ def atomic_json(path, value):
     os.replace(temporary, path)
 
 
-def read_reference(root, ref):
+def _read_reference(root, ref):
     """Read one observation by immutable segment identity, without per-tick CAS files."""
     sha = ref.get("segment")
     index = ref.get("index")
@@ -127,23 +127,48 @@ def read_reference(root, ref):
     return event
 
 
+def read_reference(root, ref):
+    from contextlib import nullcontext
+    from ..sealing.control import lease, safe_file
+    segments = Path(root) / 'segments'
+    with lease(segments) if (segments / '.sealing/config.json').exists() else nullcontext():
+        if (segments / '.sealing/config.json').exists():
+            sha = ref.get('segment')
+            if not isinstance(sha, str) or not re.fullmatch('[0-9a-f]{64}', sha):
+                raise ValueError('invalid capture reference')
+            safe_file(segments, sha + '.json.gz')
+        return _read_reference(root, ref)
+
+
 def iter_records(root):
-    """Streaming audit/export; never loads a 2GiB capture into memory."""
-    root = Path(root) / "segments"
-    with (root / "segments.jsonl").open() as manifest:
-        for line in manifest:
-            ref = json.loads(line)
-            value = json.loads(
-                gzip.decompress((root / (ref["hash"] + ".json.gz")).read_bytes())
-            )
-            events = segment_events(value)
-            if digest(value) != ref["hash"] or len(events) != ref["count"]:
-                raise ValueError("capture segment integrity failure")
-            for index, event in enumerate(events):
-                yield (
-                    event,
-                    dict(segment=ref["hash"], index=index, event_hash=digest(event)),
-                )
+    """Stream a complete audit; cold history must be restored, never silently skipped."""
+    from contextlib import nullcontext
+    from ..sealing.control import Control, NeedsRestore
+    root = Path(root) / 'segments'
+    control = Control(root) if (root / '.sealing/config.json').exists() else None
+    try:
+        with control.lease() if control else nullcontext():
+            if control:
+                if control.db.execute('SELECT 1 FROM objects WHERE local=0').fetchone():
+                    raise NeedsRestore('capture includes archived generations; restore before complete audit')
+                records = (json.loads(r[0]) for r in control.db.execute('SELECT metadata FROM objects ORDER BY rowid'))
+                yield from _iter_capture_records(root, records)
+            else:
+                with (root / 'segments.jsonl').open() as manifest:
+                    yield from _iter_capture_records(root, (json.loads(line) for line in manifest))
+    finally:
+        if control:
+            control.close()
+
+
+def _iter_capture_records(root, records):
+    for ref in records:
+        value = json.loads(gzip.decompress((root / (ref['hash'] + '.json.gz')).read_bytes()))
+        events = segment_events(value)
+        if digest(value) != ref['hash'] or len(events) != ref['count']:
+            raise ValueError('capture segment integrity failure')
+        for index, event in enumerate(events):
+            yield event, dict(segment=ref['hash'], index=index, event_hash=digest(event))
 
 
 def audit(root, export=None):
@@ -199,6 +224,7 @@ class Capture:
         seconds=86400,
         observed_runtime=None,
         clock=time.time,
+        segmented=False,
     ):
         if not 1 <= seconds <= 86400 or not CONTROL_RESERVE < max_bytes <= 2 * GIB:
             raise ValueError("capture duration/cap exceeds approved bounds")
@@ -229,6 +255,8 @@ class Capture:
             max_bytes=max_bytes - CONTROL_RESERVE,
             gzip_level=1,
             json_ready=True,
+            segmented=segmented,
+            segment_contract="capture-public",
         )
         self.client = HtxV5Client()  # no credentials, no environment loading
         self.rate_lock, self.next_request = threading.Lock(), 0.0
@@ -537,6 +565,7 @@ class Capture:
                     pass
                 if time.monotonic() - flush_at >= 10:
                     self.recorder.flush()
+                    self.recorder.segment_boundary()
                     if self.recorder.failure:
                         self.failure = self.recorder.failure
                         break
@@ -557,6 +586,7 @@ class Capture:
             while not self.events.empty() and not self.recorder.failure:
                 self.write(self.events.get_nowait())
             self.recorder.flush()
+            self.recorder.segment_boundary()
             atomic_json(self.root / "status.json", self.status(final=True))
             self.client.close()
             self.lock.close()
@@ -571,6 +601,7 @@ def main():
     start.add_argument("--max-bytes", type=int, default=2 * GIB)
     start.add_argument("--min-free-bytes", type=int, default=5 * GIB)
     start.add_argument("--seconds", type=int, default=86400)
+    start.add_argument("--segmented", action="store_true")
     check = sub.add_parser("audit")
     check.add_argument("--input", type=Path, required=True)
     check.add_argument("--export", type=Path)
@@ -587,6 +618,7 @@ def main():
         min_free_bytes=args.min_free_bytes,
         seconds=args.seconds,
         observed_runtime=source,
+        segmented=args.segmented,
     )
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: capture.stop.set())

@@ -1,5 +1,6 @@
 """PAPER-only stable candles/windows and resumable, bounded historical repair."""
 from __future__ import annotations
+from ..sealing.consumers import backfill_operation
 from datetime import UTC, datetime
 from threading import Event, Thread
 import logging
@@ -139,6 +140,7 @@ class CompactEvidence:
         raw = self.store.put('compact_decision_raw', window.capture, refs=window.evidence_refs)
         return (*window.evidence_refs, raw)
 
+    @backfill_operation
     def repair_once(self, client, symbol, period, *, page_bars=500):
         """One page per stream/pass. Network outside lock; no invented missing bars."""
         if not 1 <= page_bars <= 2000:

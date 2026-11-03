@@ -48,6 +48,15 @@ class Scheduler:
                                            or entry.get('chain_depth', 0) >= 32)
                     atomic(state_path, canonical(state))
                 try:
+                    if spec.get('kind') == 'segments':
+                        from ..sealing.lifecycle import archive_sealed
+                        sealed = archive_sealed(self.backend, spec['root'], self.work, min_free=self.min_free)
+                        recovered = entry.get('failures', 0)
+                        entry.update(pending=None, last_success=now, next_run=now+interval, failures=0,
+                                     first_failure=None, error_type=None, cleanup_error=None)
+                        results[name] = dict(sealed, recovered_failures=recovered)
+                        atomic(state_path, canonical(state))
+                        continue
                     receipt = archive(self.backend, self.work, entry['pending'], spec,
                         min_free=self.min_free,
                         previous=None if entry['full_audit'] else entry.get('manifest'))
@@ -93,7 +102,7 @@ class Scheduler:
     def _release_job(self, name, keep_receipt=False):
         # Never accept arbitrary cleanup paths or delete failed job evidence.
         import re
-        if not re.fullmatch(r'scheduled-[a-f0-9]{16}-[0-9]+', name):
+        if not re.fullmatch(r'(?:scheduled|sealed)-[a-f0-9]{16}-[0-9]+', name):
             raise ArchiveError('not a scheduler-owned job')
         target = self.work / name
         with exclusive(self.work):
@@ -103,7 +112,7 @@ class Scheduler:
             if receipt['job'] != name or receipt['namespace'] != self.backend.identity:
                 raise ArchiveError('staging receipt identity mismatch')
             allowed = {'receipt.json', 'manifest.json', 'catalogue.sqlite3.gz', 'snapshot.sqlite3',
-                       'delta.sqlite3', 'index.sqlite3', 'segments.jsonl', 'capture.json', 'status.json', 'pool-provenance.json'}
+                       'delta.sqlite3', 'sealed-scope.json', 'index.sqlite3', 'segments.jsonl', 'capture.json', 'status.json', 'pool-provenance.json'}
             if any(p.name not in allowed or p.is_symlink() or not p.is_file() for p in target.iterdir()):
                 raise ArchiveError('unknown scheduler staging file; preserve')
             if keep_receipt:

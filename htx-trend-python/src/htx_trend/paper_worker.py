@@ -4,6 +4,7 @@ One atomically replaced JSON ledger per instance; flock excludes duplicate write
 Reuse PaperExchange and PaperTrendRuntime without executing database migrations.
 """
 from __future__ import annotations
+from .sealing.consumers import paper_tick
 
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
@@ -324,6 +325,7 @@ class PaperTrendWorker:
                 self.ledger.close()
                 self.stopped = True
 
+    @paper_tick
     def tick(self):
         if self.stopped:
             return WorkerHealth('STOPPED', 'paper worker stopped')

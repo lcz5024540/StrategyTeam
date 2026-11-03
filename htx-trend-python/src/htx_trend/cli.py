@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from datetime import UTC, datetime
 import json
+import os
 from pathlib import Path
 from .runtime_kline_business import business_sink
 from .runtime_kline_backfill import backfill, DEFAULT_START, require_backfill_confirmation
@@ -257,7 +258,8 @@ def main() -> None:
         return
     if args.command in {"collect-history", "collect-tick"}:
         with business_sink(getattr(args, "business_db", False)) as sink, \
-                FileEvidenceStore(args.evidence) as store, HtxV5Client() as client:
+                FileEvidenceStore(args.evidence, segmented=(args.command == "collect-tick" and os.environ.get("HTX_COLLECTOR_EVIDENCE_SEGMENTED", "").lower() == "true"),
+                                  segment_contract="collector") as store, HtxV5Client() as client:
             collector = ContinuousCollector(client, store, business_sink=sink)
             if args.command == "collect-history":
                 manifest = collector.collect(tuple(args.symbols), start=args.start, end=args.end,

@@ -105,6 +105,8 @@ def _common(
     recorder = SegmentRecorder(
         root,
         max_bytes=int(os.environ.get("HTX_RT_CAPTURE_MAX_BYTES", str(2 * 1024**3))),
+        segmented=os.environ.get("HTX_RT_CAPTURE_SEGMENTED", "").lower() == "true",
+        segment_contract="capture-runtime",
     )
     if isinstance(management, LiveManagement):
         management.coverage_recorder = recorder

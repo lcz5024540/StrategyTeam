@@ -1,0 +1,103 @@
+{
+  "synthetic": true,
+  "production_source_deleted": false,
+  "root": "/home/ubuntu/coinstrategy-cos-archive/sealing-candidate/drill-960057ce72e0",
+  "cases": {
+    "cas": {
+      "upload": {
+        "status": "VERIFIED",
+        "receipts": [
+          {
+            "epoch": 1,
+            "manifest": "manifests/552ce5bf4f52189f3fa3c451178ea913abf6f53a90e21f75b0efb1eba34cb755.json",
+            "files": 4
+          }
+        ],
+        "source_deleted": false,
+        "pending_generations": 0
+      },
+      "preview": {
+        "plan": "/home/ubuntu/coinstrategy-cos-archive/sealing-candidate/drill-960057ce72e0/cas-plan.sqlite3",
+        "approval_sha256": "dc1f30dccfe903514a5aaba969890022c48a180db6525f21a542fad217edce11",
+        "counts": {
+          "eligible": 2
+        },
+        "eligible_bytes": 266,
+        "manifest": "manifests/552ce5bf4f52189f3fa3c451178ea913abf6f53a90e21f75b0efb1eba34cb755.json",
+        "source_deleted": false
+      },
+      "release": {
+        "status": "RETIRED",
+        "epoch": 1,
+        "released_bytes": 266,
+        "removed_this_run": 2,
+        "remaining_local_members": 0,
+        "manifest": "manifests/552ce5bf4f52189f3fa3c451178ea913abf6f53a90e21f75b0efb1eba34cb755.json",
+        "approval_sha256": "dc1f30dccfe903514a5aaba969890022c48a180db6525f21a542fad217edce11"
+      },
+      "restore": {
+        "status": "RESTORED",
+        "restored": 2,
+        "remaining_cold": 0,
+        "global_index_replaced": false
+      },
+      "rollback": {
+        "status": "LEGACY_LAYOUT_VERIFIED",
+        "root": "/home/ubuntu/coinstrategy-cos-archive/sealing-candidate/drill-960057ce72e0/cas",
+        "ledger_changed": false,
+        "note": "All payloads local; sealing metadata retained. Previous package may read legacy layout. Do not run it concurrently with segment maintenance."
+      }
+    },
+    "capture": {
+      "upload": {
+        "status": "VERIFIED",
+        "receipts": [
+          {
+            "epoch": 1,
+            "manifest": "manifests/33031c6c115b66de2de9b2894f6da1b52405a452ad1efc18a4546e128f2376a7.json",
+            "files": 3
+          },
+          {
+            "epoch": 2,
+            "manifest": "manifests/458d740a02ed3f0110694a79fae129a536b10df819be5e505082a8a216e2a86e.json",
+            "files": 3
+          }
+        ],
+        "source_deleted": false,
+        "pending_generations": 0
+      },
+      "preview": {
+        "plan": "/home/ubuntu/coinstrategy-cos-archive/sealing-candidate/drill-960057ce72e0/capture-plan.sqlite3",
+        "approval_sha256": "2ee6ba77532620cee9b7ba7e728ccc31fe09f75cce0409f2d2ad8b3b48aedfd6",
+        "counts": {
+          "eligible": 1
+        },
+        "eligible_bytes": 108,
+        "manifest": "manifests/33031c6c115b66de2de9b2894f6da1b52405a452ad1efc18a4546e128f2376a7.json",
+        "source_deleted": false
+      },
+      "release": {
+        "status": "RETIRED",
+        "epoch": 1,
+        "released_bytes": 108,
+        "removed_this_run": 1,
+        "remaining_local_members": 0,
+        "manifest": "manifests/33031c6c115b66de2de9b2894f6da1b52405a452ad1efc18a4546e128f2376a7.json",
+        "approval_sha256": "2ee6ba77532620cee9b7ba7e728ccc31fe09f75cce0409f2d2ad8b3b48aedfd6"
+      },
+      "restore": {
+        "status": "RESTORED",
+        "restored": 1,
+        "remaining_cold": 0,
+        "global_index_replaced": false
+      },
+      "rollback": {
+        "status": "LEGACY_LAYOUT_VERIFIED",
+        "root": "/home/ubuntu/coinstrategy-cos-archive/sealing-candidate/drill-960057ce72e0/capture",
+        "ledger_changed": false,
+        "note": "All payloads local; sealing metadata retained. Previous package may read legacy layout. Do not run it concurrently with segment maintenance."
+      }
+    }
+  },
+  "status": "PASS"
+}

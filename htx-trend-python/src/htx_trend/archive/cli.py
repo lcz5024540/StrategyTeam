@@ -10,9 +10,9 @@ from .transfer import archive, compact_staging, open_catalogue, restore
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--config', type=Path, required=True)
-    p.add_argument('--credentials', type=Path, required=True)
-    p.add_argument('--workspace', type=Path, required=True)
+    p.add_argument('--config', type=Path)
+    p.add_argument('--credentials', type=Path)
+    p.add_argument('--workspace', type=Path)
     p.add_argument('--min-free-gib', type=float, default=5)
     sub = p.add_subparsers(dest='command', required=True)
     a = sub.add_parser('archive')
@@ -51,14 +51,78 @@ def main():
     ra.add_argument('--source', required=True)
     ra.add_argument('--plan', type=Path, required=True)
     ra.add_argument('--approval-sha256', required=True)
+    init = sub.add_parser('segment-init', help='Explicit local enrollment; no network access')
+    init.add_argument('--root', type=Path, required=True)
+    init.add_argument('--kind', choices=['cas','capture'], required=True)
+    init.add_argument('--contract', choices=['paper','collector','capture-public','capture-runtime'], required=True)
+    init.add_argument('--max-mib', type=int, default=64)
+    init.add_argument('--max-files', type=int, default=20000)
+    init.add_argument('--delivery-consumer', action='store_true')
+    init.add_argument('--enroll-existing', action='store_true')
+    init.add_argument('--writer-stopped', action='store_true')
+    for name in ('segment-status','segment-seal','segment-archive','segment-restore-local','segment-rollback-check'):
+        cmd = sub.add_parser(name)
+        cmd.add_argument('--root', type=Path, required=True)
+        if name == 'segment-seal':
+            cmd.add_argument('--force', action='store_true')
+        if name == 'segment-rollback-check':
+            cmd.add_argument('--writer-stopped', action='store_true')
+    sp = sub.add_parser('segment-preview')
+    sp.add_argument('--root', type=Path, required=True)
+    sp.add_argument('--epoch', type=int, required=True)
+    sp.add_argument('--output', type=Path, required=True)
+    sa = sub.add_parser('segment-release')
+    sa.add_argument('--plan', type=Path, required=True)
+    sa.add_argument('--approval-sha256', required=True)
+    sa.add_argument('--max-files', type=int, default=2000)
+    for name in ('segment-pin','segment-unpin'):
+        pin = sub.add_parser(name)
+        pin.add_argument('--root',type=Path,required=True)
+        pin.add_argument('--owner',required=True)
+        pin.add_argument('--key',action='append',required=True)
+        pin.add_argument('--reason',required=True)
     args = p.parse_args()
     try:
+        local_commands = {'segment-init','segment-status','segment-seal','segment-rollback-check','segment-pin','segment-unpin'}
+        if args.command in local_commands:
+            from ..sealing.control import Control, initialize
+            if args.command == 'segment-init':
+                result = initialize(args.root,kind=args.kind,contract=args.contract,max_bytes=args.max_mib*1024**2,
+                                    max_files=args.max_files,delivery_consumer=args.delivery_consumer,
+                                    enroll_existing=args.enroll_existing,writer_stopped=args.writer_stopped)
+            elif args.command == 'segment-rollback-check':
+                from ..sealing.lifecycle import rollback_layout
+                result = rollback_layout(args.root,writer_stopped=args.writer_stopped)
+            else:
+                control = Control(args.root)
+                try:
+                    if args.command in {'segment-pin','segment-unpin'}:
+                        control.external_pin(args.owner,args.key,remove=args.command=='segment-unpin',reason=args.reason)
+                        result = {'status':'PIN_UPDATED','source_deleted':False}
+                    else:
+                        result = control.status() if args.command == 'segment-status' else {'sealed_epoch':control.seal(force=args.force)}
+                finally:
+                    control.close()
+            print(json.dumps(result,ensure_ascii=False))
+            return 0
+        if not (args.config and args.credentials and args.workspace):
+            raise ValueError('remote commands require --config --credentials --workspace')
         config = json.loads(args.config.read_bytes())
         backend = CosBackend(config, args.credentials)
         minimum = int(args.min_free_gib * 1024**3)
         if minimum < 0:
             raise ValueError('negative minimum')
-        if args.command == 'archive':
+        if args.command.startswith('segment-'):
+            from ..sealing.lifecycle import archive_sealed, preview_release, apply_release, restore_local
+            if args.command == 'segment-archive':
+                result = archive_sealed(backend,args.root,args.workspace,min_free=minimum)
+            elif args.command == 'segment-preview':
+                result = preview_release(backend,args.root,args.epoch,args.output,work=args.workspace,min_free=minimum)
+            elif args.command == 'segment-release':
+                result = apply_release(backend,args.plan,args.approval_sha256,work=args.workspace,min_free=minimum,max_files=args.max_files)
+            elif args.command == 'segment-restore-local':
+                result = restore_local(backend,args.root,work=args.workspace,min_free=minimum)
+        elif args.command == 'archive':
             result = archive(backend, args.workspace, args.job, config['sources'][args.source], min_free=minimum,
                 progress=lambda value: print(json.dumps(value), flush=True), previous=args.previous)
         elif args.command == 'run-once':

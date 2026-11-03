@@ -92,7 +92,10 @@ def prepare(job, spec):
                    (relative, str(source), semantic, count, fingerprint))
 
     kind = spec['kind']
-    if kind == 'cas':
+    if kind in {'sealed-cas', 'sealed-capture'}:
+        from ..sealing.snapshot import populate
+        populate(db, job, spec, add)
+    elif kind == 'cas':
         backup = job / 'index.sqlite3'
         sqlite_backup(root / 'index.sqlite3', backup)
         with closing(sqlite3.connect(backup)) as index:
@@ -199,7 +202,7 @@ def validate(data, row, kind):
     if digest(raw) != semantic:
         raise ArchiveError(f'source hash mismatch: {semantic}')
     value = json.loads(raw)
-    if kind == 'cas':
+    if kind in {'cas', 'sealed-cas'}:
         if value.get('schema') != 'htx-python-evidence-v1':
             raise ArchiveError('unknown CAS schema')
         return tuple(check_hash(x) for x in value['refs'])

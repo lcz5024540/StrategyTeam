@@ -56,7 +56,22 @@ def free_guard(path, minimum, needed=0):
         raise ArchiveError('archive workspace free-space guard')
 
 
-def archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
+def archive(backend, work, name, spec, **kwargs):
+    root = Path(spec['root'])
+    marker = root / ('segments/.sealing/config.json' if spec['kind'] == 'capture' else '.sealing/config.json')
+    if spec['kind'] in {'cas','capture'} and marker.exists():
+        raise ArchiveError('segmented active source requires the segments scheduler/sealed-generation adapter')
+    if spec['kind'] in {'sealed-cas', 'sealed-capture'}:
+        from ..sealing.control import lease
+        if kwargs.get('previous'):
+            raise ArchiveError('sealed generations are immutable independent snapshots')
+        # SH lease protects local files during upload; does not block writers.
+        with lease(spec['root']):
+            return _archive(backend, work, name, spec, **kwargs)
+    return _archive(backend, work, name, spec, **kwargs)
+
+
+def _archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
             max_member=512 * 1024**2, min_free=5 * 1024**3, progress=None, previous=None):
     safe_relative(name)
     if '/' in name or pack_bytes < 1 or max_member < 1:

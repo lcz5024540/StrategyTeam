@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+from functools import wraps
 import gzip
 from hashlib import sha256
 import json
@@ -96,6 +98,25 @@ class MySqlPlanStore:
         self.db.commit()
 
 
+
+def recorder_lease(method):
+    @wraps(method)
+    def guarded(self, *args, **kwargs):
+        control = getattr(self, 'segments', None)
+        try:
+            with control.lease() if control else nullcontext():
+                with control.mutation() if control and method.__name__ == 'flush' else nullcontext():
+                    return method(self, *args, **kwargs)
+        except (OSError, sqlite3.Error, ValueError):
+            if not control or method.__name__ not in {'append','flush'}:
+                raise
+            from ..sealing.consumers import fence_failure
+            fence_failure(control)
+            self.failure = 'CAPTURE_CONTROL_IO'
+            return False if method.__name__ == 'append' else None
+    return guarded
+
+
 class SegmentRecorder:
     """Append-only gzip segments. No deletion, no silent quota loss or full-window copies."""
 
@@ -107,9 +128,22 @@ class SegmentRecorder:
         segment_bytes=1024**2,
         gzip_level=9,
         json_ready=False,
+        segmented=False,
+        segment_contract="capture-public",
     ):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        self.segments = None
+        marker = self.root / '.sealing/config.json'
+        if marker.exists() and not segmented:
+            raise ValueError('segmented capture requires explicit segment-aware reader/writer')
+        if segmented:
+            from ..sealing.control import Control, initialize
+            if not marker.exists():
+                initialize(self.root, kind='capture', contract=segment_contract)
+            self.segments = Control(self.root, contract=segment_contract)
+            self.segments.begin('recorder')
+            self.segment_revision = -1
         self.max_bytes, self.segment_bytes = max_bytes, segment_bytes
         self.used = sum(p.stat().st_size for p in self.root.iterdir() if p.is_file())
         self.pending = []
@@ -125,10 +159,15 @@ class SegmentRecorder:
             if manifest.exists()
             else []
         )
+        if self.segments:
+            self.records = self.segments.local_records()
+            self.last_ref = self.records[-1]['hash'] if self.records else None
         self.indexed = {record["hash"] for record in self.records}
 
+    @recorder_lease
     def append(self, event):
         with self.lock:
+            self._refresh_released()
             if self.failure:
                 return False
             value = event.dump() if hasattr(event, "dump") else event
@@ -152,8 +191,10 @@ class SegmentRecorder:
                 else True
             )
 
+    @recorder_lease
     def flush(self):
         with self.lock:
+            self._refresh_released()
             if self.failure:
                 return None
             if not self.pending:
@@ -197,32 +238,80 @@ class SegmentRecorder:
                     # A crash after object rename but before manifest append is recoverable.
                     if sha256(gzip.decompress(path.read_bytes())).hexdigest() != sha:
                         raise OSError("orphan segment hash mismatch")
-                    with (self.root / "segments.jsonl").open("ab") as f:
-                        f.write(line)
-                        f.flush()
-                        os.fsync(f.fileno())
+                    if not self.segments:
+                        with (self.root / "segments.jsonl").open("ab") as f:
+                            f.write(line)
+                            f.flush()
+                            os.fsync(f.fileno())
                     fd = os.open(self.root, os.O_RDONLY)
                     try:
                         os.fsync(fd)
                     finally:
                         os.close(fd)
-                    self.used += len(line)
+                    if not self.segments:
+                        self.used += len(line)
                     self.indexed.add(sha)
                     self.records.append(record)
+                if self.segments:
+                    self.segments.track(sha, path.name, metadata=record)
+                    self.segment_revision = self.segments.layout_revision()
                 self.last_ref = sha
                 self.pending.clear()
                 self.encoded.clear()
                 self.pending_bytes = 0
                 return sha
-            except OSError as error:
-                self.failure = "CAPTURE_IO:" + type(error).__name__
+            except (OSError, sqlite3.Error, ValueError) as error:
+                if self.segments:
+                    from ..sealing.consumers import fence_failure
+                    fence_failure(self.segments)
+                self.failure = 'CAPTURE_IO:' + type(error).__name__
                 return None
 
+    def _refresh_released(self):
+        if not self.segments:
+            return
+        try:
+            revision = self.segments.layout_revision()
+        except Exception:
+            from ..sealing.consumers import fence_failure
+            fence_failure(self.segments)
+            self.failure = 'CAPTURE_CONTROL_IO'
+            return
+        if revision != self.segment_revision:
+            self.records = self.segments.local_records()
+            self.indexed = {r['hash'] for r in self.records}
+            self.used = sum(p.stat().st_size for p in self.root.iterdir() if p.is_file())
+            self.segment_revision = revision
+
+    def segment_boundary(self, *, extra_roots=(), safe=True):
+        if not self.segments:
+            return
+        roots = set(extra_roots)
+        if self.last_ref:
+            roots.add(self.last_ref)
+        try:
+            self.segments.ready('recorder', roots, error=None if safe and not self.failure else 'CAPTURE_HANDOFF_FAILED')
+            if safe and not self.failure:
+                self.segments.seal()
+        except Exception:
+            # Maintenance failure blocks deletion; it does not alter order/exit behavior.
+            try:
+                self.segments.ready('recorder', roots, error='CAPTURE_HANDOFF_FAILED')
+            except Exception:
+                pass  # Existing durable begin/poison blocks reclamation.
+
+    @recorder_lease
     def verify(self):
         result = []
         manifest = self.root / "segments.jsonl"
-        for line in manifest.read_text().splitlines() if manifest.exists() else []:
-            row = json.loads(line)
+        if self.segments:
+            with self.segments.guard:
+                if self.segments.db.execute('SELECT 1 FROM objects WHERE local=0').fetchone():
+                    raise ValueError('capture includes archived generations; restore required for complete audit')
+            records = self.segments.local_records()
+        else:
+            records = [json.loads(line) for line in manifest.read_text().splitlines()] if manifest.exists() else []
+        for row in records:
             raw = gzip.decompress((self.root / (row["hash"] + ".json.gz")).read_bytes())
             obj = json.loads(raw)
             events = segment_events(obj)
@@ -234,6 +323,8 @@ class SegmentRecorder:
             if manifest.exists()
             else set()
         )
+        if self.segments:
+            listed = {r["hash"] for r in records}
         orphans = {
             p.name.removesuffix(".json.gz") for p in self.root.glob("*.json.gz")
         } - listed

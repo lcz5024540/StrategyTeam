@@ -113,3 +113,7 @@ For an actually frozen, no-longer-read dataset only: an operator must verify all
 After a human approves that exact list, use `retire-apply --source NAME --plan ... --approval-sha256 ...`. The tool rejects SQLite sidecars and reads an immutable private copy of the exact approved plan bytes. It binds every eligible path/hash/size to the selected remote manifest and rechecks policy, all eligible file identities, protected metadata fingerprints and newly created files; verifies **all remote original bytes** (one pack/member at a time); records durable unlink intents; then removes only eligible approved files. A crash after unlink resumes using the exact intent. Source changes or COS corruption stop the operation. `.cos-retired.json` and a workspace receipt retain the restore mapping. Protected index files remain for forensics but do **not** make the retired directory usable. This marker is advisory: legacy workers do not enforce it, so never point one at a retired root. Restore `--all` to a fresh directory and validate existing readers before reusing the dataset. Restore validation covers byte fidelity, not market-data or fee completeness.
 
 No timer invokes retire-apply. No production original-file retirement has been performed in this follow-up.
+
+## 活跃源分段封存
+
+新增显式、默认关闭的代成员/pin/lease机制，见 [SEGMENT-SEALING.md](SEGMENT-SEALING.md)。只有已封存、远端校验成功且无热依赖的具体批准清单可释放。timer仍仅上传，不按文件年龄删除。旧CAS/LIVE未纳管目录继续完整保护。

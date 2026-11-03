@@ -1,0 +1,20 @@
+usage: cli.py [-h] [--config CONFIG] [--credentials CREDENTIALS]
+              [--workspace WORKSPACE] [--min-free-gib MIN_FREE_GIB]
+              {archive,restore,compact-staging,list,run-once,reset-pending,cache-run,retire-preview,retire-apply,segment-init,segment-status,segment-seal,segment-archive,segment-restore-local,segment-rollback-check,segment-preview,segment-release,segment-pin,segment-unpin}
+              ...
+
+Standalone archive CLI; credentials never appear in plans, receipts or errors.
+
+positional arguments:
+  {archive,restore,compact-staging,list,run-once,reset-pending,cache-run,retire-preview,retire-apply,segment-init,segment-status,segment-seal,segment-archive,segment-restore-local,segment-rollback-check,segment-preview,segment-release,segment-pin,segment-unpin}
+    run-once            Independent scheduled tick; disabled unless configured
+    cache-run           Hold a verified cache lease throughout an offline
+                        replay command
+    segment-init        Explicit local enrollment; no network access
+
+options:
+  -h, --help            show this help message and exit
+  --config CONFIG
+  --credentials CREDENTIALS
+  --workspace WORKSPACE
+  --min-free-gib MIN_FREE_GIB
