@@ -17,6 +17,7 @@ from .storage import TERMINAL
 ORIGINAL = "ORIGINAL_20_32_V1"
 EVENT_WINDOWS = "EVENT_WINDOWS_CONSERVATIVE_V1"
 EVENT_LOCAL = "EVENT_LOCAL_CONSERVATIVE_V1"
+SBOX = "SBOX_FACTS_CONSERVATIVE_V1"
 
 
 @dataclass(frozen=True)
@@ -38,9 +39,18 @@ class Parameters:
             raise ValueError(
                 "realtime-v1 requires the registered 2-second freshness bound"
             )
-        if self.candidate not in (ORIGINAL, EVENT_WINDOWS, EVENT_LOCAL):
+        if self.candidate not in (ORIGINAL, EVENT_WINDOWS, EVENT_LOCAL, SBOX):
             raise ValueError("unknown realtime candidate rule")
-        if self.target_mode not in ("J1", "J2") or (
+        if self.candidate == SBOX:
+            if (self.target_mode, self.band_atr, self.min_net_r) != (
+                "J1_BOX32",
+                D(".10"),
+                D("1.5"),
+            ):
+                raise ValueError(
+                    "SBOX v1 requires the confirmed J1_BOX32 / k=.10 / R=1.5"
+                )
+        elif self.target_mode not in ("J1", "J2") or (
             self.candidate in (ORIGINAL, EVENT_WINDOWS) and self.target_mode != "J1"
         ):
             raise ValueError("unsupported realtime target mode")
@@ -143,6 +153,8 @@ def generate(
     parameters=Parameters(),
     signal_side=TrendSide.FLAT,
 ) -> tuple[StructurePlan, ...]:
+    if parameters.candidate == SBOX:
+        raise ValueError("SBOX targets freeze at activation; use create_engine.refresh_frame")
     if parameters.candidate != ORIGINAL:
         from .structures import generate_candidates
 
@@ -282,6 +294,10 @@ def generate(
 
 def create_engine(store, instance, *, parameters=None):
     parameters = Parameters() if parameters is None else parameters
+    if parameters.candidate == SBOX:
+        from .sbox import SBoxEngine
+
+        return SBoxEngine(store, instance, parameters=parameters)
     if parameters.candidate == ORIGINAL:
         return TriggerEngine(store, instance, parameters=parameters)
     from .structure_events import StructureEventEngine

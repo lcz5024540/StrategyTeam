@@ -106,7 +106,7 @@ def profile_entry_config(profile: TimeframeProfile, *, read_env: bool = True) ->
     )
 
 
-def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strategy_version: str | None = None) -> ProfileStrategySpec:
+def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strategy_version: str | None = None, realtime_parameters=None) -> ProfileStrategySpec:
     contract = profile.contract
     config = profile_entry_config(profile, read_env=read_env)
     conditions = {item.condition_id: item.version for item in CONDITIONS
@@ -137,6 +137,8 @@ def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strate
         tuple(item.value for item in ModelCode),
     )
     from .realtime import MODELS, VERSION
+    if realtime_parameters is not None and strategy_version != VERSION:
+        raise ValueError("realtime parameters require the realtime strategy")
     if strategy_version == VERSION:
         if profile is not TimeframeProfile.INTRADAY_15M:
             raise ValueError('realtime strategy is 15m only')
@@ -145,6 +147,10 @@ def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strate
                                 Decimal(environ.get('HTX_RT_MIN_NET_R', '1.5')),
                                 candidate=environ.get('HTX_RT_CANDIDATE', ORIGINAL),
                                 target_mode=environ.get('HTX_RT_TARGET_MODE', 'J1')) if read_env else Parameters()
+        if realtime_parameters is not None:
+            if read_env or not isinstance(realtime_parameters, Parameters):
+                raise ValueError('explicit realtime parameters require an offline typed binding')
+            parameters = realtime_parameters
         rt = replace(strategy, version=VERSION,
             feature_versions={'closed_1h_ema20_60':'v1','closed_15m_structure20_32_atr14':'v1',
                               'trade_bbo_2s':'v1'},

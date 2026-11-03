@@ -9,7 +9,7 @@ from ..admission import file_hash, read_sealed, window
 from ..execution import ExecutionConfig
 from ..research.store import digest
 from . import VERSION
-from .plans import EVENT_LOCAL, ORIGINAL
+from .plans import EVENT_LOCAL, ORIGINAL, SBOX
 from .trial import Limits
 
 SCHEMA = "htx-realtime-trial-approval-v1"
@@ -84,7 +84,7 @@ def validate(path, current, *, entry=False, now=None, candidate=ORIGINAL):
         window(value, now)
         if (
             value["permission"] != "TRIAL"
-            or candidate not in (ORIGINAL, EVENT_LOCAL)
+            or candidate not in (ORIGINAL, EVENT_LOCAL, SBOX)
             or value.get("candidate") != candidate
         ):
             raise ValueError("unique production candidate not confirmed")

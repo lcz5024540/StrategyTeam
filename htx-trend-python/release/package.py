@@ -21,6 +21,8 @@ from htx_trend.release_artifacts import load_artifacts, validate_schema
 from htx_trend.strategy_profiles import profile_strategy
 from htx_trend.timeframes import TimeframeProfile
 from htx_trend.realtime import VERSION as REALTIME_VERSION
+from htx_trend.realtime.plans import SBOX, Parameters
+from htx_trend.research.store import primitive
 
 DISCLAIMER = '候选包 ≠ 可以热更 ≠ 可装现网'
 # paper=True 时按 strategy card 选择实例。15m 路径保持 primary，不得改成 4h。
@@ -204,8 +206,11 @@ def _live_payload_paths():
     return paths
 
 
-def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False):
+def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False, sbox=False):
     """Encode-only 15m LIVE tarball; realtime is explicitly entry-disabled."""
+    if sbox:
+        realtime = True
+    selected = Parameters(candidate=SBOX, target_mode='J1_BOX32') if sbox else None
     source = git('rev-parse', 'HEAD')
     short = git('rev-parse', '--short=8', 'HEAD')
     if not re.fullmatch('[0-9a-f]{8}', short):
@@ -215,7 +220,8 @@ def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False):
     card, refs = load_artifacts(ROOT / 'release/artifacts', variant='.realtime' if realtime else '')
     if card['strategy_version'] != strategy_version or card['timeframe_profile'] != LIVE_TIMEFRAME.value:
         raise ValueError('strategy card must match selected 15m LIVE package')
-    spec = profile_strategy(LIVE_TIMEFRAME, read_env=False, strategy_version=strategy_version)
+    spec = profile_strategy(LIVE_TIMEFRAME, read_env=False, strategy_version=strategy_version,
+                            realtime_parameters=selected)
     if spec.strategy.version != strategy_version:
         raise ValueError('card strategy/profile mismatch')
     paths = _live_payload_paths()
@@ -255,6 +261,21 @@ def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False):
             ROOT.parent / 'sql/htx/2026-11-02__htx_realtime_structure_plan.sql').read_bytes()
         payload['release/migrations/2026-11-03__htx_realtime_live_trial.sql'] = (
             ROOT.parent / 'sql/htx/2026-11-03__htx_realtime_live_trial.sql').read_bytes()
+        if sbox:
+            required_env = {'HTX_RT_ENTRY_ENABLED':'false', 'HTX_RT_CANDIDATE':SBOX,
+                            'HTX_RT_TARGET_MODE':'J1_BOX32', 'HTX_RT_BAND_ATR':'0.10',
+                            'HTX_RT_MIN_NET_R':'1.5'}
+            config.update(structural_candidate_selected=True, selection_id='SBOX_V1_20261104',
+                          parameters=primitive(selected.payload), parameter_fingerprint=selected.fingerprint,
+                          runtime_env_required=required_env,
+                          note='User-confirmed S/J1_BOX32 k=.10 R=1.5 trial candidate; M/T excluded. '
+                               'Implementation/selection is not financial admission or activation authority.')
+            env_path='deployment/realtime-live.env.example'
+            lines=[line for line in payload[env_path].decode().splitlines()
+                   if line.split('=',1)[0] not in required_env]
+            lines += [key+'='+value for key,value in required_env.items()]
+            payload[env_path]=('\n'.join(lines)+'\n').encode()
+            payload['release/SBOX-LIVE.md']=(ROOT/'release/SBOX-LIVE.md').read_bytes()
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
                 'config_hash': digest(encoded(config)), 'config_path': 'release/config.example.json',
@@ -353,16 +374,29 @@ def verify_live(archive: Path):
            for value in (binding, cfg, card)):
         raise ValueError('LIVE strategy/profile binding mismatch')
     if realtime:
+        sbox = cfg.get('selection_id') == 'SBOX_V1_20261104'
+        required_env = {'HTX_RT_ENTRY_ENABLED':'false'}
+        if sbox:
+            selected = Parameters(candidate=SBOX, target_mode='J1_BOX32')
+            required_env.update(HTX_RT_CANDIDATE=SBOX, HTX_RT_TARGET_MODE='J1_BOX32',
+                                HTX_RT_BAND_ATR='0.10', HTX_RT_MIN_NET_R='1.5')
+            selected_spec=profile_strategy(LIVE_TIMEFRAME, read_env=False,
+                strategy_version=REALTIME_VERSION, realtime_parameters=selected)
+            if (cfg.get('parameters') != primitive(selected.payload)
+                    or cfg.get('parameter_fingerprint') != selected.fingerprint
+                    or binding.get('strategy_spec_hash') != selected_spec.spec_hash
+                    or 'release/SBOX-LIVE.md' not in data):
+                raise ValueError('SBOX confirmed parameter/spec binding mismatch')
         required = {'release/REALTIME-LIVE-PACKAGE.md', 'release/REALTIME-ENTRY.md',
                     'deployment/realtime-live.env.example',
                     'release/migrations/2026-11-02__htx_realtime_structure_plan.sql',
                     'release/migrations/2026-11-03__htx_realtime_live_trial.sql'}
         if (not required <= data.keys() or cfg.get('entry_enabled') is not False
                 or cfg.get('financial_admission') != 'NOT_ELIGIBLE'
-                or cfg.get('structural_candidate_selected') is not False
+                or cfg.get('structural_candidate_selected') is not sbox
                 or cfg.get('trial_controls_implemented') is not True
                 or cfg.get('release_status') != 'ENCODE_ONLY_ENTRY_DISABLED'
-                or cfg.get('runtime_env_required') != {'HTX_RT_ENTRY_ENABLED': 'false'}
+                or cfg.get('runtime_env_required') != required_env
                 or cfg.get('entry_period') != '15min' or cfg.get('trend_period') != '60min'
                 or cfg.get('models') != ['RT_RANGE_REJECTION', 'RT_BREAKOUT_RETEST']):
             raise ValueError('realtime LIVE encode-only binding mismatch')
@@ -371,6 +405,10 @@ def verify_live(archive: Path):
                     if line.strip().startswith('HTX_RT_ENTRY_ENABLED=')]
         if switches != ['HTX_RT_ENTRY_ENABLED=false']:
             raise ValueError('realtime LIVE sample must disable entry')
+        if sbox:
+            for key,value in required_env.items():
+                if [line.strip() for line in env if line.strip().startswith(key+'=')] != [key+'='+value]:
+                    raise ValueError('SBOX runtime example differs from confirmed parameters')
     return receipt
 
 
@@ -460,6 +498,7 @@ def main():
     live_builder = commands.add_parser('build-live', help='LIVE encode package for htx-trend-live-primary')
     live_builder.add_argument('--out-root', type=Path, default=Path('/tmp/htx-live/frozen'))
     live_builder.add_argument('--realtime', action='store_true', help='15m realtime LIVE code package; entry off; no trial authority')
+    live_builder.add_argument('--sbox', action='store_true', help='confirmed S/J1_BOX32 k=.10 R=1.5 LIVE candidate; does not activate trading')
     commands.add_parser('verify').add_argument('archive', type=Path)
     template = commands.add_parser('approval-template')
     template.add_argument('archive', type=Path)
@@ -468,7 +507,7 @@ def main():
     if args.command == 'build':
         print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h, compact_evidence=args.compact_evidence, realtime=args.realtime))
     elif args.command == 'build-live':
-        print(build_live(args.out_root, realtime=args.realtime))
+        print(build_live(args.out_root, realtime=args.realtime, sbox=args.sbox))
     elif args.command == 'verify':
         print(json.dumps({'status': 'PASS', **verify(args.archive)}, ensure_ascii=False))
     else:

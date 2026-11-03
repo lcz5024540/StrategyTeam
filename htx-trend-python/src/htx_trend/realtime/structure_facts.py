@@ -288,6 +288,7 @@ class FactObserver:
             origin,
         )
         self.rows = copy.deepcopy(store.all(instance))
+        self.dirty = set()
         if any(
             row["fact"]["origin"] != origin
             or row["fact"]["parameter_fingerprint"] != parameters.fingerprint
@@ -300,7 +301,13 @@ class FactObserver:
         self.disconnect("RESTART")
 
     def save(self, ident):
+        self.dirty.add(ident)
         self.store.save(self.instance, ident, primitive(self.rows[ident]))
+        self.dirty.discard(ident)
+
+    def flush(self):
+        for ident in tuple(self.dirty):
+            self.save(ident)
 
     def invalidate(self, ident, reason):
         self.rows[ident].update(
@@ -321,6 +328,7 @@ class FactObserver:
     def refresh(
         self, entry, hour, spec, *, now_ms, sequence, signal_side, local_lines=()
     ):
+        self.flush()
         code = spec.contract_code
         self.frames[code] = (entry, hour, spec, signal_side)
         self.local_lines[code] = local_lines
@@ -403,6 +411,7 @@ class FactObserver:
         return facts
 
     def accept(self, event, *, now_ms, sequence):
+        self.flush()
         if event.epoch in self.retired:
             return ()
         if self.epoch is not None and self.epoch != event.epoch:
