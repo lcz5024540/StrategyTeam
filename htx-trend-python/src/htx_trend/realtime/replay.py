@@ -153,7 +153,13 @@ def validate(tape):
             if observation["spec"]["contract_code"] != code:
                 raise ValueError("contract metadata mismatch")
         elif kind == "DEPTH":
-            if observation["requested_ms"] > at:
+            if observation.get("source") == "HTX_WS_FULL_DEPTH":
+                if (
+                    type(observation.get("exchange_ms")) is not int
+                    or observation["exchange_ms"] > at
+                ):
+                    raise ValueError("depth exchange timestamp ahead of reception")
+            elif observation["requested_ms"] > at:
                 raise ValueError("depth response precedes request")
             for side in ("bids", "asks"):
                 if not observation[side]:
@@ -244,6 +250,11 @@ class FrozenMarket:
         row = self.depth.get(code)
         if row is None or not 0 <= self.now_ms - row["received_ms"] <= 2000:
             raise ValueError("COUNTERFACTUAL_DEPTH_MISSING_OR_STALE")
+        if (
+            row.get("source") == "HTX_WS_FULL_DEPTH"
+            and not 0 <= self.now_ms - row["exchange_ms"] <= 2000
+        ):
+            raise ValueError("COUNTERFACTUAL_DEPTH_EXCHANGE_STALE")
         return OrderBook(
             tuple((D(p), D(q)) for p, q in row["bids"]),
             tuple((D(p), D(q)) for p, q in row["asks"]),
@@ -755,9 +766,19 @@ def evidence_blockers(tape, evidence_root=None):
         if len(references) != len(tape["observations"]) or evidence_root is None:
             raise ValueError("observation closure missing")
         for reference, observation in zip(references, tape["observations"]):
-            obj = read_object(evidence_root, reference)
-            if obj["kind"] != "realtime_observation" or obj["payload"] != observation:
-                raise ValueError("observation receipt mismatch")
+            if isinstance(reference, dict):
+                from .public_capture import read_reference
+
+                payload = read_reference(evidence_root, reference)
+                if payload != observation:
+                    raise ValueError("segment observation receipt mismatch")
+            else:
+                obj = read_object(evidence_root, reference)
+                if (
+                    obj["kind"] != "realtime_observation"
+                    or obj["payload"] != observation
+                ):
+                    raise ValueError("observation receipt mismatch")
         rate = read_object(evidence_root, tape["fee_ref"])
         if (
             rate["kind"] != "realtime_account_fee"

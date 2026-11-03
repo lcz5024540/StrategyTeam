@@ -8,3 +8,5 @@
 
 - [15m实时结构候选交付、验证与未完成项](realtime-entry-20261102.md)
 - [实时全机会回放协议](realtime-replay-20261102.md)
+
+- [独立公共行情采集及容量约束](public-capture-20261103.md)
