@@ -1,0 +1,344 @@
+{
+  "observed": "2026-11-04T00:19:05.081073+08:00",
+  "capture": {
+    "pid": 2361464,
+    "release": "0.1.7-realtime-candidate-869660ab",
+    "bytes": 1230116204,
+    "observed_ms": 1793722737347,
+    "final": false,
+    "stop_reason": null,
+    "trading": false,
+    "counts": {
+      "BBO": 1395994,
+      "COLLECTION_SESSION": 1,
+      "CONTRACT_METADATA": 1,
+      "DEPTH": 648268,
+      "FRAME": 260,
+      "FUNDING": 2819,
+      "GAP": 1,
+      "TRADE": 14361
+    },
+    "errors": {
+      "CONNECT_OR_RECONNECT": 1
+    },
+    "queue_depth": 10
+  },
+  "disk": {
+    "total": 63290032128,
+    "used": 46286974976,
+    "free": 14302310400
+  },
+  "control": {
+    "config": {
+      "contract": "capture-public",
+      "delivery_consumer": false,
+      "kind": "capture",
+      "max_bytes": 67108864,
+      "max_files": 20000,
+      "schema": "htx-local-sealing-v1"
+    },
+    "revision": 20719,
+    "generations": [
+      {
+        "id": 1,
+        "state": "RETIRED",
+        "created": 1793719048.7539968,
+        "manifest": "manifests/7423fe897bbfa5d6192bc67fc39af6f35693fc4b52e4e8b538f337708454202f.json"
+      },
+      {
+        "id": 2,
+        "state": "RETIRED",
+        "created": 1793719167.1196733,
+        "manifest": "manifests/7e803ba451274bd27d137041bf6631a27c781b5da3a252cb06887de4627baf02.json"
+      },
+      {
+        "id": 3,
+        "state": "RETIRED",
+        "created": 1793719454.9870198,
+        "manifest": "manifests/117202d987dc3e96794556fa697741d6b68b288fa831a446b824a393b96f211a.json"
+      },
+      {
+        "id": 4,
+        "state": "RETIRED",
+        "created": 1793719575.9607656,
+        "manifest": "manifests/cf3c5c45f85c653b15ae23fdfbe5382fb3c72c9b6331995b2e9ca7eb79d496f9.json"
+      },
+      {
+        "id": 5,
+        "state": "RETIRED",
+        "created": 1793719706.407913,
+        "manifest": "manifests/921154d0301d516d8cdb237fe8ab75cb09c631ef103d1c543975bc50ffb8ee37.json"
+      },
+      {
+        "id": 6,
+        "state": "COS_VERIFIED",
+        "created": 1793719826.8450017,
+        "manifest": "manifests/4fba4587017415a69acd031192b5ce33897fac520c4d65f89ef1cb1265b989c7.json"
+      },
+      {
+        "id": 7,
+        "state": "RETIRED",
+        "created": 1793719947.2632766,
+        "manifest": "manifests/9665167db436c86689234a803309c21d7cd5639de4a1e2252a3a8340cebf98ca.json"
+      },
+      {
+        "id": 8,
+        "state": "RETIRED",
+        "created": 1793720067.7012646,
+        "manifest": "manifests/9f2e1d201dfaabf13bbe7f51b2f58fbefb14685c47f14fba6990894d700b596e.json"
+      },
+      {
+        "id": 9,
+        "state": "RETIRED",
+        "created": 1793720188.089111,
+        "manifest": "manifests/e46c46c4ca19549837cf75e1daab54c5d24d1d9dfda099f9011ad4e643fddc22.json"
+      },
+      {
+        "id": 10,
+        "state": "RETIRED",
+        "created": 1793720308.5671666,
+        "manifest": "manifests/b44b2c28d05ca5a89535dd1434e6ecdd9a7634c5cfe5172eac65461ade662837.json"
+      },
+      {
+        "id": 11,
+        "state": "COS_VERIFIED",
+        "created": 1793720438.9952776,
+        "manifest": "manifests/571d4190cac1c95e33c03aa2c739d7134157355a8aca8670fca00dd923ad438a.json"
+      },
+      {
+        "id": 12,
+        "state": "COS_VERIFIED",
+        "created": 1793720549.449027,
+        "manifest": "manifests/8c4cbdf5ad2890204599d8cc1ccc216332975c7db1b86c81d4c34752bfcc3959.json"
+      },
+      {
+        "id": 13,
+        "state": "RETIRED",
+        "created": 1793720669.8975701,
+        "manifest": "manifests/b18e867deebd019c39f5c94dd13a77db306c27d29ae9e90cd82fcfce4e8e7abd.json"
+      },
+      {
+        "id": 14,
+        "state": "COS_VERIFIED",
+        "created": 1793720780.2683086,
+        "manifest": "manifests/33544aef50fe67587f02e1a8bbfdc4b4951b8d7ab2edd41c0e6d897e2ff813fb.json"
+      },
+      {
+        "id": 15,
+        "state": "COS_VERIFIED",
+        "created": 1793720890.769861,
+        "manifest": "manifests/ba9ca7a522b94c5cce907b3b97e0624d5dbb8be0eba0e5308f298e285dd07322.json"
+      },
+      {
+        "id": 16,
+        "state": "COS_VERIFIED",
+        "created": 1793721011.1891084,
+        "manifest": "manifests/ebb27f8995caad4cc035195f57b9a2aad8643dac9df47ff2e872d53404ae011a.json"
+      },
+      {
+        "id": 17,
+        "state": "COS_VERIFIED",
+        "created": 1793721131.6728728,
+        "manifest": "manifests/a3ad21c1e3af17cd1330368596e53eb3339b38d166f994a66f43af351de57cfb.json"
+      },
+      {
+        "id": 18,
+        "state": "COS_VERIFIED",
+        "created": 1793721262.1304607,
+        "manifest": "manifests/014cc80bea56d743c633ba994a69dc01303bada71ba522aeb27ba411c7339313.json"
+      },
+      {
+        "id": 19,
+        "state": "COS_VERIFIED",
+        "created": 1793721422.6695476,
+        "manifest": "manifests/2e6a51f1b618049ec670dbbf1b3dd126791ee435b022f49c12fc7c05f170275c.json"
+      },
+      {
+        "id": 20,
+        "state": "COS_VERIFIED",
+        "created": 1793721553.2001085,
+        "manifest": "manifests/2d45aa6ab03df653d98bf05fc8d15f61b3a518507167ed5dfbb49527ff99be80.json"
+      },
+      {
+        "id": 21,
+        "state": "COS_VERIFIED",
+        "created": 1793721673.6740198,
+        "manifest": "manifests/e2224ee1f85da690d26fb718cd6ad86c5cbebc9b9e0fc87dfcdec4abc4e40521.json"
+      },
+      {
+        "id": 22,
+        "state": "COS_VERIFIED",
+        "created": 1793721804.2418218,
+        "manifest": "manifests/76759754d097ef7115e745024cfcc89f9e15192b0569f66283b115ca5aa50118.json"
+      },
+      {
+        "id": 23,
+        "state": "COS_VERIFIED",
+        "created": 1793721924.5681117,
+        "manifest": "manifests/cd491ed201dc85c988148fa1675368ec282b6e9fc0b56ae9e60765dac01cc483.json"
+      },
+      {
+        "id": 24,
+        "state": "COS_VERIFIED",
+        "created": 1793722044.9902365,
+        "manifest": "manifests/8b6e95b25fbe8c406939bfce58c9b2536dcff82f4be23955ec94e98754560f82.json"
+      },
+      {
+        "id": 25,
+        "state": "COS_VERIFIED",
+        "created": 1793722175.4106584,
+        "manifest": "manifests/83ab0cd52681292a5544706d53294b95659bfaca6c365021079c324b0b698237.json"
+      },
+      {
+        "id": 26,
+        "state": "COS_VERIFIED",
+        "created": 1793722315.8180604,
+        "manifest": "manifests/b20c49b38da73d4503dbf4e1eb71a196c8df8126c284d2112cc4479a8241d6bb.json"
+      },
+      {
+        "id": 27,
+        "state": "COS_VERIFIED",
+        "created": 1793722446.304371,
+        "manifest": "manifests/489850125e503c3895479667c694c6944c416c47e4957c6e9ec8475ec8f79f92.json"
+      },
+      {
+        "id": 28,
+        "state": "SEALED",
+        "created": 1793722566.7236137,
+        "manifest": null
+      },
+      {
+        "id": 29,
+        "state": "SEALED",
+        "created": 1793722697.2114568,
+        "manifest": null
+      },
+      {
+        "id": 30,
+        "state": "OPEN",
+        "created": 1793722697.2114727,
+        "manifest": null
+      }
+    ],
+    "blocked_release": false,
+    "pending_mutations": 0,
+    "cold_files": 2329,
+    "consumers": [
+      {
+        "owner": "recorder",
+        "ready": 1,
+        "error": null
+      }
+    ],
+    "generation_counts": {
+      "RETIRED": 10,
+      "COS_VERIFIED": 17,
+      "SEALED": 2,
+      "OPEN": 1
+    },
+    "released_totals": {
+      "files": 2329,
+      "bytes": 746952628
+    },
+    "remaining_verified": {
+      "files": 3129,
+      "bytes": 1000778334
+    }
+  },
+  "maintenance": {
+    "authorization": "user-20261104-upload-verified-server-local-release",
+    "cos_deleted": false,
+    "observed_ms": 1793722641755,
+    "released_bytes": 69292496,
+    "results": [
+      {
+        "approval_sha256": "19c612fe359e03cc74d5c7301724084195bc6098ad2cbf9362dd308a2f419deb",
+        "epoch": 17,
+        "plan": "/home/ubuntu/coinstrategy-cos-archive/15m-release-work/release-control/epoch-17-f8b26f1024464f589819bdc738828c60.sqlite3",
+        "reason": "consumer handoff incomplete or interrupted mutation; local maintenance blocked",
+        "released_bytes_this_tick": 0,
+        "status": "DEFERRED"
+      },
+      {
+        "epoch": 18,
+        "reason": "consumer handoff incomplete or interrupted mutation; local maintenance blocked",
+        "released_bytes_this_tick": 0,
+        "status": "DEFERRED"
+      },
+      {
+        "epoch": 19,
+        "reason": "consumer handoff incomplete or interrupted mutation; local maintenance blocked",
+        "released_bytes_this_tick": 0,
+        "status": "DEFERRED"
+      },
+      {
+        "epoch": 20,
+        "reason": "consumer handoff incomplete or interrupted mutation; local maintenance blocked",
+        "released_bytes_this_tick": 0,
+        "status": "DEFERRED"
+      },
+      {
+        "epoch": 21,
+        "reason": "consumer handoff incomplete or interrupted mutation; local maintenance blocked",
+        "released_bytes_this_tick": 0,
+        "status": "DEFERRED"
+      },
+      {
+        "epoch": 22,
+        "reason": "consumer handoff incomplete or interrupted mutation; local maintenance blocked",
+        "released_bytes_this_tick": 0,
+        "status": "DEFERRED"
+      },
+      {
+        "epoch": 23,
+        "reason": "consumer handoff incomplete or interrupted mutation; local maintenance blocked",
+        "released_bytes_this_tick": 0,
+        "status": "DEFERRED"
+      },
+      {
+        "epoch": 24,
+        "reason": "consumer handoff incomplete or interrupted mutation; local maintenance blocked",
+        "released_bytes_this_tick": 0,
+        "status": "DEFERRED"
+      },
+      {
+        "epoch": 25,
+        "reason": "consumer handoff incomplete or interrupted mutation; local maintenance blocked",
+        "released_bytes_this_tick": 0,
+        "status": "DEFERRED"
+      },
+      {
+        "approval_sha256": "952388c333750ed6aff6c2f3c7007e61cc04893f14afb571f9e8e971ae928b05",
+        "epoch": 26,
+        "plan": "/home/ubuntu/coinstrategy-cos-archive/15m-release-work/release-control/epoch-26-4f95aefe67a742cd9009b7ac824c5ac9.sqlite3",
+        "reason": "source is in use; retry local maintenance",
+        "released_bytes_this_tick": 41843188,
+        "status": "DEFERRED"
+      },
+      {
+        "approval_sha256": "78116ef22ced1480ed6ac2c76f115db95caaf54ea5c3433de7afebf2e9069d63",
+        "epoch": 27,
+        "manifest": "manifests/489850125e503c3895479667c694c6944c416c47e4957c6e9ec8475ec8f79f92.json",
+        "plan": "/home/ubuntu/coinstrategy-cos-archive/15m-release-work/release-control/epoch-27-d40473ec060545f88dd95b1a7d59ac43.sqlite3",
+        "released_bytes": 0,
+        "released_bytes_this_tick": 20993938,
+        "remaining_local_members": 154,
+        "removed_this_run": 0,
+        "status": "RETAINED_OR_PARTIAL"
+      },
+      {
+        "approval_sha256": "242a0728ba3a6b1bccdceb6021f14e81d2d178b11796917fedaa14a1f5328675",
+        "epoch": 3,
+        "manifest": "manifests/117202d987dc3e96794556fa697741d6b68b288fa831a446b824a393b96f211a.json",
+        "plan": "/home/ubuntu/coinstrategy-cos-archive/15m-release-work/release-control/epoch-3.sqlite3",
+        "released_bytes": 6455370,
+        "released_bytes_this_tick": 6455370,
+        "remaining_local_members": 0,
+        "removed_this_run": 21,
+        "status": "RETIRED"
+      }
+    ],
+    "status": "DEFERRED"
+  },
+  "systemd": "MainPID=2361464\nResult=success\nExecMainStatus=0\nId=coinstrategy-15m-market-data.service\nActiveState=active\n\nMainPID=0\nResult=success\nExecMainStatus=0\nId=coinstrategy-15m-cos-archive.service\nActiveState=inactive\n\nResult=success\nId=coinstrategy-15m-cos-archive.timer\nActiveState=active\n\nMainPID=2376934\nResult=success\nExecMainStatus=0\nId=coinstrategy-15m-cos-release.service\nActiveState=activating\n\nResult=success\nId=coinstrategy-15m-cos-release.timer\nActiveState=active\n\nMainPID=2213018\nResult=success\nExecMainStatus=0\nId=htx-trend-worker@htx-trend-live-primary.service\nActiveState=active\n"
+}

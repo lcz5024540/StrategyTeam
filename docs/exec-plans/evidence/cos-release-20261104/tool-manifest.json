@@ -1,0 +1,11 @@
+{
+  "version": "15m-cos-release-895663f9",
+  "source_commit": "895663f95987d19d294a802ab878d9299199f771",
+  "data_package": "0.1.7-realtime-candidate-869660ab",
+  "files": {
+    "release_verified.py": "e17a24bce46bf804f81c5b9ef3dc235d3f5dcf88cb92436006f9313b863e5083",
+    "coinstrategy-15m-cos-release.service": "5ea46be9bd79e1eb9036bb6ad312b7815b31f54209e7719f75f8e13519ae8118",
+    "coinstrategy-15m-cos-release.timer": "f31c918ced53477c30bf95e9b903c4ac7c7cf8f2eaacddb0aa222502e6e0f6b1",
+    "verified-release.md": "e04f3a8f4fe03926e18fcf18b9d4aaed71332e0086f4d88bbdfc5e02a32664c5"
+  }
+}

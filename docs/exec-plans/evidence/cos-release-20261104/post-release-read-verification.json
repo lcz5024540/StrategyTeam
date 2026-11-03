@@ -1,0 +1,27 @@
+{
+  "verified": true,
+  "source_files_absent": true,
+  "manifest": "manifests/921154d0301d516d8cdb237fe8ab75cb09c631ef103d1c543975bc50ffb8ee37.json",
+  "restored_files": 3,
+  "events": 908,
+  "kinds": {
+    "DEPTH": 361,
+    "BBO": 538,
+    "TRADE": 9
+  },
+  "restore": {
+    "manifest": "manifests/921154d0301d516d8cdb237fe8ab75cb09c631ef103d1c543975bc50ffb8ee37.json",
+    "restored": 3,
+    "reused": 0,
+    "bytes": 1012906,
+    "source_retained": true,
+    "status": "COMPLETE",
+    "scope": "selection",
+    "paths": [
+      "segments/01c8a15d9fae8e49f5cc6abae74783e688c36cd73e4063e7dae167c51b366b43.json.gz",
+      "segments/01d70f9586e177e8e8f8e366b3907b3ed57da8d5e90d5d763a9150af4cde4cc7.json.gz",
+      "segments/02081deda9281f39bf57e0ca75c6027685279d8b888b379a7b60d5e1ccb1bc75.json.gz"
+    ],
+    "cas": []
+  }
+}

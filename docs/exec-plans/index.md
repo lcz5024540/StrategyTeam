@@ -8,3 +8,5 @@
 - COS archive delivery evidence: [report](evidence/cos-archive-20261103/report.md) -7 snapshots, actual restore receipts and capacity.
 
 - [COS continuous archive](completed/plan-20261103-cos-continuous-archive.md) — scheduler, replay cache and verified frozen-source retirement.
+
+- [COS verified local release](completed/plan-20261104-cos-verified-release.md) - deployed; [evidence](evidence/cos-release-20261104/report.md).
