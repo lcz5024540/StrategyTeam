@@ -11,7 +11,7 @@ Scope: isolated archive CLI, SDK adapter, snapshots, packs/catalogue, explicit r
 
 Source-navigation evidence: Explore followed research.store FileEvidenceStore, realtime SegmentRecorder/public_capture and new archive entrypoints. Codegraph unavailable in this session; no graph output fabricated. AST/source paths and the draw.io dataflow document the affected boundary. Defect-ledger scan found no active Python COS/archive entry. New implementation edge cases identified during development are encoded in this test suite; no claim of a production strategy defect.
 
-Remaining delivery work: collect final migration receipts, actual bytes, restored CAS/capture reader evidence and final governance checkpoint. Approval to merge/deploy strategies is outside this task.
+Final result: all7 source receipts published and real restores verified; completed-staging release passed real repeat/recovery checks. Review approved within archive scope. No target-branch merge or strategy deployment.
 
 Defect feedback: governance DL-077 records the two reproducible pre-delivery snapshot-integrity findings (tree identity and capture orphan coverage), fixed in3e217e86 with targeted regression. Not a production strategy incident.
 
