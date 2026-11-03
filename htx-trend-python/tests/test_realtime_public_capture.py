@@ -144,3 +144,27 @@ def test_segment_reference_and_websocket_depth_are_replay_compatible(tmp_path):
     m.now_ms = 3100
     with pytest.raises(ValueError, match="EXCHANGE_STALE"):
         m.order_book("ETH-USDT")
+
+
+def test_fast_segments_keep_exact_canonical_identity_and_legacy_reader(tmp_path):
+    from htx_trend.research.store import canonical, digest
+    from decimal import Decimal
+
+    records = [normalize_ws(depth(i), "e", i + 1)[0][0] for i in (1000, 1100)]
+    a = SegmentRecorder(tmp_path / "a")
+    b = SegmentRecorder(tmp_path / "b", gzip_level=1, json_ready=True)
+    for r in records:
+        a.append(r)
+        b.append(r)
+    expected = {"schema": "htx-realtime-segment-v1", "events": records}
+    assert a.flush() == b.flush() == digest(expected)
+    assert b.verify() == records
+    for store in (a, b):
+        assert gzip.decompress(
+            (store.root / (store.last_ref + ".json.gz")).read_bytes()
+        ) == canonical(expected)
+        assert not store.encoded
+    default = SegmentRecorder(tmp_path / "typed")
+    default.append(dict(kind="test", received_ms=1, price=Decimal("1.20")))
+    default.flush()
+    assert default.verify()[0]["price"] == "1.2"

@@ -1,0 +1,14 @@
+{
+  "prior_gzip9": {
+    "events": 1000,
+    "seconds": 2.3588929169345647,
+    "events_per_second": 423.92767930284975,
+    "bytes": 106665
+  },
+  "single_encoding_gzip1": {
+    "events": 1000,
+    "seconds": 0.13506554206833243,
+    "events_per_second": 7403.812879928172,
+    "bytes": 582491
+  }
+}

@@ -221,7 +221,10 @@ class Capture:
         self.counts, self.channels = Counter(), Counter()
         self.last_seen, self.errors = {}, Counter()
         self.recorder = SegmentRecorder(
-            self.root / "segments", max_bytes=max_bytes - CONTROL_RESERVE
+            self.root / "segments",
+            max_bytes=max_bytes - CONTROL_RESERVE,
+            gzip_level=1,
+            json_ready=True,
         )
         self.client = HtxV5Client()  # no credentials, no environment loading
         self.rate_lock, self.next_request = threading.Lock(), 0.0
@@ -499,6 +502,7 @@ class Capture:
             bytes=self.recorder.used,
             min_free_bytes=self.min_free_bytes,
             disk_free_bytes=shutil.disk_usage(self.root).free,
+            queue_depth=self.events.qsize(),
             admission="NOT_ELIGIBLE",
             trading=False,
         )

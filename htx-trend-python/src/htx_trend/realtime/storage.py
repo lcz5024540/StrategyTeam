@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -96,12 +97,22 @@ class MySqlPlanStore:
 class SegmentRecorder:
     """Append-only gzip segments. No deletion, no silent quota loss or full-window copies."""
 
-    def __init__(self, root, *, max_bytes=2 * 1024**3, segment_bytes=1024**2):
+    def __init__(
+        self,
+        root,
+        *,
+        max_bytes=2 * 1024**3,
+        segment_bytes=1024**2,
+        gzip_level=9,
+        json_ready=False,
+    ):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.max_bytes, self.segment_bytes = max_bytes, segment_bytes
         self.used = sum(p.stat().st_size for p in self.root.iterdir() if p.is_file())
         self.pending = []
+        self.encoded = []
+        self.gzip_level, self.json_ready = gzip_level, json_ready
         self.pending_bytes = 0
         self.failure = None
         self.lock = threading.RLock()
@@ -119,8 +130,20 @@ class SegmentRecorder:
             if self.failure:
                 return False
             value = event.dump() if hasattr(event, "dump") else event
+            encoded = (
+                json.dumps(
+                    value,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode()
+                if self.json_ready
+                else canonical(value)
+            )
             self.pending.append(value)
-            self.pending_bytes += len(canonical(value))
+            self.encoded.append(encoded)
+            self.pending_bytes += len(encoded)
             return (
                 self.flush() is not None
                 if self.pending_bytes >= self.segment_bytes
@@ -133,11 +156,15 @@ class SegmentRecorder:
                 return None
             if not self.pending:
                 return self.last_ref
-            raw = canonical(
-                {"schema": "htx-realtime-segment-v1", "events": self.pending}
+            # Each immutable observation is canonicalized once at append. Joining
+            # its bytes preserves the old canonical object/hash exactly.
+            raw = (
+                b'{"events":['
+                + b",".join(self.encoded)
+                + b'],"schema":"htx-realtime-segment-v1"}'
             )
-            sha = digest(json.loads(raw))
-            packed = gzip.compress(raw, mtime=0)
+            sha = sha256(raw).hexdigest()
+            packed = gzip.compress(raw, compresslevel=self.gzip_level, mtime=0)
             record = {
                 "hash": sha,
                 "bytes": len(packed),
@@ -149,6 +176,7 @@ class SegmentRecorder:
             if self.used + len(packed) + len(line) > self.max_bytes:
                 self.failure = "CAPTURE_QUOTA_EXCEEDED"
                 self.pending.clear()
+                self.encoded.clear()
                 self.pending_bytes = 0
                 return None
             path = self.root / (sha + ".json.gz")
@@ -165,7 +193,7 @@ class SegmentRecorder:
                     self.used += len(packed)
                 if sha not in self.indexed:
                     # A crash after object rename but before manifest append is recoverable.
-                    if digest(json.loads(gzip.decompress(path.read_bytes()))) != sha:
+                    if sha256(gzip.decompress(path.read_bytes())).hexdigest() != sha:
                         raise OSError("orphan segment hash mismatch")
                     with (self.root / "segments.jsonl").open("ab") as f:
                         f.write(line)
@@ -181,6 +209,7 @@ class SegmentRecorder:
                     self.records.append(record)
                 self.last_ref = sha
                 self.pending.clear()
+                self.encoded.clear()
                 self.pending_bytes = 0
                 return sha
             except OSError as error:

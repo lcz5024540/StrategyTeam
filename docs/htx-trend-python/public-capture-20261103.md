@@ -22,3 +22,9 @@
 
 ## 验证
 83项实时测试通过；20秒ETH真实样本覆盖五类市场输入，147KB，hash重读/导出通过。证据在[evidence/capture-20261103](evidence/capture-20261103/)。服务器启动和覆盖快照在完成后追加。
+
+[采集与准入边界图](diagrams/public-capture-20261103.drawio)。
+
+## 首次服务器试采与修复
+52合约首次试采在约44秒触发QUEUE_OVERFLOW，安全停止；只得到24个合约的FRAME，不能作为完整区间。原因是通用分段writer重复规范序列化和gzip9压缩跟不上吞吐。
+已改为append时只序列化一次并拼接相同规范字节；公共采集显式gzip1和JSON-ready路径，其他调用保留gzip9及类型转换。内容哈希与旧读器完全一致，配额与fsync不变。84项实时回归通过；同一真实depth样本1000次的离线吞吐/占用见writer-benchmark.json。服务器重新试采后再决定长期运行。
