@@ -1,0 +1,20 @@
+{
+  "installed_at": "2026-11-03T23:16:41.606686+08:00",
+  "version": "0.1.7-realtime-candidate-d2a64d34",
+  "source_commit": "d2a64d34ee031aaa268b5d3480b850043376a7fb",
+  "package_sha256": "e7955e6c3f066a8b64ca07381ace45f75d5b3c8f5008f7e19a2ed1ec9ea1f643",
+  "frozen_tar": "/workspace/frozen/0.1.7-realtime-candidate-d2a64d34/htx-trend-python-0.1.7-realtime-candidate-d2a64d34.tar.gz",
+  "release": "/opt/coinstrategy/15m-market-data/releases/0.1.7-realtime-candidate-d2a64d34",
+  "data_only": true,
+  "contracts": 52,
+  "unmodified_management_pid": 2213018,
+  "unmodified_4h_pid": 705510,
+  "previous_data_release": null,
+  "files": {
+    "/etc/coinstrategy/15m-cos-pool.json": "6e5d87e4d884b4ea8e2be9180a15e6227b41855cc01bf01a8c888c492d1b75d9",
+    "/etc/coinstrategy/15m-cos-archive.json": "48d10df42ce91826a723ca5ea657880f23df11d029e57883e5d85a0dced304da",
+    "/etc/systemd/system/coinstrategy-15m-market-data.service": "b4d25e8440adc9d7fb3b2af527ecc52aa14392b02e8bc29d650c6fce127d347f",
+    "/etc/systemd/system/coinstrategy-15m-cos-archive.service": "abe5750baf731027ec1049887ae8f8234f38551afe77ba9050eaccff2f716083",
+    "/etc/systemd/system/coinstrategy-15m-cos-archive.timer": "697f65aed2ae8519cd043eff8c737f41ecf78364a7a53ce82fa07f3c0f0295ba"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "source_commit": "d2a64d34ee031aaa268b5d3480b850043376a7fb",
+  "package": "/tmp/15m-cos-deployment-frozen/0.1.7-realtime-candidate-d2a64d34/htx-trend-python-0.1.7-realtime-candidate-d2a64d34.tar.gz",
+  "sha256": "e7955e6c3f066a8b64ca07381ace45f75d5b3c8f5008f7e19a2ed1ec9ea1f643",
+  "verification": {
+    "status": "PASS",
+    "archive": "htx-trend-python-0.1.7-realtime-candidate-d2a64d34.tar.gz",
+    "archive_path": "/private/tmp/15m-cos-deployment-frozen/0.1.7-realtime-candidate-d2a64d34/htx-trend-python-0.1.7-realtime-candidate-d2a64d34.tar.gz",
+    "bindings": {
+      "config_fingerprint": "2b279230d1559175bb88071dda0fb00437f3e91d78bc37c56fcb0c00321b2d77",
+      "config_hash": "2b279230d1559175bb88071dda0fb00437f3e91d78bc37c56fcb0c00321b2d77",
+      "config_path": "release/config.example.json",
+      "instance_key": "htx-realtime-paper-15m",
+      "package_sha256": "e7955e6c3f066a8b64ca07381ace45f75d5b3c8f5008f7e19a2ed1ec9ea1f643",
+      "source_commit": "d2a64d34ee031aaa268b5d3480b850043376a7fb",
+      "strategy_spec_hash": "2bbf8ee4c19a9d0b7059b60f540e154161edee8c9b11266756e75a7e889dab63",
+      "strategy_version": "HTX_REALTIME_STRUCTURE_15M_V1",
+      "timeframe_profile": "INTRADAY_15M"
+    },
+    "build": {
+      "created_at": "2026-11-03T15:14:52.928291+00:00",
+      "source_note": "HEAD plus working-tree payload; per-file hashes bind actual bytes",
+      "version_note": "tip8 is based on HEAD; for an uncommitted working tree, the executor may rebuild after commit to align tip8",
+      "working_tree_dirty": false
+    },
+    "candidate": true,
+    "disclaimer": "\u5019\u9009\u5305 \u2260 \u53ef\u4ee5\u70ed\u66f4 \u2260 \u53ef\u88c5\u73b0\u7f51",
+    "frozen_path": "/private/tmp/15m-cos-deployment-frozen/0.1.7-realtime-candidate-d2a64d34",
+    "manifest_sha256": "01a18678dc91031003349ec40aaae77a6011c5935be59df78dfeb1dfac08e0ff",
+    "package_sha256": "e7955e6c3f066a8b64ca07381ace45f75d5b3c8f5008f7e19a2ed1ec9ea1f643",
+    "schema": "htx-candidate-build-g3",
+    "synthetic": true,
+    "version": "0.1.7-realtime-candidate-d2a64d34"
+  },
+  "build": {
+    "created_at": "2026-11-03T15:14:52.928291+00:00",
+    "source_note": "HEAD plus working-tree payload; per-file hashes bind actual bytes",
+    "working_tree_dirty": false
+  }
+}

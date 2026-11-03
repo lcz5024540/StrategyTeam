@@ -551,6 +551,7 @@ class Capture:
             observed_ms=now,
             final=final,
             stop_reason=self.failure,
+            release=os.environ.get('HTX_PUBLIC_CAPTURE_RELEASE_ID','UNSPECIFIED'),
             counts_scope="CURRENT_PROCESS",
             counts=dict(self.counts),
             channels=dict(self.channels),
@@ -564,12 +565,25 @@ class Capture:
             trading=False,
         )
 
+    @staticmethod
+    def stream_dependency_check():
+        from websockets.sync.client import connect
+        return connect
+
     def run(self):
         threads = []
         try:
             if shutil.disk_usage(self.root).free < self.min_free_bytes + self.max_bytes:
                 self.failure = "INSUFFICIENT_START_HEADROOM"
                 return
+            try:
+                self.stream_dependency_check()
+            except ImportError:
+                self.failure = 'STREAM_DEPENDENCY_UNAVAILABLE'
+                return
+            self.emit(dict(kind='COLLECTION_SESSION',received_ms=self.now(),
+                           release=os.environ.get('HTX_PUBLIC_CAPTURE_RELEASE_ID','UNSPECIFIED'),
+                           session_id=uuid.uuid4().hex,trading=False))
             self.load_specifications()
             threads = [
                 threading.Thread(target=self.stream_loop, daemon=True),
@@ -581,6 +595,9 @@ class Capture:
             while not self.stop.is_set() and time.monotonic() < deadline:
                 if time.monotonic() - checked_at >= 1:
                     checked_at = time.monotonic()
+                    if any(not thread.is_alive() for thread in threads):
+                        self.failure = 'CAPTURE_THREAD_EXITED'
+                        break
                     if shutil.disk_usage(self.root).free < self.min_free_bytes:
                         self.failure = "LOW_DISK_HEADROOM"
                         break

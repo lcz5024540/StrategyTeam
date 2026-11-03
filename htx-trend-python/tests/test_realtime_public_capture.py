@@ -221,3 +221,25 @@ def test_resume_does_not_reset_remaining_capacity(tmp_path):
     assert c.recorder.failure=='CAPTURE_QUOTA_EXCEEDED'
     assert c.recorder.used<=500
     close_capture(c)
+
+
+def test_missing_stream_dependency_stops_before_partial_rest_only_capture(tmp_path,monkeypatch):
+    c=Capture(tmp_path/'missing',['ETH-USDT'],seconds=1)
+    def missing():raise ModuleNotFoundError('websockets')
+    monkeypatch.setattr(c,'stream_dependency_check',missing)
+    monkeypatch.setattr(c,'load_specifications',lambda:pytest.fail('do not capture a partial stream silently'))
+    monkeypatch.setattr('htx_trend.realtime.public_capture.shutil.disk_usage',lambda _:SimpleNamespace(free=20*GIB))
+    c.run()
+    assert c.failure=='STREAM_DEPENDENCY_UNAVAILABLE'
+    assert json.loads((c.root/'status.json').read_bytes())['final']
+
+
+def test_unexpected_capture_thread_exit_is_visible_and_stops_run(tmp_path,monkeypatch):
+    c=Capture(tmp_path/'dead-thread',['ETH-USDT'],seconds=2)
+    monkeypatch.setattr(c,'stream_dependency_check',lambda:None)
+    monkeypatch.setattr(c,'load_specifications',lambda:None)
+    monkeypatch.setattr(c,'stream_loop',lambda:None)
+    monkeypatch.setattr(c,'rest_loop',lambda:c.stop.wait(3))
+    monkeypatch.setattr('htx_trend.realtime.public_capture.shutil.disk_usage',lambda _:SimpleNamespace(free=20*GIB))
+    c.run()
+    assert c.failure=='CAPTURE_THREAD_EXITED'

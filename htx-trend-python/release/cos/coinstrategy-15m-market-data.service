@@ -12,7 +12,8 @@ Group=ubuntu
 UMask=0077
 WorkingDirectory=/opt/coinstrategy/15m-market-data/current
 Environment=PYTHONPATH=/opt/coinstrategy/15m-market-data/current/src
-ExecStart=/opt/coinstrategy/htx-trend-py-venv/bin/python -m htx_trend.realtime.public_capture start --contracts-file /etc/coinstrategy/15m-cos-pool.json --output /home/ubuntu/coinstrategy-data/15m-cos/capture --segmented --resume --seconds 86400
+EnvironmentFile=/etc/coinstrategy/15m-cos-release.env
+ExecStart=/opt/coinstrategy/15m-market-data/venv/bin/python -m htx_trend.realtime.public_capture start --contracts-file /etc/coinstrategy/15m-cos-pool.json --output /home/ubuntu/coinstrategy-data/15m-cos/capture --segmented --resume --seconds 86400
 Restart=always
 RestartSec=60
 RestartPreventExitStatus=2
