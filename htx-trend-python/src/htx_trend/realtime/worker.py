@@ -194,6 +194,10 @@ class RealtimeWorker:
         self.last_reconcile_ms = 0
         self.last_flush_ms = 0
         self.recovery_error = None
+        self.trial = None
+        self.trial_monitor = None
+        self.trial_connection = None
+        self.management_only = False
 
     def runtime_key(self):
         return "REALTIME_STRUCTURE_15M"
@@ -293,6 +297,9 @@ class RealtimeWorker:
             },
             refs=trigger.plan.evidence_refs,
         )
+        effective = self.execution
+        if self.trial is not None and self.entry_enabled:
+            effective = self.trial.execution_config(effective, facts, check_ms)
         gate, intent = evaluate(
             trigger,
             now_ms=check_ms,
@@ -302,7 +309,7 @@ class RealtimeWorker:
             facts=facts,
             instance_key=self.instance.instance_key,
             parameters=self.parameters,
-            config=self.execution,
+            config=effective,
             evidence_ref=ref,
             recent_candles=frame["entry"].candles,
         )
@@ -372,6 +379,39 @@ class RealtimeWorker:
             failures.append(self.recovery_error)
         # Initial stop checks do not depend on structure refresh or evidence writes.
         failures.extend(self.management.tick(now))
+        if self.trial_monitor is not None:
+            try:
+                self.trial_monitor.tick(now)
+            except Exception as error:
+                failures.append('TRIAL_STATE:' + type(error).__name__)
+                self._entry_recovery_blocked = True
+        if self.management_only:
+            status = self.trial.status(now) if self.trial else {}
+            # Only owned contracts are subscribed. Existing realtime positions still
+            # need post-fill coverage and immediate stops during entry shutdown.
+            if self.stream.epoch != self.last_epoch:
+                try:
+                    self.management.gap()
+                    self.last_epoch = self.stream.epoch
+                except Exception as error:
+                    failures.append('MANAGEMENT_GAP:' + type(error).__name__)
+            for event in self.stream.drain():
+                try:
+                    if not self.recorder.append(event):
+                        failures.append(self.recorder.failure or 'CAPTURE_FAILED')
+                        self.management.gap(contract=event.contract)
+                    if event.kind == 'BBO' and event.fresh(now):
+                        self.engine.books[event.contract] = event
+                        self.management.event(event, now)
+                        failures.extend(self.management.tick(now, contract=event.contract))
+                except Exception as error:
+                    failures.append('MANAGEMENT_EVENT:' + type(error).__name__)
+            if now - self.last_flush_ms >= 10000:
+                self.recorder.flush()
+                self.last_flush_ms = now
+            return WorkerHealth('DEGRADED' if failures else 'HEALTHY',
+                                'MANAGEMENT_ONLY; trial=' + str(status['trial_id']) +
+                                '; entry=false; activated=' + str(status['activated']) + ('; ' + ','.join(failures) if failures else ''))
         if self.stream.epoch != self.last_epoch:
             try:
                 self.engine.disconnect()
@@ -493,6 +533,11 @@ class RealtimeWorker:
                             trigger.plan.plan_id, "REJECTED", reason=gate.reason
                         )
                         continue
+                    import shutil
+                    if self.trial is not None and shutil.disk_usage(self.recorder.root).free < 5 * 1024**3:
+                        if self.trial is not None:
+                            self.trial.stop('DISK_LIMIT')
+                        raise ValueError('disk free space below 5GiB')
                     self._save_runtime()
                     self.admission_guard()
                     if self._drain_requested():
@@ -517,6 +562,9 @@ class RealtimeWorker:
         )
         if failures:
             detail += "; " + ",".join(sorted(set(failures)))[:600]
+        if self.trial is not None:
+            status = self.trial.status(now)
+            detail += '; trial=' + status['trial_id'] + '; slots=' + str(status['occupied_slots']) + '/10' + '; stop=' + str(status['stop_reason'])
         self.failed = tuple(failures)
         count = (
             len(self.broker.ledger.active_positions(self.broker.account))
@@ -552,6 +600,10 @@ class RealtimeWorker:
         self.recorder.flush()
         if hasattr(self.broker, "close"):
             self.broker.close()
+        if self.trial_monitor is not None:
+            self.trial_monitor.close()
+        if self.trial_connection is not None:
+            self.trial_connection.close()
         if hasattr(self.management, "flush"):
             self.management.flush()
         if hasattr(self.broker, "ledger"):

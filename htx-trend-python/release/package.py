@@ -141,6 +141,8 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False,
             payload['release/' + name] = (ROOT / 'release' / name).read_bytes()
         payload['release/migrations/2026-11-02__htx_realtime_structure_plan.sql'] = (
             ROOT.parent / 'sql/htx/2026-11-02__htx_realtime_structure_plan.sql').read_bytes()
+        payload['release/migrations/2026-11-03__htx_realtime_live_trial.sql'] = (
+            ROOT.parent / 'sql/htx/2026-11-03__htx_realtime_live_trial.sql').read_bytes()
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
                 'config_hash': digest(encoded(config)), 'config_path': 'release/config.example.json',
@@ -219,7 +221,7 @@ def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False):
                  and p.name not in {'LIVE_PACKAGE.md', 'seal_live.py', 'seal_product_live_waiver.py'}]
         paths += [ROOT / 'release/REALTIME-LIVE-PACKAGE.md', ROOT / 'release/REALTIME-ENTRY.md',
                   ROOT / 'deployment/systemd/coinstrategy-python-strategy@.service',
-                  ROOT / 'deployment/realtime-live.env.example']
+                  ROOT / 'deployment/realtime-live.env.example', ROOT / 'release/TRIAL-CONTROLS.md']
     payload = {}
     for path in paths:
         if path.is_symlink() or any(p.is_symlink() for p in path.parents):
@@ -233,7 +235,7 @@ def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False):
               'note': 'LIVE encode package only; sealed admission/approval required before trading'}
     if realtime:
         config.update(entry_enabled=False, financial_admission='NOT_ELIGIBLE',
-                      structural_candidate_selected=False, trial_controls_implemented=False,
+                      structural_candidate_selected=False, trial_controls_implemented=True,
                       entry_period='15min', trend_period='60min',
                       models=['RT_RANGE_REJECTION', 'RT_BREAKOUT_RETEST'],
                       runtime_env_required={'HTX_RT_ENTRY_ENABLED': 'false'},
@@ -245,6 +247,8 @@ def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False):
             config.pop(field)
         payload['release/migrations/2026-11-02__htx_realtime_structure_plan.sql'] = (
             ROOT.parent / 'sql/htx/2026-11-02__htx_realtime_structure_plan.sql').read_bytes()
+        payload['release/migrations/2026-11-03__htx_realtime_live_trial.sql'] = (
+            ROOT.parent / 'sql/htx/2026-11-03__htx_realtime_live_trial.sql').read_bytes()
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
                 'config_hash': digest(encoded(config)), 'config_path': 'release/config.example.json',
@@ -345,11 +349,12 @@ def verify_live(archive: Path):
     if realtime:
         required = {'release/REALTIME-LIVE-PACKAGE.md', 'release/REALTIME-ENTRY.md',
                     'deployment/realtime-live.env.example',
-                    'release/migrations/2026-11-02__htx_realtime_structure_plan.sql'}
+                    'release/migrations/2026-11-02__htx_realtime_structure_plan.sql',
+                    'release/migrations/2026-11-03__htx_realtime_live_trial.sql'}
         if (not required <= data.keys() or cfg.get('entry_enabled') is not False
                 or cfg.get('financial_admission') != 'NOT_ELIGIBLE'
                 or cfg.get('structural_candidate_selected') is not False
-                or cfg.get('trial_controls_implemented') is not False
+                or cfg.get('trial_controls_implemented') is not True
                 or cfg.get('release_status') != 'ENCODE_ONLY_ENTRY_DISABLED'
                 or cfg.get('runtime_env_required') != {'HTX_RT_ENTRY_ENABLED': 'false'}
                 or cfg.get('entry_period') != '15min' or cfg.get('trend_period') != '60min'

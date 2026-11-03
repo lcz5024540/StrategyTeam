@@ -1,13 +1,13 @@
 """Explicit realtime construction; no strategy entry activation by installation."""
 
-from dataclasses import asdict, replace
-from decimal import Decimal as D
-from pathlib import Path
 import json
 import os
-from datetime import datetime, UTC
+from dataclasses import asdict, replace
+from datetime import UTC, datetime
+from decimal import Decimal as D
+from pathlib import Path
 
-from ..continuation import ContinuationConfig, LINKED
+from ..continuation import LINKED, ContinuationConfig
 from ..execution import ExecutionConfig
 from ..exit_config import ExitConfig
 from ..holding_policy import HoldingPolicy
@@ -16,12 +16,27 @@ from ..runtime import PaperTrendRuntime
 from ..strategy_profiles import profile_entry_config
 from ..timeframes import TimeframeProfile
 from . import VERSION
-from .brokers import PaperBroker, LiveBroker, RealtimePaperExchange
+from .brokers import LiveBroker, PaperBroker, RealtimePaperExchange
 from .feed import PublicStream
-from .management import PaperManagement, LiveManagement
+from .management import LiveManagement, PaperManagement
 from .plans import Parameters, TriggerEngine
-from .storage import PaperPlanStore, MySqlPlanStore, SegmentRecorder
-from .worker import RealtimeWorker, FrameLoader, MarketView
+from .storage import MySqlPlanStore, PaperPlanStore, SegmentRecorder
+from .worker import FrameLoader, MarketView, RealtimeWorker
+
+
+class IdleManagementStream:
+    """A verified empty management inventory needs no public universe subscription."""
+    connected = False
+    epoch = "MANAGEMENT_EMPTY"
+
+    def start(self):
+        pass
+
+    def drain(self):
+        return ()
+
+    def close(self):
+        pass
 
 
 class BreadthContext:
@@ -248,6 +263,14 @@ def live(
 ):
     if instance.strategy_name != VERSION or instance.execution_mode != "LIVE":
         raise ValueError("realtime LIVE ownership mismatch")
+    from .trial_admission import BINDINGS, configured, runtime_authority
+    trial_approval = None
+    if configured():
+        trial_approval, trial_limits = runtime_authority(
+            instance, entry._account, policy=policy, contracts=contracts,
+            parameters=parameters(), entry=os.environ.get('HTX_RT_ENTRY_ENABLED', '').lower() == 'true')
+        admission_guard = lambda: runtime_authority(
+            instance, entry._account, policy=policy, contracts=contracts, parameters=parameters(), entry=True)
     engine = TriggerEngine(
         MySqlPlanStore(entry._repository._connection),
         instance.instance_key,
@@ -276,7 +299,7 @@ def live(
             "realtime 15m cannot adopt a holding with an unmanaged timeframe"
         )
     current = tuple(row["contract_code"] for row in holdings)
-    return _common(
+    worker = _common(
         instance,
         engine,
         broker,
@@ -292,3 +315,24 @@ def live(
         guard=guard,
         admission_guard=admission_guard,
     )
+
+    if trial_approval is not None:
+        from ..mysql_store import HtxTrendMySqlRepository, MySqlSettings, connect
+        from ..worker import _account_client
+        from .trial import MySqlTrialStore, Trial
+        from .trial_facts import BackgroundTrialMonitor, LiveTrialReader
+        trial_db = connect(MySqlSettings.from_env())
+        worker.trial = Trial(MySqlTrialStore(trial_db), trial_approval['trial_id'],
+                             {k: trial_approval[k] for k in BINDINGS}, trial_limits)
+        broker.trial = worker.trial
+        worker.trial_monitor = BackgroundTrialMonitor(worker.trial,
+            LiveTrialReader(lambda: HtxTrendMySqlRepository(connect(MySqlSettings.from_env())),
+                            lambda repo: _account_client(repo, entry._account.account_id, live=False), evidence),
+            engine.books)
+        worker.management_only = trial_approval['permission'] == 'MANAGEMENT'
+        if worker.management_only:
+            worker.loader.contracts = current
+            worker.stream = PublicStream(current) if current else IdleManagementStream()
+            management.coverage_stream = worker.stream
+        worker.trial_connection = trial_db
+    return worker

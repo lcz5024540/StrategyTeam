@@ -1,0 +1,19 @@
+usage: python -m htx_trend.realtime.trial_ops [-h] [--trial-id TRIAL_ID]
+                                              [--approval APPROVAL]
+                                              [--input INPUT]
+                                              [--output OUTPUT]
+                                              [--reason REASON]
+                                              {status,activate,stop,seal-management}
+
+Read trial status or explicitly activate/stop under the account writer lock.
+
+positional arguments:
+  {status,activate,stop,seal-management}
+
+options:
+  -h, --help            show this help message and exit
+  --trial-id TRIAL_ID
+  --approval APPROVAL
+  --input INPUT
+  --output OUTPUT
+  --reason REASON

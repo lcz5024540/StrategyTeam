@@ -35,7 +35,7 @@ def test_realtime_live_is_distinct_bound_and_entry_disabled(archive):
     assert cfg['mode'] == 'LIVE' and cfg['entry_enabled'] is False
     assert cfg['financial_admission'] == 'NOT_ELIGIBLE'
     assert cfg['structural_candidate_selected'] is False
-    assert cfg['trial_controls_implemented'] is False
+    assert cfg['trial_controls_implemented'] is True
     assert (cfg['entry_period'], cfg['trend_period']) == ('15min', '60min')
     assert 'release/migrations/2026-11-02__htx_realtime_structure_plan.sql' in data
     assert 'release/REALTIME-LIVE-PACKAGE.md' in data
@@ -79,7 +79,7 @@ def repack(archive, change):
 
 @pytest.mark.parametrize('field,value', [
     ('entry_enabled', True), ('financial_admission', 'PASS'),
-    ('trial_controls_implemented', True), ('structural_candidate_selected', True),
+    ('trial_controls_implemented', False), ('structural_candidate_selected', True),
     ('trend_period', '1day'), ('runtime_env_required', {'HTX_RT_ENTRY_ENABLED': 'true'}),
 ])
 def test_live_semantics_cannot_be_relabelled_with_rehashed_files(archive, field, value):
