@@ -1,0 +1,14 @@
+# COS archive implementation review
+2026-11-03 · Codex · candidate implementation self-review with read-only Explore findings.
+
+Scope: isolated archive CLI, SDK adapter, snapshots, packs/catalogue, explicit restore and capture reader compatibility. This is a coherent new storage boundary, larger than100 lines; it is kept together so pack format, writer and reader are reviewed against the same tests. No Java, execution strategy, order writer or MySQL schema change.
+
+- Correctness: explicit approved sources, private immutable hash keys, PUT/full GET before acknowledgement, independent cache, cache-before-job recovery, closure completion from exact CAS hashes, pinned tree fingerprints, required capture config, preserved unindexed segments. Grouped capture reads preserve sequence. Review findings were fixed before final delivery.
+- Tests:35 archive tests, including live SQLite WAL snapshot, interrupted upload acknowledgement, remote corruption, repeated/incremental archive, immutable identities, lock contention, changed source, missing dependencies followed by same-job recovery, unsafe paths, grouped-order invalidity, source orphan coverage and completion receipt. Full Python suite1031 passed/7 environment-dependent MySQL tests skipped. Actual COS small dataset271 full restored files SHA-equal; large migration evidence follows separately.
+- Design: archive is explicit/offline; neither existing trading loop nor MySQL delivery outbox is network-coupled to COS. Normal capture writing stays unchanged; only replay/verification decoding gains the deployed grouped schema. Whole-directory restore is not claimed atomic; completion receipt and success required before replay.
+- Style/naming: source, pack, manifest and catalogue identities distinct. Runtime imports SDK only when CLI constructs backend. Credential JSON external and mode0600; CLI redacts SDK errors/signatures.
+- Performance/security: bounded packs and decoded-object cap, streaming upload verification, ranges for selected objects, one-pack cache for full restore, no production deletion capability, source/destination symlink rejection and atomic non-overwriting member publication. Free-space guard protects the archive process; it does not control independent collector growth.
+
+Source-navigation evidence: Explore followed research.store FileEvidenceStore, realtime SegmentRecorder/public_capture and new archive entrypoints. Codegraph unavailable in this session; no graph output fabricated. AST/source paths and the draw.io dataflow document the affected boundary. Defect-ledger scan found no active Python COS/archive entry. New implementation edge cases identified during development are encoded in this test suite; no claim of a production strategy defect.
+
+Remaining delivery work: collect final migration receipts, actual bytes, restored CAS/capture reader evidence and final governance checkpoint. Approval to merge/deploy strategies is outside this task.

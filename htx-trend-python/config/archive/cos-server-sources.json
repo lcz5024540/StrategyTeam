@@ -1,0 +1,14 @@
+{
+  "bucket": "rayquant-strategy-1253235498",
+  "region": "na-siliconvalley",
+  "prefix": "coinstrategy/archive/v1/",
+  "sources": {
+    "paper-15m": {"kind": "cas", "root": "/opt/coinstrategy/htx-trend-paper-primary/evidence"},
+    "paper-4h": {"kind": "cas", "root": "/opt/coinstrategy/htx-trend-paper-4h/evidence"},
+    "shared-klines": {"kind": "cas", "root": "/opt/coinstrategy/htx-trend-py-state/evidence"},
+    "capture-realtime": {"kind": "capture", "root": "/home/ubuntu/coinstrategy-research/realtime-20261103/capture"},
+    "capture-long": {"kind": "capture", "root": "/home/ubuntu/coinstrategy-research/long-20261103-aaf3352c/capture", "pool": "/home/ubuntu/coinstrategy-research/long-20261103-aaf3352c/runtime-pool.json"},
+    "legacy-research": {"kind": "tree", "root": "/opt/coinstrategy/htx-trade/research", "extensions": [".json", ".md"]},
+    "parquet-datasets": {"kind": "tree", "root": "/opt/coinstrategy/htx-trend-py-state/data", "extensions": [".json", ".parquet", ".yaml", ".md"]}
+  }
+}
