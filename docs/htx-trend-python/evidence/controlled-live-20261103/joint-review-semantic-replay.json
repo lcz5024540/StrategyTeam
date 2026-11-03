@@ -1,0 +1,20 @@
+{
+  "original_commit": "9ca7dd59",
+  "fixed_source_sha256": "117faa7c9007afeafa02873f2054dcf5e3fbcedaa54b1fe3b789b057c134e21b",
+  "original_gzip_sha256": "0b60fbe1facdeef2e2e4550ebeb836e84db38e94b48514afcf650b91e233850f",
+  "fixed_gzip_sha256": "f22e89d4d436ff9f05d0b1c10d7fb11a8760495781f74754c8bbe72b1b87950d",
+  "comparison": "all fields equal after removing new activation.event_sequence and normalizing source_sha256",
+  "activations_with_new_sequence": 220,
+  "grouped_price_plans": 231,
+  "paths": 231,
+  "input_sha256": {
+    "baseline": "c1885e3df409b7035dcc86e2ac726e03a6bc9604d03c2d14a416bb334f2ed13a",
+    "manifest": "0a21a7246d870be55b0df2f404ff53d573a387046e8788d46f49f286188f89aa",
+    "prefix": "b6cb0f950412325483982924c901cebb30c6240d23541a66f9b7a2d3a3a1f4fd",
+    "protocol": "9dc1c548fbc4bdb5982c1c5089d5152ad046ef7abb18468373ed949221da3898",
+    "tail": "c3a654728b4246119e02b93e8cd5a8bffe2954edab8b54548bc6f0b0904c5621"
+  },
+  "same_parameter_grid": true,
+  "financial_admission": "RESEARCH_ONLY_NOT_ELIGIBLE",
+  "orders_submitted": 0
+}

@@ -7,8 +7,9 @@ import pytest
 from htx_trend.market_data import Candle, KlineWindow
 from htx_trend.models import TrendSide
 from htx_trend.realtime.fast_structure_diagnostic import EphemeralStore, Line
-from htx_trend.realtime.feed import MarketEvent
+from htx_trend.realtime.feed import MarketEvent, decode
 from htx_trend.realtime.joint_price_diagnostic import (
+    JointResearch,
     QuotePaths,
     TargetEngine,
     target_snapshot,
@@ -207,3 +208,67 @@ def test_late_pretrigger_quote_cannot_be_a_posttrigger_touch():
     observe(p, replace(book(T + 1120, 94, 95), exchange_ms=T + 1060))
     assert p.results[0]["outcome"] == "TARGET_REFERENCE_TOUCH"
     assert p.results[0]["observed_ms"] == T + 1120
+
+
+def test_same_packet_trades_can_activate_then_trigger(monkeypatch):
+    import json
+
+    study = JointResearch({"first_ms": T, "last_ms": T + 60000})
+    f = frame()
+    f.update(
+        trend=KlineWindow(CODE, "60min", tuple(
+            Candle(T // 1000 - (32 - i) * 3600, D(100), D(110), D(90), D(100))
+            for i in range(32)
+        ), 32, ("trend",)),
+        spec=SimpleNamespace(price_tick=D(".01")), atr=D(2),
+    )
+    study.frames[CODE] = f
+    # Freeze one input structure; exercise the real decoder, trigger and sidecar.
+    monkeypatch.setattr(study, "add_line", lambda *args: None)
+    engine = study.group("M", D(".1"), CODE)
+    engine.refresh(CODE, [plan()])
+    quote = book(T + 1, 98, 98.01)
+    study.observe(quote.dump(), {"event_hash": digest(quote)})
+    packet = {"ch": f"market.{CODE}.trade.detail", "tick": {"data": [
+        {"ts": T + i, "id": i, "price": price, "amount": 1}
+        for i, price in enumerate((98, 100, 98, 98), 2)
+    ]}}
+    trades, _ = decode(json.dumps(packet), epoch="e", received_ms=T + 10)
+    for event in trades:
+        study.observe(event.dump(), {"event_hash": digest(event)})
+    assert len(study.triggers) == 1
+    snap = engine.active_targets["p"]
+    assert snap["activation_ms"] == study.triggers[0]["trigger"]["trigger_ms"]
+    assert snap["event_sequence"] < engine.event_sequence
+    assert len(study.joint) == 3
+
+
+@pytest.mark.parametrize("kind", ["TRADE", "BBO", "DEPTH"])
+def test_any_new_epoch_censors_all_paths_and_old_epoch_cannot_return(kind):
+    p = QuotePaths()
+    p.add("old", trigger(), D(95), book(T, 99, 100))
+    event = trade(T + 1, 100, "new").dump()
+    event.update(kind=kind, contract="BTC-USDT", bid="99", ask="100")
+    p.observe(event, {"event_hash": digest(event)}, T + 1)
+    assert p.results[0]["outcome"] == "CENSORED_CONNECTION_GAP"
+    # Delayed old quotes cannot restore an old path or cancel a new one.
+    p.add("new", trigger(at=T + 2), D(95), book(T + 2, 99, 100, "new"))
+    observe(p, book(T + 3, 94, 95, "e"))
+    assert len(p.results) == 1
+    p.add("late-old-intent", trigger(at=T + 3), D(95), book(T + 3, 99, 100, "e"))
+    assert p.results[-1]["outcome"] == "CENSORED_CONNECTION_GAP"
+    observe(p, book(T + 4, 94, 95, "new"))
+    assert p.results[-1]["key"] == "new"
+    assert p.results[-1]["outcome"] == "TARGET_REFERENCE_TOUCH"
+
+
+def test_explicit_gap_retires_old_epoch_before_next_quote():
+    p = QuotePaths()
+    p.add("old", trigger(), D(95), book(T, 99, 100))
+    p.observe({"kind": "GAP", "received_ms": T + 1}, {}, T + 1)
+    observe(p, book(T + 2, 94, 95, "e"))
+    p.add("late-old", trigger(at=T + 3), D(95), book(T + 3, 99, 100, "e"))
+    observe(p, book(T + 4, 94, 95, "e"))
+    assert p.results[0]["outcome"] == "CENSORED_CONNECTION_GAP"
+    assert p.results[-1]["key"] == "late-old"
+    assert p.results[-1]["outcome"] == "CENSORED_CONNECTION_GAP"

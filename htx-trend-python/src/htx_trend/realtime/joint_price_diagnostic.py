@@ -102,11 +102,13 @@ class TargetEngine(TriggerEngine):
     def __init__(self, owner, key):
         self.owner, self.key = owner, key
         self.active_targets = {}
+        self.event_sequence = 0
         super().__init__(
             EphemeralStore(), str(key), parameters=Parameters(key[1], D("1.5"))
         )
 
     def accept(self, event, *, now_ms):
+        self.event_sequence += 1
         before = {i: r["phase"] for i, r in self.rows.items()}
         triggers = super().accept(event, now_ms=now_ms)
         for ident, row in self.rows.items():
@@ -119,6 +121,7 @@ class TargetEngine(TriggerEngine):
                     group=primitive(self.key),
                     epoch=event.epoch,
                     sequence=len(self.owner.activations),
+                    event_sequence=self.event_sequence,
                 )
                 self.owner.activations.append(snapshot)
                 self.active_targets[ident] = snapshot
@@ -133,8 +136,16 @@ class QuotePaths:
         self.results = []
         self.order = EventOrder()
         self.source_refs = {}
+        self.epoch = None
+        self.retired_epochs = set()
 
     def add(self, key, trigger, target, book):
+        if book.epoch in self.retired_epochs or (
+            self.epoch is not None and book.epoch != self.epoch
+        ):
+            self.results.append({"key": key, "outcome": "CENSORED_CONNECTION_GAP"})
+            return
+        self.epoch = book.epoch
         long = trigger["plan"]["side"] == "LONG"
         ref, stop = D(trigger["reference"]), D(trigger["invalidation_price"])
         if target is None or not (stop < ref < target if long else target < ref < stop):
@@ -166,13 +177,24 @@ class QuotePaths:
         )
 
     def observe(self, value, source_ref, now):
-        if value["kind"] == "GAP":
+        epoch = value.get("epoch")
+        if epoch in self.retired_epochs:
+            return  # A delayed old connection cannot restore or censor a new path.
+        gap = value["kind"] == "GAP"
+        switched = epoch and self.epoch is not None and epoch != self.epoch
+        if gap or switched:
             for rows in self.pending.values():
                 for row in rows:
                     self.finish_row(row, "CENSORED_CONNECTION_GAP", now)
             self.pending.clear()
             self.order.reset()
+            if self.epoch is not None:
+                self.retired_epochs.add(self.epoch)
+            self.epoch = None
+        if gap:
             return
+        if epoch:
+            self.epoch = epoch
         if value["kind"] != "BBO":
             return
         e = MarketEvent.load(value)
@@ -259,7 +281,10 @@ class JointResearch(Research):
             snap = engine.active_targets.get(p.plan_id)
             if p.model == "RT_RANGE_REJECTION":
                 assert (
-                    snap is not None and snap["activation_ms"] < trigger["trigger_ms"]
+                    snap is not None
+                    and snap["activation_ms"] <= trigger["trigger_ms"]
+                    and snap["event_sequence"] < engine.event_sequence
+                    and snap["epoch"] == trigger["epoch"]
                 )
             for geometry in ("J0", "J1", "J2"):
                 if geometry == "J0" or p.model != "RT_RANGE_REJECTION":
