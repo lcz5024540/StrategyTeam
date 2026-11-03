@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from htx_trend.live_approval import LiveRiskPolicy  # noqa: E402
 from htx_trend.product_live_waiver import (  # noqa: E402
     LIVE_INSTANCE_KEY,
+    STRATEGY_15M_V2,
     ProductLiveWaiver,
     ProductLiveWaiverBody,
     UserRulingRef,
@@ -47,6 +48,8 @@ def seal_waiver(
 ) -> ProductLiveWaiver:
     receipt = _package.verify_live(archive)
     bindings = {**receipt["bindings"], "package_sha256": receipt["package_sha256"]}
+    if bindings["strategy_version"] != STRATEGY_15M_V2:
+        raise ValueError("product LIVE waiver only authorizes HTX_TREND_15M_V2")
     issued = datetime.fromisoformat((issued_at or datetime.now(UTC).isoformat()).replace("Z", "+00:00"))
     if issued.tzinfo is None:
         raise ValueError("issued_at requires timezone")

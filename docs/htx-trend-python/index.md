@@ -20,3 +20,4 @@
 - [受控实盘M1基线与候选关口（2026-11-03）](controlled-live-trial-20261103.md)：最新基线整合及证据核验完成；候选未确认，后续控制实现和部署未开始。
 - [入场失效目标配套研究（2026-11-03）](joint-price-research-20261103.md)：激活时冻结目标，修正几何错误但未增加净R合格机会；尾段单列。
 - [配套目标研究审查与边界修复（2026-11-03）](joint-target-review-20261103.md)：复用9ca7dd59，修复同包毫秒和连接换代两项研究边界；未选择实盘候选。
+- [新实时结构LIVE待启用打包入口](../../htx-trend-python/release/REALTIME-LIVE-PACKAGE.md)：`build-live --realtime`，身份独立、入场关闭；不提供生产或试运行授权。

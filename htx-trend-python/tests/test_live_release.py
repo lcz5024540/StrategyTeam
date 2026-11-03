@@ -34,6 +34,7 @@ def test_live_package_includes_deployment(live_archive):
         names = tar.getnames()
     assert any(n.startswith('deployment/') for n in names)
     assert 'release/seal_live.py' in names
+    assert 'deployment/realtime-live.env.example' not in names
 
 
 def test_paper_build_not_live(tmp_path):
