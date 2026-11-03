@@ -30,7 +30,7 @@ capture 仅公开逐笔/BBO，不读取交易凭据。完整回放还要求当�
 
 1. 验证目标 support_htx_python 合入提交、冻结包及最终MANIFEST；保持原账户绑定、风险额度、C钟及独立存储。当前分支不自动合并/推送/部署。
 2. DBA审核 `release/migrations/2026-11-02__htx_realtime_structure_plan.sql`（仓内原文件 `sql/htx/`）。仅LIVE需要此小型表；worker只验表，不建表。该迁移幂等且不修改旧订单/持仓表。生产数据库不在本次测试范围。
-3. 按原准入机制登记真实模型、最终策略spec/config/package hash、账户和批准记录。示例SYNTHETIC材料、占位hash、candidate卡不能授权LIVE。`build-live`仍为旧15m打包入口，不能拿它冒充新RT策略包。
+3. 按原准入机制登记真实模型、最终策略spec/config/package hash、账户和批准记录。示例SYNTHETIC材料、占位hash、candidate卡不能授权LIVE。不带`--realtime`的`build-live`仍为旧15m打包入口；新`build-live --realtime`只生成新RT的LIVE待启用代码包，见[打包边界](REALTIME-LIVE-PACKAGE.md)，不提供试运行授权。
 4. 完整实际数据先重现基线，再诊断选参、冻结选择并留出验证。两段净收益不降、组合回撤/手续费/一小时无效往返不增；失败不换参数重试留出。当前没有满足该要求的真实数据，保持入口关闭。
 5. 当前V5明细接口已接入：`GET /v5/trade/order/details`按trade_id去重、id分页，updated_time为真实撮合时间；异步读取、writer核对当前累计数量/均价/费用后落盘。终态订单也每5秒重试，超过3天保守窗口标EXPIRED_UNRECOVERABLE；不会重放数量或重复收手续费。精确时间和BBO覆盖独立验收：缺覆盖标GAP，不用整根bar补造持仓极值或新启动保护；初始止损及可用的正常闭合bar退出继续。真实IOC、部分成交/撤单竞态仍须在获批环境实测。
 6. 获准后先影子，再PAPER，再切换15m新入场；不得同时启动旧/新writer争抢账户。启用值及选中参数只在获批操作单中填写。

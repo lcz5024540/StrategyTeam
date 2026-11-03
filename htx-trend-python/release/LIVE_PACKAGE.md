@@ -2,6 +2,8 @@
 
 **LIVE tarball ≠ 密封 admission/approval ≠ 启动交易**。本路径仅产出可审计的 LIVE 代码包与绑定字段，不安装、不启动实例。
 
+本文介绍不带`--realtime`的旧趋势LIVE包。新实时结构使用`build-live --realtime`，版本与策略身份独立，详见[实时结构LIVE待启用包](REALTIME-LIVE-PACKAGE.md)；不得混用旧策略许可。
+
 ## 版本命名
 
 - 格式：`0.1.7-live-<8位HEAD>`（例如 `0.1.7-live-dbfee173`）

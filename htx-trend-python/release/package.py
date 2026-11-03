@@ -33,7 +33,7 @@ PAPER_4H_CARD = ROOT / 'release/artifacts/strategy_card.paper-4h.example.json'
 LIVE_INSTANCE_KEY = 'htx-trend-live-primary'
 LIVE_STRATEGY_VERSION = 'HTX_TREND_15M_V2'
 LIVE_TIMEFRAME = TimeframeProfile.INTRADAY_15M
-LIVE_VERSION_RE = re.compile(r'0\.1\.7-live-[0-9a-f]{8}')
+LIVE_VERSION_RE = re.compile(r'0\.1\.7-(?:realtime-)?live-[0-9a-f]{8}')
 CANDIDATE_VERSION_RE = re.compile(
     r'0\.1\.(?:(?:(?:2-g3|3-paper)-candidate|[56]-paper-db|4-paper-fixa)-[0-9a-f]{8}|7-evidence-v2-[0-9a-f]{8}(?:-4h)?|7-realtime-candidate-[0-9a-f]{8})')
 
@@ -196,35 +196,59 @@ def _live_payload_paths():
     return paths
 
 
-def build_live(out_root=Path('/tmp/htx-live/frozen')):
-    """Encode-only LIVE tarball for htx-trend-live-primary / HTX_TREND_15M_V2."""
+def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False):
+    """Encode-only 15m LIVE tarball; realtime is explicitly entry-disabled."""
     source = git('rev-parse', 'HEAD')
     short = git('rev-parse', '--short=8', 'HEAD')
     if not re.fullmatch('[0-9a-f]{8}', short):
         raise ValueError('expected exactly eight hex characters')
-    version = f'0.1.7-live-{short}'
-    card, refs = load_artifacts(ROOT / 'release/artifacts')
-    if card['strategy_version'] != LIVE_STRATEGY_VERSION or card['timeframe_profile'] != LIVE_TIMEFRAME.value:
-        raise ValueError('default strategy card must bind 15m V2 for LIVE encode')
-    spec = profile_strategy(LIVE_TIMEFRAME, read_env=False)
-    if spec.strategy.version != LIVE_STRATEGY_VERSION:
+    strategy_version = REALTIME_VERSION if realtime else LIVE_STRATEGY_VERSION
+    version = f'0.1.7-{"realtime-" if realtime else ""}live-{short}'
+    card, refs = load_artifacts(ROOT / 'release/artifacts', variant='.realtime' if realtime else '')
+    if card['strategy_version'] != strategy_version or card['timeframe_profile'] != LIVE_TIMEFRAME.value:
+        raise ValueError('strategy card must match selected 15m LIVE package')
+    spec = profile_strategy(LIVE_TIMEFRAME, read_env=False, strategy_version=strategy_version)
+    if spec.strategy.version != strategy_version:
         raise ValueError('card strategy/profile mismatch')
     paths = _live_payload_paths()
+    if not realtime:
+        paths = [p for p in paths if p.name != 'realtime-live.env.example']
+    if realtime:
+        # Exclude old strategy deployment templates and waiver tooling.
+        paths = [p for p in paths if not p.is_relative_to(ROOT / 'deployment')
+                 and p.name not in {'LIVE_PACKAGE.md', 'seal_live.py', 'seal_product_live_waiver.py'}]
+        paths += [ROOT / 'release/REALTIME-LIVE-PACKAGE.md', ROOT / 'release/REALTIME-ENTRY.md',
+                  ROOT / 'deployment/systemd/coinstrategy-python-strategy@.service',
+                  ROOT / 'deployment/realtime-live.env.example']
     payload = {}
     for path in paths:
         if path.is_symlink() or any(p.is_symlink() for p in path.parents):
             raise ValueError(f'symlink payload forbidden: {path}')
         payload[path.relative_to(ROOT).as_posix()] = path.read_bytes()
     config = {'synthetic': True, 'candidate': False, 'live_package': True, 'mode': 'LIVE',
-              'strategy_version': LIVE_STRATEGY_VERSION, 'timeframe_profile': LIVE_TIMEFRAME.value,
+              'strategy_version': strategy_version, 'timeframe_profile': LIVE_TIMEFRAME.value,
               'instance_key': LIVE_INSTANCE_KEY, 'max_active_positions': 3,
               'account_equity_usdt': '300', 'max_total_margin_rate': '0.10',
               'contracts': ['BTC-USDT', 'ETH-USDT'],
               'note': 'LIVE encode package only; sealed admission/approval required before trading'}
+    if realtime:
+        config.update(entry_enabled=False, financial_admission='NOT_ELIGIBLE',
+                      structural_candidate_selected=False, trial_controls_implemented=False,
+                      entry_period='15min', trend_period='60min',
+                      models=['RT_RANGE_REJECTION', 'RT_BREAKOUT_RETEST'],
+                      runtime_env_required={'HTX_RT_ENTRY_ENABLED': 'false'},
+                      release_status='ENCODE_ONLY_ENTRY_DISABLED',
+                      note='Original realtime structure implementation; minute/trade target studies are research only. '
+                           'This example is not a deployable account configuration or trial approval.')
+        # Pool, capital and trial limits are not manufactured runtime settings.
+        for field in ('contracts', 'account_equity_usdt', 'max_active_positions', 'max_total_margin_rate'):
+            config.pop(field)
+        payload['release/migrations/2026-11-02__htx_realtime_structure_plan.sql'] = (
+            ROOT.parent / 'sql/htx/2026-11-02__htx_realtime_structure_plan.sql').read_bytes()
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
                 'config_hash': digest(encoded(config)), 'config_path': 'release/config.example.json',
-                'strategy_version': LIVE_STRATEGY_VERSION, 'timeframe_profile': LIVE_TIMEFRAME.value,
+                'strategy_version': strategy_version, 'timeframe_profile': LIVE_TIMEFRAME.value,
                 'strategy_spec_hash': spec.spec_hash, 'instance_key': LIVE_INSTANCE_KEY,
                 'package_sha256': {'ref': 'BUILD.json#/package_sha256', 'scope': 'final tar.gz bytes'}}
     manifest = {'schema': 'htx-live-package-g3', 'candidate': False, 'live': True, 'mode': 'LIVE', 'synthetic': True,
@@ -233,7 +257,7 @@ def build_live(out_root=Path('/tmp/htx-live/frozen')):
                 'build': {'created_at': datetime.now(UTC).isoformat(),
                           'working_tree_dirty': bool(git('status', '--porcelain')),
                           'mode': 'LIVE', 'instance_key': LIVE_INSTANCE_KEY,
-                          'version_note': '0.1.7-live-* avoids collision with retired 0.1.1-live line'},
+                          'version_note': 'realtime-live is distinct from old trend LIVE; all LIVE code packages require separate authority'},
                 'bindings': bindings, 'artifacts': refs,
                 'files': {name: {'sha256': digest(raw), 'hash_mode': 'raw'} for name, raw in payload.items()}}
     manifest['files']['MANIFEST.json'] = {'sha256': '', 'hash_mode': 'canonical-json-self-sha256-empty'}
@@ -311,6 +335,31 @@ def verify_live(archive: Path):
     for ref in manifest['artifacts'].values():
         if digest(data[ref['path']]) != ref['sha256']:
             raise ValueError('artifact binding mismatch')
+    realtime = manifest['version'].startswith('0.1.7-realtime-live-')
+    expected_strategy = REALTIME_VERSION if realtime else LIVE_STRATEGY_VERSION
+    card = json.loads(data[manifest['artifacts']['strategy_card']['path']])
+    if any(value.get('strategy_version') != expected_strategy
+           or value.get('timeframe_profile') != LIVE_TIMEFRAME.value
+           for value in (binding, cfg, card)):
+        raise ValueError('LIVE strategy/profile binding mismatch')
+    if realtime:
+        required = {'release/REALTIME-LIVE-PACKAGE.md', 'release/REALTIME-ENTRY.md',
+                    'deployment/realtime-live.env.example',
+                    'release/migrations/2026-11-02__htx_realtime_structure_plan.sql'}
+        if (not required <= data.keys() or cfg.get('entry_enabled') is not False
+                or cfg.get('financial_admission') != 'NOT_ELIGIBLE'
+                or cfg.get('structural_candidate_selected') is not False
+                or cfg.get('trial_controls_implemented') is not False
+                or cfg.get('release_status') != 'ENCODE_ONLY_ENTRY_DISABLED'
+                or cfg.get('runtime_env_required') != {'HTX_RT_ENTRY_ENABLED': 'false'}
+                or cfg.get('entry_period') != '15min' or cfg.get('trend_period') != '60min'
+                or cfg.get('models') != ['RT_RANGE_REJECTION', 'RT_BREAKOUT_RETEST']):
+            raise ValueError('realtime LIVE encode-only binding mismatch')
+        env = data['deployment/realtime-live.env.example'].decode().splitlines()
+        switches = [line.strip() for line in env
+                    if line.strip().startswith('HTX_RT_ENTRY_ENABLED=')]
+        if switches != ['HTX_RT_ENTRY_ENABLED=false']:
+            raise ValueError('realtime LIVE sample must disable entry')
     return receipt
 
 
@@ -399,6 +448,7 @@ def main():
                          help='PAPER 示例绑定 HTX_TREND_4H_V2 / htx-trend-paper-4h')
     live_builder = commands.add_parser('build-live', help='LIVE encode package for htx-trend-live-primary')
     live_builder.add_argument('--out-root', type=Path, default=Path('/tmp/htx-live/frozen'))
+    live_builder.add_argument('--realtime', action='store_true', help='15m realtime LIVE code package; entry off; no trial authority')
     commands.add_parser('verify').add_argument('archive', type=Path)
     template = commands.add_parser('approval-template')
     template.add_argument('archive', type=Path)
@@ -407,7 +457,7 @@ def main():
     if args.command == 'build':
         print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h, compact_evidence=args.compact_evidence, realtime=args.realtime))
     elif args.command == 'build-live':
-        print(build_live(args.out_root))
+        print(build_live(args.out_root, realtime=args.realtime))
     elif args.command == 'verify':
         print(json.dumps({'status': 'PASS', **verify(args.archive)}, ensure_ascii=False))
     else:
