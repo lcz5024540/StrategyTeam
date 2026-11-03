@@ -1,0 +1,347 @@
+{
+  "audit": "RESEARCH_INTEGRITY_VERIFIED_NOT_DEPLOYMENT_APPROVAL",
+  "verified_artifacts": 10,
+  "input_tape_sha256": "b6cb0f950412325483982924c901cebb30c6240d23541a66f9b7a2d3a3a1f4fd",
+  "input_tape_bytes": 105656081,
+  "research_status": "RESEARCH_ONLY_NOT_ELIGIBLE",
+  "config_scope": "CODE_DEFAULTS_NOT_VERIFIED_PRIVATE_RUNTIME_CONFIG",
+  "orders_submitted_in_research": 0,
+  "summaries": [
+    {
+      "variant": "A",
+      "k": "0.05",
+      "min_net_r": "1",
+      "real_event_triggers": 6,
+      "r_screen_only": 2,
+      "contracts": {
+        "FIL-USDT": 2,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "BTC-USDT": 1
+      }
+    },
+    {
+      "variant": "A",
+      "k": "0.05",
+      "min_net_r": "1.5",
+      "real_event_triggers": 6,
+      "r_screen_only": 1,
+      "contracts": {
+        "FIL-USDT": 2,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "BTC-USDT": 1
+      }
+    },
+    {
+      "variant": "A",
+      "k": "0.05",
+      "min_net_r": "2",
+      "real_event_triggers": 6,
+      "r_screen_only": 0,
+      "contracts": {
+        "FIL-USDT": 2,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "BTC-USDT": 1
+      }
+    },
+    {
+      "variant": "A",
+      "k": "0.1",
+      "min_net_r": "1",
+      "real_event_triggers": 7,
+      "r_screen_only": 2,
+      "contracts": {
+        "LINK-USDT": 1,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "DOGE-USDT": 1,
+        "BTC-USDT": 1,
+        "FIL-USDT": 1
+      }
+    },
+    {
+      "variant": "A",
+      "k": "0.1",
+      "min_net_r": "1.5",
+      "real_event_triggers": 7,
+      "r_screen_only": 2,
+      "contracts": {
+        "LINK-USDT": 1,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "DOGE-USDT": 1,
+        "BTC-USDT": 1,
+        "FIL-USDT": 1
+      }
+    },
+    {
+      "variant": "A",
+      "k": "0.1",
+      "min_net_r": "2",
+      "real_event_triggers": 7,
+      "r_screen_only": 0,
+      "contracts": {
+        "LINK-USDT": 1,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "DOGE-USDT": 1,
+        "BTC-USDT": 1,
+        "FIL-USDT": 1
+      }
+    },
+    {
+      "variant": "M",
+      "k": "0.05",
+      "min_net_r": "1",
+      "real_event_triggers": 15,
+      "r_screen_only": 2,
+      "contracts": {
+        "ENA-USDT": 1,
+        "FIL-USDT": 2,
+        "BNB-USDT": 2,
+        "SHIB-USDT": 3,
+        "BTC-USDT": 1,
+        "ZEC-USDT": 1,
+        "ADA-USDT": 2,
+        "ETH-USDT": 2,
+        "AAVE-USDT": 1
+      }
+    },
+    {
+      "variant": "M",
+      "k": "0.05",
+      "min_net_r": "1.5",
+      "real_event_triggers": 15,
+      "r_screen_only": 1,
+      "contracts": {
+        "ENA-USDT": 1,
+        "FIL-USDT": 2,
+        "BNB-USDT": 2,
+        "SHIB-USDT": 3,
+        "BTC-USDT": 1,
+        "ZEC-USDT": 1,
+        "ADA-USDT": 2,
+        "ETH-USDT": 2,
+        "AAVE-USDT": 1
+      }
+    },
+    {
+      "variant": "M",
+      "k": "0.05",
+      "min_net_r": "2",
+      "real_event_triggers": 15,
+      "r_screen_only": 0,
+      "contracts": {
+        "ENA-USDT": 1,
+        "FIL-USDT": 2,
+        "BNB-USDT": 2,
+        "SHIB-USDT": 3,
+        "BTC-USDT": 1,
+        "ZEC-USDT": 1,
+        "ADA-USDT": 2,
+        "ETH-USDT": 2,
+        "AAVE-USDT": 1
+      }
+    },
+    {
+      "variant": "M",
+      "k": "0.1",
+      "min_net_r": "1",
+      "real_event_triggers": 17,
+      "r_screen_only": 2,
+      "contracts": {
+        "ENA-USDT": 1,
+        "LINK-USDT": 1,
+        "BNB-USDT": 2,
+        "SHIB-USDT": 3,
+        "DOGE-USDT": 2,
+        "BTC-USDT": 1,
+        "ZEC-USDT": 1,
+        "FIL-USDT": 2,
+        "ADA-USDT": 2,
+        "ETH-USDT": 1,
+        "AAVE-USDT": 1
+      }
+    },
+    {
+      "variant": "M",
+      "k": "0.1",
+      "min_net_r": "1.5",
+      "real_event_triggers": 17,
+      "r_screen_only": 2,
+      "contracts": {
+        "ENA-USDT": 1,
+        "LINK-USDT": 1,
+        "BNB-USDT": 2,
+        "SHIB-USDT": 3,
+        "DOGE-USDT": 2,
+        "BTC-USDT": 1,
+        "ZEC-USDT": 1,
+        "FIL-USDT": 2,
+        "ADA-USDT": 2,
+        "ETH-USDT": 1,
+        "AAVE-USDT": 1
+      }
+    },
+    {
+      "variant": "M",
+      "k": "0.1",
+      "min_net_r": "2",
+      "real_event_triggers": 17,
+      "r_screen_only": 0,
+      "contracts": {
+        "ENA-USDT": 1,
+        "LINK-USDT": 1,
+        "BNB-USDT": 2,
+        "SHIB-USDT": 3,
+        "DOGE-USDT": 2,
+        "BTC-USDT": 1,
+        "ZEC-USDT": 1,
+        "FIL-USDT": 2,
+        "ADA-USDT": 2,
+        "ETH-USDT": 1,
+        "AAVE-USDT": 1
+      }
+    },
+    {
+      "variant": "T",
+      "k": "0.05",
+      "min_net_r": "1",
+      "real_event_triggers": 11,
+      "r_screen_only": 2,
+      "contracts": {
+        "NEAR-USDT": 1,
+        "FIL-USDT": 2,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "BTC-USDT": 2,
+        "ETH-USDT": 2,
+        "TRX-USDT": 1
+      }
+    },
+    {
+      "variant": "T",
+      "k": "0.05",
+      "min_net_r": "1.5",
+      "real_event_triggers": 11,
+      "r_screen_only": 1,
+      "contracts": {
+        "NEAR-USDT": 1,
+        "FIL-USDT": 2,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "BTC-USDT": 2,
+        "ETH-USDT": 2,
+        "TRX-USDT": 1
+      }
+    },
+    {
+      "variant": "T",
+      "k": "0.05",
+      "min_net_r": "2",
+      "real_event_triggers": 11,
+      "r_screen_only": 0,
+      "contracts": {
+        "NEAR-USDT": 1,
+        "FIL-USDT": 2,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "BTC-USDT": 2,
+        "ETH-USDT": 2,
+        "TRX-USDT": 1
+      }
+    },
+    {
+      "variant": "T",
+      "k": "0.1",
+      "min_net_r": "1",
+      "real_event_triggers": 13,
+      "r_screen_only": 2,
+      "contracts": {
+        "LINK-USDT": 1,
+        "NEAR-USDT": 1,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "DOGE-USDT": 1,
+        "BTC-USDT": 2,
+        "ETH-USDT": 2,
+        "SUI-USDT": 1,
+        "FIL-USDT": 1,
+        "TRX-USDT": 1
+      }
+    },
+    {
+      "variant": "T",
+      "k": "0.1",
+      "min_net_r": "1.5",
+      "real_event_triggers": 13,
+      "r_screen_only": 2,
+      "contracts": {
+        "LINK-USDT": 1,
+        "NEAR-USDT": 1,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "DOGE-USDT": 1,
+        "BTC-USDT": 2,
+        "ETH-USDT": 2,
+        "SUI-USDT": 1,
+        "FIL-USDT": 1,
+        "TRX-USDT": 1
+      }
+    },
+    {
+      "variant": "T",
+      "k": "0.1",
+      "min_net_r": "2",
+      "real_event_triggers": 13,
+      "r_screen_only": 0,
+      "contracts": {
+        "LINK-USDT": 1,
+        "NEAR-USDT": 1,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "DOGE-USDT": 1,
+        "BTC-USDT": 2,
+        "ETH-USDT": 2,
+        "SUI-USDT": 1,
+        "FIL-USDT": 1,
+        "TRX-USDT": 1
+      }
+    }
+  ],
+  "r15_comparisons": [
+    {
+      "variant": "M",
+      "k": "0.05",
+      "eligible_events": 1,
+      "same_event_time_line_price_target_as_A": true
+    },
+    {
+      "variant": "T",
+      "k": "0.05",
+      "eligible_events": 1,
+      "same_event_time_line_price_target_as_A": true
+    },
+    {
+      "variant": "M",
+      "k": "0.1",
+      "eligible_events": 2,
+      "same_event_time_line_price_target_as_A": true
+    },
+    {
+      "variant": "T",
+      "k": "0.1",
+      "eligible_events": 2,
+      "same_event_time_line_price_target_as_A": true
+    }
+  ],
+  "selected_candidate": null,
+  "production_changes": false,
+  "limitations": [
+    "Assumed costs; funding settlement unknown",
+    "No executable portfolio replay or IOC validation in this study",
+    "No user-confirmed production structure/parameter selection"
+  ]
+}
