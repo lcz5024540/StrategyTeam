@@ -1,0 +1,40 @@
+{
+  "implementation_commit": "27a1ca8affa187068dfad39072c4356ad9c56881",
+  "packages": [
+    {
+      "mode": [
+        "build",
+        "--paper",
+        "--compact-evidence"
+      ],
+      "archive": "/tmp/cos-continuous-packages-27a1ca8a/0.1.7-evidence-v2-27a1ca8a/htx-trend-python-0.1.7-evidence-v2-27a1ca8a.tar.gz",
+      "sha256": "871faa5d45ee4f85cf1944fa18f0c7391d18c34007328845ac061eb324b6291e",
+      "verify": "PASS",
+      "cos_files_present": true,
+      "schedule_enabled": false
+    },
+    {
+      "mode": [
+        "build",
+        "--paper-4h",
+        "--compact-evidence"
+      ],
+      "archive": "/tmp/cos-continuous-packages-27a1ca8a/0.1.7-evidence-v2-27a1ca8a-4h/htx-trend-python-0.1.7-evidence-v2-27a1ca8a-4h.tar.gz",
+      "sha256": "69e5418264713cfaf7c81e3590f9b260bd0420fe2d2e60cec6d08a7a266bc2e4",
+      "verify": "PASS",
+      "cos_files_present": true,
+      "schedule_enabled": false
+    },
+    {
+      "mode": [
+        "build-live"
+      ],
+      "archive": "/tmp/cos-continuous-packages-27a1ca8a/0.1.7-live-27a1ca8a/htx-trend-python-0.1.7-live-27a1ca8a.tar.gz",
+      "sha256": "ac97580a1c6e52f3796c1940296e7d019957058625575b952ec402c41c4e59be",
+      "verify": "PASS",
+      "cos_files_present": true,
+      "schedule_enabled": false
+    }
+  ],
+  "deployed": false
+}

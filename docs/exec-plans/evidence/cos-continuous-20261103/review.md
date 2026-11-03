@@ -1,7 +1,7 @@
 # Review and remaining-work audit
 2026-11-03 · Codex · Python only · scope: previous COS integration plus continuous follow-up.
 
-Verdict pending final gate/merge. Review is across correctness, tests, design, style, performance/security. No Java/TS changes or regressions are claimed. The change is larger than100lines because scheduler, cache and retirement form one end-to-end delivery; modules and tests keep responsibilities separate.
+Verdict: approve code merge;0 unresolved Blocker/Required. Final Python1049passed/7environment skips,53archive tests,real COS drill and3package variants passed. Review is across correctness, tests, design, style, performance/security. No Java/TS changes or regressions are claimed. The change is larger than100lines because scheduler, cache and retirement form one end-to-end delivery; modules and tests keep responsibilities separate.
 
 ## Correctness / tests
 Resolved pre-delivery findings: sealed SQLite plan read (WAL rejection + private immutable copy); each retirement member bound to the remote manifest; stale source inventory/new-file and metadata checks; backoff remains DEGRADED; invalid tree snapshot becomes BLOCKED with explicit reset; child replay inherits lock FD; old3-field fingerprints do not qualify for inheritance. Dedicated tests reproduce each. SQLite backup/read connections close explicitly so stale local WAL/SHM cannot defeat bounded staging cleanup.

@@ -1,14 +1,14 @@
 {
   "production_source_deleted": false,
   "trading_services_changed": false,
-  "delta_catalogue_bytes": 1430,
+  "delta_catalogue_bytes": 1434,
   "status": "PASS",
   "first": {
     "status": "OK",
     "sources": {
       "integration": {
         "status": "VERIFIED",
-        "manifest": "manifests/05418e8bba6a958905df5c01ae5c3ef5f20b35c15e433d21ca0069d237612a9b.json",
+        "manifest": "manifests/daaf4ea8a26c011589e8650d19b6b5e1e1140eb4c85d6517f0f3be7add884ed2.json",
         "recovered_failures": 0,
         "cleanup_error": null
       }
@@ -19,7 +19,7 @@
     "sources": {
       "integration": {
         "status": "UNCHANGED",
-        "manifest": "manifests/05418e8bba6a958905df5c01ae5c3ef5f20b35c15e433d21ca0069d237612a9b.json",
+        "manifest": "manifests/daaf4ea8a26c011589e8650d19b6b5e1e1140eb4c85d6517f0f3be7add884ed2.json",
         "recovered_failures": 0,
         "cleanup_error": null
       }
@@ -30,7 +30,7 @@
     "sources": {
       "integration": {
         "status": "VERIFIED",
-        "manifest": "manifests/b4ae15a307177d81656b676fdefa164d40deb0643a3953a332ef061fe67c80cf.json",
+        "manifest": "manifests/b65468b3db58ede3ad59c21cc4ee5d5c2d41576ff40dec69431d489caa3e36c4.json",
         "recovered_failures": 0,
         "cleanup_error": null
       }
@@ -43,8 +43,8 @@
         "status": "FAILED",
         "error_type": "OSError",
         "failures": 1,
-        "first_failure": 1793715843.1304197,
-        "next_run": 1793715903.1304197
+        "first_failure": 1793716143.055014,
+        "next_run": 1793716203.055014
       }
     }
   },
@@ -53,7 +53,7 @@
     "sources": {
       "integration": {
         "status": "UNCHANGED",
-        "manifest": "manifests/b4ae15a307177d81656b676fdefa164d40deb0643a3953a332ef061fe67c80cf.json",
+        "manifest": "manifests/b65468b3db58ede3ad59c21cc4ee5d5c2d41576ff40dec69431d489caa3e36c4.json",
         "recovered_failures": 1,
         "cleanup_error": null
       }
@@ -61,8 +61,8 @@
   },
   "isolated_retirement": {
     "state": "RETIRED",
-    "manifest": "manifests/b4ae15a307177d81656b676fdefa164d40deb0643a3953a332ef061fe67c80cf.json",
-    "plan_sha256": "54b62055bd610effd9ec26fcc75f458da7b48a0d4f5093c2a1d10258f46767ab",
+    "manifest": "manifests/b65468b3db58ede3ad59c21cc4ee5d5c2d41576ff40dec69431d489caa3e36c4.json",
+    "plan_sha256": "03840e1c7322a0715156c45214f8b25b4f9cfa5492a8f27da840328efd535ed0",
     "released_this_run": 309,
     "retired_files": 2,
     "restore_before_reuse": true
