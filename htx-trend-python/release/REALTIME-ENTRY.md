@@ -40,3 +40,9 @@ capture 仅公开逐笔/BBO，不读取交易凭据。完整回放还要求当�
 SIGTERM先停止新机会、收口当前动作并持久化，再释放锁；不会因部署主动清仓。IOC未知结果查询同一client ID，部分成交保留实际量，余量终止，不追单补齐。保护退出重入仍要求新闭合bar及恢复价格。
 
 回滚先关闭 `HTX_RT_ENTRY_ENABLED`，保留能解释新持仓的当前包继续恢复/管理。旧包不识别新模型/计划表/运行检查点时不能直接切回。保留原evidence、capture、paper-state、MySQL计划/订单状态及运行快照；不回滚SQL、不清空计划身份。后续只有在兼容预检通过或所有新仓/未决意图结束后，才按批准方案回切旧入口。
+
+## 独立结构候选
+
+`HTX_RT_CANDIDATE`默认`ORIGINAL_20_32_V1`。新候选`EVENT_LOCAL_CONSERVATIVE_V1`接入同一PAPER/LIVE链路，目标规则用`HTX_RT_TARGET_MODE=J1`或`J2`。候选及目标进入参数指纹，旧许可不能授权新候选；生产k/R及目标必须单独冻结。`EVENT_WINDOWS_CONSERVATIVE_V1`仅供离线对照。
+
+详见仓库`docs/htx-trend-python/structure-event-implementation-20261103.md`。本轮无新增SQL；现有计划表state_json向后兼容。关闭新入场后仍须用兼容包管理已成交仓位和未决意图；不删除账本或计划状态。

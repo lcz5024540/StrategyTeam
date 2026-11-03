@@ -3,12 +3,13 @@
 import argparse
 import json
 import time
-from pathlib import Path
 from decimal import Decimal as D
+from pathlib import Path
+
 from ..admission import canonical, seal
-from ..mysql_store import connect, MySqlSettings
+from ..mysql_store import MySqlSettings, connect
 from ..writer_lock import TrendWriterLock
-from .trial import MySqlTrialStore, Trial, Limits
+from .trial import Limits, MySqlTrialStore, Trial
 from .trial_admission import validate
 
 
@@ -67,11 +68,27 @@ def main():
             lock = TrendWriterLock(connect(MySqlSettings.from_env()))
             lock.acquire()
             if args.command == "activate":
-                validate(args.approval, saved["binding"], entry=True)
+                from .factory import parameters
+
+                configured_parameters = parameters()
+                if (
+                    saved["binding"]["parameters_hash"]
+                    != configured_parameters.fingerprint
+                ):
+                    raise ValueError(
+                        "activation parameters do not match the prepared trial"
+                    )
+                validate(
+                    args.approval,
+                    saved["binding"],
+                    entry=True,
+                    candidate=configured_parameters.candidate,
+                )
                 trial.activate(int(time.time() * 1000))
             else:
                 trial.stop(args.reason)
-        import os, shutil
+        import os
+        import shutil
 
         status = trial.status(int(time.time() * 1000))
         capture = os.environ.get("HTX_RT_CAPTURE_DIR")

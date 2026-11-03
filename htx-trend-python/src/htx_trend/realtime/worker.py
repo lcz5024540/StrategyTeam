@@ -3,20 +3,21 @@
 from __future__ import annotations
 from ..sealing.consumers import realtime_capture_tick
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from decimal import Decimal as D
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from decimal import Decimal as D
 
 from ..execution import ExecutionConfig
-from ..java_entry_contract import evaluate as signal_for, JavaEntryConfig
+from ..java_entry_contract import JavaEntryConfig
+from ..java_entry_contract import evaluate as signal_for
 from ..market_data import OrderBook
 from ..models import TrendSide
 from ..strategy_platform import WorkerHealth
+from .management import check_reentry, paper_reentry
 from .plans import Parameters, generate
 from .risk import evaluate
 from .storage import TERMINAL
-from .management import paper_reentry, check_reentry
 
 
 class FrameLoader:
@@ -262,6 +263,24 @@ class RealtimeWorker:
         if not self.stream.connected or self.stream.epoch != trigger.epoch:
             raise ValueError("trigger connection interrupted")
         frame = self.frames[trigger.plan.contract]
+        if hasattr(self.engine, "refresh_frame"):
+            from .structures import direction
+
+            self.engine.flush()
+            state = self.engine.rows.get(trigger.plan.plan_id, {})
+            if state.get("phase") != "TRIGGERED":
+                raise ValueError("conservative event is no longer actionable")
+            side, reason = direction(
+                frame["entry"],
+                frame["trend"],
+                frame["contract"],
+                now,
+                signal_for(frame["entry"].candles, self.entry_config).side,
+            )
+            if reason or side is not trigger.side:
+                raise ValueError(reason or "1h direction changed")
+            if now >= (trigger.plan.anchor_bar + 32 * 900) * 1000:
+                raise ValueError("original structure anchor expired")
         if not frame["entry"].is_complete:
             raise ValueError("incomplete structure")
         if not 0 <= now // 1000 - (frame["entry"].candles[-1].open_time + 900) < 900:
@@ -385,7 +404,7 @@ class RealtimeWorker:
             try:
                 self.trial_monitor.tick(now)
             except Exception as error:
-                failures.append('TRIAL_STATE:' + type(error).__name__)
+                failures.append("TRIAL_STATE:" + type(error).__name__)
                 self._entry_recovery_blocked = True
         if self.management_only:
             status = self.trial.status(now) if self.trial else {}
@@ -396,24 +415,31 @@ class RealtimeWorker:
                     self.management.gap()
                     self.last_epoch = self.stream.epoch
                 except Exception as error:
-                    failures.append('MANAGEMENT_GAP:' + type(error).__name__)
+                    failures.append("MANAGEMENT_GAP:" + type(error).__name__)
             for event in self.stream.drain():
                 try:
                     if not self.recorder.append(event):
-                        failures.append(self.recorder.failure or 'CAPTURE_FAILED')
+                        failures.append(self.recorder.failure or "CAPTURE_FAILED")
                         self.management.gap(contract=event.contract)
-                    if event.kind == 'BBO' and event.fresh(now):
+                    if event.kind == "BBO" and event.fresh(now):
                         self.engine.books[event.contract] = event
                         self.management.event(event, now)
-                        failures.extend(self.management.tick(now, contract=event.contract))
+                        failures.extend(
+                            self.management.tick(now, contract=event.contract)
+                        )
                 except Exception as error:
-                    failures.append('MANAGEMENT_EVENT:' + type(error).__name__)
+                    failures.append("MANAGEMENT_EVENT:" + type(error).__name__)
             if now - self.last_flush_ms >= 10000:
                 self.recorder.flush()
                 self.last_flush_ms = now
-            return WorkerHealth('DEGRADED' if failures else 'HEALTHY',
-                                'MANAGEMENT_ONLY; trial=' + str(status['trial_id']) +
-                                '; entry=false; activated=' + str(status['activated']) + ('; ' + ','.join(failures) if failures else ''))
+            return WorkerHealth(
+                "DEGRADED" if failures else "HEALTHY",
+                "MANAGEMENT_ONLY; trial="
+                + str(status["trial_id"])
+                + "; entry=false; activated="
+                + str(status["activated"])
+                + ("; " + ",".join(failures) if failures else ""),
+            )
         if self.stream.epoch != self.last_epoch:
             try:
                 self.engine.disconnect()
@@ -435,15 +461,24 @@ class RealtimeWorker:
                 if self.refreshed.get(code) == key:
                     continue
                 signal = signal_for(frame["entry"].candles, self.entry_config)
-                plans = generate(
-                    frame["entry"],
-                    frame["trend"],
-                    frame["contract"],
-                    now_ms=now,
-                    parameters=self.parameters,
-                    signal_side=signal.side,
-                )
-                self.engine.refresh(code, plans)
+                if hasattr(self.engine, "refresh_frame"):
+                    plans = self.engine.refresh_frame(
+                        frame["entry"],
+                        frame["trend"],
+                        frame["contract"],
+                        now_ms=now,
+                        signal_side=signal.side,
+                    )
+                else:
+                    plans = generate(
+                        frame["entry"],
+                        frame["trend"],
+                        frame["contract"],
+                        now_ms=now,
+                        parameters=self.parameters,
+                        signal_side=signal.side,
+                    )
+                    self.engine.refresh(code, plans)
                 refs = tuple(r for w in windows.values() for r in w.evidence_refs)
                 self.evidence.put(
                     "realtime_structure_refresh",
@@ -453,6 +488,14 @@ class RealtimeWorker:
                         "signal_side": signal.side,
                         "at_ms": now,
                         "window_hashes": key,
+                        **(
+                            {
+                                "candidate_rule": self.parameters.candidate,
+                                "candidate_decisions": self.engine.generation_audit,
+                            }
+                            if hasattr(self.engine, "generation_audit")
+                            else {}
+                        ),
                     },
                     refs=refs,
                 )
@@ -536,10 +579,14 @@ class RealtimeWorker:
                         )
                         continue
                     import shutil
-                    if self.trial is not None and shutil.disk_usage(self.recorder.root).free < 5 * 1024**3:
+
+                    if (
+                        self.trial is not None
+                        and shutil.disk_usage(self.recorder.root).free < 5 * 1024**3
+                    ):
                         if self.trial is not None:
-                            self.trial.stop('DISK_LIMIT')
-                        raise ValueError('disk free space below 5GiB')
+                            self.trial.stop("DISK_LIMIT")
+                        raise ValueError("disk free space below 5GiB")
                     self._save_runtime()
                     self.admission_guard()
                     if self._drain_requested():
@@ -566,7 +613,15 @@ class RealtimeWorker:
             detail += "; " + ",".join(sorted(set(failures)))[:600]
         if self.trial is not None:
             status = self.trial.status(now)
-            detail += '; trial=' + status['trial_id'] + '; slots=' + str(status['occupied_slots']) + '/10' + '; stop=' + str(status['stop_reason'])
+            detail += (
+                "; trial="
+                + status["trial_id"]
+                + "; slots="
+                + str(status["occupied_slots"])
+                + "/10"
+                + "; stop="
+                + str(status["stop_reason"])
+            )
         self.failed = tuple(failures)
         count = (
             len(self.broker.ledger.active_positions(self.broker.account))

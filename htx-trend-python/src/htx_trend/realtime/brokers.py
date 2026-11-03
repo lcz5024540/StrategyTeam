@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
+import copy
+import time
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal as D
-import copy
-import time
 
 from ..execution import ExecutionFacts
-from ..ledger import Order, Fill, Position
-from ..models import TrendSide
-from ..order_accounting import TERMINAL as ORDER_TERMINAL
+from ..execution_service import _client_id, _order_id, _reservation_key
 from ..htx_v5 import SwapOrderRequest
+from ..ledger import Fill, Order, Position
+from ..models import TrendSide
 from ..mysql_store import PositionIntent, TrendOrderIntent
-from ..execution_service import _order_id, _client_id, _reservation_key
+from ..order_accounting import TERMINAL as ORDER_TERMINAL
 from ..research.store import primitive
 from . import VERSION
 
@@ -24,7 +24,7 @@ def utc(ms):
 
 
 def initial_context(intent, trigger, contract, holding_parameters):
-    return {
+    result = {
         "model": intent.model,
         "entry_strategy_version": VERSION,
         "plan_id": intent.plan_id,
@@ -58,6 +58,16 @@ def initial_context(intent, trigger, contract, holding_parameters):
         "first_fill_ms": None,
         "extrema_coverage": "NOT_FILLED",
     }
+    rules = [
+        s.removeprefix("RULE:") for s in trigger.plan.sources if s.startswith("RULE:")
+    ]
+    if rules:
+        result.update(
+            entry_candidate_rule=rules[0],
+            entry_parameters_fingerprint=trigger.plan.parameter_fingerprint,
+            entry_target_rule=trigger.plan.target_kind,
+        )
+    return result
 
 
 class PaperBroker:

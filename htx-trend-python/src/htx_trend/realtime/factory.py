@@ -19,7 +19,7 @@ from . import VERSION
 from .brokers import LiveBroker, PaperBroker, RealtimePaperExchange
 from .feed import PublicStream
 from .management import LiveManagement, PaperManagement
-from .plans import Parameters, TriggerEngine
+from .plans import ORIGINAL, Parameters, create_engine
 from .storage import MySqlPlanStore, PaperPlanStore, SegmentRecorder
 from .worker import FrameLoader, MarketView, RealtimeWorker
 
@@ -77,6 +77,8 @@ def parameters():
     return Parameters(
         D(os.environ.get("HTX_RT_BAND_ATR", ".10")),
         D(os.environ.get("HTX_RT_MIN_NET_R", "1.5")),
+        candidate=os.environ.get("HTX_RT_CANDIDATE", ORIGINAL),
+        target_mode=os.environ.get("HTX_RT_TARGET_MODE", "J1"),
     )
 
 
@@ -184,7 +186,7 @@ def paper(
         exit_config=ExitConfig.from_env(),
         continuation_version=LINKED,
     )
-    engine = TriggerEngine(
+    engine = create_engine(
         PaperPlanStore(ledger), instance.instance_key, parameters=parameters()
     )
     broker = PaperBroker(
@@ -266,14 +268,26 @@ def live(
     if instance.strategy_name != VERSION or instance.execution_mode != "LIVE":
         raise ValueError("realtime LIVE ownership mismatch")
     from .trial_admission import BINDINGS, configured, runtime_authority
+
     trial_approval = None
     if configured():
         trial_approval, trial_limits = runtime_authority(
-            instance, entry._account, policy=policy, contracts=contracts,
-            parameters=parameters(), entry=os.environ.get('HTX_RT_ENTRY_ENABLED', '').lower() == 'true')
+            instance,
+            entry._account,
+            policy=policy,
+            contracts=contracts,
+            parameters=parameters(),
+            entry=os.environ.get("HTX_RT_ENTRY_ENABLED", "").lower() == "true",
+        )
         admission_guard = lambda: runtime_authority(
-            instance, entry._account, policy=policy, contracts=contracts, parameters=parameters(), entry=True)
-    engine = TriggerEngine(
+            instance,
+            entry._account,
+            policy=policy,
+            contracts=contracts,
+            parameters=parameters(),
+            entry=True,
+        )
+    engine = create_engine(
         MySqlPlanStore(entry._repository._connection),
         instance.instance_key,
         parameters=parameters(),
@@ -323,15 +337,27 @@ def live(
         from ..worker import _account_client
         from .trial import MySqlTrialStore, Trial
         from .trial_facts import BackgroundTrialMonitor, LiveTrialReader
+
         trial_db = connect(MySqlSettings.from_env())
-        worker.trial = Trial(MySqlTrialStore(trial_db), trial_approval['trial_id'],
-                             {k: trial_approval[k] for k in BINDINGS}, trial_limits)
+        worker.trial = Trial(
+            MySqlTrialStore(trial_db),
+            trial_approval["trial_id"],
+            {k: trial_approval[k] for k in BINDINGS},
+            trial_limits,
+        )
         broker.trial = worker.trial
-        worker.trial_monitor = BackgroundTrialMonitor(worker.trial,
-            LiveTrialReader(lambda: HtxTrendMySqlRepository(connect(MySqlSettings.from_env())),
-                            lambda repo: _account_client(repo, entry._account.account_id, live=False), evidence),
-            engine.books)
-        worker.management_only = trial_approval['permission'] == 'MANAGEMENT'
+        worker.trial_monitor = BackgroundTrialMonitor(
+            worker.trial,
+            LiveTrialReader(
+                lambda: HtxTrendMySqlRepository(connect(MySqlSettings.from_env())),
+                lambda repo: _account_client(
+                    repo, entry._account.account_id, live=False
+                ),
+                evidence,
+            ),
+            engine.books,
+        )
+        worker.management_only = trial_approval["permission"] == "MANAGEMENT"
         if worker.management_only:
             worker.loader.contracts = current
             worker.stream = PublicStream(current) if current else IdleManagementStream()

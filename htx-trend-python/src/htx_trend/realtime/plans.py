@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from decimal import Decimal as D
-import copy
 
-from ..indicators import ema, atr
+from ..indicators import atr, ema
 from ..market_data import ContractSpec, KlineWindow
 from ..models import TrendSide
-from ..research.store import primitive, digest
-from . import VERSION, MODELS
-from .feed import MarketEvent, EventOrder
+from ..research.store import digest, primitive
+from . import MODELS, VERSION
+from .feed import EventOrder, MarketEvent
 from .storage import TERMINAL
+
+ORIGINAL = "ORIGINAL_20_32_V1"
+EVENT_WINDOWS = "EVENT_WINDOWS_CONSERVATIVE_V1"
+EVENT_LOCAL = "EVENT_LOCAL_CONSERVATIVE_V1"
 
 
 @dataclass(frozen=True)
@@ -20,6 +24,8 @@ class Parameters:
     band_atr: D = D(".10")
     min_net_r: D = D("1.5")
     max_age_ms: int = 2000
+    candidate: str = ORIGINAL
+    target_mode: str = "J1"
 
     def __post_init__(self):
         if self.band_atr not in (D(".05"), D(".10")) or self.min_net_r not in (
@@ -32,10 +38,28 @@ class Parameters:
             raise ValueError(
                 "realtime-v1 requires the registered 2-second freshness bound"
             )
+        if self.candidate not in (ORIGINAL, EVENT_WINDOWS, EVENT_LOCAL):
+            raise ValueError("unknown realtime candidate rule")
+        if self.target_mode not in ("J1", "J2") or (
+            self.candidate in (ORIGINAL, EVENT_WINDOWS) and self.target_mode != "J1"
+        ):
+            raise ValueError("unsupported realtime target mode")
+
+    @property
+    def payload(self):
+        # Keep the deployed v1 fingerprint byte-for-byte when opt-in fields are absent.
+        value = {
+            "band_atr": self.band_atr,
+            "min_net_r": self.min_net_r,
+            "max_age_ms": self.max_age_ms,
+        }
+        if self.candidate != ORIGINAL:
+            value.update(candidate=self.candidate, target_mode=self.target_mode)
+        return value
 
     @property
     def fingerprint(self):
-        return digest({"version": VERSION, "parameters": self})
+        return digest({"version": VERSION, "parameters": self.payload})
 
 
 GRID = tuple(
@@ -119,6 +143,17 @@ def generate(
     parameters=Parameters(),
     signal_side=TrendSide.FLAT,
 ) -> tuple[StructurePlan, ...]:
+    if parameters.candidate != ORIGINAL:
+        from .structures import generate_candidates
+
+        return generate_candidates(
+            entry,
+            trend,
+            contract,
+            now_ms=now_ms,
+            parameters=parameters,
+            signal_side=signal_side,
+        )
     if (
         entry.period != "15min"
         or trend.period != "60min"
@@ -243,6 +278,15 @@ def generate(
             )
         )
     return tuple(output)
+
+
+def create_engine(store, instance, *, parameters=None):
+    parameters = Parameters() if parameters is None else parameters
+    if parameters.candidate == ORIGINAL:
+        return TriggerEngine(store, instance, parameters=parameters)
+    from .structure_events import StructureEventEngine
+
+    return StructureEventEngine(store, instance, parameters=parameters)
 
 
 class TriggerEngine:
