@@ -59,3 +59,9 @@ Already-gzipped members retain exact bytes; uncompressed JSON and SQLite are gzi
 Stop only the archive command to pause migration. Existing trading processes/packages, MySQL, PAPER JSON and local evidence readers are unaffected. Keep published packs/catalogues; an unfinished upload has no final manifest and the same job can recover. Do not change the namespace while reusing a workspace. Empty packs are not published. A corrupt source or oversized file fails closed; do not lower validation to force a successful receipt. Hash integrity is not a substitute for market-data quality checks.
 
 Grouped capture compatibility: the approved long capture uses `htx-realtime-grouped-v1` from source commit `aaf3352c`, while the chosen baseline initially read only v1 event arrays. This branch adds the lossless grouped decoder to the existing replay readers; writer behavior and trading evaluation are unchanged. Original grouping, event order, raw fields and segment hashes survive retrieval.
+
+## Authorized host convenience command
+
+The isolated server tool lives at `/home/ubuntu/coinstrategy-cos-archive` (directory0700). `/home/ubuntu/coinstrategy-cos-archive/run list --manifest manifests/<receipt-hash>.json` and `run restore --manifest manifests/<receipt-hash>.json --destination /home/ubuntu/replay-restored/<dataset> --cas <root-hash>` reuse the existing restricted credentials without putting their values in a command. `run archive --source <configured-source> --job <new-snapshot-name>` is an explicit future snapshot; no timer is installed.
+
+`tools/archive/verify_migration.py` reproduces real archive validation against source snapshots: chosen CAS roots plus closure, temporary SQLite quick-check, original-file hashes, and capture read_reference using real event hashes. Its selections are integrity checks, not a profitability replay.
