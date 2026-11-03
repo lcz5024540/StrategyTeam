@@ -1,0 +1,25 @@
+[Unit]
+Description=CoinStrategy independent COS archive tick
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/coinstrategy/cos-archive.enabled
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+UMask=0077
+WorkingDirectory=/opt/coinstrategy/cos-archive/current
+ExecStart=/opt/coinstrategy/cos-archive/venv/bin/htx-cos-archive --config /etc/coinstrategy/cos-archive.json --credentials /home/ubuntu/coinstrategy-cos-pilot/credentials.json --workspace /home/ubuntu/coinstrategy-cos-archive/continuous-work run-once
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=50%
+MemoryHigh=512M
+MemoryMax=1G
+TimeoutStartSec=12h
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/coinstrategy-cos-archive/continuous-work
+PrivateTmp=true
+# No dependency on any trading worker; this unit cannot restart one.

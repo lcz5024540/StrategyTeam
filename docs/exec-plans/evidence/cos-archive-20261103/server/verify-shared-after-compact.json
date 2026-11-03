@@ -1,0 +1,29 @@
+{
+  "checked_at": "2026-11-03T11:01:09.110778+00:00",
+  "jobs": [
+    {
+      "manifest": "manifests/f3684da210f909d11fc58408968cdfc6b90d2c3b104c7f31c72433c558138fdf.json",
+      "restored": 12,
+      "reused": 0,
+      "bytes": 159091,
+      "source_retained": true,
+      "status": "COMPLETE",
+      "scope": "selection",
+      "paths": [],
+      "cas": [
+        "f0822d54964bd7c5a9eff21df233d3920af71f0a4a2ff7a7cd8f4af3bdbd15ed",
+        "a94e6364ca199902c00056c2d90474e0a1bcd4fceedf2f8a6535187eb64b4439"
+      ],
+      "cas_roots": [
+        "f0822d54964bd7c5a9eff21df233d3920af71f0a4a2ff7a7cd8f4af3bdbd15ed",
+        "a94e6364ca199902c00056c2d90474e0a1bcd4fceedf2f8a6535187eb64b4439"
+      ],
+      "cas_reader_objects": 12,
+      "sqlite_quick_check": "ok",
+      "indexed_objects": 637839,
+      "source_sha_equal_files": 12,
+      "job": "shared-klines-20261103",
+      "kind": "cas"
+    }
+  ]
+}

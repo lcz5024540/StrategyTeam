@@ -1,0 +1,11 @@
+[Unit]
+Description=Dispatch independent COS archive schedule
+
+[Timer]
+OnBootSec=10min
+OnUnitInactiveSec=15min
+RandomizedDelaySec=60
+Unit=coinstrategy-cos-archive.service
+
+[Install]
+WantedBy=timers.target

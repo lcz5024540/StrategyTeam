@@ -1,0 +1,14 @@
+{
+  "branch": "codex/cos-evidence-archive",
+  "commit": "32055415c51992d41f118f87a98c08c77e6f4e78",
+  "files": {
+    "htx_trend/archive/backend.py": "0e30099da8213ec3a3257c51c8a648db317b7d304a0bbb6980dfc5b6b09b39dd",
+    "htx_trend/archive/__init__.py": "16a2b3cf2cd803d60a7c6b95a38a3d36f4e32afb570f182abe3872bb909af0de",
+    "htx_trend/archive/transfer.py": "583d0c71d309f468fa1f1b88da4188ae863efcd26e7091d9243c610a3486c7a1",
+    "htx_trend/archive/cli.py": "056e05ce94c1c5acd10566f2c3433552666fe1ee9fb35444c1f68a1a417801db",
+    "htx_trend/archive/snapshot.py": "4a088afd756c0488f49e58a0bd25431d0d22c8dd8a080b72bbdeac071079fd06",
+    "htx_trend/realtime/segment_codec.py": "864b119d07642f7a3e6207718c42d8fdebe166885d18d34a04436a528487cf18",
+    "htx_trend/realtime/storage.py": "77c831e41794e0ca247d3c7c590c0429c60a5c52ef685a0db5d9471153adf104",
+    "htx_trend/realtime/public_capture.py": "0bde3a3bbd9c9c5b6e1bf725e4bde12f75be8dc12539e45859dfd8dccb8404e3"
+  }
+}

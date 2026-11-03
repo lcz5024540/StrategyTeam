@@ -1,0 +1,29 @@
+{
+  "checked_at": "2026-11-03T10:24:25.476801+00:00",
+  "jobs": [
+    {
+      "manifest": "manifests/b18b4c4b12aba7842a3d59b2d276b5d7ffe0bf9f77c72748b079b4cd63d33392.json",
+      "restored": 327,
+      "reused": 0,
+      "bytes": 101895,
+      "source_retained": true,
+      "status": "COMPLETE",
+      "scope": "selection",
+      "paths": [],
+      "cas": [
+        "6216613f7071b215abde806fcf823a9de88a3350d7803008425a7df8163e1d2c",
+        "4422ad35aa08b69244ddbcbc7df28284f24df34b9095e18460add3a726122f10"
+      ],
+      "cas_roots": [
+        "6216613f7071b215abde806fcf823a9de88a3350d7803008425a7df8163e1d2c",
+        "4422ad35aa08b69244ddbcbc7df28284f24df34b9095e18460add3a726122f10"
+      ],
+      "cas_reader_objects": 327,
+      "sqlite_quick_check": "ok",
+      "indexed_objects": 633911,
+      "source_sha_equal_files": 327,
+      "job": "paper-15m-20261103",
+      "kind": "cas"
+    }
+  ]
+}

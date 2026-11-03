@@ -15,6 +15,7 @@ import gzip
 import json
 import os
 from pathlib import Path
+
 import queue
 import re
 import shutil
@@ -25,6 +26,7 @@ import uuid
 
 from ..htx_v5 import HtxV5Client
 from ..market_data import Candle, KlineWindow, period_seconds
+from .segment_codec import segment_events
 from ..research.store import canonical, digest, primitive
 from .feed import decode
 from .storage import SegmentRecorder
@@ -116,9 +118,10 @@ def read_reference(root, ref):
     )
     if digest(value) != sha:
         raise ValueError("capture segment hash mismatch")
-    if index >= len(value["events"]):
+    events = segment_events(value)
+    if index >= len(events):
         raise ValueError("capture index out of range")
-    event = value["events"][index]
+    event = events[index]
     if digest(event) != ref.get("event_hash"):
         raise ValueError("capture observation hash mismatch")
     return event
@@ -133,9 +136,10 @@ def iter_records(root):
             value = json.loads(
                 gzip.decompress((root / (ref["hash"] + ".json.gz")).read_bytes())
             )
-            if digest(value) != ref["hash"] or len(value["events"]) != ref["count"]:
+            events = segment_events(value)
+            if digest(value) != ref["hash"] or len(events) != ref["count"]:
                 raise ValueError("capture segment integrity failure")
-            for index, event in enumerate(value["events"]):
+            for index, event in enumerate(events):
                 yield (
                     event,
                     dict(segment=ref["hash"], index=index, event_hash=digest(event)),

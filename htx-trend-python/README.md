@@ -136,3 +136,7 @@ JSON 保存初始化身份/资金配置，变更这些配置须使用新实例�
 ## PAPER evidence compact-v2
 
 [运行、盘点、部署与回滚说明](release/EVIDENCE-RETENTION.md)。默认 legacy-v1；新格式显式配置，只影响 PAPER。历史数据无自动删除。
+
+## Offline COS archive
+
+[Verified archive and replay retrieval](COS-ARCHIVE.md) provides an independent Python CLI with approved source snapshots, compressed packs and hash-checked restores. It does not change trading workers or delete local evidence.

@@ -1,0 +1,68 @@
+{
+  "checked_at": "2026-11-03T09:54:25.442165+00:00",
+  "jobs": [
+    {
+      "manifest": "manifests/5aaae82f676ac6a1f36e00e63b1dcc56205f2b397df2da5a2e493b30cd4cfbed.json",
+      "restored": 3,
+      "reused": 0,
+      "bytes": 1559563,
+      "source_retained": true,
+      "status": "COMPLETE",
+      "scope": "selection",
+      "paths": [
+        "datasets/4hour_8024e8fc92d12d85/BTC-USDT.parquet",
+        "klines/batches/ETH-USDT_4hour_20261019_200331_871930.parquet",
+        "raw/unsliced-backup/ETHUSDT_4h_binance.parquet"
+      ],
+      "cas": [],
+      "source_sha_equal_files": 3,
+      "job": "parquet-datasets-20261103",
+      "kind": "tree"
+    },
+    {
+      "manifest": "manifests/8419ec1c23b4841d366928ed720817c7cb66300f88c5e09cde3874802b6a4623.json",
+      "restored": 3,
+      "reused": 0,
+      "bytes": 111740,
+      "source_retained": true,
+      "status": "COMPLETE",
+      "scope": "selection",
+      "paths": [
+        "config/20260930-code-defaults.json",
+        "data/20260329-20260929-v3/raw/HYPE-USDT/15min/1789113600-1789563600.json",
+        "results/20260930-frozen-signal-replay/btc-eth-20260918-15m.jsonl.summary.json"
+      ],
+      "cas": [],
+      "source_sha_equal_files": 3,
+      "job": "legacy-research-20261103",
+      "kind": "tree"
+    },
+    {
+      "manifest": "manifests/177007298121f5f37db5ac5370cb14b9de62cee26703aa980b0bba36490c8165.json",
+      "restored": 5,
+      "reused": 0,
+      "bytes": 2135182,
+      "source_retained": true,
+      "status": "COMPLETE",
+      "scope": "selection",
+      "paths": [
+        "segments/00047746fa5b7ce8219903e049d5d9e4bad343d775a58ca137cd6e990f2147fa.json.gz",
+        "segments/80b19dab6639d9cec95953a81f32a6a2e1e8debd142da1999e33c6313c3d62fa.json.gz",
+        "segments/fffa49ad31d5400df376311ef15699815251d22d584b7c4c53a5cace1a63279f.json.gz",
+        "capture.json",
+        "segments/segments.jsonl"
+      ],
+      "cas": [],
+      "capture_reader_observations": 9,
+      "schemas": [
+        "htx-realtime-segment-v1"
+      ],
+      "currently_sealed_not_in_snapshot": 0,
+      "snapshot_unindexed_segments": 0,
+      "current_index_scan_is_not_atomic": true,
+      "source_sha_equal_files": 5,
+      "job": "capture-realtime-20261103",
+      "kind": "capture"
+    }
+  ]
+}

@@ -7,9 +7,11 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
+
 import sqlite3
 import tempfile
 import threading
+from .segment_codec import segment_events
 from ..research.store import canonical, digest
 
 TERMINAL = frozenset(
@@ -223,9 +225,10 @@ class SegmentRecorder:
             row = json.loads(line)
             raw = gzip.decompress((self.root / (row["hash"] + ".json.gz")).read_bytes())
             obj = json.loads(raw)
-            if digest(obj) != row["hash"] or len(obj["events"]) != row["count"]:
+            events = segment_events(obj)
+            if digest(obj) != row["hash"] or len(events) != row["count"]:
                 raise ValueError("realtime segment integrity failure")
-            result.extend(obj["events"])
+            result.extend(events)
         listed = (
             {json.loads(line)["hash"] for line in manifest.read_text().splitlines()}
             if manifest.exists()

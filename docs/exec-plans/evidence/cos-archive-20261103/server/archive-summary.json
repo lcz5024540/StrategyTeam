@@ -1,0 +1,1722 @@
+{
+  "checked_at": "2026-11-03T10:54:10.047819+00:00",
+  "bucket": "rayquant-strategy-1253235498",
+  "prefix": "coinstrategy/archive/v1/",
+  "receipts": [
+    {
+      "catalogue": "catalogues/4fc1c208c2e79cc6ac1d43e1aebdb3ef131c62bdee926d44f6d28e40001f8821.sqlite3.gz",
+      "catalogue_bytes": 331378816,
+      "catalogue_raw_bytes": 1857921024,
+      "catalogue_sha256": "4fc1c208c2e79cc6ac1d43e1aebdb3ef131c62bdee926d44f6d28e40001f8821",
+      "explicit_reference_closure": "VERIFIED",
+      "files": 633912,
+      "job": "paper-15m-20261103",
+      "manifest": "manifests/b18b4c4b12aba7842a3d59b2d276b5d7ffe0bf9f77c72748b079b4cd63d33392.json",
+      "member_bytes": 3104969166,
+      "namespace": "{\"bucket\": \"rayquant-strategy-1253235498\", \"prefix\": \"coinstrategy/archive/v1/\", \"region\": \"na-siliconvalley\"}",
+      "packs": 92,
+      "references": 3867290,
+      "schema": "htx-cos-archive-v1",
+      "snapshot": {
+        "snapshot_finished": "2026-11-03T10:03:48.667385+00:00",
+        "snapshot_started": "2026-11-03T10:00:18.605707+00:00",
+        "spec": "{\"kind\": \"cas\", \"root\": \"/opt/coinstrategy/htx-trend-paper-primary/evidence\"}"
+      },
+      "source": {
+        "kind": "cas",
+        "root": "/opt/coinstrategy/htx-trend-paper-primary/evidence"
+      },
+      "source_bytes": 3285963606,
+      "source_retained": true,
+      "storage_class": "STANDARD",
+      "verified_at": "2026-11-03T10:23:16.369250+00:00"
+    },
+    {
+      "catalogue": "catalogues/dc0b8c7bb2ca2bcb1ac1ff881447c84c7b486014743589f6adca72d2b90e98fb.sqlite3.gz",
+      "catalogue_bytes": 98079332,
+      "catalogue_raw_bytes": 493068288,
+      "catalogue_sha256": "dc0b8c7bb2ca2bcb1ac1ff881447c84c7b486014743589f6adca72d2b90e98fb",
+      "explicit_reference_closure": "VERIFIED",
+      "files": 410799,
+      "job": "paper-4h-20261103",
+      "manifest": "manifests/bee77d04f0b3cf701f7337b60e4e8666662d31379ec27ee62108af65c38bb42f.json",
+      "member_bytes": 2594089319,
+      "namespace": "{\"bucket\": \"rayquant-strategy-1253235498\", \"prefix\": \"coinstrategy/archive/v1/\", \"region\": \"na-siliconvalley\"}",
+      "packs": 77,
+      "references": 479864,
+      "schema": "htx-cos-archive-v1",
+      "snapshot": {
+        "snapshot_finished": "2026-11-03T10:25:34.275578+00:00",
+        "snapshot_started": "2026-11-03T10:23:16.763229+00:00",
+        "spec": "{\"kind\": \"cas\", \"root\": \"/opt/coinstrategy/htx-trend-paper-4h/evidence\"}"
+      },
+      "source": {
+        "kind": "cas",
+        "root": "/opt/coinstrategy/htx-trend-paper-4h/evidence"
+      },
+      "source_bytes": 2707004594,
+      "source_retained": true,
+      "storage_class": "STANDARD",
+      "verified_at": "2026-11-03T10:37:17.377278+00:00"
+    },
+    {
+      "catalogue": "catalogues/f5a9649b949e376945cac7154ded4c428d17ba6b13133c2eed1498555b929c57.sqlite3.gz",
+      "catalogue_bytes": 153717013,
+      "catalogue_raw_bytes": 730918912,
+      "catalogue_sha256": "f5a9649b949e376945cac7154ded4c428d17ba6b13133c2eed1498555b929c57",
+      "explicit_reference_closure": "VERIFIED",
+      "files": 637885,
+      "job": "shared-klines-20261103",
+      "manifest": "manifests/f3684da210f909d11fc58408968cdfc6b90d2c3b104c7f31c72433c558138fdf.json",
+      "member_bytes": 1186362976,
+      "namespace": "{\"bucket\": \"rayquant-strategy-1253235498\", \"prefix\": \"coinstrategy/archive/v1/\", \"region\": \"na-siliconvalley\"}",
+      "packs": 66,
+      "references": 683674,
+      "schema": "htx-cos-archive-v1",
+      "snapshot": {
+        "snapshot_finished": "2026-11-03T10:39:51.893220+00:00",
+        "snapshot_started": "2026-11-03T10:37:17.761247+00:00",
+        "spec": "{\"kind\": \"cas\", \"root\": \"/opt/coinstrategy/htx-trend-py-state/evidence\"}"
+      },
+      "source": {
+        "kind": "cas",
+        "root": "/opt/coinstrategy/htx-trend-py-state/evidence"
+      },
+      "source_bytes": 4704724554,
+      "source_retained": true,
+      "storage_class": "STANDARD",
+      "verified_at": "2026-11-03T10:52:41.061067+00:00"
+    },
+    {
+      "catalogue": "catalogues/ab6bb5f132f2327e4a05041c10d76c37eefb3fbff937b262f44030f02a1e9730.sqlite3.gz",
+      "catalogue_bytes": 1530835,
+      "catalogue_raw_bytes": 5603328,
+      "catalogue_sha256": "ab6bb5f132f2327e4a05041c10d76c37eefb3fbff937b262f44030f02a1e9730",
+      "explicit_reference_closure": "VERIFIED",
+      "files": 6554,
+      "job": "capture-realtime-20261103",
+      "manifest": "manifests/177007298121f5f37db5ac5370cb14b9de62cee26703aa980b0bba36490c8165.json",
+      "member_bytes": 2145635575,
+      "namespace": "{\"bucket\": \"rayquant-strategy-1253235498\", \"prefix\": \"coinstrategy/archive/v1/\", \"region\": \"na-siliconvalley\"}",
+      "packs": 65,
+      "references": 0,
+      "schema": "htx-cos-archive-v1",
+      "snapshot": {
+        "snapshot_finished": "2026-11-03T09:37:35.914999+00:00",
+        "snapshot_started": "2026-11-03T09:37:35.770772+00:00",
+        "spec": "{\"kind\": \"capture\", \"root\": \"/home/ubuntu/coinstrategy-research/realtime-20261103/capture\"}"
+      },
+      "source": {
+        "kind": "capture",
+        "root": "/home/ubuntu/coinstrategy-research/realtime-20261103/capture"
+      },
+      "source_bytes": 2146387503,
+      "source_retained": true,
+      "storage_class": "STANDARD",
+      "verified_at": "2026-11-03T09:42:11.564549+00:00"
+    },
+    {
+      "catalogue": "catalogues/57c984d46f8cdca1c4865a6416994ba0c7ba177ab7c7cc6519afbacf2075a5ee.sqlite3.gz",
+      "catalogue_bytes": 413088,
+      "catalogue_raw_bytes": 1601536,
+      "catalogue_sha256": "57c984d46f8cdca1c4865a6416994ba0c7ba177ab7c7cc6519afbacf2075a5ee",
+      "explicit_reference_closure": "VERIFIED",
+      "files": 1852,
+      "job": "capture-long-20261103",
+      "manifest": "manifests/3deec6a61a768448ea6bd3a7edc4fcc877ea5d58b48babd0d1654828a6448192.json",
+      "member_bytes": 1765164398,
+      "namespace": "{\"bucket\": \"rayquant-strategy-1253235498\", \"prefix\": \"coinstrategy/archive/v1/\", \"region\": \"na-siliconvalley\"}",
+      "packs": 54,
+      "references": 0,
+      "schema": "htx-cos-archive-v1",
+      "snapshot": {
+        "snapshot_finished": "2026-11-03T09:42:11.892746+00:00",
+        "snapshot_started": "2026-11-03T09:42:11.859462+00:00",
+        "spec": "{\"kind\": \"capture\", \"pool\": \"/home/ubuntu/coinstrategy-research/long-20261103-aaf3352c/runtime-pool.json\", \"root\": \"/home/ubuntu/coinstrategy-research/long-20261103-aaf3352c/capture\"}"
+      },
+      "source": {
+        "kind": "capture",
+        "pool": "/home/ubuntu/coinstrategy-research/long-20261103-aaf3352c/runtime-pool.json",
+        "root": "/home/ubuntu/coinstrategy-research/long-20261103-aaf3352c/capture"
+      },
+      "source_bytes": 1765380216,
+      "source_retained": true,
+      "storage_class": "STANDARD",
+      "verified_at": "2026-11-03T10:00:18.305833+00:00"
+    },
+    {
+      "catalogue": "catalogues/d44de8653dd353ac3f353d613a74e318406a890773a7613a47c259a9f786ace1.sqlite3.gz",
+      "catalogue_bytes": 487725,
+      "catalogue_raw_bytes": 2162688,
+      "catalogue_sha256": "d44de8653dd353ac3f353d613a74e318406a890773a7613a47c259a9f786ace1",
+      "explicit_reference_closure": "VERIFIED",
+      "files": 3825,
+      "job": "legacy-research-20261103",
+      "manifest": "manifests/8419ec1c23b4841d366928ed720817c7cb66300f88c5e09cde3874802b6a4623.json",
+      "member_bytes": 105742080,
+      "namespace": "{\"bucket\": \"rayquant-strategy-1253235498\", \"prefix\": \"coinstrategy/archive/v1/\", \"region\": \"na-siliconvalley\"}",
+      "packs": 4,
+      "references": 0,
+      "schema": "htx-cos-archive-v1",
+      "snapshot": {
+        "snapshot_finished": "2026-11-03T09:37:10.904960+00:00",
+        "snapshot_started": "2026-11-03T09:37:09.801802+00:00",
+        "spec": "{\"extensions\": [\".json\", \".md\"], \"kind\": \"tree\", \"root\": \"/opt/coinstrategy/htx-trade/research\"}"
+      },
+      "source": {
+        "extensions": [
+          ".json",
+          ".md"
+        ],
+        "kind": "tree",
+        "root": "/opt/coinstrategy/htx-trade/research"
+      },
+      "source_bytes": 752082377,
+      "source_retained": true,
+      "storage_class": "STANDARD",
+      "verified_at": "2026-11-03T09:37:35.476410+00:00"
+    },
+    {
+      "catalogue": "catalogues/42da34cea3cce599e33629c7b9a35b3330a6ad829d59d8d656581359503752ab.sqlite3.gz",
+      "catalogue_bytes": 30476,
+      "catalogue_raw_bytes": 167936,
+      "catalogue_sha256": "42da34cea3cce599e33629c7b9a35b3330a6ad829d59d8d656581359503752ab",
+      "explicit_reference_closure": "VERIFIED",
+      "files": 271,
+      "job": "parquet-datasets-20261103",
+      "manifest": "manifests/5aaae82f676ac6a1f36e00e63b1dcc56205f2b397df2da5a2e493b30cd4cfbed.json",
+      "member_bytes": 8565581,
+      "namespace": "{\"bucket\": \"rayquant-strategy-1253235498\", \"prefix\": \"coinstrategy/archive/v1/\", \"region\": \"na-siliconvalley\"}",
+      "packs": 1,
+      "references": 0,
+      "schema": "htx-cos-archive-v1",
+      "snapshot": {
+        "snapshot_finished": "2026-11-03T09:35:06.950117+00:00",
+        "snapshot_started": "2026-11-03T09:35:06.898192+00:00",
+        "spec": "{\"extensions\": [\".json\", \".parquet\", \".yaml\", \".md\"], \"kind\": \"tree\", \"root\": \"/opt/coinstrategy/htx-trend-py-state/data\"}"
+      },
+      "source": {
+        "extensions": [
+          ".json",
+          ".parquet",
+          ".yaml",
+          ".md"
+        ],
+        "kind": "tree",
+        "root": "/opt/coinstrategy/htx-trend-py-state/data"
+      },
+      "source_bytes": 8596109,
+      "source_retained": true,
+      "storage_class": "STANDARD",
+      "verified_at": "2026-11-03T09:35:07.862570+00:00"
+    }
+  ],
+  "missing_sources": [],
+  "cos_objects": 373,
+  "cos_bytes": 11496173222,
+  "source_files": 1695098,
+  "source_bytes": 15370138959,
+  "sample_object_encryption": "AES256",
+  "sample_storage_class": "STANDARD",
+  "disk": {
+    "total": 63290032128,
+    "used": 47912255488,
+    "free": 12677029888
+  },
+  "source_deleted": false,
+  "automatic_scheduler_installed": false,
+  "objects": [
+    {
+      "key": "coinstrategy/archive/v1/catalogues/42da34cea3cce599e33629c7b9a35b3330a6ad829d59d8d656581359503752ab.sqlite3.gz",
+      "bytes": 30476
+    },
+    {
+      "key": "coinstrategy/archive/v1/catalogues/4fc1c208c2e79cc6ac1d43e1aebdb3ef131c62bdee926d44f6d28e40001f8821.sqlite3.gz",
+      "bytes": 331378816
+    },
+    {
+      "key": "coinstrategy/archive/v1/catalogues/57c984d46f8cdca1c4865a6416994ba0c7ba177ab7c7cc6519afbacf2075a5ee.sqlite3.gz",
+      "bytes": 413088
+    },
+    {
+      "key": "coinstrategy/archive/v1/catalogues/ab6bb5f132f2327e4a05041c10d76c37eefb3fbff937b262f44030f02a1e9730.sqlite3.gz",
+      "bytes": 1530835
+    },
+    {
+      "key": "coinstrategy/archive/v1/catalogues/d44de8653dd353ac3f353d613a74e318406a890773a7613a47c259a9f786ace1.sqlite3.gz",
+      "bytes": 487725
+    },
+    {
+      "key": "coinstrategy/archive/v1/catalogues/dc0b8c7bb2ca2bcb1ac1ff881447c84c7b486014743589f6adca72d2b90e98fb.sqlite3.gz",
+      "bytes": 98079332
+    },
+    {
+      "key": "coinstrategy/archive/v1/catalogues/f5a9649b949e376945cac7154ded4c428d17ba6b13133c2eed1498555b929c57.sqlite3.gz",
+      "bytes": 153717013
+    },
+    {
+      "key": "coinstrategy/archive/v1/manifests/177007298121f5f37db5ac5370cb14b9de62cee26703aa980b0bba36490c8165.json",
+      "bytes": 955
+    },
+    {
+      "key": "coinstrategy/archive/v1/manifests/3deec6a61a768448ea6bd3a7edc4fcc877ea5d58b48babd0d1654828a6448192.json",
+      "bytes": 1136
+    },
+    {
+      "key": "coinstrategy/archive/v1/manifests/5aaae82f676ac6a1f36e00e63b1dcc56205f2b397df2da5a2e493b30cd4cfbed.json",
+      "bytes": 1011
+    },
+    {
+      "key": "coinstrategy/archive/v1/manifests/8419ec1c23b4841d366928ed720817c7cb66300f88c5e09cde3874802b6a4623.json",
+      "bytes": 963
+    },
+    {
+      "key": "coinstrategy/archive/v1/manifests/b18b4c4b12aba7842a3d59b2d276b5d7ffe0bf9f77c72748b079b4cd63d33392.json",
+      "bytes": 933
+    },
+    {
+      "key": "coinstrategy/archive/v1/manifests/bee77d04f0b3cf701f7337b60e4e8666662d31379ec27ee62108af65c38bb42f.json",
+      "bytes": 919
+    },
+    {
+      "key": "coinstrategy/archive/v1/manifests/f3684da210f909d11fc58408968cdfc6b90d2c3b104c7f31c72433c558138fdf.json",
+      "bytes": 925
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/01bcbab2835b40dbe18955d7b24072cb772cbe02d7982b26dc9a8f3dd341c3ae.pack",
+      "bytes": 33552587
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/01effe77aa94a2e87d2aa42e8f82aadc55be4bb39654ebdae4da59ca106854fe.pack",
+      "bytes": 17531056
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0223a0855daafeca22f02166287b72b73d141cad39474e4a1435377bb4dbe09d.pack",
+      "bytes": 33552306
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0294c366f009481a218bee8504e373903fcb3a838315b372182acbcaa8ebd835.pack",
+      "bytes": 33547919
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/02bb9f9934d131cce5a450fdd9d060bf6114d72338afa50f2a8653c9bf42103d.pack",
+      "bytes": 17475014
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/037efb163b87d882bec4706ef74103eeed848f14d9854717b2f19a9f7b6b8256.pack",
+      "bytes": 2230
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/03ca3c38f587ee008f28d891a000fb5a8390c3e2eda03e204f372fd8843c8c88.pack",
+      "bytes": 33552054
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/03d0ba9c852f93ae14c7685178697d60bfc9b194187072e1000bf789dc74920e.pack",
+      "bytes": 17523610
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0440b122173857981735eab5201b1988bf93804796e8d29f122181339c65e78d.pack",
+      "bytes": 32703959
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/047aaf6fccc3303d1cc7fbe1ed34f2cd4581074169d783cd6fa11a3786caa712.pack",
+      "bytes": 17269530
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0489505eabcd9d204d3e8eec2962f5afb46c579d38cda35eb37e5767ed7bad58.pack",
+      "bytes": 73760036
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/04d3e0d60fbb4f213530331f653de41f6928d67770ef6d0dcb31aaf1a29e2864.pack",
+      "bytes": 33554160
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/05ebf68ebde1cfc308bd2fe1f784906c0261394bbebcbc1a2b29dc405a58ba18.pack",
+      "bytes": 33365547
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0623faaea2a333f8f20f9f68d22f8d8bbfa69fb1047544237caeb4b8f00bfeb5.pack",
+      "bytes": 17262141
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/069885f572e8417f440790fa0e877d579d4a27cccdf9c809542048555238af67.pack",
+      "bytes": 33551517
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/08bdcd7f4e93c5258ef8448564857eacb1484933bb69b2a2c8050917e658ed64.pack",
+      "bytes": 33488122
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/08f098cddd731776f20650f1d57f4ebc290ed46a8c6e7cf998c724a60aad6efc.pack",
+      "bytes": 17621060
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/09a5006c2b1ab2edc5ba04ae07a1112642ee0be094632e978331a386dd8f2f2e.pack",
+      "bytes": 33537407
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/09ddcabd72b3b6f6c9c8360ba620c9fb835c9e2989d057bdc027ad5c0164c43a.pack",
+      "bytes": 17288697
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0a61c25c3844019168c2a0c10cc86fb4d75990e6cd24053ea8bd8847d9e16ed2.pack",
+      "bytes": 33553693
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0b4095d84caff17e0bc6eb48cff767ee672b099245671aa15cd179daaed71975.pack",
+      "bytes": 17360259
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0c524d58d928d100f1f9e6640446182e4ae5a08d25d3a780e6b76aebbbd747c5.pack",
+      "bytes": 33553985
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0cd8dc34bdef6d3af66cca290a4f8585a050f16d0796015e1eb6c5e43787860a.pack",
+      "bytes": 33552826
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0d562ee18879d4ec025df6e917cd0aa4e4f0231889d2e8460525c63629eb1153.pack",
+      "bytes": 33551806
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0d6bdcec399945efe7c69388806057a254298f3f611344d8f35e275734024e62.pack",
+      "bytes": 33551731
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0da9aef9f045988f5d6a8eb1516785297b5c7ef68e5f2257dbc34e16bbff0f8c.pack",
+      "bytes": 32357999
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0db19661a8f0c24e4c7417da9356d499e5ecfdfd6ad381820f20e958e06b3822.pack",
+      "bytes": 33550392
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/0fc597e8d9a1e7337c27e2c87325fc21aae8b857137d79e93b17c5a16f91d2d5.pack",
+      "bytes": 33553141
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/10f7596f3be735a12a6359c3127f3832f47074861a018468de080e8a3bb9767c.pack",
+      "bytes": 33549377
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1108a8e3a647e160d19876f24e9f04d2eaca7bbf80ecbbb610112b68084357a5.pack",
+      "bytes": 33553768
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1282b9893032ebd64c99d9ecd0c2815a2738682f48d80d5c4311521739a2e016.pack",
+      "bytes": 17786235
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/12d4b115b4372f6002a18a5bacfa617b28e8cd4f84f613245554daf1874614e6.pack",
+      "bytes": 17464559
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1451a9f39884db5c31f7b625fa9b3d7a4a7e1c6b92843a84d47f76fd33987482.pack",
+      "bytes": 33552720
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/149c9a35aa067fecfb21996e2ac17b21414bfaf295fa15596701942b2e8d0646.pack",
+      "bytes": 33461422
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/14c24dda7b3ebfe2d2907ded4485b1e6f6f9d15b216220d401f9008cdc3be2bf.pack",
+      "bytes": 17452098
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/157e84d24f75827a4e154bfe19d7af448f1ec770f34266135b7718f9b35026f7.pack",
+      "bytes": 33554107
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/161610b63df47925320ccabdb759e3a934f6f88ceed7541ce1caf15e918a0c56.pack",
+      "bytes": 33313069
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/17368b880b27a3183a6b969b17e076855e72595a46fd799ad4735945fd29e8b0.pack",
+      "bytes": 33396067
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/173db0d53b71e176e1c841d3ff5e7144eaafad00d38c0b4c081591d61d080a31.pack",
+      "bytes": 33507286
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/17a1fb30b48d50b5b875df026df255c64151a84ca3593dee6ec271222034b460.pack",
+      "bytes": 45923509
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/189c20d80ac8142cfeba3292687ba48a8971c31b8de6c60b8ff133658a34331f.pack",
+      "bytes": 17491468
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/18ea1f24b34b1b02acaadcf28627e42842087d8b69304b381f605fd97c728f6a.pack",
+      "bytes": 33223821
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/198e3a292b3b7abf79dad8693772707eef293adcb4ad13bcc338d037ed97f0ae.pack",
+      "bytes": 32430317
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1996712b41f86f14a4c6e2a7099c0ffc2b99249239db89c64453deeede6adb9d.pack",
+      "bytes": 33552245
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1996c004cd09ab51105ff619e84881085af539c639abd5673c2b9aa1fd9da65d.pack",
+      "bytes": 33552862
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1a328121c36321f61360829df4c2403d0da7eedbf78dbdc9dd0916bbce18cf0c.pack",
+      "bytes": 33552116
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1b67a76ec317052b8f41260c3c1ab39bab98e78c58091375df27690f20d82fa7.pack",
+      "bytes": 33553655
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1bba8d6df737e947db27498874192c6fc1e307bc57f573490858c4a2af7592b6.pack",
+      "bytes": 33552817
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1c09b4538a0e5c4dded509af08b5c48446a763d19b83bb67128cbaf609c1fe8a.pack",
+      "bytes": 33548538
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1cbdae59978113e746fa491de5ce5875326387a733f9e18f316f1d7b4daa364b.pack",
+      "bytes": 33553676
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1e9058fdf104e42e9f7a5015ee545411e46a7a071e00fdb0f06561ac3cc32bbc.pack",
+      "bytes": 33478481
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1f773204dd249ceb74f599d3ad89305cee6fa9dd378196940603e60f03cd8d95.pack",
+      "bytes": 33551810
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/1fd1314aeef0fa766f936fe1ed41c96e4aeda9c08c815bb3b58faa4a8aed9df5.pack",
+      "bytes": 33539407
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/204052335157d04f56a7ca788ac44605881e9aa9bfd387f84efa14bb9d2ddcaa.pack",
+      "bytes": 32540057
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/20417a10cd0e27bdd11d9f325f6dc223363a758928ca32a1dd69e67f31865261.pack",
+      "bytes": 5352845
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/207740927a5875aee8a7f87bd41347ac1f07a45e190c90f90c4500419c34c767.pack",
+      "bytes": 33553233
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/224976f1959e1a7e646fa9fee0a83e7cf999f3066aa396f66f7ef4b95c992727.pack",
+      "bytes": 33535757
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/22c09b9d34d556dda73780dba05ea0f5f83fec01b92c2e2be029ab67b4999715.pack",
+      "bytes": 17377771
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/244793db609a4fe8d20f18be75dfda567301eb0e9d39ba1483fee803737d4c54.pack",
+      "bytes": 33552528
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/24608012cf3a20642ebccd2da3798821c089ced8686a3ff884d7bd56a13635f1.pack",
+      "bytes": 33404181
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/24741eea9b3f3244cb1179a035b2f1378a53b5b10b1901029e904fdce8572007.pack",
+      "bytes": 17528377
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/25f91612ab31c28b9733733cf0c71f2094e9fbe8f36e2250e49db8db008e8c12.pack",
+      "bytes": 33412288
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/28c8a1dd7576e3e0387a092e8f1c8426a7917fbe2dde7ea14a1f45d1f33e5120.pack",
+      "bytes": 33552013
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/28f76e01f4cbbf46ab0b4aa9860d21579509eca5ccc0846b57e8517f2f8ee434.pack",
+      "bytes": 17735283
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/29aa696aae8d5c1906b2a907cbd3972c53bb941f66f8d93b8da0e95d2f285354.pack",
+      "bytes": 33552887
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/29e190b8b601dd3993e421369ee427a991e7e65be31f3c9284b8cca12aeea627.pack",
+      "bytes": 33553825
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/2a1640ac1a7b00809ba44adf757929264733ae8b55f03c295bb4e9588c3103f4.pack",
+      "bytes": 16932652
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/2a7f4be6a85c306ed90d0c6311d709fce6bbeaa751e17b177202a28608199c2b.pack",
+      "bytes": 33550889
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/2a8dc45dc3c8bc1e9b6d5e401adb3ce6940eda706f36251b091820a0d5f48c03.pack",
+      "bytes": 33457487
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/2b5b97a5ad6375995fbcfc5a1ea9ae0aab80a97ce639b8cdf629a8773d02348a.pack",
+      "bytes": 17864779
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/2bae017ad0bdc0c36c153a13ff9b6688093145db8aa827a36363d1ce9fbdb6e4.pack",
+      "bytes": 32769925
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/2c0db1eee60a4de644b74a73885b0981abb5bc8fec644a0df40c31fa106273cc.pack",
+      "bytes": 33551623
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/2de058433edbd130099975d8f35cd216a71c0cba4f8b032e877e37f259f6159e.pack",
+      "bytes": 33323164
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/2ecb6c9a347198fef458514ea40bf2ee3690830e9c39d23e181efa5bee0bcd1d.pack",
+      "bytes": 32646187
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/2f24a57662c82bc437fae119933522b69aaa6c03ce61d921fc8ff171c24207c3.pack",
+      "bytes": 33329814
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/2fb337aa84063f53d44e8a5de57457a1703b1ebc854db911c8e213b85d39190d.pack",
+      "bytes": 33551272
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/2fc0272be9b6751c7fc573f292d4cbd0c5a8ef266eef126f52078b34a833bd6e.pack",
+      "bytes": 33307356
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/31da3f3051aea1812f9fd87d6909ba880f2d744f727e722cdc72ee07cbd1010a.pack",
+      "bytes": 17781243
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/322bd24f11283a00d9e90ee3eef31a6fdf1e82e602e8f71d285d452723c50544.pack",
+      "bytes": 33553146
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/337c033e0dc882577d9d2e3f5de92947e9a297305168eca155b898adf3ddd76b.pack",
+      "bytes": 33552253
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/338d4a2eaa21b8f0a472e101620d4892d7682f76ba5c8bf4900c18ba708147c5.pack",
+      "bytes": 33360153
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/33b5b74fa92a018c5a3a9bc037c2ccba49f0bdded2714c74c6ab025447cbaf77.pack",
+      "bytes": 33552978
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/33f55b30ee3ceac6c1cd5576fbe114239c09adb83e0cbfec591fb364fd07df08.pack",
+      "bytes": 33441110
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/34155ac3bf6ce85af0aff61bcd141662386bb07ed51773bdf4a66e5ab638d8f3.pack",
+      "bytes": 17373191
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/3539a1211ef7ac7e6ce7c88f183b2e2da7938bab2dd06bf50b0b735f0358fddc.pack",
+      "bytes": 33552561
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/3586e7df7ad9fabc3c4b4196a1568f0a4e097cd70eef50ab922c88f997fca919.pack",
+      "bytes": 33305988
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/36ede63872b12aa574997442921ff051143de819aced0c58362bfb680fd11558.pack",
+      "bytes": 33512383
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/3779d3258436d786cabbb11aa321e3475b14913a96f57aaf9053bf3b6e1f9dc6.pack",
+      "bytes": 33551656
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/378ac42c7284530b174728dc789f5f182c1baa127eecc4ad439a81e85b5dcfcb.pack",
+      "bytes": 33520051
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/39dec581c209364f69713f8d97a28a545bd05652ce7fc9bfa0b6b3256fc80450.pack",
+      "bytes": 33553168
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/3a3a9e16b5196c62b8574ffedcc959d0ebe251403eccbf051bd6409811be51e9.pack",
+      "bytes": 33551808
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/3c278da011407cea19f6beb8c82c05a30be159f9cfd60894588e63c1041fb2ef.pack",
+      "bytes": 33549517
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/3c3b40f7af1b6e332a86a4d2a8b0edc9c0dae7f9befb60a3a9603c3b2b61ba9b.pack",
+      "bytes": 33136842
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/3ca12de8f25887b86bb604617b7b8b841b7418ea8d3f36e1af1318826e7a7664.pack",
+      "bytes": 33548328
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/3cded4ae3f974c623e076bff85b20c3b8a4d1809d90097b8d7d412eccc48183e.pack",
+      "bytes": 17520915
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/3d4dcd82f88bee8c239bca9eec99d7fad646ed5eb9303d003929946f50ee0995.pack",
+      "bytes": 33554384
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/3df444b49a250a7b9aa7293baf10adf1fd21481531eac48fe1167914d66db67d.pack",
+      "bytes": 33550048
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4104357ed014a6cb0a8a8b53035668f83d4462126e1a50287697668509811b15.pack",
+      "bytes": 33127376
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/41ee15f5ed3304b1a34676c993f8a6687d2b0f5b2f0e35653e464981e2cddeb9.pack",
+      "bytes": 33488022
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/42479fac56f41da23f0ee6f0e18eff737c8285b7e64e743d65a9f5487fdb56ae.pack",
+      "bytes": 32910551
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4307091b092baa6501f4884af6e253e1d9618e626eb0c88f6c6990a9c25fdd7f.pack",
+      "bytes": 33395222
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/44c605b57ed33fd3e8245c92e1d7c6741388b5eed07fe85ebe2561d1f0e1d14b.pack",
+      "bytes": 33552280
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4512347f9a6e915acb49795229366ed8c11cbea5fe2a888944218d7846b44a01.pack",
+      "bytes": 17231027
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/452d00202d8ae5c781bb484c1d19720d540e3fbbc32328885066d5745069ecc0.pack",
+      "bytes": 17624743
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4656c0c6191557b0fdb008af6d9f2b0732030285ac22caedc5e92a895c05ea91.pack",
+      "bytes": 33551892
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4728f485d4294e35f8becfafe4f647c6354f9ed75368771993d042093c7032dd.pack",
+      "bytes": 33554343
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/47371ae3805a7b92858ff1c8589733e7c40e737e1787c59d99a9f984e1a2a68e.pack",
+      "bytes": 33241602
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4932ca586ac1d9e8347a709535dedd3b0b177169f9a7f0ef14d0d218d46a653d.pack",
+      "bytes": 33549053
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/49f1f97d507daa3f157a084dfa76c74c3e587d930ef05c2e97639a72ea678f35.pack",
+      "bytes": 33174635
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4a1ef12d68e519a152316ce05ebd9b983e08a6ec3e8acff4aa69c7cb654a0e93.pack",
+      "bytes": 17531611
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4a3291460cae1379e9b40bec94f2ecf88de86b618913b515b61dce90b34b3248.pack",
+      "bytes": 33550675
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4abbd565b868f39aa4942244ba1bb509935c24b84a1e1090674e257a101a7564.pack",
+      "bytes": 33548823
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4ae665866d422a8bb8d43ecb5246db9a80e1094826d15b69fb8c8bd0022d0b9c.pack",
+      "bytes": 33301444
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4b9baabe7c6019840ed37173bbffaa880166c3e3a041857d71e2f383f3c107e8.pack",
+      "bytes": 17345338
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4c0d8cfff42fb1fd7be653054e15034990df42ba60d6be23f61f20460cce9746.pack",
+      "bytes": 33309915
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4ce96d4deb5a294e13517d7d7fcc38a2a658d85ac496781543240b090042a09b.pack",
+      "bytes": 33551958
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4cec9723b1d57b2e61d879f5588e6d032826adc2702a2d3af7f03098e603fafc.pack",
+      "bytes": 17547502
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4cfafc5f2a6d35a774f753640d2b9e2c0b78d03372b51e222a89d477fe94ce26.pack",
+      "bytes": 17202603
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4d200f6a9b16766e05597b1c22fba7e7e28ff9b938c154f19361d83aa979e69d.pack",
+      "bytes": 32829579
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/4f7c9bf3d7251d97f75529ea5b943554849f4f4d8fa619149fc46be1bddbaf85.pack",
+      "bytes": 33552055
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/504a62098eefcfcbb00520ac268a11935d771d4b2f6ef1ad02a45ca755ad2c84.pack",
+      "bytes": 33549805
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/51aebece96d775e0445408520e3cf9ed2ccc720d08d68481ced799488aa6c5d5.pack",
+      "bytes": 17431894
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/51f254b4cbe23d52fd8d385dd2de00814eff6effd4e735e700d86e85e3b2a381.pack",
+      "bytes": 33546753
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/52bec9d9817a2ad5611dcabcf5b48325a20c1dab92bb767039e18c83c7b79ed2.pack",
+      "bytes": 33398585
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/530b44c10356f57c0f4e4b9b0bfff41f0a329094bab4070babb61dcc11a6fc81.pack",
+      "bytes": 33553479
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/53fefd005f63463bfe1f4c36fd7b17b608827ea9c165eb5bb2fb41706ed036d6.pack",
+      "bytes": 8565581
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/546ef99abc0348ef54bdf71bfa30cc46d9aac579d3b4a379ceb7a631d64ff7d2.pack",
+      "bytes": 33548611
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/54ceb2895323e9376008f7aa7a84297c8dfe282a99e4477eab4763395f1f9f79.pack",
+      "bytes": 33416040
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/55c7466bdf06cd8e7f302f5a04bd52fdbc617c1ea22c974617efd48e3c68a1fc.pack",
+      "bytes": 33550656
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/5613859c6749d35629a1c1d0499ae78a019b9c8ee39c1ebd20a2549704d713ca.pack",
+      "bytes": 33552098
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/56304c3bd9d7873230dfd24cb44447c6f9aff23252f8ea833f0decbca45b7ae3.pack",
+      "bytes": 33446915
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/57283fc99cde082fbbfca34efeebe59cf5b7827e3bb771a1b07dc81288d1fb57.pack",
+      "bytes": 33552240
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/572ee373ab33303b737160a2ba8ebbc4ced0af24c1bde34e36bc2f239069dd77.pack",
+      "bytes": 17322454
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/57f23fe5a7f259704200ad355d7acc2a735a68aff4854c086efc506d448c24f2.pack",
+      "bytes": 33551191
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/58083f6b9729ad6a55bd3ca1cc787e66fae7a2555df3cc46adac11d3fc301ca4.pack",
+      "bytes": 33536759
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/586bc008b1008d199ad4262cf02feb90b580ee208110fb36cb0c8c35bad7e87a.pack",
+      "bytes": 33225135
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/5b6ae013c60cce98623735a62b5667f37b8a53106bfef5930bb2a9b76de6faac.pack",
+      "bytes": 33553360
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/5be37481dbd6b32a9fecbb9794f13bb6cf01060778523be8fd946d0db3e282c6.pack",
+      "bytes": 17536531
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/5c2e1348d0198b6d03edc2e7e8de92c59ee49444a5469daafe315ea83eb2a336.pack",
+      "bytes": 33554071
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/5d261291bf89647207ba4979da69b1c69f3d4333e2934d19addc266a169d8fe1.pack",
+      "bytes": 33321962
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/5d84dc80a8d102b56d2ae102977b56f1bbea306fa796e2ce3911f7b62531f600.pack",
+      "bytes": 33387028
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/5e9c75a3f5114ebc3de5a83b0cc31f193b8ad8220d045adab6890ef26d51d8f1.pack",
+      "bytes": 33550499
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/5eca87e35b8262c58c9dc42193f6ed072188dcb3a806a11c085a3eee1c9c3199.pack",
+      "bytes": 33288943
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/5f8df4a0ceb434f976987fe720c86700c3c6432b63021e6f89475b6ee5a3adb2.pack",
+      "bytes": 32753379
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/5fb4ddd6bab06146e1ffd766f0cb8d6a4b3d9154057d0ff058a523779dbbb131.pack",
+      "bytes": 31833428
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/62a4d60ba5b0fbf8f4293e4e8f4dc272397399357823af70420d8225ef93f77f.pack",
+      "bytes": 33219571
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/638640b45e6122a2292c8ee4f87a5e7ad3d77b19d2f4b13708edea3ae4725567.pack",
+      "bytes": 33551816
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/642f55a91f5710ff6f4f2869a899911b229c1a653ae42435bcd0ccabb90b5889.pack",
+      "bytes": 33339080
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/64d9d5ee0f520dc195b0ff7e79205d42b2d0af8a60a91914996f8efcdcf19a6f.pack",
+      "bytes": 17409977
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/6516eaf88de55ea8b122d6655f521a1fb055c3d2dbfffbc43aeb9b7d17fedf08.pack",
+      "bytes": 33549802
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/6635ce1f686f6be12820613186c48a0270e9a435cb3f4057082bddd7d0847f78.pack",
+      "bytes": 17406680
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/675a6104b32fa889d6623afc51b40b646d3aadada24e54d72dc71236ca40d3b1.pack",
+      "bytes": 17428892
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/67fe271847718f85ed92aa565cbdf789d03248c8fb7c578552635ef8f6c1d818.pack",
+      "bytes": 33525431
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/698d62c5fd4ebbff7d0b4add7438a05d85f42ab98f601d8071f0c401cc406ddc.pack",
+      "bytes": 32627427
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/6a90fa7a3061da6f70ca97375fc2cfebc7dda9884c246a3c6329c185c449c562.pack",
+      "bytes": 16045519
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/6bcc5ac2a9f15a5846605241ebfdbdb5b2b43b95fd6654be58d07a315a821362.pack",
+      "bytes": 33328886
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/6c0c442606593b7b196773d0ead051512e3bff9e90e43f1f8dded10e260927c1.pack",
+      "bytes": 32444929
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/6c0ee0d09f6d664005b67fb64a32c15c42c63c4822adfc71640cc0daf0c4cfce.pack",
+      "bytes": 33554347
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/6dc1b01586fc6f9e989bf71f8edabe6e222b263fd24a8fd84324c1cb60ce743e.pack",
+      "bytes": 33485963
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/6e2ad36b0af75448fc59740547946a7d18989aaade14a296c5988b8eca2cc614.pack",
+      "bytes": 33550447
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/6f4077c299fd1e3f100d309c819871be118906887d9200ea2da023f31fa82c3b.pack",
+      "bytes": 33551585
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/6f54d6cc8ea1fee27b14de267f82162518871486ab40afde2ea9d07470367028.pack",
+      "bytes": 33552095
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/6ffb17a34ed3aef393f339daf3f709fffc95ea437e972571cd8a80119562d4ce.pack",
+      "bytes": 33551864
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/700386c1bc0f2ebded0e792d7f440c15d0b4b42938ec353be60a9c974888d68c.pack",
+      "bytes": 33020243
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/703fa397ccc5b8d1e371e76c45c0b3fb1de5e98e54616199670f0c006f811b52.pack",
+      "bytes": 33551658
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/70b133fcb7797ce89cf10ff6e026e8e9de77a0295ca98e93228dcdba00154181.pack",
+      "bytes": 33554174
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/73d3cd29d23d0401dc60b5847416032e88d0bfc576aebae27d9c10b26554c1ef.pack",
+      "bytes": 17411722
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/74af5a45ce8086299a44ee7ade79524a34311d0044da4ddf0c8a4034a18d4b44.pack",
+      "bytes": 33549143
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/76d10d13b494bd4cd066be516b54c79c9eccd61b6dfefc46e107cca4b0d3a6ea.pack",
+      "bytes": 33548238
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/77916fd6f02ddd9e9f8d4fb84845880db6efeec03884502446d9faa628c5c78e.pack",
+      "bytes": 33552588
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/77abdf20ec918674a213f1b6451455961a1af73bd1d1e0c0b6cda2c0b741c231.pack",
+      "bytes": 33409836
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/79057c96b224fb6bd7d7b5ef16cfd3a75f60b1ce121e29e34770a4d416283c54.pack",
+      "bytes": 32378619
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/799d5fdee305ff30176832546e13d6c65f0f773f03e7c5f6614c80474bd40441.pack",
+      "bytes": 33551568
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/79baae7bf7aedfbc938a6ca1d6ba2691cba3ba62792c68737332fae97dd24707.pack",
+      "bytes": 17609078
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/7a908c2a597a2996263d86908fd71f6d212d49e2eb473fc4cc03c08ebd8e2399.pack",
+      "bytes": 33547923
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/7af014ca4487bc35985c5f8f46487e25bc7b32937f5c555b3d84577a1510651f.pack",
+      "bytes": 17335953
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/7bde2ed76f83ada3ff99bc8a0f855ecb9d0d45a434ac24752404c4f14879631d.pack",
+      "bytes": 17308699
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/7cc76b57b94e2c7276ce0e2d0543da6c81bc4e70c88d1bfed0f31f53c2dc1f0f.pack",
+      "bytes": 33549922
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/7cfd6f9b3b793c5d77f8b5a2eb772465e567fa64c8575170e81b5a9d14e6377f.pack",
+      "bytes": 16992385
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/7d8ab474b943d98fd70c09d6ee2e8b2d6df4fb7160e154ea767345ce9e6d7b45.pack",
+      "bytes": 17293361
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/7ec2532bec37d9a60c6a0cde23735e71eeacf09cbd74e3a4bf21aa060e73635a.pack",
+      "bytes": 33039835
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/7ec41cb64137591100edaa7263e643d23ef0ba4ca6c868e3111658ea882ab9e8.pack",
+      "bytes": 33388360
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/803240e055173a3734e52842adf408efa0d8ea353e7d552ecb3253ce7dfdbc63.pack",
+      "bytes": 33550527
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/80d43e196c25493b78f69eee6599c074a8287225abec38a22f9f916577873fe6.pack",
+      "bytes": 33290379
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/834768e0349f5a1a28cc08b821567c74b51417653c2c7ebd9764c98f5af1a86a.pack",
+      "bytes": 33293671
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/83e18af1f16fe8c453c7dc74be06e870f7d8cf7e290320de341a126f7ddce32e.pack",
+      "bytes": 33554161
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8425727f784f3c54e3592f4d1bbb9f615364ad50e66b3dd33681be1f368a9c84.pack",
+      "bytes": 33452429
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/845cbc691f1b7ba518a1a67fea1f802a5c7069860ee1bf6e52c737749da5f1d1.pack",
+      "bytes": 33333913
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/84f8b6721d3a34c34b9474b99bb8407a2184a1918358bd9b6803490dfe408aa6.pack",
+      "bytes": 33553925
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/858817d7ba17024f239338712ba7352414e6c79a621a6859c6a49c7e1db1cea1.pack",
+      "bytes": 33383939
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/85b0b8216f141bd9a870102978545a3bb515aa387f8952af4e08f1da097dfcf2.pack",
+      "bytes": 33551307
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/85b3ec94f2dfcf149de05aa0cb8a8af1c767dc014517b568a953ee933d949267.pack",
+      "bytes": 33523433
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/867d5945d50946c83dfb5b0472be196e4c9c7c6d8b5983d43a80e35dab45651a.pack",
+      "bytes": 33551563
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/875f4f1d30623279e37976f64fe6549bee3f5c250839d1442ec4348abb24d777.pack",
+      "bytes": 33176897
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/87e93173768d84a07679684d72b56e62980c696da239a194b5cfbc49bd375757.pack",
+      "bytes": 32748581
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/87fcb778f0eedd190af7135cc5576c006e975102138e9da625507cb10071269a.pack",
+      "bytes": 33513056
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/882fb12164a68957ad5a2dce3aabf42e9fd570c26ec0d888f0549badb26d8a19.pack",
+      "bytes": 33552003
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/886531a2ec2c3c53b7e397b5a07ce571ed5161ffea0184724d3057ab20472a45.pack",
+      "bytes": 33548422
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/88da300546e5d11a92e40736fb95c1ce3bee6fef0200bd152bf340cb583c1483.pack",
+      "bytes": 33549244
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/88ff3ffad8b6e37df4732d1746f93a46815a4b194b01c6c40c5ac1a2629d686e.pack",
+      "bytes": 17693951
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/899b70ce08fba8a423c0b02a2a3e7a48105c51c68e51e6a3490d60450cda2134.pack",
+      "bytes": 33551174
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8aa68a8f6b750be3b8ae643b9939ebee07e6b16a6f3b99eeb96f5725ef49ce09.pack",
+      "bytes": 17788152
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8ac22713a5fd5ffe98d28de653445d80135e5e25166ea337a180afb35c2948b3.pack",
+      "bytes": 33550624
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8b347601b7b5138040958412da9e1c6a0fe0999799289c3dc0a39781c86387f2.pack",
+      "bytes": 33511695
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8b6cc231e587cee2d92cbbee3a215d78bd31702386f8ab14b9faa996efc839db.pack",
+      "bytes": 33554099
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8bc51e3a0e5212471502050735a3c811ede18ba334b681bc194acca19a2b0d0b.pack",
+      "bytes": 33325305
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8bf701efe212c873e3435be03fb3098ef74c2bfdb634b1230e6cbe45ba4c5df5.pack",
+      "bytes": 33553308
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8c04fb5a67a6449757947ee84bc78ab100e37f1c96c37384de151435846d1423.pack",
+      "bytes": 33554349
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8c25e84c651c94b4d77f23bd8c29e5b95854bacceff3d809c3c408fd81e9637e.pack",
+      "bytes": 33520035
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8ce88333b5e6ebce2dee3ce2f328b602125fbff427e4b705721ec55c8959a905.pack",
+      "bytes": 17604179
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8d1b590edfb907cd719cab9d9f3ed5d60558fcc0df127034929d5ce33a0a2021.pack",
+      "bytes": 33373126
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8e23342e1e8ae12017ad31fc115f7548b56915e94aad17dc783d926fb9e684d1.pack",
+      "bytes": 33553358
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8edf8eb272faa877c889725ec4de593bd694748c0ba2cd77bd9feffd2f14427e.pack",
+      "bytes": 33547970
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8f1e9ec59eb6d0465e21342c9ba70b3376ec2d19276ab2b1dbd453cb7d1063e9.pack",
+      "bytes": 33552897
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8f6431a4894b4301ad1f732d012b77120e2912ca5e7fbab0f34c9d52939a2989.pack",
+      "bytes": 33547867
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/8fb8882381c3869fa713d4b1bad04a3a0f64f8ae9a364ab8b240ed7c22a7edb0.pack",
+      "bytes": 33551800
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/926a57458e20aa98a2c285cbd10b4b3b172785eb5ec6236b76bd6c084efede01.pack",
+      "bytes": 17091491
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/929b02ba501e86d2c169f33a3fd12452bb6ff722020037ccac7bf639aac1daaf.pack",
+      "bytes": 17636655
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/92c3f6ca45d8e7a288e005693b67c1e36899bfc0cd9ce8f6d83a851a73a5f4b8.pack",
+      "bytes": 33552547
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/94003c39a7dd8cff4fcbca3df0deba6d3a18ebe1c7a333d6cd4932769d4c08a9.pack",
+      "bytes": 33549741
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/9445669dc040cbede7d58bc158325f8c4845d6f3dc70decafdf18581119f2d4d.pack",
+      "bytes": 33551919
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/9447a78412bb5449f649fe33396bdb84733628a04f33903145cea5e7872c735b.pack",
+      "bytes": 33552220
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/9620e6bebf67595b6582fc132c1f9b5528d4c07b0285e66810d3c8e2fc19369f.pack",
+      "bytes": 17471502
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/964aeedecad525c0694109ec8a5a19031cd4b7651738c2efb0d6a290f5d23340.pack",
+      "bytes": 33552036
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/96c92ba48de39c99766ca89145c40f75c93aa3339510dec65751249a3a5f1c8b.pack",
+      "bytes": 32905201
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/96ec91803c4311eaa85cc81a1191d468cc6a4d066aa319b9e7939069ee13a216.pack",
+      "bytes": 32581085
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/98d860dc610eb4dfdd8aaedc7c0ed038173e264c2260ad010278197a904c2689.pack",
+      "bytes": 33546953
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/98ef18e5f6ba5cfe3dd184a91c999a8c9809a30be8f0f3cbef1fb593bf9ca1b5.pack",
+      "bytes": 32573719
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/99974dc8baac58652ce06c4d189159ade4c7e5e980424f53896063672fec1a26.pack",
+      "bytes": 33554141
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/99b233cc78a826d73717ecc3cdf9bc8d8cf45d57e86953c53d582349aeb626ab.pack",
+      "bytes": 33551817
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/99d963552636b2c776128122743e69d126bfd5d0b8e9ca1b48b960a247e0fe66.pack",
+      "bytes": 17603685
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/9a54df4c2d2f2cf63f35aad47c23d882a75b4f93c5e2a6bb3995778aca9f452a.pack",
+      "bytes": 33501278
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/9b9b341a37f7134e8ec3b8804ba6c3904f8d39ecc6eb8eb962ad7523a180a727.pack",
+      "bytes": 33554072
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/9ba13db3ce2868f733971fdb8d4402a13460c77cbb702b9ef1f6ef0eca08d0b6.pack",
+      "bytes": 33552647
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/9d51e78dac4262841d71e249a0429885f327de8550a52cf8a9e673ac33cf2d50.pack",
+      "bytes": 33552609
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/9ea23d8a375afa5c2d65e1f2c8c2e6c495146ee86c3438884fe98c232bbe0fd5.pack",
+      "bytes": 33549358
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/9ff8e3f18e98940766711eee16d3063eb63c7f5f49ff602f0ca1a16005aba172.pack",
+      "bytes": 33549044
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a028eca1e3c7863cd9d222e12c8bb5e6d0baa051f13d62bde0b4868501c9d5fa.pack",
+      "bytes": 33553091
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a09391bbda39d53f8ec79bcd7dcf19e0c4da73c3556240acb5fd0b7ff62f8188.pack",
+      "bytes": 33548612
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a16f69c0731fb5cead6b0e9b74b76a71a9fcea7964581dfde0179150671d37ed.pack",
+      "bytes": 33549452
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a2e68719b2750cf1f4f22e09c4e3db92d50bb900079ea216d483da6b6e52ab96.pack",
+      "bytes": 17423689
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a36d9aa65ffd72807efe3b894c6b4c41fb10588ec4350252db461ec36f555f67.pack",
+      "bytes": 33553325
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a3a06a85f0c67e5f8589adae9fe8bf4a7bd2721b36eb50b9ddd1ac2eaf082968.pack",
+      "bytes": 17205625
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a42a9dbf2eca562f4c2ca17d2432708f92017d3d4f7bb2f92e789ce22de8a73b.pack",
+      "bytes": 33553470
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a4597e50780e106716bd8bcad3a9ee5fde0cff170c0c2cc11a43c3b887c106b9.pack",
+      "bytes": 17082387
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a4960dfd5aafece42c06f905ed8e8eb364ea024d31cddb194a9194ba14fc4c8c.pack",
+      "bytes": 33551569
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a4f1087c0c303228d0be5c49482d6c0d73892d086a4a45d29f9f1421f5a08c04.pack",
+      "bytes": 33550657
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a4fb57d28fd374f61ee39a95d16e8dd2e2d1dedf7e3e186e5159ca6575285051.pack",
+      "bytes": 33551380
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a630b15a0ab7b2e7e3bae3c75842c1cda6eed239d59ff73d0fe5b1b398a37ff1.pack",
+      "bytes": 33002232
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a67e7b615410819911cae960f73800b520d378ea577e906b0ee1be738a853e25.pack",
+      "bytes": 33552733
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a72fcf089022d5b71b428895bde466d791ad9ee538364e01bc7fed6ea6ebf1df.pack",
+      "bytes": 33549611
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a777b4c88340463258066cc9aa792a95a47b11b812913d0596eaf790dc15419a.pack",
+      "bytes": 33549077
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/a9b3f409ce44372b4ef45363c707ae4e72c25d4279ca2929cf26153428a3e9aa.pack",
+      "bytes": 33426965
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ac382fd6ca42c320a4ca709a4dba6dd5f022e32c76d0df850ca3700a07c979d0.pack",
+      "bytes": 33314494
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ac7603a3a2a65297ae7567b2884e9e5951b8160b0950c36f7649ed35e498700b.pack",
+      "bytes": 17777231
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/aca0d710fc5088c60f328585088032358affab0c85de7c537de4f8577a52c7c4.pack",
+      "bytes": 33311547
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/acd303842f57f521594a69ff59cc62d94e1b60ee5b8734704f57731ebb41563b.pack",
+      "bytes": 17724228
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ace95991b797721e2b8433aaf786e0130d82ee5d9b5c91f1752d7b38953fa09e.pack",
+      "bytes": 33550972
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ad05f9a2d4ea828a98e17105ac2d38d47b9b929983e060e2ce63af4234b8b52e.pack",
+      "bytes": 8725150
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ad94b453642090811013c53ee42f7ad0807de4475445f2df972d8ffcb1a2e8e2.pack",
+      "bytes": 33550635
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ade6e6d260f630cf7f37882fad94cd0e3fc587550dfa511fe80db979c4ee20e1.pack",
+      "bytes": 33551609
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ae5b4ead3f7ecc64158eef4ec2284003f4206b17cb2197909199ba46e98a10e3.pack",
+      "bytes": 33548811
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/af8d9a8a34cd0a392112777ea54f980a506981cb95ca2ada1be797313b454f7f.pack",
+      "bytes": 17728439
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b0b45e3a2d3e23069e8102ede6daa04ffcb4422be28f695e52de555b5d132f36.pack",
+      "bytes": 33521918
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b137f64a5cfaefb16b44c59d41bf76824a4474650bf6ef80a09ec28485c9a4cd.pack",
+      "bytes": 33550793
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b22d85fa91713efb665518c8cd4800eff4247a87f1f0288392b1bcdab340af0e.pack",
+      "bytes": 33549472
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b37f54d5101a30fff9178be6c7fbce26fd60a3f9078d1994059acbb02cfc80f3.pack",
+      "bytes": 17471391
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b3f69fdf5736327bd5706d7212c138a7a69cdafcaafd3919feeb1a4b67ce26f2.pack",
+      "bytes": 33548463
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b49c620f0ceabf22966814092c4700be0e53af48fc9f8a24706990ad821e0f6b.pack",
+      "bytes": 33322860
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b60a434ebb32cef84e56ca89348a8c8773afbcb849d64d9edf33b0b6b7dd1004.pack",
+      "bytes": 32504126
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b62412dd8b5ef0765b6ef646f586f6229890026faa520fd45c39f608adcf0d0a.pack",
+      "bytes": 33550533
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b63bbbc192262acd290b9716e33b57daec57cc4fa9771bb80c844d339aa26c81.pack",
+      "bytes": 33026584
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b84c8a6acc16b324e09b42d2fee436e71fc0365429febc673321222e0e05e1b4.pack",
+      "bytes": 33550445
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b8ac06ddc88b0387f0e2dc4f0340e1607dc83b4f526f1bd4d4c886d030aed1ad.pack",
+      "bytes": 33551900
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b8d5ceded7e67f6b3029ebb23bc28f376255f9752a55f42c5f99f7c5cedadc67.pack",
+      "bytes": 33519613
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/b93d7d74df40624d245d49495f8c43bccd8fb8f7766d4511182aae5bf57a103e.pack",
+      "bytes": 33553767
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ba03291c4529c2b7a87d8f9a7d7389a4ef757667019495fdee6351cff71661df.pack",
+      "bytes": 33552606
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ba77bc1d5b94cc18da1f715ee4537fa5f5500acb4d091443e9ccef34d01bf7f1.pack",
+      "bytes": 33442023
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/bb2da3f12f5e249e994c18c2db024f982b106e0861770d747d68a0c6a6b3dfed.pack",
+      "bytes": 17496348
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/bc08a069ebcc6d0ad21e87afb9ae45efbec8a2f967aad63aedcb7d2654f341ad.pack",
+      "bytes": 32941223
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/bc0ca9cb119f0fa12f56a6d9608f0f9653b6b819fe4ec212c13bf6cd1f162c05.pack",
+      "bytes": 33376530
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/bc33771b93577c5df259cb5276b4755eb0fd8fde81cc9733346367263df9e6c0.pack",
+      "bytes": 33531563
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/bcb9d92b78ab8a40a51971a39cde3495fd15e5717e82afc18056a020d4ced9ed.pack",
+      "bytes": 17525006
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/bcfa2ecde4362119974873077e52271db6809fa29adb187f7fc6a5ad7c9ed521.pack",
+      "bytes": 33548849
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/bf05c25b12161e9929369175e9863de64471abb4f0bae592d2d1791c61069686.pack",
+      "bytes": 17127328
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c0951b60752541d708ce4aeee59028bc946eb7a8cb48d559b611f4d003a576e6.pack",
+      "bytes": 17407486
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c09f5183fb6d10c5507b10d63406f998753c9dfe294449cf4221a9ac8d08e808.pack",
+      "bytes": 33417300
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c44666896dafb95433ef78994eb9da07dec328707943d6ed80fd8ca851ea3a74.pack",
+      "bytes": 33253706
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c47a7a8ea0d0f2babc47e3321884b69b310928d4dd382befeab03ab654ffd4b3.pack",
+      "bytes": 33264523
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c5089251c31926dda0f04b22131ad0a85bbf66d89f821974285aa203e117c70d.pack",
+      "bytes": 33478984
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c5652dd2c1b47bc37cbf5a52ec4509fc02c3c91a5609768040d6219e6a07756e.pack",
+      "bytes": 33553965
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c5af29aaf2d86e8cd7a05b3d84af184f2f2f0dfd863d8e0df09b5ab887058a1d.pack",
+      "bytes": 33500161
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c5e87a7718a250d55a56a7e9eb66ca824aa7f08b62fa22528038c35881442222.pack",
+      "bytes": 33554347
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c6a053df12b8f00e7c20f07e07c563652c5337a6522d61b4e36ce12913d879ad.pack",
+      "bytes": 33548253
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c7aaab80833c976c6a6ee75f517affee91fd64dcd24a74decfc3539f56a9f2da.pack",
+      "bytes": 33552849
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c7bdfbaf485f4fec2d0f9c2a5df7d070f7c52f1a5073d42588ea66a3b121f37d.pack",
+      "bytes": 33552165
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c80c88aaf5a647352bf2d062f4b8feb31af5b16f70d5a035ca8e6368be6f1455.pack",
+      "bytes": 17690347
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c86a4c763a9da9c28d9e9d6d8573619e21d0f7219075929f5cd7420506ed8081.pack",
+      "bytes": 33333423
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c887f27ab609e3fc20eb381a8fc9564cf4a11095340dc448ed9e72a5efc7eacd.pack",
+      "bytes": 33554244
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c895c645e600e632d0686fa29a7baed0b74ca6a1158cd031282c157ee4c29c05.pack",
+      "bytes": 33532010
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c909023896bbda505e45037867056d10ff49a47939e62a0d4a01eaa989d26d65.pack",
+      "bytes": 33365564
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c9413b3dbf2ea01f06f62b952139387df82541ccd8c9aaddf4c3ffbaf20fad64.pack",
+      "bytes": 33554241
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/c9b1ba9a59c4d449e1475f1d4b9997cc02749f7717f4f1eb1b4705180c9989a7.pack",
+      "bytes": 33423682
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/cb7580ecae4dc65b25948307b119d912396e6a2f9725304c8f32658eca36da37.pack",
+      "bytes": 32899526
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/cc5e315ed7d11c580665df389f10233b096bd9c896f25159c66767cb71d196fe.pack",
+      "bytes": 33552755
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/cc6f40626f40702136205de606585a52bb26a04b54e27087ea88acc589b30c99.pack",
+      "bytes": 33496041
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/cce14a75efafa284bcbe603778afd12c3bdfeaa66ec685085721ad3cbede8692.pack",
+      "bytes": 17604382
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ccea19c9c2dae3411a266331933f9280f1486c4c058a75254d06edc5eb8c6298.pack",
+      "bytes": 33223516
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/cd5f46954c430942591bba75b9ddc6ca4e2e3c73d8173b08744f5827680399ef.pack",
+      "bytes": 33553999
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ce55d82bfa7f87e1d609fa8fa8fb253050924ba527089b3f37c86136e0f139b2.pack",
+      "bytes": 74697014
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/d08aa954239a222317706169386a1692425e7e731580fe0da51ccc6bb730bbc0.pack",
+      "bytes": 10599254
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/d1a6375efa178324864c1c1198a7b2c30ac0987ae1f13fe8476073665f81df21.pack",
+      "bytes": 14345277
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/d1b9955b693a945b9430e0923e5f72185e6d87f37202c362b246ac80e3706616.pack",
+      "bytes": 32860682
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/d1f92ad58a684caaa4b6c43efdae15abd8ffc37e92cbb3786f80a9548563325a.pack",
+      "bytes": 33549754
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/d3177318e2c45ff3406cd1a2402f737fbac7c25d8663e211786b97cddd88d1e8.pack",
+      "bytes": 33550600
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/d4008946da03d222b71aad32119cfdb2d6da07fc6a9a42051c058b48eccc52a2.pack",
+      "bytes": 32544024
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/d440f4a9d92439c8f6f5480eba126ad428f134bf2766924e585381df0e53a391.pack",
+      "bytes": 33550571
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/d54ccd36ffd44bd9b4651d4be8e28c24b26d61c600e6e97d5f719115b5a46d27.pack",
+      "bytes": 33550060
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/d5a5b7edc31bd931b8336f9b047e1c891fb4e0e8acb56ba1655ef482884a3080.pack",
+      "bytes": 33453166
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/d5ef86b22971490c8102cc98c9e2e433677f62c9842c477eb4938fa99e09a958.pack",
+      "bytes": 33452097
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/d7bb406b044fd0d44620665376c753e332a950163c4747f49d5ced6b6230326f.pack",
+      "bytes": 33219019
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/d9cff8158fb92992a4077f7691be10bb7806e108e1f80129406de1af6e6ccb45.pack",
+      "bytes": 32753531
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/da66c2de6c9c891ca2752e6744a83bcd391985ccbdb2158db3e679986551a36d.pack",
+      "bytes": 33553987
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/db64b36ee9b95d95f051ae6042a69358522f9072c867fdd74201a0a1aec6e017.pack",
+      "bytes": 33554027
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/dc672c8aaa6de9c9935760a41f7fe1fe33c33d0e371e5d5c115b779ab8edf664.pack",
+      "bytes": 17292126
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/dd87d4a51fcb256c09a973642ab76125cba8b1fa1d88b3e8e55affd472985422.pack",
+      "bytes": 33552039
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/e005a9f3ed1515fefa945e2a4c8894d0450c6f96f993137df2a84309b98efb58.pack",
+      "bytes": 33551818
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/e0aeae4d4f65100a07613b52319f4370c1525ebb808e473833d502422fbf5356.pack",
+      "bytes": 17056533
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/e0d35dce1d48785fe40519ef38f182635ebf791d87fe8346fb68c40c973e4817.pack",
+      "bytes": 33264643
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/e306fa7585ea6b663bd0a7ad6b1d96edaf9cf1f46cbcd54fd17f765fcdc82327.pack",
+      "bytes": 33554158
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/e47b22b0b718891a58eed9c8ef04f88ef263d6f6b8419819d804fe328829bd94.pack",
+      "bytes": 33548923
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/e4ffa2bcab049adf0d12875fed170c0c42e69267bdc432982265f75d94da3eca.pack",
+      "bytes": 33554002
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/e7f51a06bef25ffb0199aff420bb73f4c1224a884c60090f6bea0d4c12a8bbbd.pack",
+      "bytes": 33500394
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/e7f53b040cde40bffaf21b54765c259adbf6b8be1220b5e3c3424f4764e4e850.pack",
+      "bytes": 33549348
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/e8d225d3b0a9991afb612778bf55ca08bd0a0b7fab22445c855e36779291687c.pack",
+      "bytes": 33242691
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/e96c057ea60feb803e6227ad25ea2591ef2243cc9a49d095b2373aa4ad52bf81.pack",
+      "bytes": 33475726
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/eae452be2b376c29c29e9365ab968524f9ee8b292280c9c021faa94765981b62.pack",
+      "bytes": 33547393
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ece747f9baa8cfcfbfcb254bc426ee76b0f70ae792993d2e73a6821988c01046.pack",
+      "bytes": 33155715
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ed6d566da84ba5cdb053d86f0aaebc491c1dd827b51fecfe325ea727e3507af3.pack",
+      "bytes": 33367451
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/eedd78d2d3eef51710a7b2e498deae7138f11d43f75883fd9c7f380d10df8c90.pack",
+      "bytes": 33549080
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/efa48e9befa937e98afc793c1eaf45a8228aaafa5f38d110eae44549957e8697.pack",
+      "bytes": 33551424
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/efac93bd0a1ab73746822c1f9d5ddc76847d5ea9b682081254ff37596ad8dc3b.pack",
+      "bytes": 16745891
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f06bd66f0fb2738214bd9ce90ed5efd535d14cbc3f5770a68fef52b2ff88191b.pack",
+      "bytes": 33551563
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f0b060bb1605b7422db3579a37febd25ce43cea0c612ad67685e052f6b385c80.pack",
+      "bytes": 32950194
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f287e5098c88cbc6bc2822fa60f2bbac4fbf9a146b0eeb4c8d3ca314d53dc469.pack",
+      "bytes": 33550373
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f2ae6d30a7808297acff7f1a9b2cc4e6b03515234b988c1a841f4acdc0d59725.pack",
+      "bytes": 33549477
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f2f94d67b60e0a838d2ae457270ce3e4b59dd87e154ae6ef797202ae54f5ed60.pack",
+      "bytes": 32681403
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f3053a079f13b2dbfe4df3f6eccebb1f69b0e6cbbbba0ce5ec912968f8cdef73.pack",
+      "bytes": 17168993
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f3dfb6e860b2881f9b99d0a1d9237dc9bb5c7a7a15e74a92f60a9d63ee3e8ea4.pack",
+      "bytes": 33026406
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f456e5412b7dad6ae416838270efd71746747becd3fe140e48461f43d0176aa1.pack",
+      "bytes": 33547879
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f47d7d830a3ab24cac621a6fbc4f1a8ea35871dbbc0beaf230d21ae4f90bcee4.pack",
+      "bytes": 33548562
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f4c3396dfe4594a4bf3675e146224438f375c00861b6e295297087eb8bcfa7bd.pack",
+      "bytes": 32574591
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f4d76bbb5ec4f679001f07c5e66915262e02c51f00c2b07c63bcd84171c65702.pack",
+      "bytes": 17228000
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f66b3a8548a834469ede615313af4209bc6606b6679f29fb029eaff2fb9bce98.pack",
+      "bytes": 33550374
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/f7c7e7e4b13dd901e3fd4f49aa0ee77249b0bb82afe6cd4013c0d408d74a7b5f.pack",
+      "bytes": 33552397
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/faccba214a2b9ad7759f02d987e03641044d1b2fc5bcd39bb7cf91768e4fd40d.pack",
+      "bytes": 33417746
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/fae3ad8d174217f7d7cd9678b66d73602b2748b3a9e118edf221238348b7028c.pack",
+      "bytes": 33553945
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ff75fad0be3d484502f23392412a6e8a3a2c3858db26cca4b9c665557ef4ae0c.pack",
+      "bytes": 32924927
+    },
+    {
+      "key": "coinstrategy/archive/v1/packs/ffae89205a4b7e30befc61f244875d8d99fc665de4fb06332203fbc0fd61ff34.pack",
+      "bytes": 33551595
+    }
+  ]
+}

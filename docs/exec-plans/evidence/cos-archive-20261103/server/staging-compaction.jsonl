@@ -1,0 +1,3 @@
+{"job": "paper-15m-20261103", "released_staging_bytes": 1857921024, "retained_compressed_catalogue": "/home/ubuntu/coinstrategy-cos-archive/work/paper-15m-20261103/catalogue.sqlite3.gz", "source_deleted": false, "status": "VERIFIED"}
+{"job": "paper-4h-20261103", "released_staging_bytes": 493068288, "retained_compressed_catalogue": "/home/ubuntu/coinstrategy-cos-archive/work/paper-4h-20261103/catalogue.sqlite3.gz", "source_deleted": false, "status": "VERIFIED"}
+{"job": "shared-klines-20261103", "released_staging_bytes": 730918912, "retained_compressed_catalogue": "/home/ubuntu/coinstrategy-cos-archive/work/shared-klines-20261103/catalogue.sqlite3.gz", "source_deleted": false, "status": "VERIFIED"}

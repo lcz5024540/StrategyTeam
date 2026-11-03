@@ -1,0 +1,61 @@
+{
+  "checked_at": "2026-11-03T10:02:03.879360+00:00",
+  "jobs": [
+    {
+      "manifest": "manifests/177007298121f5f37db5ac5370cb14b9de62cee26703aa980b0bba36490c8165.json",
+      "restored": 0,
+      "reused": 5,
+      "bytes": 0,
+      "source_retained": true,
+      "status": "COMPLETE",
+      "scope": "selection",
+      "paths": [
+        "segments/00047746fa5b7ce8219903e049d5d9e4bad343d775a58ca137cd6e990f2147fa.json.gz",
+        "segments/80b19dab6639d9cec95953a81f32a6a2e1e8debd142da1999e33c6313c3d62fa.json.gz",
+        "segments/fffa49ad31d5400df376311ef15699815251d22d584b7c4c53a5cace1a63279f.json.gz",
+        "capture.json",
+        "segments/segments.jsonl"
+      ],
+      "cas": [],
+      "capture_reader_observations": 9,
+      "schemas": [
+        "htx-realtime-segment-v1"
+      ],
+      "unarchived_sealed_before_inventory_end": 0,
+      "currently_sealed_not_in_snapshot": 0,
+      "snapshot_unindexed_segments": 0,
+      "current_index_scan_is_not_atomic": true,
+      "source_sha_equal_files": 5,
+      "job": "capture-realtime-20261103",
+      "kind": "capture"
+    },
+    {
+      "manifest": "manifests/3deec6a61a768448ea6bd3a7edc4fcc877ea5d58b48babd0d1654828a6448192.json",
+      "restored": 5,
+      "reused": 0,
+      "bytes": 3809794,
+      "source_retained": true,
+      "status": "COMPLETE",
+      "scope": "selection",
+      "paths": [
+        "segments/000b1850c35e1c8f7f0e7c224937797dcbe1736c0cd6f2a00d421613f7424a1e.json.gz",
+        "segments/7ed171258e752e2aed017d75fbbed8a8fa8a91202bf58355096f3f3123f4c081.json.gz",
+        "segments/fff01f6ac0e6b6e57a5287085ac42592b55034ef9f4b0b2860e0fcbf095b3c47.json.gz",
+        "capture.json",
+        "segments/segments.jsonl"
+      ],
+      "cas": [],
+      "capture_reader_observations": 9,
+      "schemas": [
+        "htx-realtime-grouped-v1"
+      ],
+      "unarchived_sealed_before_inventory_end": 0,
+      "currently_sealed_not_in_snapshot": 142,
+      "snapshot_unindexed_segments": 0,
+      "current_index_scan_is_not_atomic": true,
+      "source_sha_equal_files": 5,
+      "job": "capture-long-20261103",
+      "kind": "capture"
+    }
+  ]
+}
