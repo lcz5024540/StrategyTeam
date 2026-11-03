@@ -1,0 +1,10 @@
+........................................................................ [ 66%]
+.....................................                                    [100%]
+109 passed in 0.83s
+
+A baseline: all 12 opportunity sequences exactly equal prior results
+Research: 36 scenario runs, repeated output byte-identical
+CAS: 1167 object hashes/reference closure verified
+Reference sets: 47 content hashes verified
+ruff/compileall/git diff --check: passed
+Draw.io XML parse: passed

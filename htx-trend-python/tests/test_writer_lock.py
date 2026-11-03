@@ -34,3 +34,9 @@ def test_live_mutation_checks_ownership_immediately_before_transport():
     db.owned=0
     with pytest.raises(RuntimeError): executor.place(SwapOrderRequest('BTC-USDT','long','buy','market','1','1'))
     assert client.sent==0
+
+
+def test_shutdown_acknowledges_release_before_closing_transport():
+    db=Connection();guard=TrendWriterLock(db);guard.acquire();guard.close()
+    assert 'RELEASE_LOCK' in db.query and db.closed and guard.lost
+    with pytest.raises(RuntimeError):guard.acquire()

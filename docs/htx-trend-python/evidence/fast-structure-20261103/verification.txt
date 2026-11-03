@@ -1,0 +1,9 @@
+........................................................................ [ 60%]
+...............................................                          [100%]
+119 passed in 0.83s
+
+ruff: All checks passed
+compileall: exit 0
+exact replay cmp: exit 0
+trigger proof: 69 study records / 85 unique events verified
+Draw.io XML: parse passed

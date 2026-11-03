@@ -1,0 +1,98 @@
+{
+  "schema": "htx-realtime-input-audit-v1",
+  "status": "NOT_ELIGIBLE",
+  "capture_path": "/private/tmp/htx-realtime-public-20261102",
+  "verified_market_events": 323,
+  "channels": {
+    "ETH-USDT:TRADE": 58,
+    "ETH-USDT:BBO": 265
+  },
+  "epochs": 1,
+  "bytes": 32022,
+  "first_received_ms": 1793621616443,
+  "last_received_ms": 1793621630440,
+  "blockers": [
+    "NO_VERIFIED_FULL_OPPORTUNITY_TAPE",
+    "NO_POINT_IN_TIME_CANDLE_AND_CONFIG_CLOSURE",
+    "NO_ALL_OPPORTUNITY_DEPTH_COVERAGE",
+    "NO_REFERENCE_BASELINE_LEDGER_AND_DECISIONS",
+    "NO_VERIFIED_FILL_LATENCY",
+    "FUNDING_SCHEDULE_UNKNOWN",
+    "NO_INDEPENDENT_DIAGNOSTIC_HOLDOUT_INTERVAL"
+  ],
+  "grid": [
+    {
+      "parameters": {
+        "band_atr": "0.05",
+        "min_net_r": "1",
+        "max_age_ms": 2000
+      },
+      "status": "NOT_RUN_DATA_INSUFFICIENT",
+      "net": null,
+      "drawdown": null,
+      "fees": null,
+      "roundtrips": null
+    },
+    {
+      "parameters": {
+        "band_atr": "0.05",
+        "min_net_r": "1.5",
+        "max_age_ms": 2000
+      },
+      "status": "NOT_RUN_DATA_INSUFFICIENT",
+      "net": null,
+      "drawdown": null,
+      "fees": null,
+      "roundtrips": null
+    },
+    {
+      "parameters": {
+        "band_atr": "0.05",
+        "min_net_r": "2",
+        "max_age_ms": 2000
+      },
+      "status": "NOT_RUN_DATA_INSUFFICIENT",
+      "net": null,
+      "drawdown": null,
+      "fees": null,
+      "roundtrips": null
+    },
+    {
+      "parameters": {
+        "band_atr": "0.1",
+        "min_net_r": "1",
+        "max_age_ms": 2000
+      },
+      "status": "NOT_RUN_DATA_INSUFFICIENT",
+      "net": null,
+      "drawdown": null,
+      "fees": null,
+      "roundtrips": null
+    },
+    {
+      "parameters": {
+        "band_atr": "0.1",
+        "min_net_r": "1.5",
+        "max_age_ms": 2000
+      },
+      "status": "NOT_RUN_DATA_INSUFFICIENT",
+      "net": null,
+      "drawdown": null,
+      "fees": null,
+      "roundtrips": null
+    },
+    {
+      "parameters": {
+        "band_atr": "0.1",
+        "min_net_r": "2",
+        "max_age_ms": 2000
+      },
+      "status": "NOT_RUN_DATA_INSUFFICIENT",
+      "net": null,
+      "drawdown": null,
+      "fees": null,
+      "roundtrips": null
+    }
+  ],
+  "production_changes": false
+}

@@ -20,12 +20,14 @@ from htx_trend.admission import canonical
 from htx_trend.release_artifacts import load_artifacts, validate_schema
 from htx_trend.strategy_profiles import profile_strategy
 from htx_trend.timeframes import TimeframeProfile
+from htx_trend.realtime import VERSION as REALTIME_VERSION
 
 DISCLAIMER = '候选包 ≠ 可以热更 ≠ 可装现网'
 # paper=True 时按 strategy card 选择实例。15m 路径保持 primary，不得改成 4h。
 PAPER_INSTANCE_BY_STRATEGY = {
     'HTX_TREND_15M_V2': 'htx-trend-paper-primary',
     'HTX_TREND_4H_V2': 'htx-trend-paper-4h',
+    REALTIME_VERSION: 'htx-realtime-paper-15m',
 }
 PAPER_4H_CARD = ROOT / 'release/artifacts/strategy_card.paper-4h.example.json'
 LIVE_INSTANCE_KEY = 'htx-trend-live-primary'
@@ -33,7 +35,7 @@ LIVE_STRATEGY_VERSION = 'HTX_TREND_15M_V2'
 LIVE_TIMEFRAME = TimeframeProfile.INTRADAY_15M
 LIVE_VERSION_RE = re.compile(r'0\.1\.7-live-[0-9a-f]{8}')
 CANDIDATE_VERSION_RE = re.compile(
-    r'0\.1\.(?:(?:(?:2-g3|3-paper)-candidate|[56]-paper-db|4-paper-fixa)-[0-9a-f]{8}|7-evidence-v2-[0-9a-f]{8}(?:-4h)?)')
+    r'0\.1\.(?:(?:(?:2-g3|3-paper)-candidate|[56]-paper-db|4-paper-fixa)-[0-9a-f]{8}|7-evidence-v2-[0-9a-f]{8}(?:-4h)?|7-realtime-candidate-[0-9a-f]{8})')
 
 
 def encoded(value):
@@ -75,8 +77,12 @@ def load_strategy_card(path: Path):
     }
 
 
-def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False, compact_evidence=False):
+def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False, compact_evidence=False, realtime=False):
     # paper_4h 仍是 PAPER 候选包，只切换 card / instance，不改 15m paper=True 默认。
+    if realtime:
+        if paper_4h:
+            raise ValueError('realtime entry is 15m only')
+        paper = compact_evidence = True
     if paper_4h:
         paper = True
     if compact_evidence and not paper:
@@ -88,7 +94,9 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False,
     version = f'0.1.6-paper-db-{short}' if paper else f'0.1.2-g3-candidate-{short}'
     if compact_evidence:
         version = f'0.1.7-evidence-v2-{short}' + ('-4h' if paper_4h else '')
-    card, refs = load_artifacts(ROOT / 'release/artifacts')
+    if realtime:
+        version = f'0.1.7-realtime-candidate-{short}'
+    card, refs = load_artifacts(ROOT / 'release/artifacts', variant='.realtime' if realtime else '')
     if paper_4h:
         card, card_ref = load_strategy_card(PAPER_4H_CARD)
         feature_keys = refs['feature_dict']['feature_keys']
@@ -96,7 +104,8 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False,
         if not set(card['feature_keys']) <= set(feature_keys) or not set(card['experiment_ids']) <= set(experiment_ids):
             raise ValueError('strategy card references unknown features/experiments')
         refs = {**refs, 'strategy_card': card_ref}
-    spec = profile_strategy(TimeframeProfile(card['timeframe_profile']), read_env=False)
+    spec = profile_strategy(TimeframeProfile(card['timeframe_profile']), read_env=False,
+                            strategy_version=card['strategy_version'])
     if spec.strategy.version != card['strategy_version']:
         raise ValueError('card strategy/profile mismatch')
     # Explicit allowlist: no env, keys, SQL, tests, real approvals or state trees.
@@ -122,6 +131,16 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False,
     if compact_evidence:
         config['evidence_format'] = 'compact-v2'
         config['runtime_env_required'] = {'HTX_PAPER_EVIDENCE_FORMAT': 'compact-v2'}
+    if realtime:
+        config.update(entry_enabled=False, financial_admission='NOT_ELIGIBLE',
+                      models=['RT_RANGE_REJECTION', 'RT_BREAKOUT_RETEST'],
+                      runtime_env_required={'HTX_RT_ENTRY_ENABLED': 'false',
+                          'HTX_PAPER_EVIDENCE_FORMAT': 'compact-v2'},
+                      note='PAPER candidate; LIVE code present but separate admission/migration/approval required')
+        for name in ('REALTIME-ENTRY.md', 'realtime.env.example'):
+            payload['release/' + name] = (ROOT / 'release' / name).read_bytes()
+        payload['release/migrations/2026-11-02__htx_realtime_structure_plan.sql'] = (
+            ROOT.parent / 'sql/htx/2026-11-02__htx_realtime_structure_plan.sql').read_bytes()
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
                 'config_hash': digest(encoded(config)), 'config_path': 'release/config.example.json',
@@ -339,6 +358,14 @@ def verify(archive: Path):
     for ref in manifest['artifacts'].values():
         if digest(data[ref['path']]) != ref['sha256']:
             raise ValueError('artifact binding mismatch')
+    if '-realtime-candidate-' in manifest['version']:
+        cfg = json.loads(data[binding['config_path']])
+        card = json.loads(data[manifest['artifacts']['strategy_card']['path']])
+        if (binding['strategy_version'] != REALTIME_VERSION or cfg.get('entry_enabled') is not False
+                or cfg.get('financial_admission') != 'NOT_ELIGIBLE'
+                or cfg['strategy_version'] != REALTIME_VERSION or card['strategy_version'] != REALTIME_VERSION
+                or binding['timeframe_profile'] != 'INTRADAY_15M'):
+            raise ValueError('realtime candidate binding mismatch')
     return receipt
 
 
@@ -366,6 +393,7 @@ def main():
     builder = commands.add_parser('build')
     builder.add_argument('--out-root', type=Path, default=Path('/tmp/g3-codex/frozen'))
     builder.add_argument('--paper', action='store_true')
+    builder.add_argument('--realtime', action='store_true', help='15m realtime candidate; entry disabled; includes unapplied SQL')
     builder.add_argument('--compact-evidence', action='store_true', help='PAPER compact-v2 candidate; runtime switch still requires explicit env')
     builder.add_argument('--paper-4h', action='store_true',
                          help='PAPER 示例绑定 HTX_TREND_4H_V2 / htx-trend-paper-4h')
@@ -377,7 +405,7 @@ def main():
     template.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.command == 'build':
-        print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h, compact_evidence=args.compact_evidence))
+        print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h, compact_evidence=args.compact_evidence, realtime=args.realtime))
     elif args.command == 'build-live':
         print(build_live(args.out_root))
     elif args.command == 'verify':

@@ -1,0 +1,20 @@
+{
+  "id": "SYNTHETIC-realtime-card",
+  "version": "1",
+  "synthetic": true,
+  "candidate": true,
+  "strategy_version": "HTX_REALTIME_STRUCTURE_15M_V1",
+  "timeframe_profile": "INTRADAY_15M",
+  "hypothesis": "Plan on closed bars; range rejection or breakout retest trigger from public trades/BBO; capped IOC",
+  "limitations": [
+    "Default entry off; no financial admission",
+    "250ms PAPER latency is an assumption until measured",
+    "Cumulative LIVE fill observation is not exact first fill time"
+  ],
+  "feature_keys": [
+    "rt_structure_20_32"
+  ],
+  "experiment_ids": [
+    "SYNTHETIC-RT-SIX-COMBINATIONS"
+  ]
+}

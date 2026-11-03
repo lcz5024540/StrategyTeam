@@ -1,0 +1,415 @@
+{
+  "assumptions": {
+    "fee_each_side": "0.0004",
+    "funding": "UNKNOWN",
+    "holdout": "NOT_INDEPENDENT: Oct30-31 hypothesis cases; no selection performed",
+    "paths": "three linear legs at 0/300/600/899 seconds; not mathematical bounds",
+    "screenshot_timezone": "CST_ASSUMED",
+    "slippage_atr_each_side": [
+      "0.05",
+      "0.10",
+      "0.20"
+    ]
+  },
+  "coverage": {
+    "15min": {
+      "bars": 378,
+      "first_archived_cst": "2026-10-29T13:03:08.364168+08:00",
+      "first_open_cst": "2026-10-27T21:00:00+08:00",
+      "last_open_cst": "2026-10-31T19:15:00+08:00"
+    },
+    "60min": {
+      "bars": 214,
+      "first_archived_cst": "2026-10-29T13:03:10.024494+08:00",
+      "first_open_cst": "2026-10-22T21:00:00+08:00",
+      "last_open_cst": "2026-10-31T18:00:00+08:00"
+    }
+  },
+  "financial_admission": "NOT_ELIGIBLE",
+  "not_tested": [
+    "two_distinct_trades",
+    "BBO",
+    "IOC_fill",
+    "reentry_gate",
+    "account_budget",
+    "trend_exits",
+    "funding",
+    "portfolio_pnl"
+  ],
+  "provenance": {
+    "diagnostic_source_sha256": "38a7e32e233f8b4f9fbfe75bf5e14dcf6a6fc7945efecbecc5631d81c2b93b21",
+    "orders_sha256": "8c26f78c450d85806894c59dc8a24e3a177bab507f08bffd53ab9c44459da44a",
+    "sha256": "401894cc0fd37df3cb11854f40f021605424bcc25fd3f34039d5ada7e557d9a3",
+    "verified_objects": 1167
+  },
+  "scope": "ASSUMPTION_ONLY_NOT_EXECUTABLE",
+  "runs": [
+    {
+      "band_atr": "0.05",
+      "min_net_r": "1",
+      "path": "OHLC",
+      "summary": {
+        "barrier_contacts_r_screen": {
+          "RIGHT_CENSORED": 11,
+          "STOP_CONTACT": 4,
+          "TARGET_CONTACT": 1
+        },
+        "final_phases": {
+          "INVALIDATED": 79,
+          "TERMINAL": 16,
+          "WAITING": 1
+        },
+        "models": {
+          "RT_RANGE_REJECTION": 16
+        },
+        "r_screen_only": 16,
+        "refresh_reasons": {
+          "AWAITING_FRESH_ARCHIVED_WINDOWS": 54,
+          "DIRECTION_OR_STRUCTURE_REJECTED": 4,
+          "METADATA_OR_CONFIG_NOT_VISIBLE": 321,
+          "READY": 215
+        },
+        "refreshes": 594,
+        "shapes": 16,
+        "touched_plans": 31,
+        "unique_plans": 96
+      }
+    },
+    {
+      "band_atr": "0.05",
+      "min_net_r": "1",
+      "path": "OLHC",
+      "summary": {
+        "barrier_contacts_r_screen": {
+          "RIGHT_CENSORED": 11,
+          "STOP_CONTACT": 3,
+          "TARGET_CONTACT": 2
+        },
+        "final_phases": {
+          "INVALIDATED": 79,
+          "TERMINAL": 16,
+          "WAITING": 1
+        },
+        "models": {
+          "RT_RANGE_REJECTION": 16
+        },
+        "r_screen_only": 16,
+        "refresh_reasons": {
+          "AWAITING_FRESH_ARCHIVED_WINDOWS": 54,
+          "DIRECTION_OR_STRUCTURE_REJECTED": 4,
+          "METADATA_OR_CONFIG_NOT_VISIBLE": 321,
+          "READY": 215
+        },
+        "refreshes": 594,
+        "shapes": 16,
+        "touched_plans": 31,
+        "unique_plans": 96
+      }
+    },
+    {
+      "band_atr": "0.05",
+      "min_net_r": "1.5",
+      "path": "OHLC",
+      "summary": {
+        "barrier_contacts_r_screen": {
+          "RIGHT_CENSORED": 9,
+          "STOP_CONTACT": 3,
+          "TARGET_CONTACT": 1
+        },
+        "final_phases": {
+          "INVALIDATED": 79,
+          "TERMINAL": 16,
+          "WAITING": 1
+        },
+        "models": {
+          "RT_RANGE_REJECTION": 16
+        },
+        "r_screen_only": 13,
+        "refresh_reasons": {
+          "AWAITING_FRESH_ARCHIVED_WINDOWS": 54,
+          "DIRECTION_OR_STRUCTURE_REJECTED": 4,
+          "METADATA_OR_CONFIG_NOT_VISIBLE": 321,
+          "READY": 215
+        },
+        "refreshes": 594,
+        "shapes": 16,
+        "touched_plans": 31,
+        "unique_plans": 96
+      }
+    },
+    {
+      "band_atr": "0.05",
+      "min_net_r": "1.5",
+      "path": "OLHC",
+      "summary": {
+        "barrier_contacts_r_screen": {
+          "RIGHT_CENSORED": 9,
+          "STOP_CONTACT": 2,
+          "TARGET_CONTACT": 2
+        },
+        "final_phases": {
+          "INVALIDATED": 79,
+          "TERMINAL": 16,
+          "WAITING": 1
+        },
+        "models": {
+          "RT_RANGE_REJECTION": 16
+        },
+        "r_screen_only": 13,
+        "refresh_reasons": {
+          "AWAITING_FRESH_ARCHIVED_WINDOWS": 54,
+          "DIRECTION_OR_STRUCTURE_REJECTED": 4,
+          "METADATA_OR_CONFIG_NOT_VISIBLE": 321,
+          "READY": 215
+        },
+        "refreshes": 594,
+        "shapes": 16,
+        "touched_plans": 31,
+        "unique_plans": 96
+      }
+    },
+    {
+      "band_atr": "0.05",
+      "min_net_r": "2",
+      "path": "OHLC",
+      "summary": {
+        "barrier_contacts_r_screen": {
+          "RIGHT_CENSORED": 7,
+          "STOP_CONTACT": 1,
+          "TARGET_CONTACT": 1
+        },
+        "final_phases": {
+          "INVALIDATED": 79,
+          "TERMINAL": 16,
+          "WAITING": 1
+        },
+        "models": {
+          "RT_RANGE_REJECTION": 16
+        },
+        "r_screen_only": 9,
+        "refresh_reasons": {
+          "AWAITING_FRESH_ARCHIVED_WINDOWS": 54,
+          "DIRECTION_OR_STRUCTURE_REJECTED": 4,
+          "METADATA_OR_CONFIG_NOT_VISIBLE": 321,
+          "READY": 215
+        },
+        "refreshes": 594,
+        "shapes": 16,
+        "touched_plans": 31,
+        "unique_plans": 96
+      }
+    },
+    {
+      "band_atr": "0.05",
+      "min_net_r": "2",
+      "path": "OLHC",
+      "summary": {
+        "barrier_contacts_r_screen": {
+          "RIGHT_CENSORED": 7,
+          "TARGET_CONTACT": 2
+        },
+        "final_phases": {
+          "INVALIDATED": 79,
+          "TERMINAL": 16,
+          "WAITING": 1
+        },
+        "models": {
+          "RT_RANGE_REJECTION": 16
+        },
+        "r_screen_only": 9,
+        "refresh_reasons": {
+          "AWAITING_FRESH_ARCHIVED_WINDOWS": 54,
+          "DIRECTION_OR_STRUCTURE_REJECTED": 4,
+          "METADATA_OR_CONFIG_NOT_VISIBLE": 321,
+          "READY": 215
+        },
+        "refreshes": 594,
+        "shapes": 16,
+        "touched_plans": 31,
+        "unique_plans": 96
+      }
+    },
+    {
+      "band_atr": "0.1",
+      "min_net_r": "1",
+      "path": "OHLC",
+      "summary": {
+        "barrier_contacts_r_screen": {
+          "RIGHT_CENSORED": 9,
+          "STOP_CONTACT": 5
+        },
+        "final_phases": {
+          "INVALIDATED": 81,
+          "TERMINAL": 14,
+          "WAITING": 1
+        },
+        "models": {
+          "RT_RANGE_REJECTION": 14
+        },
+        "r_screen_only": 14,
+        "refresh_reasons": {
+          "AWAITING_FRESH_ARCHIVED_WINDOWS": 54,
+          "DIRECTION_OR_STRUCTURE_REJECTED": 4,
+          "METADATA_OR_CONFIG_NOT_VISIBLE": 321,
+          "READY": 215
+        },
+        "refreshes": 594,
+        "shapes": 14,
+        "touched_plans": 31,
+        "unique_plans": 96
+      }
+    },
+    {
+      "band_atr": "0.1",
+      "min_net_r": "1",
+      "path": "OLHC",
+      "summary": {
+        "barrier_contacts_r_screen": {
+          "RIGHT_CENSORED": 10,
+          "STOP_CONTACT": 3,
+          "TARGET_CONTACT": 1
+        },
+        "final_phases": {
+          "INVALIDATED": 81,
+          "TERMINAL": 14,
+          "WAITING": 1
+        },
+        "models": {
+          "RT_RANGE_REJECTION": 14
+        },
+        "r_screen_only": 14,
+        "refresh_reasons": {
+          "AWAITING_FRESH_ARCHIVED_WINDOWS": 54,
+          "DIRECTION_OR_STRUCTURE_REJECTED": 4,
+          "METADATA_OR_CONFIG_NOT_VISIBLE": 321,
+          "READY": 215
+        },
+        "refreshes": 594,
+        "shapes": 14,
+        "touched_plans": 31,
+        "unique_plans": 96
+      }
+    },
+    {
+      "band_atr": "0.1",
+      "min_net_r": "1.5",
+      "path": "OHLC",
+      "summary": {
+        "barrier_contacts_r_screen": {
+          "RIGHT_CENSORED": 7,
+          "STOP_CONTACT": 4
+        },
+        "final_phases": {
+          "INVALIDATED": 81,
+          "TERMINAL": 14,
+          "WAITING": 1
+        },
+        "models": {
+          "RT_RANGE_REJECTION": 14
+        },
+        "r_screen_only": 11,
+        "refresh_reasons": {
+          "AWAITING_FRESH_ARCHIVED_WINDOWS": 54,
+          "DIRECTION_OR_STRUCTURE_REJECTED": 4,
+          "METADATA_OR_CONFIG_NOT_VISIBLE": 321,
+          "READY": 215
+        },
+        "refreshes": 594,
+        "shapes": 14,
+        "touched_plans": 31,
+        "unique_plans": 96
+      }
+    },
+    {
+      "band_atr": "0.1",
+      "min_net_r": "1.5",
+      "path": "OLHC",
+      "summary": {
+        "barrier_contacts_r_screen": {
+          "RIGHT_CENSORED": 8,
+          "STOP_CONTACT": 2,
+          "TARGET_CONTACT": 1
+        },
+        "final_phases": {
+          "INVALIDATED": 81,
+          "TERMINAL": 14,
+          "WAITING": 1
+        },
+        "models": {
+          "RT_RANGE_REJECTION": 14
+        },
+        "r_screen_only": 11,
+        "refresh_reasons": {
+          "AWAITING_FRESH_ARCHIVED_WINDOWS": 54,
+          "DIRECTION_OR_STRUCTURE_REJECTED": 4,
+          "METADATA_OR_CONFIG_NOT_VISIBLE": 321,
+          "READY": 215
+        },
+        "refreshes": 594,
+        "shapes": 14,
+        "touched_plans": 31,
+        "unique_plans": 96
+      }
+    },
+    {
+      "band_atr": "0.1",
+      "min_net_r": "2",
+      "path": "OHLC",
+      "summary": {
+        "barrier_contacts_r_screen": {
+          "RIGHT_CENSORED": 6,
+          "STOP_CONTACT": 1
+        },
+        "final_phases": {
+          "INVALIDATED": 81,
+          "TERMINAL": 14,
+          "WAITING": 1
+        },
+        "models": {
+          "RT_RANGE_REJECTION": 14
+        },
+        "r_screen_only": 7,
+        "refresh_reasons": {
+          "AWAITING_FRESH_ARCHIVED_WINDOWS": 54,
+          "DIRECTION_OR_STRUCTURE_REJECTED": 4,
+          "METADATA_OR_CONFIG_NOT_VISIBLE": 321,
+          "READY": 215
+        },
+        "refreshes": 594,
+        "shapes": 14,
+        "touched_plans": 31,
+        "unique_plans": 96
+      }
+    },
+    {
+      "band_atr": "0.1",
+      "min_net_r": "2",
+      "path": "OLHC",
+      "summary": {
+        "barrier_contacts_r_screen": {
+          "RIGHT_CENSORED": 6,
+          "TARGET_CONTACT": 1
+        },
+        "final_phases": {
+          "INVALIDATED": 81,
+          "TERMINAL": 14,
+          "WAITING": 1
+        },
+        "models": {
+          "RT_RANGE_REJECTION": 14
+        },
+        "r_screen_only": 7,
+        "refresh_reasons": {
+          "AWAITING_FRESH_ARCHIVED_WINDOWS": 54,
+          "DIRECTION_OR_STRUCTURE_REJECTED": 4,
+          "METADATA_OR_CONFIG_NOT_VISIBLE": 321,
+          "READY": 215
+        },
+        "refreshes": 594,
+        "shapes": 14,
+        "touched_plans": 31,
+        "unique_plans": 96
+      }
+    }
+  ]
+}

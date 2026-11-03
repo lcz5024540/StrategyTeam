@@ -43,7 +43,8 @@ class ProfileStrategySpec:
     def validate(self) -> None:
         self.timeframe_profile.validate(self.entry_period, self.trend_period)
         expected = version_for_profile(self.timeframe_profile)
-        if self.strategy.version != expected:
+        from .realtime import VERSION
+        if self.strategy.version != expected and not (self.strategy.version == VERSION and self.timeframe_profile is TimeframeProfile.INTRADAY_15M):
             raise ValueError(f"{self.timeframe_profile.value} requires strategy version {expected}")
         if self.exit_version != "HTX_TREND_EXIT_V4":
             raise ValueError("profile strategy may only reference the formal V4 exit")
@@ -58,7 +59,8 @@ def version_for_profile(profile: TimeframeProfile) -> str:
 
 
 def profile_for_version(version: str) -> TimeframeProfile | None:
-    if version == STRATEGY_15M_V2:
+    from .realtime import VERSION
+    if version in (STRATEGY_15M_V2, VERSION):
         return TimeframeProfile.INTRADAY_15M
     if version == STRATEGY_4H_V2:
         return TimeframeProfile.SWING_4H
@@ -104,7 +106,7 @@ def profile_entry_config(profile: TimeframeProfile, *, read_env: bool = True) ->
     )
 
 
-def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True) -> ProfileStrategySpec:
+def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strategy_version: str | None = None) -> ProfileStrategySpec:
     contract = profile.contract
     config = profile_entry_config(profile, read_env=read_env)
     conditions = {item.condition_id: item.version for item in CONDITIONS
@@ -134,5 +136,22 @@ def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True) -> Pro
                                       ModelCode.EMA_MOMENTUM_CONTINUATION)),
         tuple(item.value for item in ModelCode),
     )
+    from .realtime import VERSION, MODELS
+    if strategy_version == VERSION:
+        if profile is not TimeframeProfile.INTRADAY_15M:
+            raise ValueError('realtime strategy is 15m only')
+        from .realtime.plans import Parameters, GRID
+        parameters = Parameters(Decimal(environ.get('HTX_RT_BAND_ATR', '.10')),
+                                Decimal(environ.get('HTX_RT_MIN_NET_R', '1.5'))) if read_env else Parameters()
+        rt = replace(strategy, version=VERSION,
+            feature_versions={'closed_1h_ema20_60':'v1','closed_15m_structure20_32_atr14':'v1',
+                              'trade_bbo_2s':'v1'},
+            condition_versions={'entry.profile_contract':'v1','rt.two_distinct_trades':'v1',
+                                'rt.ioc_cost_risk':'v1','rt.protection_reentry':'linked-v1'},
+            parameters={'parameters':asdict(parameters),'preregistered_grid':[asdict(x) for x in GRID]},
+            transitions=({'from':'STRUCTURE','to':'TRIGGERED','when':'two trades and fresh BBO'},
+                       {'from':'TRIGGERED','to':'ORDER_INTENT','when':'cost/risk/ownership gates pass'},
+                       {'from':'OPEN','to':'MANAGED','when':'fill confirmed; v4/linked ownership'}))
+        result = replace(result, strategy=rt, primary_models=tuple(sorted(MODELS)), confirmation_models=())
     result.validate()
     return result

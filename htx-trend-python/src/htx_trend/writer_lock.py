@@ -33,7 +33,20 @@ class TrendWriterLock:
             raise
 
     def close(self):
-        # Closing this dedicated connection releases its lock even after errors.
-        self.connection.close()
-        self.acquired = False
-        self.lost = True
+        # A TCP close is not a server acknowledgement: a replacement process
+        # could reach GET_LOCK before MySQL has handled the disconnect. Release
+        # synchronously on a healthy connection, then close even after errors.
+        try:
+            if self.acquired:
+                try:
+                    with self.connection.cursor() as cursor:
+                        cursor.execute("SELECT RELEASE_LOCK(%s) AS released", (LOCK_NAME,))
+                        cursor.fetchone()
+                except Exception:
+                    pass  # Disconnect still releases server ownership eventually.
+        finally:
+            try:
+                self.connection.close()
+            finally:
+                self.acquired = False
+                self.lost = True

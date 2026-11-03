@@ -22,6 +22,7 @@ ZERO = Decimal("0")
 
 class ExecutionStyle(StrEnum):
     PASSIVE_LIMIT = "PASSIVE_LIMIT"
+    IOC_LIMIT = "IOC_LIMIT"
     IOC_OR_MARKET = "IOC_OR_MARKET"
     CONDITIONAL_OR_MARKET = "CONDITIONAL_OR_MARKET"
 
@@ -262,7 +263,7 @@ def structural_target(candidate: ModelCandidate) -> Decimal:
     return candidate.target_low if candidate.side is TrendSide.LONG else candidate.target_high
 
 
-def structured_price_plan(candidate, *, atr, execution_price, fee_rate, entry_fee_rate, passive, config):
+def structured_price_plan(candidate, *, atr, execution_price, fee_rate, entry_fee_rate, passive, config, entry_limit=None):
     desired = candidate.entry_price if execution_price is None else execution_price
     close_rate = config.fee_rate if fee_rate is None else fee_rate
     open_rate = close_rate if entry_fee_rate is None else entry_fee_rate
@@ -276,7 +277,11 @@ def structured_price_plan(candidate, *, atr, execution_price, fee_rate, entry_fe
     sign = Decimal(1) if candidate.side is TrendSide.LONG else Decimal(-1)
     slip = atr * config.slippage_atr_fraction
     entry_slip = ZERO if passive else slip
-    worst = desired + sign * entry_slip
+    worst = desired + sign * entry_slip if entry_limit is None else entry_limit
+    if entry_limit is not None:
+        if not worst.is_finite() or worst <= ZERO or sign*(worst-desired) < ZERO:
+            raise ValueError("invalid IOC price cap")
+        entry_slip = abs(worst-desired)
     target = structural_target(candidate)
     stop = candidate.invalidation_price
     if sign * (target - worst) <= ZERO or sign * (worst - stop) <= ZERO:
@@ -518,6 +523,55 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
         emit("sizing.valid_contracts", False, planned_size.contracts, ">0", planned_size.reason)
         return GateResult(False, "SIZING", planned_size.reason, planned_price, planned_size)
     emit("sizing.valid_contracts", True, planned_size.contracts, ">0", planned_size.reason)
+    account_gate = account_risk_gate(planned_price, planned_size, facts, config=config, emit=emit)
+    if account_gate is not None:
+        return account_gate
+    if config.min_average_turnover > ZERO:
+        values = [item.turnover for item in recent_candles[-config.liquidity_lookback:] if item.turnover is not None]
+        average = sum(values, ZERO) / Decimal(len(values)) if values else None
+        if average is None:
+            emit("gate.average_turnover", False, None, config.min_average_turnover, "unavailable")
+            return GateResult(False, "LIQUIDITY", "liquidity turnover unavailable", planned_price, planned_size)
+        if average < config.min_average_turnover:
+            emit("gate.average_turnover", False, average, config.min_average_turnover)
+            return GateResult(False, "LIQUIDITY", f"liquidity turnover too low avgTurnover={average}", planned_price, planned_size)
+        emit("gate.average_turnover", True, average, config.min_average_turnover)
+    if config.require_execution_facts and facts.executable_depth_contracts is None:
+        emit("gate.executable_depth", False, None, "available")
+        return GateResult(False, "LIQUIDITY", "executable multi-level depth unavailable", planned_price, planned_size)
+    if config.require_execution_facts and facts.executable_depth_contracts < Decimal(planned_size.contracts) * config.min_depth_multiple:
+        emit("gate.executable_depth", False, facts.executable_depth_contracts,
+             Decimal(planned_size.contracts) * config.min_depth_multiple)
+        return GateResult(False, "LIQUIDITY", "top book depth below planned-order multiplier", planned_price, planned_size)
+    emit("gate.executable_depth", True, facts.executable_depth_contracts,
+         Decimal(planned_size.contracts) * config.min_depth_multiple if config.require_execution_facts else None)
+    fee_rate = facts.actual_taker_fee_rate if facts.actual_taker_fee_rate is not None else config.fee_rate
+    if config.fee_protection_enabled:
+        expected_move = atr * config.min_expected_move_atr_multiplier
+        required_move = fill * (order_book.spread_rate + fee_rate * Decimal("2") + config.min_net_profit_rate)
+        if expected_move < required_move:
+            emit("gate.fee_protection", False, expected_move, required_move)
+            return GateResult(False, "COST", f"expected move too small after fees expectedMove={expected_move} requiredMove={required_move}", planned_price, planned_size)
+        emit("gate.fee_protection", True, expected_move, required_move)
+    if config.require_execution_facts:
+        required_margin = (planned_size.notional / facts.leverage * config.margin_safety_ratio
+                           if facts.leverage is not None and facts.leverage > ZERO else None)
+        if required_margin is None or facts.available_margin_usdt is None:
+            emit("gate.margin", False, facts.available_margin_usdt, required_margin, "unavailable")
+            return GateResult(False, "MARGIN", "contract margin unavailable", planned_price, planned_size)
+        if required_margin < config.min_available_margin:
+            required_margin = config.min_available_margin
+        if facts.available_margin_usdt < required_margin:
+            emit("gate.margin", False, facts.available_margin_usdt, required_margin, "insufficient")
+            return GateResult(False, "MARGIN", "contract margin insufficient", planned_price, planned_size)
+        emit("gate.margin", True, facts.available_margin_usdt, required_margin)
+    return GateResult(True, "READY", cooldown_result.override_reason or "all Java entry gates passed", planned_price, planned_size)
+
+
+def account_risk_gate(planned_price, planned_size, facts, *, config, emit=None):
+    """Shared unchanged account risk block for closed-bar and realtime entry."""
+    if emit is None:
+        emit = lambda *args, **kwargs: None
     if config.hard_risk_limits_enabled:
         from .live_approval import validate_margin_config, projected_margin
         try:
@@ -563,43 +617,4 @@ def evaluate_gate(candidate: ModelCandidate, *, period: str, now_epoch: int, atr
             return GateResult(False, "RISK_LIMIT", "same-direction position limit reached",
                               planned_price, planned_size)
         emit("risk.max_same_direction", True, direction_count, config.max_same_direction_positions)
-    if config.min_average_turnover > ZERO:
-        values = [item.turnover for item in recent_candles[-config.liquidity_lookback:] if item.turnover is not None]
-        average = sum(values, ZERO) / Decimal(len(values)) if values else None
-        if average is None:
-            emit("gate.average_turnover", False, None, config.min_average_turnover, "unavailable")
-            return GateResult(False, "LIQUIDITY", "liquidity turnover unavailable", planned_price, planned_size)
-        if average < config.min_average_turnover:
-            emit("gate.average_turnover", False, average, config.min_average_turnover)
-            return GateResult(False, "LIQUIDITY", f"liquidity turnover too low avgTurnover={average}", planned_price, planned_size)
-        emit("gate.average_turnover", True, average, config.min_average_turnover)
-    if config.require_execution_facts and facts.executable_depth_contracts is None:
-        emit("gate.executable_depth", False, None, "available")
-        return GateResult(False, "LIQUIDITY", "executable multi-level depth unavailable", planned_price, planned_size)
-    if config.require_execution_facts and facts.executable_depth_contracts < Decimal(planned_size.contracts) * config.min_depth_multiple:
-        emit("gate.executable_depth", False, facts.executable_depth_contracts,
-             Decimal(planned_size.contracts) * config.min_depth_multiple)
-        return GateResult(False, "LIQUIDITY", "top book depth below planned-order multiplier", planned_price, planned_size)
-    emit("gate.executable_depth", True, facts.executable_depth_contracts,
-         Decimal(planned_size.contracts) * config.min_depth_multiple if config.require_execution_facts else None)
-    fee_rate = facts.actual_taker_fee_rate if facts.actual_taker_fee_rate is not None else config.fee_rate
-    if config.fee_protection_enabled:
-        expected_move = atr * config.min_expected_move_atr_multiplier
-        required_move = fill * (order_book.spread_rate + fee_rate * Decimal("2") + config.min_net_profit_rate)
-        if expected_move < required_move:
-            emit("gate.fee_protection", False, expected_move, required_move)
-            return GateResult(False, "COST", f"expected move too small after fees expectedMove={expected_move} requiredMove={required_move}", planned_price, planned_size)
-        emit("gate.fee_protection", True, expected_move, required_move)
-    if config.require_execution_facts:
-        required_margin = (planned_size.notional / facts.leverage * config.margin_safety_ratio
-                           if facts.leverage is not None and facts.leverage > ZERO else None)
-        if required_margin is None or facts.available_margin_usdt is None:
-            emit("gate.margin", False, facts.available_margin_usdt, required_margin, "unavailable")
-            return GateResult(False, "MARGIN", "contract margin unavailable", planned_price, planned_size)
-        if required_margin < config.min_available_margin:
-            required_margin = config.min_available_margin
-        if facts.available_margin_usdt < required_margin:
-            emit("gate.margin", False, facts.available_margin_usdt, required_margin, "insufficient")
-            return GateResult(False, "MARGIN", "contract margin insufficient", planned_price, planned_size)
-        emit("gate.margin", True, facts.available_margin_usdt, required_margin)
-    return GateResult(True, "READY", cooldown_result.override_reason or "all Java entry gates passed", planned_price, planned_size)
+    return None

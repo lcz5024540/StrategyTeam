@@ -17,6 +17,8 @@ ACCOUNT = 'paper:htx-trend-paper-primary'
 ALLOWED_PAPER_IDENTITIES = {
     ('HTX_TREND_15M_V2', 'htx-trend-paper-primary'),
     ('HTX_TREND_4H_V2', 'htx-trend-paper-4h'),
+    ('HTX_REALTIME_STRUCTURE_15M_V1', 'htx-realtime-paper-15m'),
+    ('HTX_REALTIME_STRUCTURE_15M_V1', 'htx-trend-paper-primary'),
 }
 FEE_RATE = D('.0004')
 CLIENT_ORDER_ID_MAX_LEN = 128
@@ -73,7 +75,8 @@ def backfill_paper_state_to_mysql(state_json, repo):
         state = json.loads(state_json) if state_json.lstrip().startswith('{') else json.loads(Path(state_json).read_text())
     else:
         state = state_json
-    strategy, instance, account = resolve_paper_identity(state.get('identity'))
+    ledger_strategy, instance, account = resolve_paper_identity(state.get('identity'))
+    strategy = ledger_strategy
     orders, positions = state['orders'], state['positions']
     # Preflight before any writes; preserve authoritative IDs without truncation.
     for order in orders.values():
@@ -114,6 +117,16 @@ def backfill_paper_state_to_mysql(state_json, repo):
         trade_account = ensure_paper_account(repo, instance)
         for key, p, linked in groups:
             context = state['contexts'][key]
+            from .realtime import MODELS, VERSION as RT_VERSION
+            realtime = context.get('model') in MODELS
+            strategy = ledger_strategy
+            if realtime:
+                from .holding_policy import HoldingPolicy
+                from .timeframes import TimeframeProfile
+                policy = HoldingPolicy.load(context['holding_policy'])
+                policy.require_owner(instance_key=instance, account_id=account, mode='PAPER',
+                    strategy_family='TREND', strategy_name=RT_VERSION, profile=TimeframeProfile.INTRADAY_15M)
+                strategy = RT_VERSION
             size = D(str(context['contract_size']))
             if not size.is_finite() or size <= 0:
                 raise ValueError('invalid contract size')
@@ -155,7 +168,9 @@ def backfill_paper_state_to_mysql(state_json, repo):
                     if not q.is_finite() or not price.is_finite() or q <= 0 or price <= 0:
                         raise ValueError('invalid simulated fill')
                     amount = q * price * size
-                    cost = amount * FEE_RATE
+                    cost = D(str(f['fee'])) if realtime else amount * FEE_RATE
+                    if not cost.is_finite() or cost < 0:
+                        raise ValueError('invalid recorded simulated fee')
                     pnl = (price-entry) * q * size * (1 if p['side'] == 'LONG' else -1) if leg != 'ENTRY' else D(0)
                     quantity += q; value += q * price; fee += cost; profit += pnl
                     # 哈希纳入 paper:{instance}，避免不同 PAPER 实例的 fill_id 撞键。
@@ -174,7 +189,8 @@ def backfill_paper_state_to_mysql(state_json, repo):
                     raise ValueError('fill quantity exceeds order')
                 if new_fill or old is None:
                     repo.reconcile_order(position_id=pid, leg=leg, client_order_id=client,
-                        status='FILLED' if quantity == D(str(order['quantity'])) else 'PARTIALLY_FILLED',
+                        status=('FILLED' if quantity == D(str(order['quantity'])) else
+                                'PARTIALLY_CANCELLED' if realtime else 'PARTIALLY_FILLED'),
                         exchange_order_id=None, exchange_client_order_id=None, exchange_state='PAPER_SIMULATED',
                         filled_contracts=quantity, average_price=value/quantity, fee=fee, fee_currency='USDT',
                         realized_profit=profit if leg != 'ENTRY' else None, message='PAPER_SIMULATED')

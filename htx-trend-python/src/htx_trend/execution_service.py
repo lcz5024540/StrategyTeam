@@ -514,9 +514,29 @@ class HtxTrendEntryExecutor:
             exchange_client_order_id=_client_id(order), exchange_state=exchange_state,
             filled_contracts=filled, average_price=price, fee=fee,
             fee_currency=order.get("fee_currency"), realized_profit=_decimal(order, "real_profit"))
+        if leg == 'ENTRY' and entry_execution and entry_execution.get('schema')=='realtime-ioc-v1' and filled>0:
+            state=self._repository.exit_state(position_id)
+            observed_ms=int(time.time()*1000)
+            state.setdefault('first_fill_observed_ms',observed_ms)
+            # The V5 cumulative order projection does not establish an exact
+            # execution timestamp. Never substitute order-created time.
+            state['fill_time_status']='UNKNOWN_EXCHANGE_TIME' if state.get('first_fill_ms') is None else 'RECORDED'
+            state['entry_fee_status']='KNOWN' if fee is not None else 'UNKNOWN'
+            if self._evidence_store is not None:
+                try:
+                    state['fill_receipt_ref']=self._evidence_store.put('realtime_exchange_receipt',
+                        {'client_order_id':client_order_id,'position_id':position_id,'observed_ms':observed_ms,
+                         'order':order,'fee_status':state['entry_fee_status']})
+                except Exception:
+                    state['fill_receipt_status']='EVIDENCE_FAILED'
+            self._repository.save_management_state(position_id,state)
         if leg == "ENTRY" and entry_execution and status in ("ACCEPTED", "PARTIALLY_FILLED", "UNKNOWN"):
             if entry_execution.get('client_order_id') != client_order_id:
                 raise ValueError("entry recovery identity mismatch")
+            if entry_execution.get('schema') == 'realtime-ioc-v1':
+                # IOC remainder expires at the exchange. An unknown result only
+                # queries the original identity; never reuse the maker deadline.
+                return status
             current = int(time.time()) if now_epoch is None else now_epoch
             if current >= int(entry_execution['cancel_at_epoch']):
                 if exchange_id is None:

@@ -156,6 +156,6 @@ def runtime_guard(instance, account, profile):
         source_commit=os.environ.get('HTX_PYTHON_SOURCE_COMMIT', ''),
         package_sha256=os.environ.get('HTX_PYTHON_PACKAGE_SHA256', ''),
         config_fingerprint=instance.config_fingerprint, account_id=account.account_id,
-        strategy_spec_hash=profile_strategy(TimeframeProfile(profile)).spec_hash,
+        strategy_spec_hash=profile_strategy(TimeframeProfile(profile), strategy_version=instance.strategy_name).spec_hash,
         account_equity_usdt=str(config.account_equity_usdt), max_total_margin_rate=str(config.max_total_margin_rate))
     return validate_approval(Path(approval), Path(admission), current)

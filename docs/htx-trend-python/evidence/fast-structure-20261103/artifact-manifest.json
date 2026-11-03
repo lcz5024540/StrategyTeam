@@ -1,0 +1,51 @@
+{
+  "protocol_preregistered_commit": "a98d1181",
+  "baseline_commit": "b201b78a",
+  "input_tape": {
+    "path": "/tmp/coinstrategy-fast-structure-20261103/capture-prefix.jsonl.gz",
+    "bytes": 105656081,
+    "sha256": "b6cb0f950412325483982924c901cebb30c6240d23541a66f9b7a2d3a3a1f4fd"
+  },
+  "artifacts": {
+    "capture-delivery-status.json": {
+      "bytes": 7803,
+      "sha256": "0ea09964ce34645d299fb16e7542742ec033a08e1f1a3d42a115f02dac92a21a"
+    },
+    "capture-initial-status.json": {
+      "bytes": 10035,
+      "sha256": "5fb2d87d025ef1f7af068fc25ef53bc8461322b87396552f7880c0d85907aa70"
+    },
+    "capture-later-status.json": {
+      "bytes": 7088,
+      "sha256": "9b4b69f86309d5e8ccf03867d4c387f10324258e2c2379c0418e2a8d023550d4"
+    },
+    "capture-manifest.json.gz": {
+      "bytes": 275486,
+      "sha256": "d35f17bbf632b926ab7dd697c3cfbe7cfb9aa184bd3984b6b647accde8ec4e61"
+    },
+    "official-1m.json.gz": {
+      "bytes": 176340,
+      "sha256": "9bcf5751c548acc19fa30a3fa331fae6c31964950baf65cc066b2b53877b6ef9"
+    },
+    "protocol.md": {
+      "bytes": 4104,
+      "sha256": "e9579ba84167853c6574462824c0e4eed47e049c16a4c1e4cddb923678d021be"
+    },
+    "results.json.gz": {
+      "bytes": 3031429,
+      "sha256": "c1885e3df409b7035dcc86e2ac726e03a6bc9604d03c2d14a416bb334f2ed13a"
+    },
+    "summary.json": {
+      "bytes": 10358,
+      "sha256": "d82b64a140881b98daabf1149520eecc801a293d9496b6eacca47f49e1996f82"
+    },
+    "trigger-proof-audit.json.gz": {
+      "bytes": 12032,
+      "sha256": "640fab7652c64579d43913e3690e31b260afd5c687811299d338d24bc60ae706"
+    },
+    "verification.txt": {
+      "bytes": 335,
+      "sha256": "cce7cd8720f6c13e5c644fdfa53d03484e25aab63a6c6a56e56b68f40984f04d"
+    }
+  }
+}

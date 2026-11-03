@@ -48,7 +48,7 @@ class HtxStrategyDecisionEngine:
                  config: JavaEntryConfig | None = None,
                  admission: StrategyAdmissionArtifact | None = None, evidence_store=None) -> None:
         profile = profile_for_version(strategy_version)
-        self.profile_spec = profile_strategy(profile) if profile is not None else None
+        self.profile_spec = profile_strategy(profile, strategy_version=strategy_version) if profile is not None else None
         self.strategy_version = strategy_version
         self.config = config or (self.profile_spec.entry_config if self.profile_spec else JavaEntryConfig())
         self.admission = admission
@@ -56,6 +56,9 @@ class HtxStrategyDecisionEngine:
 
     def decide(self, *, contract_code: str, period: str, candles: Sequence[Candle],
                surface: DecisionSurface | str, evidence_refs: tuple[str, ...] = ()) -> StrategyDecision:
+        from .realtime import VERSION as REALTIME_VERSION
+        if self.strategy_version == REALTIME_VERSION:
+            raise ValueError("realtime strategy requires StructurePlan/RealtimeTrigger, not candle candidates")
         self._authorize(DecisionSurface(surface))
         period_profile = TimeframeProfile.for_period(period)
         if self.profile_spec is not None and period_profile is not self.profile_spec.timeframe_profile:

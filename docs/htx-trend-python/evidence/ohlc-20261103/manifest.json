@@ -1,0 +1,17 @@
+{
+  "base_commit": "6d6dca6f",
+  "inputs": [
+    {
+      "path": "/Users/lichangzheng.ray/Ray/ray-agent/docs/reports/evidence/20261102-eth-structure-opportunities/eth-evidence.json.gz",
+      "sha256": "401894cc0fd37df3cb11854f40f021605424bcc25fd3f34039d5ada7e557d9a3",
+      "bytes": 3335640
+    },
+    {
+      "path": "/Users/lichangzheng.ray/Ray/ray-agent/docs/reports/evidence/20261102-eth-structure-opportunities/image-orders.json",
+      "sha256": "8c26f78c450d85806894c59dc8a24e3a177bab507f08bffd53ab9c44459da44a",
+      "bytes": 2760
+    }
+  ],
+  "output_sha256": "2af4aa909059acd92539e57047f87e5f0fb23aec3e65f76a187afe6252064c34",
+  "source_sha256": "38a7e32e233f8b4f9fbfe75bf5e14dcf6a6fc7945efecbecc5631d81c2b93b21"
+}

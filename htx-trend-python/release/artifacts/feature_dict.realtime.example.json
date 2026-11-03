@@ -1,0 +1,20 @@
+{
+  "id": "SYNTHETIC-realtime-features",
+  "version": "1",
+  "synthetic": true,
+  "candidate": true,
+  "features": [
+    {
+      "key": "rt_structure_20_32",
+      "version": "1",
+      "formula": "closed channel20 / box32 edges; EMA20/60 direction; two distinct trades and fresh BBO",
+      "inputs": [
+        "closed 15min and 60min candles",
+        "trade IDs",
+        "BBO exchange and receive timestamps"
+      ],
+      "window": 32,
+      "unit": "price"
+    }
+  ]
+}

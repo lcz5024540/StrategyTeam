@@ -289,3 +289,31 @@ def test_new_paper_metadata_projects_once_without_history_rewrite(paper_store, t
     backfill_paper_state_to_mysql(json.dumps(state), repo)
     again = dict(db.raw.execute(query, (order['client_order_id'],)).fetchone())
     assert again['order_px'] == '99' and again['signal_px'] == '98'
+
+
+@pytest.mark.parametrize('ledger_strategy', [STRATEGY, 'HTX_REALTIME_STRUCTURE_15M_V1'])
+def test_realtime_mirror_uses_position_owner_actual_fee_and_partial_terminal(tmp_path,paper_store,ledger_strategy):
+    from htx_trend.holding_policy import HoldingPolicy,paper_exit_config
+    from htx_trend.java_entry_contract import JavaEntryConfig
+    from htx_trend.timeframes import TimeframeProfile
+    from htx_trend.realtime import VERSION
+    db,repo=paper_store
+    state=make_state(tmp_path,1,strategy=ledger_strategy)
+    owner=HoldingPolicy.create(instance_key='htx-trend-paper-primary',account_id=ACCOUNT,
+        strategy_family='TREND',strategy_name=VERSION,mode='PAPER',
+        profile=TimeframeProfile.INTRADAY_15M,entry_config=JavaEntryConfig(),
+        exit_config=paper_exit_config(),continuation_version='linked-v1')
+    for ctx in state['contexts'].values():
+        ctx.update(model='RT_RANGE_REJECTION',holding_policy=owner.to_dict())
+    # Simulated actual fees deliberately differ from the old constant .0004.
+    for fill in state['fills']:fill['fee']='0.0123'
+    entry=next(o for o in state['orders'].values() if o['position_id'] is None)
+    entry.update(quantity=12,status='PARTIALLY_CANCELLED')
+    assert backfill_paper_state_to_mysql(state,repo)['fills_added']==2
+    for table in ('htx_trend_position','htx_trend_order','coin_strategy_ledger_event'):
+        rows=list(db.raw.execute(f'SELECT * FROM {table}'))
+        assert rows and all(r['strategy_name']==VERSION for r in rows)
+    row=db.raw.execute('SELECT * FROM htx_trend_position').fetchone()
+    assert D(str(row['final_total_fee']))==D('.0246')
+    assert db.raw.execute("SELECT status FROM htx_trend_order WHERE leg='ENTRY'").fetchone()[0]=='PARTIALLY_CANCELLED'
+    assert backfill_paper_state_to_mysql(state,repo)['fills_added']==0

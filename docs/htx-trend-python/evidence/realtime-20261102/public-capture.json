@@ -1,0 +1,1 @@
+{"schema": "realtime-public-capture-v1", "counts": {"TRADE": 58, "BBO": 265}, "epochs": 1, "failure": null, "bytes": 32022, "observed_both_channels": true, "events_verified": 323, "trading": false}

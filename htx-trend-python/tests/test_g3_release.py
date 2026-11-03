@@ -151,3 +151,19 @@ def test_paper_4h_config_binds_swing_instance(tmp_path):
     assert bindings['instance_key'] == 'htx-trend-paper-4h'
     assert receipt['bindings']['instance_key'] == 'htx-trend-paper-4h'
     assert receipt['bindings']['strategy_version'] == 'HTX_TREND_4H_V2'
+
+
+def test_realtime_package_has_actual_strategy_disabled_entry_and_unapplied_migration(tmp_path):
+    from htx_trend.realtime import VERSION
+    archive = package.build(tmp_path, realtime=True)
+    receipt = package.verify(archive)
+    assert receipt['bindings']['strategy_version'] == VERSION
+    with tarfile.open(archive) as tar:
+        cfg = json.load(tar.extractfile('release/config.example.json'))
+        assert cfg['entry_enabled'] is False and cfg['financial_admission'] == 'NOT_ELIGIBLE'
+        assert cfg['runtime_env_required']['HTX_RT_ENTRY_ENABLED'] == 'false'
+        assert 'release/migrations/2026-11-02__htx_realtime_structure_plan.sql' in tar.getnames()
+        manifest = json.load(tar.extractfile('MANIFEST.json'))
+        assert '.realtime.' in manifest['artifacts']['strategy_card']['path']
+    with pytest.raises(ValueError, match='15m only'):
+        package.build(tmp_path / 'bad', realtime=True, paper_4h=True)

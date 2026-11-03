@@ -1,0 +1,77 @@
+{
+  "observed_at": "2026-11-02T15:08:26.577715+00:00",
+  "mode": "READ_ONLY",
+  "path": "/v5/trade/order/details",
+  "facts": {
+    "first_fill_ms": 1793621725768,
+    "last_fill_ms": 1793621725768,
+    "detail_quantity": "1",
+    "detail_vwap": "94.5448",
+    "detail_trade_ids": [
+      "37921169"
+    ],
+    "detail_min_fill_price": "94.5448",
+    "detail_max_fill_price": "94.5448",
+    "detail_fee_status": "KNOWN",
+    "detail_fee_usdt": "0.03781792",
+    "fill_time_source": "HTX_V5_ORDER_DETAILS.updated_time"
+  },
+  "source_sha256": {
+    "htx_v5": "e2754adbdfcfab0ac0a29cbbaf71969a065804d19f046b78505e517e3b7a9c58",
+    "fills": "c5ef66fd3f3b14a6560569c46afa130aa7ecc8dd938d25c138886740249926fc"
+  },
+  "receipt": {
+    "pages": [
+      [
+        {
+          "id": "1566908615879434243",
+          "contract_code": "SOL-USDT",
+          "order_id": "1566908615774674944",
+          "trade_id": "37921169",
+          "side": "buy",
+          "position_side": "short",
+          "order_type": "1",
+          "margin_mode": "isolated",
+          "type": "market",
+          "role": "TAKER",
+          "trade_price": "94.5448",
+          "trade_volume": "1",
+          "trade_turnover": "94.5448",
+          "created_time": "1793621725768",
+          "updated_time": "1793621725768",
+          "order_source": "api",
+          "fee_currency": "USDT",
+          "trade_fee": "0.03781792",
+          "deduction_price": "",
+          "profit": "-0.4566",
+          "contract_type": "swap"
+        }
+      ]
+    ],
+    "trades": [
+      {
+        "id": "1566908615879434243",
+        "contract_code": "SOL-USDT",
+        "order_id": "1566908615774674944",
+        "trade_id": "37921169",
+        "side": "buy",
+        "position_side": "short",
+        "order_type": "1",
+        "margin_mode": "isolated",
+        "type": "market",
+        "role": "TAKER",
+        "trade_price": "94.5448",
+        "trade_volume": "1",
+        "trade_turnover": "94.5448",
+        "created_time": "1793621725768",
+        "updated_time": "1793621725768",
+        "order_source": "api",
+        "fee_currency": "USDT",
+        "trade_fee": "0.03781792",
+        "deduction_price": "",
+        "profit": "-0.4566",
+        "contract_type": "swap"
+      }
+    ]
+  }
+}

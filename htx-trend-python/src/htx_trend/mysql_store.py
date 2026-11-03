@@ -722,7 +722,7 @@ class HtxTrendMySqlRepository:
         finally:
             self._in_transaction = False
 
-    def save_exit_state(self, position_id: int, state: dict[str, Any], decision) -> None:
+    def save_management_state(self, position_id: int, state: dict[str, Any]) -> None:
         previous = self.exit_state(position_id)
         if previous.get('holding_policy') is not None:
             if state.get('holding_policy') != previous['holding_policy']:
@@ -733,6 +733,9 @@ class HtxTrendMySqlRepository:
         self._write("""INSERT INTO python_trend_exit_state(position_id,state_json) VALUES(%s,%s)
           ON DUPLICATE KEY UPDATE state_json=VALUES(state_json),updated_at=CURRENT_TIMESTAMP(3)""",
           (position_id,json.dumps(state,default=str,sort_keys=True)))
+
+    def save_exit_state(self, position_id: int, state: dict[str, Any], decision) -> None:
+        self.save_management_state(position_id, state)
         self._write("""UPDATE htx_trend_position SET highest_price=%s,lowest_price=%s,profit_protection_price=%s,
           trailing_armed_at=%s,trailing_arm_reason=%s,max_favorable_r=%s,exit_phase=%s WHERE id=%s""",
           (state['highest'],state['lowest'],decision.protection_price,decision.trailing_armed_at,
