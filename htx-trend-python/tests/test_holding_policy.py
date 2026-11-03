@@ -315,7 +315,19 @@ def test_probe_pid_must_bind_the_requested_worker():
 
 def test_legacy_adaptation_is_exact_and_unknown_control_flow_is_rejected():
     from htx_trend.holding_policy import implementation_hashes, LEGACY_MANAGEMENT, supports_observed_implementation
-    legacy = {**implementation_hashes(), **LEGACY_MANAGEMENT}
+    from htx_trend.realtime.legacy_implementations import LEGACY_IMPLEMENTATIONS
+    legacy = LEGACY_IMPLEMENTATIONS[0]
+    assert not supports_observed_implementation({**implementation_hashes(), **LEGACY_MANAGEMENT})
     assert supports_observed_implementation(legacy)
     assert not supports_observed_implementation({**legacy,'timeframes.py':'changed'})
     assert not supports_observed_implementation({**legacy,'position_manager.py':'changed'})
+
+
+def test_realtime_adapter_loads_exact_predecessor_without_rewriting_policy():
+    from htx_trend.realtime.legacy_implementations import LEGACY_IMPLEMENTATIONS
+    for vector in LEGACY_IMPLEMENTATIONS:
+        payload=reseal({**policy().to_dict(),'implementation_hashes':vector})
+        assert HoldingPolicy.load(payload).to_dict()==payload
+        rt={**payload,'owner':{**payload['owner'],'strategy_name':'HTX_REALTIME_STRUCTURE_15M_V1'}}
+        with pytest.raises(HoldingPolicyError,match='implementation'):
+            HoldingPolicy.load(reseal(rt))

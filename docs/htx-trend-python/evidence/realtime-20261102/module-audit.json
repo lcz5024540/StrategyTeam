@@ -1,0 +1,261 @@
+{
+  "tool": "Python AST (not codegraph)",
+  "modules": [
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/__init__.py",
+      "functions": 0,
+      "imports": []
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/__main__.py",
+      "functions": 1,
+      "imports": [
+        "import argparse",
+        "import json",
+        "import time",
+        "from pathlib import Path",
+        "from .feed import PublicStream",
+        "from .storage import SegmentRecorder",
+        "from .replay import audit_capture, load, replay as run_replay, write_report"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "functions": 17,
+      "imports": [
+        "from __future__ import annotations",
+        "from dataclasses import replace",
+        "from datetime import UTC, datetime",
+        "from decimal import Decimal as D",
+        "import copy",
+        "import time",
+        "from ..execution import ExecutionFacts",
+        "from ..ledger import Order, Fill, Position",
+        "from ..models import TrendSide",
+        "from ..order_accounting import TERMINAL as ORDER_TERMINAL",
+        "from ..htx_v5 import SwapOrderRequest",
+        "from ..mysql_store import PositionIntent, TrendOrderIntent",
+        "from ..execution_service import _order_id, _client_id, _reservation_key",
+        "from ..research.store import primitive",
+        "from . import VERSION",
+        "from ..paper import PaperExchange",
+        "from .fills import FillRecovery"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/coverage.py",
+      "functions": 4,
+      "imports": [
+        "from collections import deque",
+        "from decimal import Decimal as D",
+        "import uuid",
+        "import gzip, json",
+        "from ..research.store import digest"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "functions": 6,
+      "imports": [
+        "from dataclasses import asdict, replace",
+        "from decimal import Decimal as D",
+        "from pathlib import Path",
+        "import json",
+        "import os",
+        "from datetime import datetime, UTC",
+        "from ..continuation import ContinuationConfig, LINKED",
+        "from ..execution import ExecutionConfig",
+        "from ..exit_config import ExitConfig",
+        "from ..holding_policy import HoldingPolicy",
+        "from ..paper_worker import PaperFileLedger, PaperWorkerConfig",
+        "from ..runtime import PaperTrendRuntime",
+        "from ..strategy_profiles import profile_entry_config",
+        "from ..timeframes import TimeframeProfile",
+        "from . import VERSION",
+        "from .brokers import PaperBroker, LiveBroker, RealtimePaperExchange",
+        "from .feed import PublicStream",
+        "from .management import PaperManagement, LiveManagement",
+        "from .plans import Parameters, TriggerEngine",
+        "from .storage import PaperPlanStore, MySqlPlanStore, SegmentRecorder",
+        "from .worker import RealtimeWorker, FrameLoader, MarketView",
+        "from ..live_worker import LiveTrendWorker",
+        "from ..strategy_context import MarketRegime"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/feed.py",
+      "functions": 13,
+      "imports": [
+        "from __future__ import annotations",
+        "from dataclasses import dataclass",
+        "from collections import deque",
+        "from decimal import Decimal",
+        "import gzip",
+        "import json",
+        "import queue",
+        "import re",
+        "import threading",
+        "import time",
+        "import uuid",
+        "from ..research.store import primitive",
+        "from websockets.sync.client import connect"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/fills.py",
+      "functions": 5,
+      "imports": [
+        "from concurrent.futures import ThreadPoolExecutor",
+        "from decimal import Decimal as D",
+        "import time"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/legacy_implementations.py",
+      "functions": 0,
+      "imports": []
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/management.py",
+      "functions": 17,
+      "imports": [
+        "from __future__ import annotations",
+        "from dataclasses import dataclass",
+        "from datetime import UTC, datetime",
+        "from decimal import Decimal as D",
+        "import copy",
+        "from ..holding_policy import resolve_holding_policy",
+        "from ..holding_adoption import adopted_state",
+        "from ..continuation import latest_completed, reentry_gate",
+        "from ..java_entry_contract import evaluate",
+        "from ..models import TrendSide",
+        "from ..position_manager import timeframe_side, decimal",
+        "from ..strategy_context import MarketContext",
+        "from . import VERSION",
+        "from .coverage import Coverage",
+        "import time",
+        "from ..timeframes import TimeframeProfile"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/ownership.py",
+      "functions": 4,
+      "imports": [
+        "from enum import StrEnum",
+        "from ..models import ModelCode",
+        "from . import VERSION"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "functions": 16,
+      "imports": [
+        "from __future__ import annotations",
+        "from dataclasses import dataclass",
+        "from decimal import Decimal as D",
+        "import copy",
+        "from ..indicators import ema, atr",
+        "from ..market_data import ContractSpec, KlineWindow",
+        "from ..models import TrendSide",
+        "from ..research.store import primitive, digest",
+        "from . import VERSION, MODELS",
+        "from .feed import MarketEvent, EventOrder",
+        "from .storage import TERMINAL"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/replay.py",
+      "functions": 32,
+      "imports": [
+        "from __future__ import annotations",
+        "from dataclasses import asdict, replace",
+        "from datetime import UTC, datetime",
+        "from decimal import Decimal as D",
+        "from pathlib import Path",
+        "from types import SimpleNamespace",
+        "from unittest.mock import patch",
+        "import gzip",
+        "import json",
+        "from ..continuation import ContinuationConfig, LINKED",
+        "from ..continuation_replay import configuration, events as fill_events",
+        "from ..execution import ExecutionConfig",
+        "from ..exit_config import ExitConfig",
+        "from ..holding_policy import HoldingPolicy, _decode_config",
+        "from ..java_entry_contract import JavaEntryConfig",
+        "from ..maker_execution import MakerExecutionConfig",
+        "from ..market_data import Candle, ContractSpec, FundingRate, KlineWindow, OrderBook, period_seconds",
+        "from ..paper_worker import PaperTrendWorker, PaperWorkerConfig, WorkerPaperExchange",
+        "from ..research.store import primitive, digest, read_object",
+        "from ..runtime import PaperTrendRuntime",
+        "from ..scan_replay import MemoryLedger",
+        "from ..strategy_context import MarketContext",
+        "from ..timeframes import TimeframeProfile",
+        "from . import VERSION",
+        "from .brokers import PaperBroker, RealtimePaperExchange",
+        "from .feed import MarketEvent",
+        "from .management import PaperManagement",
+        "from .plans import GRID, TriggerEngine",
+        "from .storage import PlanStore",
+        "from .worker import RealtimeWorker, MarketView",
+        "from datetime import timedelta",
+        "from . import MODELS",
+        "from .storage import SegmentRecorder",
+        "from hashlib import sha256",
+        "from .. import paper_worker",
+        "from ..models import TrendSide",
+        "from ..strategy_context import MarketRegime"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/risk.py",
+      "functions": 1,
+      "imports": [
+        "from dataclasses import dataclass, replace",
+        "from decimal import Decimal as D, ROUND_CEILING, ROUND_FLOOR",
+        "from ..execution import ExecutionConfig, ExecutionStyle, GateResult, PricePlan, SizePlan, ExecutionFacts, structured_price_plan, size_plan, account_risk_gate",
+        "from ..models import TrendSide",
+        "from ..research.store import digest",
+        "from .plans import Parameters, RealtimeTrigger"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/storage.py",
+      "functions": 14,
+      "imports": [
+        "from __future__ import annotations",
+        "import gzip",
+        "import json",
+        "import os",
+        "from pathlib import Path",
+        "import sqlite3",
+        "import tempfile",
+        "import threading",
+        "from ..research.store import canonical, digest"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/worker.py",
+      "functions": 19,
+      "imports": [
+        "from __future__ import annotations",
+        "from concurrent.futures import ThreadPoolExecutor, as_completed",
+        "from decimal import Decimal as D",
+        "import threading",
+        "import time",
+        "from ..execution import ExecutionConfig",
+        "from ..java_entry_contract import evaluate as signal_for, JavaEntryConfig",
+        "from ..market_data import OrderBook",
+        "from ..models import TrendSide",
+        "from ..strategy_platform import WorkerHealth",
+        "from .plans import Parameters, generate",
+        "from .risk import evaluate",
+        "from .storage import TERMINAL",
+        "from .management import paper_reentry, check_reentry",
+        "from pathlib import Path",
+        "from . import VERSION",
+        "from itertools import groupby",
+        "from ..execution_service import _complete_exit_facts"
+      ]
+    }
+  ]
+}

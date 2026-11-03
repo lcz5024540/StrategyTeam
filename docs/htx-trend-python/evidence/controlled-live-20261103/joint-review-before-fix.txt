@@ -1,0 +1,117 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+______________ test_same_packet_trades_can_activate_then_trigger _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10874cd60>
+
+    def test_same_packet_trades_can_activate_then_trigger(monkeypatch):
+        import json
+    
+        study = JointResearch({"first_ms": T, "last_ms": T + 60000})
+        f = frame()
+        f.update(
+            trend=KlineWindow(CODE, "60min", tuple(
+                Candle(T // 1000 - (32 - i) * 3600, D(100), D(110), D(90), D(100))
+                for i in range(32)
+            ), 32, ("trend",)),
+            spec=SimpleNamespace(price_tick=D(".01")), atr=D(2),
+        )
+        study.frames[CODE] = f
+        # Freeze one input structure; exercise the real decoder, trigger and sidecar.
+        monkeypatch.setattr(study, "add_line", lambda *args: None)
+        engine = study.group("M", D(".1"), CODE)
+        engine.refresh(CODE, [plan()])
+        quote = book(T + 1, 98, 98.01)
+        study.observe(quote.dump(), {"event_hash": digest(quote)})
+        packet = {"ch": f"market.{CODE}.trade.detail", "tick": {"data": [
+            {"ts": T + i, "id": i, "price": price, "amount": 1}
+            for i, price in enumerate((98, 100, 98, 98), 2)
+        ]}}
+        trades, _ = decode(json.dumps(packet), epoch="e", received_ms=T + 10)
+        for event in trades:
+>           study.observe(event.dump(), {"event_hash": digest(event)})
+
+tests/test_realtime_joint_price_diagnostic.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <htx_trend.realtime.joint_price_diagnostic.JointResearch object at 0x10866fa10>
+event = {'amount': '1', 'ask': None, 'ask_size': None, 'bid': None, ...}
+source_ref = {'event_hash': 'd449495732a6bc942b7931e10b8f924a5965a04004c28a40107bd07a27a3503c'}
+
+>   ???
+E   AssertionError
+
+9ca7dd59/joint_price_diagnostic.py:262: AssertionError
+___ test_any_new_epoch_censors_all_paths_and_old_epoch_cannot_return[TRADE] ____
+
+kind = 'TRADE'
+
+    @pytest.mark.parametrize("kind", ["TRADE", "BBO", "DEPTH"])
+    def test_any_new_epoch_censors_all_paths_and_old_epoch_cannot_return(kind):
+        p = QuotePaths()
+        p.add("old", trigger(), D(95), book(T, 99, 100))
+        event = trade(T + 1, 100, "new").dump()
+        event.update(kind=kind, contract="BTC-USDT", bid="99", ask="100")
+        p.observe(event, {"event_hash": digest(event)}, T + 1)
+>       assert p.results[0]["outcome"] == "CENSORED_CONNECTION_GAP"
+               ^^^^^^^^^^^^
+E       IndexError: list index out of range
+
+tests/test_realtime_joint_price_diagnostic.py:253: IndexError
+____ test_any_new_epoch_censors_all_paths_and_old_epoch_cannot_return[BBO] _____
+
+kind = 'BBO'
+
+    @pytest.mark.parametrize("kind", ["TRADE", "BBO", "DEPTH"])
+    def test_any_new_epoch_censors_all_paths_and_old_epoch_cannot_return(kind):
+        p = QuotePaths()
+        p.add("old", trigger(), D(95), book(T, 99, 100))
+        event = trade(T + 1, 100, "new").dump()
+        event.update(kind=kind, contract="BTC-USDT", bid="99", ask="100")
+        p.observe(event, {"event_hash": digest(event)}, T + 1)
+>       assert p.results[0]["outcome"] == "CENSORED_CONNECTION_GAP"
+               ^^^^^^^^^^^^
+E       IndexError: list index out of range
+
+tests/test_realtime_joint_price_diagnostic.py:253: IndexError
+___ test_any_new_epoch_censors_all_paths_and_old_epoch_cannot_return[DEPTH] ____
+
+kind = 'DEPTH'
+
+    @pytest.mark.parametrize("kind", ["TRADE", "BBO", "DEPTH"])
+    def test_any_new_epoch_censors_all_paths_and_old_epoch_cannot_return(kind):
+        p = QuotePaths()
+        p.add("old", trigger(), D(95), book(T, 99, 100))
+        event = trade(T + 1, 100, "new").dump()
+        event.update(kind=kind, contract="BTC-USDT", bid="99", ask="100")
+        p.observe(event, {"event_hash": digest(event)}, T + 1)
+>       assert p.results[0]["outcome"] == "CENSORED_CONNECTION_GAP"
+               ^^^^^^^^^^^^
+E       IndexError: list index out of range
+
+tests/test_realtime_joint_price_diagnostic.py:253: IndexError
+____________ test_explicit_gap_retires_old_epoch_before_next_quote _____________
+
+    def test_explicit_gap_retires_old_epoch_before_next_quote():
+        p = QuotePaths()
+        p.add("old", trigger(), D(95), book(T, 99, 100))
+        p.observe({"kind": "GAP", "received_ms": T + 1}, {}, T + 1)
+        observe(p, book(T + 2, 94, 95, "e"))
+        p.add("late-old", trigger(at=T + 3), D(95), book(T + 3, 99, 100, "e"))
+        observe(p, book(T + 4, 94, 95, "e"))
+        assert p.results[0]["outcome"] == "CENSORED_CONNECTION_GAP"
+        assert p.results[-1]["key"] == "late-old"
+>       assert p.results[-1]["outcome"] == "CENSORED_CONNECTION_GAP"
+E       AssertionError: assert 'TARGET_REFERENCE_TOUCH' == 'CENSORED_CONNECTION_GAP'
+E         
+E         - CENSORED_CONNECTION_GAP
+E         + TARGET_REFERENCE_TOUCH
+
+tests/test_realtime_joint_price_diagnostic.py:274: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_realtime_joint_price_diagnostic.py::test_same_packet_trades_can_activate_then_trigger
+FAILED tests/test_realtime_joint_price_diagnostic.py::test_any_new_epoch_censors_all_paths_and_old_epoch_cannot_return[TRADE]
+FAILED tests/test_realtime_joint_price_diagnostic.py::test_any_new_epoch_censors_all_paths_and_old_epoch_cannot_return[BBO]
+FAILED tests/test_realtime_joint_price_diagnostic.py::test_any_new_epoch_censors_all_paths_and_old_epoch_cannot_return[DEPTH]
+FAILED tests/test_realtime_joint_price_diagnostic.py::test_explicit_gap_retires_old_epoch_before_next_quote
+5 failed, 13 deselected in 0.05s

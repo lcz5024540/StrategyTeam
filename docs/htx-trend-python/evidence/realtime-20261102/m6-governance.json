@@ -1,0 +1,8 @@
+{
+  "governance_commit": "319ae18",
+  "incremental_structure_check": "PASS",
+  "original_worktree_historical_H10_violations": 53,
+  "production_changes": false,
+  "isolated_mysql_and_colima_stopped": true,
+  "docker_context_preserved": "colima"
+}

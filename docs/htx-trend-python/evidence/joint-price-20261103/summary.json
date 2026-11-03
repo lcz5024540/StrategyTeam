@@ -1,0 +1,3316 @@
+{
+  "summary": [
+    {
+      "geometry": "J0",
+      "invalid_geometry": 0,
+      "k": "0.05",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 2
+      },
+      "r_pass": {
+        "1": 0,
+        "1.5": 0,
+        "2": 0
+      },
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "triggers": 2,
+      "variant": "M"
+    },
+    {
+      "geometry": "J1",
+      "invalid_geometry": 0,
+      "k": "0.05",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 2
+      },
+      "r_pass": {
+        "1": 0,
+        "1.5": 0,
+        "2": 0
+      },
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "triggers": 2,
+      "variant": "M"
+    },
+    {
+      "geometry": "J2",
+      "invalid_geometry": 0,
+      "k": "0.05",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 2
+      },
+      "r_pass": {
+        "1": 0,
+        "1.5": 0,
+        "2": 0
+      },
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "triggers": 2,
+      "variant": "M"
+    },
+    {
+      "geometry": "J0",
+      "invalid_geometry": 0,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 3
+      },
+      "r_pass": {
+        "1": 0,
+        "1.5": 0,
+        "2": 0
+      },
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "triggers": 3,
+      "variant": "M"
+    },
+    {
+      "geometry": "J1",
+      "invalid_geometry": 0,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 3
+      },
+      "r_pass": {
+        "1": 0,
+        "1.5": 0,
+        "2": 0
+      },
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "triggers": 3,
+      "variant": "M"
+    },
+    {
+      "geometry": "J2",
+      "invalid_geometry": 1,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 3
+      },
+      "r_pass": {
+        "1": 0,
+        "1.5": 0,
+        "2": 0
+      },
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "triggers": 3,
+      "variant": "M"
+    },
+    {
+      "geometry": "J0",
+      "invalid_geometry": 1,
+      "k": "0.05",
+      "paths": {
+        "INVALID_GEOMETRY": 1
+      },
+      "r_pass": {
+        "1": 0,
+        "1.5": 0,
+        "2": 0
+      },
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "triggers": 1,
+      "variant": "T"
+    },
+    {
+      "geometry": "J1",
+      "invalid_geometry": 1,
+      "k": "0.05",
+      "paths": {
+        "INVALID_GEOMETRY": 1
+      },
+      "r_pass": {
+        "1": 0,
+        "1.5": 0,
+        "2": 0
+      },
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "triggers": 1,
+      "variant": "T"
+    },
+    {
+      "geometry": "J2",
+      "invalid_geometry": 1,
+      "k": "0.05",
+      "paths": {
+        "INVALID_GEOMETRY": 1
+      },
+      "r_pass": {
+        "1": 0,
+        "1.5": 0,
+        "2": 0
+      },
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "triggers": 1,
+      "variant": "T"
+    },
+    {
+      "geometry": "J0",
+      "invalid_geometry": 1,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 1,
+        "INVALID_GEOMETRY": 1
+      },
+      "r_pass": {
+        "1": 0,
+        "1.5": 0,
+        "2": 0
+      },
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "triggers": 2,
+      "variant": "T"
+    },
+    {
+      "geometry": "J1",
+      "invalid_geometry": 1,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 1,
+        "INVALID_GEOMETRY": 1
+      },
+      "r_pass": {
+        "1": 0,
+        "1.5": 0,
+        "2": 0
+      },
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "triggers": 2,
+      "variant": "T"
+    },
+    {
+      "geometry": "J2",
+      "invalid_geometry": 1,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 1,
+        "INVALID_GEOMETRY": 1
+      },
+      "r_pass": {
+        "1": 0,
+        "1.5": 0,
+        "2": 0
+      },
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "triggers": 2,
+      "variant": "T"
+    },
+    {
+      "geometry": "J0",
+      "invalid_geometry": 0,
+      "k": "0.05",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 6
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 1,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 6,
+      "variant": "A"
+    },
+    {
+      "geometry": "J1",
+      "invalid_geometry": 0,
+      "k": "0.05",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 6
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 1,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 6,
+      "variant": "A"
+    },
+    {
+      "geometry": "J2",
+      "invalid_geometry": 0,
+      "k": "0.05",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 6
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 1,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 6,
+      "variant": "A"
+    },
+    {
+      "geometry": "J0",
+      "invalid_geometry": 0,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 7
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 2,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 7,
+      "variant": "A"
+    },
+    {
+      "geometry": "J1",
+      "invalid_geometry": 0,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 7
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 2,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 7,
+      "variant": "A"
+    },
+    {
+      "geometry": "J2",
+      "invalid_geometry": 0,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 7
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 2,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 7,
+      "variant": "A"
+    },
+    {
+      "geometry": "J0",
+      "invalid_geometry": 2,
+      "k": "0.05",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 13,
+        "INVALID_GEOMETRY": 2
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 1,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 15,
+      "variant": "M"
+    },
+    {
+      "geometry": "J1",
+      "invalid_geometry": 2,
+      "k": "0.05",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 13,
+        "INVALID_GEOMETRY": 2
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 1,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 15,
+      "variant": "M"
+    },
+    {
+      "geometry": "J2",
+      "invalid_geometry": 2,
+      "k": "0.05",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 13,
+        "INVALID_GEOMETRY": 2
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 1,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 15,
+      "variant": "M"
+    },
+    {
+      "geometry": "J0",
+      "invalid_geometry": 2,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 15,
+        "INVALID_GEOMETRY": 2
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 2,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 17,
+      "variant": "M"
+    },
+    {
+      "geometry": "J1",
+      "invalid_geometry": 2,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 15,
+        "INVALID_GEOMETRY": 2
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 2,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 17,
+      "variant": "M"
+    },
+    {
+      "geometry": "J2",
+      "invalid_geometry": 3,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 15,
+        "INVALID_GEOMETRY": 2
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 2,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 17,
+      "variant": "M"
+    },
+    {
+      "geometry": "J0",
+      "invalid_geometry": 5,
+      "k": "0.05",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 6,
+        "INVALID_GEOMETRY": 5
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 1,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 11,
+      "variant": "T"
+    },
+    {
+      "geometry": "J1",
+      "invalid_geometry": 3,
+      "k": "0.05",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 8,
+        "INVALID_GEOMETRY": 3
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 1,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 11,
+      "variant": "T"
+    },
+    {
+      "geometry": "J2",
+      "invalid_geometry": 2,
+      "k": "0.05",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 7,
+        "INVALID_GEOMETRY": 2,
+        "TARGET_REFERENCE_TOUCH": 2
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 1,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 11,
+      "variant": "T"
+    },
+    {
+      "geometry": "J0",
+      "invalid_geometry": 6,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 7,
+        "INVALID_GEOMETRY": 6
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 2,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 13,
+      "variant": "T"
+    },
+    {
+      "geometry": "J1",
+      "invalid_geometry": 4,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 9,
+        "INVALID_GEOMETRY": 4
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 2,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 13,
+      "variant": "T"
+    },
+    {
+      "geometry": "J2",
+      "invalid_geometry": 3,
+      "k": "0.10",
+      "paths": {
+        "CENSORED_QUOTE_GAP": 8,
+        "INVALID_GEOMETRY": 3,
+        "TARGET_REFERENCE_TOUCH": 2
+      },
+      "r_pass": {
+        "1": 2,
+        "1.5": 2,
+        "2": 0
+      },
+      "split": "DIAGNOSTIC",
+      "triggers": 13,
+      "variant": "T"
+    }
+  ],
+  "by_contract_and_model": [
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "ADA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "OP-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "ADA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "OP-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "ADA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "OP-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "ADA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "DOGE-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "OP-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "ADA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "DOGE-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "OP-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "ADA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "DOGE-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "OP-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "TIA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "TIA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "TIA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "BNB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "TIA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "BNB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "TIA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "BNB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "CHRONOLOGICAL_TAIL_CHECK",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "TIA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "DOGE-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "LINK-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "DOGE-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "LINK-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "DOGE-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "LINK-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "A",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "AAVE-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "ADA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "BNB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "ENA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "ETH-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "SHIB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "ZEC-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "AAVE-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "ADA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "BNB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "ENA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "ETH-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "SHIB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "ZEC-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "AAVE-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "ADA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "BNB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "ENA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "ETH-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "SHIB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "ZEC-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "AAVE-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "ADA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "BNB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "DOGE-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "DOGE-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "ENA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "ETH-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "FIL-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "LINK-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "SHIB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "ZEC-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "AAVE-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "ADA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "BNB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "DOGE-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "DOGE-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "ENA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "ETH-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "FIL-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "LINK-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "SHIB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "ZEC-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "AAVE-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "ADA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "BNB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "DOGE-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "DOGE-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "ENA-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "ETH-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "FIL-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "LINK-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "SHIB-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "M",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "ZEC-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "BTC-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "ETH-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "NEAR-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J0",
+      "contract": "TRX-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "BTC-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "ETH-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "NEAR-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J1",
+      "contract": "TRX-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "BTC-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "TARGET_REFERENCE_TOUCH": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "ETH-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "TARGET_REFERENCE_TOUCH": 1,
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "NEAR-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.05",
+      "geometry": "J2",
+      "contract": "TRX-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "BTC-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "DOGE-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "ETH-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "LINK-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "NEAR-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "SUI-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J0",
+      "contract": "TRX-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "BTC-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "DOGE-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "ETH-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "LINK-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "NEAR-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "SUI-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J1",
+      "contract": "TRX-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "BNB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "BTC-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "BTC-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "TARGET_REFERENCE_TOUCH": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "DOGE-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 1,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "ETH-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "TARGET_REFERENCE_TOUCH": 1,
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "FIL-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "LINK-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "NEAR-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "SHIB-USDT",
+      "model": "RT_BREAKOUT_RETEST",
+      "triggers": 2,
+      "r15_pass": 0,
+      "outcomes": {
+        "CENSORED_QUOTE_GAP": 2
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "SUI-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    },
+    {
+      "split": "DIAGNOSTIC",
+      "variant": "T",
+      "k": "0.1",
+      "geometry": "J2",
+      "contract": "TRX-USDT",
+      "model": "RT_RANGE_REJECTION",
+      "triggers": 1,
+      "r15_pass": 0,
+      "outcomes": {
+        "INVALID_GEOMETRY": 1
+      }
+    }
+  ],
+  "events": {
+    "BBO": 1203089,
+    "FRAME": 304,
+    "FUNDING": 3370,
+    "GAP": 1,
+    "SOURCE_ERROR": 2,
+    "TRADE": 15154
+  },
+  "rejections": {
+    "GAP": 1,
+    "STALE_BBO": 33,
+    "STALE_TRADE": 55
+  },
+  "per_contract": {
+    "AAVE-USDT": {
+      "ACCEPTED_BBO": 13025,
+      "ACCEPTED_TRADE": 290,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 12
+    },
+    "ACE-USDT": {
+      "ACCEPTED_BBO": 551,
+      "ACCEPTED_TRADE": 37,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 2
+    },
+    "ADA-USDT": {
+      "ACCEPTED_BBO": 49092,
+      "ACCEPTED_TRADE": 631,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 62
+    },
+    "ALGO-USDT": {
+      "ACCEPTED_BBO": 3675,
+      "ACCEPTED_TRADE": 196,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 9
+    },
+    "APT-USDT": {
+      "ACCEPTED_BBO": 1957,
+      "ACCEPTED_TRADE": 21,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 1
+    },
+    "ARB-USDT": {
+      "ACCEPTED_BBO": 4871,
+      "ACCEPTED_TRADE": 229,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 11
+    },
+    "ATOM-USDT": {
+      "ACCEPTED_BBO": 4271,
+      "ACCEPTED_TRADE": 204,
+      "TRADE_WITHOUT_FRESH_FRAME": 9
+    },
+    "AVAX-USDT": {
+      "ACCEPTED_BBO": 3248,
+      "ACCEPTED_TRADE": 140,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 10
+    },
+    "BCH-USDT": {
+      "ACCEPTED_BBO": 4168,
+      "ACCEPTED_TRADE": 133,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 12
+    },
+    "BNB-USDT": {
+      "ACCEPTED_BBO": 25339,
+      "ACCEPTED_TRADE": 537,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 56
+    },
+    "BOME-USDT": {
+      "ACCEPTED_BBO": 762,
+      "ACCEPTED_TRADE": 32,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 1
+    },
+    "BONK-USDT": {
+      "ACCEPTED_BBO": 703,
+      "ACCEPTED_TRADE": 105,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 7
+    },
+    "BTC-USDT": {
+      "ACCEPTED_BBO": 122108,
+      "ACCEPTED_TRADE": 3290,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 217
+    },
+    "CHZ-USDT": {
+      "ACCEPTED_BBO": 601,
+      "ACCEPTED_TRADE": 97,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 6
+    },
+    "DASH-USDT": {
+      "ACCEPTED_BBO": 664,
+      "ACCEPTED_TRADE": 148,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 13
+    },
+    "DOGE-USDT": {
+      "ACCEPTED_BBO": 41040,
+      "ACCEPTED_TRADE": 633,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 39
+    },
+    "DOT-USDT": {
+      "ACCEPTED_BBO": 1634,
+      "ACCEPTED_TRADE": 103,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 8
+    },
+    "ENA-USDT": {
+      "ACCEPTED_BBO": 23426,
+      "ACCEPTED_TRADE": 149,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 5
+    },
+    "ETC-USDT": {
+      "ACCEPTED_BBO": 362,
+      "ACCEPTED_TRADE": 68,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 3
+    },
+    "ETH-USDT": {
+      "ACCEPTED_BBO": 81227,
+      "ACCEPTED_TRADE": 3128,
+      "TRADE_WITHOUT_FRESH_FRAME": 244
+    },
+    "ETHFI-USDT": {
+      "ACCEPTED_BBO": 2314,
+      "ACCEPTED_TRADE": 111,
+      "TRADE_WITHOUT_FRESH_FRAME": 7
+    },
+    "FIL-USDT": {
+      "ACCEPTED_BBO": 10047,
+      "ACCEPTED_TRADE": 339,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 59
+    },
+    "FLOKI-USDT": {
+      "ACCEPTED_BBO": 480,
+      "ACCEPTED_TRADE": 103,
+      "TRADE_WITHOUT_FRESH_FRAME": 7
+    },
+    "HBAR-USDT": {
+      "ACCEPTED_BBO": 2180,
+      "ACCEPTED_TRADE": 98,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 7
+    },
+    "HYPE-USDT": {
+      "ACCEPTED_BBO": 11473,
+      "ACCEPTED_TRADE": 149,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 12
+    },
+    "ICP-USDT": {
+      "ACCEPTED_BBO": 376,
+      "ACCEPTED_TRADE": 107,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 6
+    },
+    "JUP-USDT": {
+      "ACCEPTED_BBO": 970,
+      "ACCEPTED_TRADE": 104,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 4
+    },
+    "LINK-USDT": {
+      "ACCEPTED_BBO": 111579,
+      "ACCEPTED_TRADE": 108,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 4
+    },
+    "LTC-USDT": {
+      "ACCEPTED_BBO": 12226,
+      "ACCEPTED_TRADE": 154,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 10
+    },
+    "NEAR-USDT": {
+      "ACCEPTED_BBO": 12034,
+      "ACCEPTED_TRADE": 177,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 2
+    },
+    "OKB-USDT": {
+      "ACCEPTED_BBO": 810,
+      "ACCEPTED_TRADE": 142,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 8
+    },
+    "ONDO-USDT": {
+      "ACCEPTED_BBO": 1709,
+      "ACCEPTED_TRADE": 109,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 3
+    },
+    "OP-USDT": {
+      "ACCEPTED_BBO": 1367,
+      "ACCEPTED_TRADE": 116,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 10
+    },
+    "ORDI-USDT": {
+      "ACCEPTED_BBO": 463,
+      "ACCEPTED_TRADE": 98,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 4
+    },
+    "PAXG-USDT": {
+      "ACCEPTED_BBO": 1377,
+      "ACCEPTED_TRADE": 275,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 23
+    },
+    "PEOPLE-USDT": {
+      "ACCEPTED_BBO": 365,
+      "ACCEPTED_TRADE": 102,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 6
+    },
+    "PEPE-USDT": {
+      "ACCEPTED_BBO": 19741,
+      "ACCEPTED_TRADE": 126,
+      "STALE_TRADE": 2,
+      "TRADE_WITHOUT_FRESH_FRAME": 13
+    },
+    "PONS-USDT": {
+      "ACCEPTED_BBO": 3852,
+      "ACCEPTED_TRADE": 136,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 11
+    },
+    "RAY-USDT": {
+      "ACCEPTED_BBO": 3046,
+      "ACCEPTED_TRADE": 27,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1
+    },
+    "SHIB-USDT": {
+      "ACCEPTED_BBO": 619,
+      "ACCEPTED_TRADE": 627,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 108
+    },
+    "SOL-USDT": {
+      "ACCEPTED_BBO": 92314,
+      "ACCEPTED_TRADE": 171,
+      "STALE_TRADE": 6,
+      "TRADE_WITHOUT_FRESH_FRAME": 7
+    },
+    "SUI-USDT": {
+      "ACCEPTED_BBO": 8282,
+      "ACCEPTED_TRADE": 132,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 10
+    },
+    "TAO-USDT": {
+      "ACCEPTED_BBO": 4183,
+      "ACCEPTED_TRADE": 120,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 6
+    },
+    "TIA-USDT": {
+      "ACCEPTED_BBO": 4017,
+      "ACCEPTED_TRADE": 132,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 5
+    },
+    "TRX-USDT": {
+      "ACCEPTED_BBO": 3443,
+      "ACCEPTED_TRADE": 53,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 2
+    },
+    "UNI-USDT": {
+      "ACCEPTED_BBO": 326627,
+      "ACCEPTED_TRADE": 101,
+      "STALE_TRADE": 2,
+      "TRADE_WITHOUT_FRESH_FRAME": 4
+    },
+    "WIF-USDT": {
+      "ACCEPTED_BBO": 827,
+      "ACCEPTED_TRADE": 104,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 6
+    },
+    "WLD-USDT": {
+      "ACCEPTED_BBO": 4203,
+      "ACCEPTED_TRADE": 47,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1
+    },
+    "XAUT-USDT": {
+      "ACCEPTED_BBO": 1009,
+      "ACCEPTED_TRADE": 56,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 2
+    },
+    "XLM-USDT": {
+      "ACCEPTED_BBO": 4338,
+      "ACCEPTED_TRADE": 114,
+      "STALE_BBO": 1,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 8
+    },
+    "XRP-USDT": {
+      "ACCEPTED_BBO": 22879,
+      "ACCEPTED_TRADE": 229,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 17
+    },
+    "ZEC-USDT": {
+      "ACCEPTED_BBO": 151182,
+      "ACCEPTED_TRADE": 461,
+      "STALE_TRADE": 1,
+      "TRADE_WITHOUT_FRESH_FRAME": 30
+    }
+  }
+}

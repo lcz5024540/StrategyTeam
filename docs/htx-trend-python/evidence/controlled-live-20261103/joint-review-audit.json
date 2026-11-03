@@ -1,0 +1,67 @@
+{
+  "commit": "9ca7dd59",
+  "scope": "READ_ONLY_REVIEW_NOT_NEW_PARAMETER_EXPERIMENT",
+  "files_verified": 6,
+  "source_and_five_inputs_verified": true,
+  "original_trigger_contexts_exact": 69,
+  "target_comparisons": [
+    {
+      "slippage_atr_per_side": "0.05",
+      "min_net_r": "1",
+      "same_opportunity_set": true,
+      "grouped_opportunities": 12
+    },
+    {
+      "slippage_atr_per_side": "0.05",
+      "min_net_r": "1.5",
+      "same_opportunity_set": true,
+      "grouped_opportunities": 12
+    },
+    {
+      "slippage_atr_per_side": "0.05",
+      "min_net_r": "2",
+      "same_opportunity_set": true,
+      "grouped_opportunities": 3
+    },
+    {
+      "slippage_atr_per_side": "0.10",
+      "min_net_r": "1",
+      "same_opportunity_set": true,
+      "grouped_opportunities": 12
+    },
+    {
+      "slippage_atr_per_side": "0.10",
+      "min_net_r": "1.5",
+      "same_opportunity_set": true,
+      "grouped_opportunities": 9
+    },
+    {
+      "slippage_atr_per_side": "0.10",
+      "min_net_r": "2",
+      "same_opportunity_set": true,
+      "grouped_opportunities": 0
+    },
+    {
+      "slippage_atr_per_side": "0.20",
+      "min_net_r": "1",
+      "same_opportunity_set": true,
+      "grouped_opportunities": 12
+    },
+    {
+      "slippage_atr_per_side": "0.20",
+      "min_net_r": "1.5",
+      "same_opportunity_set": true,
+      "grouped_opportunities": 3
+    },
+    {
+      "slippage_atr_per_side": "0.20",
+      "min_net_r": "2",
+      "same_opportunity_set": true,
+      "grouped_opportunities": 0
+    }
+  ],
+  "activation_count": 220,
+  "activation_source_closure_verified": true,
+  "research_orders_submitted": 0,
+  "financial_admission": "RESEARCH_ONLY_NOT_ELIGIBLE"
+}

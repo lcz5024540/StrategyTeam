@@ -1,0 +1,13 @@
+{
+  "baseline_business_commit": "1480b513",
+  "initial_protocol_commit": "17ba801f",
+  "protocol_sha256": "cf094a1aa458c1fc681debedbca1bf6b3b41a907e9eefca3cad2d45336ec1922",
+  "results_sha256": "fbea2f3f5de78bc5fb9ead3d9f226b72238570e4b828318b1f31629c20787883",
+  "provenance": {
+    "baseline_sha256": "2af4aa909059acd92539e57047f87e5f0fb23aec3e65f76a187afe6252064c34",
+    "orders_sha256": "8c26f78c450d85806894c59dc8a24e3a177bab507f08bffd53ab9c44459da44a",
+    "sha256": "401894cc0fd37df3cb11854f40f021605424bcc25fd3f34039d5ada7e557d9a3",
+    "source_sha256": "cfc745d0890311abce6cd336ab0fdba8656714ed41c3fb56ba58cf5f388b0577",
+    "verified_objects": 1167
+  }
+}

@@ -77,6 +77,9 @@ if checkpoint:
         if 'last_scanned' in state:
             from htx_trend.live_worker import LiveTrendWorker
             LiveTrendWorker.validate_runtime_state(state)
+        elif 'parameters' in state and 'strategy' in state:
+            from htx_trend.realtime.worker import RealtimeWorker
+            RealtimeWorker.validate_runtime_state(state)
         elif set(state) not in ({'ledger_path','failures'},{'completed','last_health'}):
             raise ValueError('unknown runtime state fields')
 '''

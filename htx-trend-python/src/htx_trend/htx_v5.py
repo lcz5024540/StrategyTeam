@@ -196,6 +196,19 @@ class HtxV5Client:
         query["order_id" if order_id is not None else "client_order_id"] = str(order_id or client_order_id)
         return self._data_object(self._signed("GET", "/v5/trade/order", query))
 
+    def order_details(self, contract_code: str, order_id: str, *, from_id: str = "0", limit: int = 100) -> list[dict[str, Any]]:
+        """V5 account-scoped private read; updated_time is the documented match time.
+
+        Cursor is the query id, not trade_id. The API advertises recent three
+        days; callers must not assume the inconsistent 90-day parameter note.
+        """
+        if not order_id or not str(from_id).isdigit() or not 1 <= limit <= 100:
+            raise ValueError("invalid V5 fill query")
+        return self._data_list(self._signed("GET", "/v5/trade/order/details", {
+            "contract_code": contract_code, "order_id": str(order_id),
+            "from": str(from_id), "limit": str(limit), "direct": "next",
+        }))
+
     def _public_get(self, path: str, query: Mapping[str, str]) -> dict[str, Any]:
         return self._request("GET", path, query=query)
 

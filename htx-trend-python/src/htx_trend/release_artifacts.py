@@ -43,20 +43,20 @@ def validate_schema(value, schema, path='$'):
         raise ValueError(f'{path}: below minimum')
 
 
-def load_artifact(root: Path, kind: str):
+def load_artifact(root: Path, kind: str, *, variant=""):
     if kind not in KINDS:
         raise ValueError('unknown artifact kind')
-    raw = (root / f'{kind}.example.json').read_bytes()
+    raw = (root / f'{kind}{variant}.example.json').read_bytes()
     value = json.loads(raw)
     validate_schema(value, json.loads((root / f'{kind}.schema.json').read_bytes()))
     return value, {'id': value['id'], 'version': value['version'],
-                   'path': f'release/artifacts/{kind}.example.json',
+                   'path': f'release/artifacts/{kind}{variant}.example.json',
                    'sha256': sha256(raw).hexdigest(),
                    'schema_path': f'release/artifacts/{kind}.schema.json'}
 
 
-def load_artifacts(root: Path):
-    loaded = {kind: load_artifact(root, kind) for kind in KINDS}
+def load_artifacts(root: Path, *, variant=""):
+    loaded = {kind: load_artifact(root, kind, variant=variant) for kind in KINDS}
     card, features, ledger = (loaded[k][0] for k in KINDS)
     keys = [f['key'] for f in features['features']]
     ids = [e['experiment_id'] for e in ledger['experiments']]

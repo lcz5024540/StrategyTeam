@@ -45,3 +45,7 @@ class HtxLiveExecutor:
               client_order_id: str | None = None) -> dict:
         """Private read for reconciliation; available without mutation authority."""
         return self._client.order(contract_code, order_id=order_id, client_order_id=client_order_id)
+
+    def order_details(self, contract_code: str, order_id: str, *, from_id="0", limit=100) -> list[dict]:
+        """Read execution receipts without order mutation authority."""
+        return self._client.order_details(contract_code, order_id, from_id=from_id, limit=limit)
