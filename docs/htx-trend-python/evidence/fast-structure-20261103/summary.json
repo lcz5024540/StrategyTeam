@@ -1,0 +1,508 @@
+{
+  "summaries": [
+    {
+      "variant": "A",
+      "k": "0.05",
+      "min_net_r": "1",
+      "real_event_triggers": 6,
+      "r_screen_only": 2,
+      "contracts": {
+        "FIL-USDT": 2,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "BTC-USDT": 1
+      }
+    },
+    {
+      "variant": "A",
+      "k": "0.05",
+      "min_net_r": "1.5",
+      "real_event_triggers": 6,
+      "r_screen_only": 1,
+      "contracts": {
+        "FIL-USDT": 2,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "BTC-USDT": 1
+      }
+    },
+    {
+      "variant": "A",
+      "k": "0.05",
+      "min_net_r": "2",
+      "real_event_triggers": 6,
+      "r_screen_only": 0,
+      "contracts": {
+        "FIL-USDT": 2,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "BTC-USDT": 1
+      }
+    },
+    {
+      "variant": "A",
+      "k": "0.1",
+      "min_net_r": "1",
+      "real_event_triggers": 7,
+      "r_screen_only": 2,
+      "contracts": {
+        "LINK-USDT": 1,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "DOGE-USDT": 1,
+        "BTC-USDT": 1,
+        "FIL-USDT": 1
+      }
+    },
+    {
+      "variant": "A",
+      "k": "0.1",
+      "min_net_r": "1.5",
+      "real_event_triggers": 7,
+      "r_screen_only": 2,
+      "contracts": {
+        "LINK-USDT": 1,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "DOGE-USDT": 1,
+        "BTC-USDT": 1,
+        "FIL-USDT": 1
+      }
+    },
+    {
+      "variant": "A",
+      "k": "0.1",
+      "min_net_r": "2",
+      "real_event_triggers": 7,
+      "r_screen_only": 0,
+      "contracts": {
+        "LINK-USDT": 1,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "DOGE-USDT": 1,
+        "BTC-USDT": 1,
+        "FIL-USDT": 1
+      }
+    },
+    {
+      "variant": "M",
+      "k": "0.05",
+      "min_net_r": "1",
+      "real_event_triggers": 15,
+      "r_screen_only": 2,
+      "contracts": {
+        "ENA-USDT": 1,
+        "FIL-USDT": 2,
+        "BNB-USDT": 2,
+        "SHIB-USDT": 3,
+        "BTC-USDT": 1,
+        "ZEC-USDT": 1,
+        "ADA-USDT": 2,
+        "ETH-USDT": 2,
+        "AAVE-USDT": 1
+      }
+    },
+    {
+      "variant": "M",
+      "k": "0.05",
+      "min_net_r": "1.5",
+      "real_event_triggers": 15,
+      "r_screen_only": 1,
+      "contracts": {
+        "ENA-USDT": 1,
+        "FIL-USDT": 2,
+        "BNB-USDT": 2,
+        "SHIB-USDT": 3,
+        "BTC-USDT": 1,
+        "ZEC-USDT": 1,
+        "ADA-USDT": 2,
+        "ETH-USDT": 2,
+        "AAVE-USDT": 1
+      }
+    },
+    {
+      "variant": "M",
+      "k": "0.05",
+      "min_net_r": "2",
+      "real_event_triggers": 15,
+      "r_screen_only": 0,
+      "contracts": {
+        "ENA-USDT": 1,
+        "FIL-USDT": 2,
+        "BNB-USDT": 2,
+        "SHIB-USDT": 3,
+        "BTC-USDT": 1,
+        "ZEC-USDT": 1,
+        "ADA-USDT": 2,
+        "ETH-USDT": 2,
+        "AAVE-USDT": 1
+      }
+    },
+    {
+      "variant": "M",
+      "k": "0.1",
+      "min_net_r": "1",
+      "real_event_triggers": 17,
+      "r_screen_only": 2,
+      "contracts": {
+        "ENA-USDT": 1,
+        "LINK-USDT": 1,
+        "BNB-USDT": 2,
+        "SHIB-USDT": 3,
+        "DOGE-USDT": 2,
+        "BTC-USDT": 1,
+        "ZEC-USDT": 1,
+        "FIL-USDT": 2,
+        "ADA-USDT": 2,
+        "ETH-USDT": 1,
+        "AAVE-USDT": 1
+      }
+    },
+    {
+      "variant": "M",
+      "k": "0.1",
+      "min_net_r": "1.5",
+      "real_event_triggers": 17,
+      "r_screen_only": 2,
+      "contracts": {
+        "ENA-USDT": 1,
+        "LINK-USDT": 1,
+        "BNB-USDT": 2,
+        "SHIB-USDT": 3,
+        "DOGE-USDT": 2,
+        "BTC-USDT": 1,
+        "ZEC-USDT": 1,
+        "FIL-USDT": 2,
+        "ADA-USDT": 2,
+        "ETH-USDT": 1,
+        "AAVE-USDT": 1
+      }
+    },
+    {
+      "variant": "M",
+      "k": "0.1",
+      "min_net_r": "2",
+      "real_event_triggers": 17,
+      "r_screen_only": 0,
+      "contracts": {
+        "ENA-USDT": 1,
+        "LINK-USDT": 1,
+        "BNB-USDT": 2,
+        "SHIB-USDT": 3,
+        "DOGE-USDT": 2,
+        "BTC-USDT": 1,
+        "ZEC-USDT": 1,
+        "FIL-USDT": 2,
+        "ADA-USDT": 2,
+        "ETH-USDT": 1,
+        "AAVE-USDT": 1
+      }
+    },
+    {
+      "variant": "T",
+      "k": "0.05",
+      "min_net_r": "1",
+      "real_event_triggers": 11,
+      "r_screen_only": 2,
+      "contracts": {
+        "NEAR-USDT": 1,
+        "FIL-USDT": 2,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "BTC-USDT": 2,
+        "ETH-USDT": 2,
+        "TRX-USDT": 1
+      }
+    },
+    {
+      "variant": "T",
+      "k": "0.05",
+      "min_net_r": "1.5",
+      "real_event_triggers": 11,
+      "r_screen_only": 1,
+      "contracts": {
+        "NEAR-USDT": 1,
+        "FIL-USDT": 2,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "BTC-USDT": 2,
+        "ETH-USDT": 2,
+        "TRX-USDT": 1
+      }
+    },
+    {
+      "variant": "T",
+      "k": "0.05",
+      "min_net_r": "2",
+      "real_event_triggers": 11,
+      "r_screen_only": 0,
+      "contracts": {
+        "NEAR-USDT": 1,
+        "FIL-USDT": 2,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "BTC-USDT": 2,
+        "ETH-USDT": 2,
+        "TRX-USDT": 1
+      }
+    },
+    {
+      "variant": "T",
+      "k": "0.1",
+      "min_net_r": "1",
+      "real_event_triggers": 13,
+      "r_screen_only": 2,
+      "contracts": {
+        "LINK-USDT": 1,
+        "NEAR-USDT": 1,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "DOGE-USDT": 1,
+        "BTC-USDT": 2,
+        "ETH-USDT": 2,
+        "SUI-USDT": 1,
+        "FIL-USDT": 1,
+        "TRX-USDT": 1
+      }
+    },
+    {
+      "variant": "T",
+      "k": "0.1",
+      "min_net_r": "1.5",
+      "real_event_triggers": 13,
+      "r_screen_only": 2,
+      "contracts": {
+        "LINK-USDT": 1,
+        "NEAR-USDT": 1,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "DOGE-USDT": 1,
+        "BTC-USDT": 2,
+        "ETH-USDT": 2,
+        "SUI-USDT": 1,
+        "FIL-USDT": 1,
+        "TRX-USDT": 1
+      }
+    },
+    {
+      "variant": "T",
+      "k": "0.1",
+      "min_net_r": "2",
+      "real_event_triggers": 13,
+      "r_screen_only": 0,
+      "contracts": {
+        "LINK-USDT": 1,
+        "NEAR-USDT": 1,
+        "BNB-USDT": 1,
+        "SHIB-USDT": 2,
+        "DOGE-USDT": 1,
+        "BTC-USDT": 2,
+        "ETH-USDT": 2,
+        "SUI-USDT": 1,
+        "FIL-USDT": 1,
+        "TRX-USDT": 1
+      }
+    }
+  ],
+  "rejections": {
+    "GAP": 1,
+    "STALE_TRADE": 55,
+    "STALE_BBO": 33
+  },
+  "reversal_resets": {
+    "START_OR_TRADE_GAP": 5035
+  },
+  "line_counts": {
+    "T": 126,
+    "M": 764
+  },
+  "official_checks": {
+    "BTC-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "ETH-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "SOL-USDT": {
+      "NO_OBSERVED_MINUTE": 14,
+      "OHLC_VOLUME_MATCH": 34
+    },
+    "XRP-USDT": {
+      "OHLC_VOLUME_MATCH": 47,
+      "NO_OBSERVED_MINUTE": 1
+    },
+    "BNB-USDT": {
+      "OHLC_VOLUME_MATCH": 47,
+      "NO_OBSERVED_MINUTE": 1
+    },
+    "DOGE-USDT": {
+      "OHLC_VOLUME_MATCH": 46,
+      "NO_OBSERVED_MINUTE": 2
+    },
+    "ADA-USDT": {
+      "OHLC_VOLUME_MATCH": 45,
+      "NO_OBSERVED_MINUTE": 3
+    },
+    "TRX-USDT": {
+      "NO_OBSERVED_MINUTE": 34,
+      "OHLC_VOLUME_MATCH": 14
+    },
+    "LINK-USDT": {
+      "OHLC_VOLUME_MATCH": 39,
+      "NO_OBSERVED_MINUTE": 9
+    },
+    "AVAX-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "SUI-USDT": {
+      "OHLC_VOLUME_MATCH": 37,
+      "NO_OBSERVED_MINUTE": 11
+    },
+    "HYPE-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "HBAR-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "PONS-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "BCH-USDT": {
+      "OHLC_VOLUME_MATCH": 46,
+      "NO_OBSERVED_MINUTE": 2
+    },
+    "LTC-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "DOT-USDT": {
+      "OHLC_VOLUME_MATCH": 37,
+      "NO_OBSERVED_MINUTE": 11
+    },
+    "UNI-USDT": {
+      "OHLC_VOLUME_MATCH": 33,
+      "NO_OBSERVED_MINUTE": 15
+    },
+    "AAVE-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "NEAR-USDT": {
+      "OHLC_VOLUME_MATCH": 28,
+      "NO_OBSERVED_MINUTE": 20
+    },
+    "ETC-USDT": {
+      "NO_OBSERVED_MINUTE": 13,
+      "OHLC_VOLUME_MATCH": 35
+    },
+    "XLM-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "FIL-USDT": {
+      "OHLC_VOLUME_MATCH": 47,
+      "NO_OBSERVED_MINUTE": 1
+    },
+    "ARB-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "OP-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "ATOM-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "ICP-USDT": {
+      "OHLC_VOLUME_MATCH": 47,
+      "NO_OBSERVED_MINUTE": 1
+    },
+    "APT-USDT": {
+      "OHLC_VOLUME_MATCH": 14,
+      "NO_OBSERVED_MINUTE": 34
+    },
+    "PEPE-USDT": {
+      "OHLC_VOLUME_MATCH": 47,
+      "NO_OBSERVED_MINUTE": 1
+    },
+    "SHIB-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "WIF-USDT": {
+      "OHLC_VOLUME_MATCH": 47,
+      "NO_OBSERVED_MINUTE": 1
+    },
+    "BONK-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "FLOKI-USDT": {
+      "OHLC_VOLUME_MATCH": 47,
+      "NO_OBSERVED_MINUTE": 1
+    },
+    "TAO-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "WLD-USDT": {
+      "NO_OBSERVED_MINUTE": 28,
+      "OHLC_VOLUME_MATCH": 20
+    },
+    "TIA-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "JUP-USDT": {
+      "OHLC_VOLUME_MATCH": 47,
+      "NO_OBSERVED_MINUTE": 1
+    },
+    "ENA-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "ONDO-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "ALGO-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "OKB-USDT": {
+      "OHLC_VOLUME_MATCH": 47,
+      "NO_OBSERVED_MINUTE": 1
+    },
+    "DASH-USDT": {
+      "OHLC_VOLUME_MATCH": 47,
+      "NO_OBSERVED_MINUTE": 1
+    },
+    "ZEC-USDT": {
+      "OHLC_VOLUME_MATCH": 45,
+      "NO_OBSERVED_MINUTE": 3
+    },
+    "XAUT-USDT": {
+      "NO_OBSERVED_MINUTE": 21,
+      "OHLC_VOLUME_MATCH": 27
+    },
+    "PAXG-USDT": {
+      "OHLC_VOLUME_MATCH": 42,
+      "NO_OBSERVED_MINUTE": 6
+    },
+    "PEOPLE-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "ORDI-USDT": {
+      "OHLC_VOLUME_MATCH": 47,
+      "NO_OBSERVED_MINUTE": 1
+    },
+    "BOME-USDT": {
+      "NO_OBSERVED_MINUTE": 31,
+      "OHLC_VOLUME_MATCH": 17
+    },
+    "RAY-USDT": {
+      "NO_OBSERVED_MINUTE": 31,
+      "OHLC_VOLUME_MATCH": 17
+    },
+    "CHZ-USDT": {
+      "OHLC_VOLUME_MATCH": 47,
+      "NO_OBSERVED_MINUTE": 1
+    },
+    "ETHFI-USDT": {
+      "OHLC_VOLUME_MATCH": 48
+    },
+    "ACE-USDT": {
+      "OHLC_VOLUME_MATCH": 22,
+      "NO_OBSERVED_MINUTE": 26
+    }
+  }
+}
