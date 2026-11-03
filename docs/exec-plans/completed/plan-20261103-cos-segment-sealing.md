@@ -1,5 +1,5 @@
 # 活跃 evidence 分段封存
-2026-11-03 · Codex · active · WIP=1 · 业务分支 codex/cos-segment-sealing，基线87eaf55f。
+2026-11-03 · Codex · completed · WIP=0 · 业务分支 codex/cos-segment-sealing，基线87eaf55f。
 
 ## 目标
 按用户指令补充分段封存，禁止按文件年龄删除。保留本地交易依赖，把确定边界的历史段归档到COS，只有校验成功且无本地引用才允许释放。
@@ -15,7 +15,7 @@ Python文件证据与盘口采集，新增显式分段配置、局部控制索�
 - [x] M2 本地分代成员、pin/lease与安全切段（2026-11-03）
 - [x] M3 封存段归档适配与精确释放/恢复（2026-11-03）
 - [x] M4 写入者和持仓/采集恢复接线，部署说明（2026-11-03）
-- [ ] M5 验证 / 自检、真实接口演练与交付检查（in_progress）
+- [x] M5 验证 / 自检、真实接口演练与交付检查（2026-11-03）
 完成日期按实际记录，不预填天数。
 
 ## 风险与缓解
@@ -31,4 +31,14 @@ Python文件证据与盘口采集，新增显式分段配置、局部控制索�
 Explore：CompactEvidence.capture依赖compact_latest全部旧K线和current checkpoint；confirm_ledger仅需未确认EVIDENCE_RESULT；ContinuousCollector coverage历史与continuous热游标区别；LIVE Coverage.prove读取4096条BBO覆盖区间内的真实段；FrameLoader/backfill线程需协作lease。现有outbox并无runtime deliver调用，必须显式consumer合同，不伪造delivered。
 
 ## 验证进展
-23项封存定向测试通过；全回归早一轮1070通过/7环境跳过，最终树待重跑。新增独立fault fence、发布前mutation、required consumer、INTENT缺文件恢复，覆盖崩溃/新pin/并发reader/原布局回滚。文档明确历史compact_latest锚点和全局索引仍保留本地，不宣称本地总量完全有界。
+最终28项封存定向测试通过；全回归1077通过/7隔离MySQL环境跳过。真实COS隔离CAS/盘口两条链路全部通过；15m PAPER/4H PAPER/LIVE三种包验证通过，源码提交96d4ae7f。新增独立fault fence、发布前mutation、required consumer、INTENT缺文件恢复，覆盖崩溃/新pin/并发reader/原布局回滚。文档明确历史compact_latest锚点和全局索引仍保留本地，不宣称本地总量完全有界。
+
+## 交付证据
+实现提交96d4ae7f；分支codex/cos-segment-sealing；治理21项结构校验通过。原始输出：docs/exec-plans/evidence/cos-sealing-20261103/{python-regression.txt,real-cos-drill.json,package-checks.json,review.md}。操作手册htx-trend-python/SEGMENT-SEALING.md，禁用配置模板随包。目标分支合入按此前条件授权执行，最终远端哈希在治理memory/trace中记录。
+
+## 复盘 (Retrospective)
+- 做到了什么：本地代边界、完整引用归档、consumer交接/故障栅栏、批准清单释放、unlink恢复、外部冻结pin、真实COS原布局恢复均完成。旧历史默认保护，不靠文件年龄删除。
+- 未达成 / 偏差：生产开关/timer/删除不在本轮授权内，未执行；全历史compact_latest和本地索引仍增长，LIVE/realtime CAS不切换，不宣称磁盘绝对有界。七项隔离MySQL测试未启，但本轮不变更业务DB。
+- 学到了什么：技术上，DB逻辑状态不能代替物理文件存在；流程上，辅助存储异常与持仓管理必须单独验收；协作上，部署批准和代码合入不能混为一项。
+- 下次怎么做：运维获部署批准后先单源离线纳管，再开启分段写入和仅上传timer，观察pending_generations、pin占比与增长；按具体SHA核清历史归属，才生成并批准释放清单。旧包回滚前恢复全本地并校验。
+- 沉淀的模式：DL-081/082记录交付前审查缺陷并由28项业务回归固定；暂无需扩大为跨项目规则，技能流程无需修改。既有DL-077..080未重现。连续收敛：依赖契约、实现、验证三阶段均更贴近用户“分段封存、不按年龄删”的原意。

@@ -1,0 +1,110 @@
+[
+  {
+    "command": [
+      "build",
+      "--paper",
+      "--compact-evidence"
+    ],
+    "archive": "/tmp/cos-sealing-packages/0.1.7-evidence-v2-96d4ae7f/htx-trend-python-0.1.7-evidence-v2-96d4ae7f.tar.gz",
+    "verification": {
+      "status": "PASS",
+      "archive": "htx-trend-python-0.1.7-evidence-v2-96d4ae7f.tar.gz",
+      "archive_path": "/private/tmp/cos-sealing-packages/0.1.7-evidence-v2-96d4ae7f/htx-trend-python-0.1.7-evidence-v2-96d4ae7f.tar.gz",
+      "bindings": {
+        "config_fingerprint": "c0e7106e83f89dee402a8b1a1360f02d624a275016faabcbf624eab89694439f",
+        "config_hash": "c0e7106e83f89dee402a8b1a1360f02d624a275016faabcbf624eab89694439f",
+        "config_path": "release/config.example.json",
+        "instance_key": "htx-trend-paper-primary",
+        "package_sha256": "2de35162bf7509cda5fe45e17147ba981470f20112e95c5f18d311cc3ba3b20e",
+        "source_commit": "96d4ae7f3ad4ab1d544a543c234a24c7539a481f",
+        "strategy_spec_hash": "d8cb5f01bd83382b7770ca3992284fe80ebf636a5865d6795db4b95ae956be9c",
+        "strategy_version": "HTX_TREND_15M_V2",
+        "timeframe_profile": "INTRADAY_15M"
+      },
+      "build": {
+        "created_at": "2026-11-03T14:44:53.960695+00:00",
+        "source_note": "HEAD plus working-tree payload; per-file hashes bind actual bytes",
+        "version_note": "tip8 is based on HEAD; for an uncommitted working tree, the executor may rebuild after commit to align tip8",
+        "working_tree_dirty": false
+      },
+      "candidate": true,
+      "disclaimer": "候选包 ≠ 可以热更 ≠ 可装现网",
+      "frozen_path": "/private/tmp/cos-sealing-packages/0.1.7-evidence-v2-96d4ae7f",
+      "manifest_sha256": "844759eba44cbaa6b7090163a2cbd180b0f94c8787aa0650542d1dd9cbbef57b",
+      "package_sha256": "2de35162bf7509cda5fe45e17147ba981470f20112e95c5f18d311cc3ba3b20e",
+      "schema": "htx-candidate-build-g3",
+      "synthetic": true,
+      "version": "0.1.7-evidence-v2-96d4ae7f"
+    }
+  },
+  {
+    "command": [
+      "build",
+      "--paper",
+      "--paper-4h",
+      "--compact-evidence"
+    ],
+    "archive": "/tmp/cos-sealing-packages/0.1.7-evidence-v2-96d4ae7f-4h/htx-trend-python-0.1.7-evidence-v2-96d4ae7f-4h.tar.gz",
+    "verification": {
+      "status": "PASS",
+      "archive": "htx-trend-python-0.1.7-evidence-v2-96d4ae7f-4h.tar.gz",
+      "archive_path": "/private/tmp/cos-sealing-packages/0.1.7-evidence-v2-96d4ae7f-4h/htx-trend-python-0.1.7-evidence-v2-96d4ae7f-4h.tar.gz",
+      "bindings": {
+        "config_fingerprint": "24323f920ea252f90d027ca54c38b53bbffd729c4d39ba2f6f1da4779f3c9620",
+        "config_hash": "24323f920ea252f90d027ca54c38b53bbffd729c4d39ba2f6f1da4779f3c9620",
+        "config_path": "release/config.example.json",
+        "instance_key": "htx-trend-paper-4h",
+        "package_sha256": "faf24a925b99db7f18cddb74f9d1241544c5e8644f53f74467a101e2f5451642",
+        "source_commit": "96d4ae7f3ad4ab1d544a543c234a24c7539a481f",
+        "strategy_spec_hash": "0e58827eb8677264d8a5da22ad1a6e921e7ab34705f6fc7ada79cd3cec412265",
+        "strategy_version": "HTX_TREND_4H_V2",
+        "timeframe_profile": "SWING_4H"
+      },
+      "build": {
+        "created_at": "2026-11-03T14:44:54.295279+00:00",
+        "source_note": "HEAD plus working-tree payload; per-file hashes bind actual bytes",
+        "version_note": "tip8 is based on HEAD; for an uncommitted working tree, the executor may rebuild after commit to align tip8",
+        "working_tree_dirty": false
+      },
+      "candidate": true,
+      "disclaimer": "候选包 ≠ 可以热更 ≠ 可装现网",
+      "frozen_path": "/private/tmp/cos-sealing-packages/0.1.7-evidence-v2-96d4ae7f-4h",
+      "manifest_sha256": "ae4334efad6740f9fc4825e47ac80eaa2747ca369b6d0f23bab49046c8510558",
+      "package_sha256": "faf24a925b99db7f18cddb74f9d1241544c5e8644f53f74467a101e2f5451642",
+      "schema": "htx-candidate-build-g3",
+      "synthetic": true,
+      "version": "0.1.7-evidence-v2-96d4ae7f-4h"
+    }
+  },
+  {
+    "command": [
+      "build-live"
+    ],
+    "archive": "/tmp/cos-sealing-packages/0.1.7-live-96d4ae7f/htx-trend-python-0.1.7-live-96d4ae7f.tar.gz",
+    "verification": {
+      "status": "PASS",
+      "archive": "htx-trend-python-0.1.7-live-96d4ae7f.tar.gz",
+      "archive_path": "/private/tmp/cos-sealing-packages/0.1.7-live-96d4ae7f/htx-trend-python-0.1.7-live-96d4ae7f.tar.gz",
+      "bindings": {
+        "config_fingerprint": "d523c6ee349c097bdd7bc68e9c20036bc5ca06d077be1d6277101cf36abf57ae",
+        "config_hash": "d523c6ee349c097bdd7bc68e9c20036bc5ca06d077be1d6277101cf36abf57ae",
+        "config_path": "release/config.example.json",
+        "instance_key": "htx-trend-live-primary",
+        "package_sha256": "017eb2f63f3f5f1b391a392dea52146f9f2e2d9064f830f507fd8666a84248f9",
+        "source_commit": "96d4ae7f3ad4ab1d544a543c234a24c7539a481f",
+        "strategy_spec_hash": "d8cb5f01bd83382b7770ca3992284fe80ebf636a5865d6795db4b95ae956be9c",
+        "strategy_version": "HTX_TREND_15M_V2",
+        "timeframe_profile": "INTRADAY_15M"
+      },
+      "candidate": false,
+      "disclaimer": "LIVE encode tarball ≠ deployment authority ≠ start trading",
+      "frozen_path": "/private/tmp/cos-sealing-packages/0.1.7-live-96d4ae7f",
+      "live": true,
+      "manifest_sha256": "b42117f518a9d41c7cfabb20c046e0fa030fecab6f89847c8076cb333a467b5d",
+      "package_sha256": "017eb2f63f3f5f1b391a392dea52146f9f2e2d9064f830f507fd8666a84248f9",
+      "schema": "htx-live-build-g3",
+      "synthetic": true,
+      "version": "0.1.7-live-96d4ae7f"
+    }
+  }
+]
