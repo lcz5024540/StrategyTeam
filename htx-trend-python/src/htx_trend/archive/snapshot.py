@@ -1,4 +1,5 @@
 """Freeze explicitly selected replay inventories without changing source data."""
+from contextlib import closing
 from datetime import datetime, timezone
 import gzip
 import json
@@ -46,8 +47,8 @@ def stable_read(path, root, max_bytes):
 
 def sqlite_backup(source, target):
     regular(source, source.parent)
-    with sqlite3.connect(source.as_uri() + '?mode=ro', uri=True, timeout=30) as src:
-        with sqlite3.connect(target) as dst:
+    with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True, timeout=30)) as src:
+        with closing(sqlite3.connect(target)) as dst:
             src.backup(dst, pages=256, sleep=0.05)
             if dst.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
                 raise ArchiveError('inconsistent SQLite snapshot')
@@ -58,6 +59,8 @@ def prepare(job, spec):
     root = Path(spec['root']).absolute()
     if root.resolve() != root or not root.is_dir():
         raise ArchiveError('source root must be a real directory without symlinks')
+    if (root / '.cos-retired.json').exists():
+        raise ArchiveError('retired source requires full restoration to a fresh directory')
     job.mkdir(parents=True, exist_ok=True)
     db_path = job / 'snapshot.sqlite3'
     identity = json.dumps(spec, sort_keys=True)
@@ -84,7 +87,7 @@ def prepare(job, spec):
     def add(relative, source, semantic=None, count=None):
         safe_relative(relative)
         info = regular(source, job if source.is_relative_to(job) else root).stat()
-        fingerprint = json.dumps([info.st_ino, info.st_size, info.st_mtime_ns])
+        fingerprint = json.dumps([info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns])
         db.execute('INSERT INTO files(path,origin,semantic,count,fingerprint) VALUES (?,?,?,?,?)',
                    (relative, str(source), semantic, count, fingerprint))
 
@@ -92,7 +95,7 @@ def prepare(job, spec):
     if kind == 'cas':
         backup = job / 'index.sqlite3'
         sqlite_backup(root / 'index.sqlite3', backup)
-        with sqlite3.connect(backup) as index:
+        with closing(sqlite3.connect(backup)) as index:
             indexed = {check_hash(row[0]) for row in index.execute('SELECT hash FROM evidence')}
         found = set()
         # Include valid unindexed CAS objects too: unknown historical ownership is not garbage.

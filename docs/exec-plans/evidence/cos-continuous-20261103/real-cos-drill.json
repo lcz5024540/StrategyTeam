@@ -1,0 +1,75 @@
+{
+  "production_source_deleted": false,
+  "trading_services_changed": false,
+  "delta_catalogue_bytes": 1430,
+  "status": "PASS",
+  "first": {
+    "status": "OK",
+    "sources": {
+      "integration": {
+        "status": "VERIFIED",
+        "manifest": "manifests/05418e8bba6a958905df5c01ae5c3ef5f20b35c15e433d21ca0069d237612a9b.json",
+        "recovered_failures": 0,
+        "cleanup_error": null
+      }
+    }
+  },
+  "unchanged": {
+    "status": "OK",
+    "sources": {
+      "integration": {
+        "status": "UNCHANGED",
+        "manifest": "manifests/05418e8bba6a958905df5c01ae5c3ef5f20b35c15e433d21ca0069d237612a9b.json",
+        "recovered_failures": 0,
+        "cleanup_error": null
+      }
+    }
+  },
+  "incremental": {
+    "status": "OK",
+    "sources": {
+      "integration": {
+        "status": "VERIFIED",
+        "manifest": "manifests/b4ae15a307177d81656b676fdefa164d40deb0643a3953a332ef061fe67c80cf.json",
+        "recovered_failures": 0,
+        "cleanup_error": null
+      }
+    }
+  },
+  "outage": {
+    "status": "DEGRADED",
+    "sources": {
+      "integration": {
+        "status": "FAILED",
+        "error_type": "OSError",
+        "failures": 1,
+        "first_failure": 1793715843.1304197,
+        "next_run": 1793715903.1304197
+      }
+    }
+  },
+  "recovery": {
+    "status": "OK",
+    "sources": {
+      "integration": {
+        "status": "UNCHANGED",
+        "manifest": "manifests/b4ae15a307177d81656b676fdefa164d40deb0643a3953a332ef061fe67c80cf.json",
+        "recovered_failures": 1,
+        "cleanup_error": null
+      }
+    }
+  },
+  "isolated_retirement": {
+    "state": "RETIRED",
+    "manifest": "manifests/b4ae15a307177d81656b676fdefa164d40deb0643a3953a332ef061fe67c80cf.json",
+    "plan_sha256": "54b62055bd610effd9ec26fcc75f458da7b48a0d4f5093c2a1d10258f46767ab",
+    "released_this_run": 309,
+    "retired_files": 2,
+    "restore_before_reuse": true
+  },
+  "real_capture_manifest": "manifests/3deec6a61a768448ea6bd3a7edc4fcc877ea5d58b48babd0d1654828a6448192.json",
+  "real_capture_path": "segments/000b1850c35e1c8f7f0e7c224937797dcbe1736c0cd6f2a00d421613f7424a1e.json.gz",
+  "real_capture_schema": "htx-realtime-grouped-v1",
+  "real_capture_events": 3967,
+  "offline_cache_hit": true
+}

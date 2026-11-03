@@ -11,6 +11,10 @@ class ArchiveError(ValueError):
     pass
 
 
+class SnapshotChanged(ArchiveError):
+    """Pinned mutable source changed; a new snapshot requires explicit reset."""
+
+
 def digest(data):
     return sha256(data).hexdigest()
 

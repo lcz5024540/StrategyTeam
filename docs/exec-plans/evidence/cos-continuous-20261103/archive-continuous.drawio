@@ -1,0 +1,11 @@
+<mxfile host="app.diagrams.net"><diagram name="Independent archive"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+<mxCell id="2" value="Trading worker → local evidence + authoritative ledger" vertex="1" parent="1"><mxGeometry x="40" y="40" width="360" height="60" as="geometry"/></mxCell>
+<mxCell id="3" value="Independent timer → pinned snapshot → delta upload" vertex="1" parent="1"><mxGeometry x="40" y="180" width="360" height="60" as="geometry"/></mxCell>
+<mxCell id="4" value="Private COS: verified packs + bounded manifest chain" vertex="1" parent="1"><mxGeometry x="480" y="180" width="320" height="60" as="geometry"/></mxCell>
+<mxCell id="5" value="Research lease → verified local cache → offline replay" vertex="1" parent="1"><mxGeometry x="480" y="320" width="320" height="60" as="geometry"/></mxCell>
+<mxCell id="6" value="Frozen source only: exact approval + full restore check → journal → release" vertex="1" parent="1"><mxGeometry x="40" y="460" width="540" height="60" as="geometry"/></mxCell>
+<mxCell id="7" edge="1" source="2" target="3" value="read only; separate process" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="8" edge="1" source="3" target="4" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="9" edge="1" source="4" target="5" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="10" edge="1" source="4" target="6" value="verified bytes" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+</root></mxGraphModel></diagram></mxfile>

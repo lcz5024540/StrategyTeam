@@ -6,3 +6,5 @@
 - [COS evidence integration](completed/plan-20261103-cos-evidence-integration.md) — inventory and scope decision in progress.
 
 - COS archive delivery evidence: [report](evidence/cos-archive-20261103/report.md) -7 snapshots, actual restore receipts and capacity.
+
+- [COS continuous archive](active/plan-20261103-cos-continuous-archive.md) — scheduler, replay cache and verified frozen-source retirement.

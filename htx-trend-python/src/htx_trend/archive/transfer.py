@@ -10,7 +10,7 @@ import shutil
 import sqlite3
 import tempfile
 
-from .backend import ArchiveError, check_hash, digest, file_hash
+from .backend import ArchiveError, SnapshotChanged, check_hash, digest, file_hash
 from .snapshot import prepare, safe_relative, stable_read, validate
 
 
@@ -48,7 +48,7 @@ def exclusive(work):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise ArchiveError('another archive writer holds this workspace') from exc
-        yield
+        yield lock
 
 
 def free_guard(path, minimum, needed=0):
@@ -57,7 +57,7 @@ def free_guard(path, minimum, needed=0):
 
 
 def archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
-            max_member=512 * 1024**2, min_free=5 * 1024**3, progress=None):
+            max_member=512 * 1024**2, min_free=5 * 1024**3, progress=None, previous=None):
     safe_relative(name)
     if '/' in name or pack_bytes < 1 or max_member < 1:
         raise ArchiveError('invalid archive job or size')
@@ -90,6 +90,8 @@ def archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
             db = prepare(job, spec)
             db.row_factory = sqlite3.Row
             try:
+                if previous:
+                    inherit_verified(backend, previous, db, spec, work, min_free)
                 receipt = job / 'receipt.json'
                 if receipt.exists():
                     return json.loads(receipt.read_bytes())
@@ -139,8 +141,8 @@ def archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
                                 if 'fingerprint' not in row.keys() or not row['fingerprint']:
                                     raise ArchiveError('legacy tree job requires a new snapshot')
                                 info = origin.stat()
-                                if json.dumps([info.st_ino, info.st_size, info.st_mtime_ns]) != row['fingerprint']:
-                                    raise ArchiveError('tree file changed since inventory; start a new job')
+                                if json.dumps([info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns]) != row['fingerprint']:
+                                    raise SnapshotChanged('tree file changed since inventory; reset the pending source after investigation')
                             data = stable_read(origin, source_root, max_member)
                             refs = validate(data, row, spec['kind'])
                             raw_hash = digest(data)
@@ -203,9 +205,20 @@ def archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
                     pack.close()
                 if db.execute('SELECT count(*) FROM files WHERE raw_hash IS NULL').fetchone()[0]:
                     raise ArchiveError('incomplete archive snapshot')
+                if previous and unchanged(backend, previous, db, work, min_free):
+                    with open_catalogue(backend, previous, work, min_free) as (old, _):
+                        result = dict(old, job=name, manifest=previous, unchanged=True,
+                                      verified_at=datetime.now(timezone.utc).isoformat())
+                    atomic(receipt, canonical(result))
+                    pack_path.unlink(missing_ok=True)
+                    return result
                 # A standalone SQLite catalogue is small enough to fetch once; member data is ranged.
+                catalogue_source = job / 'snapshot.sqlite3'
+                parent_meta = None
+                if previous:
+                    catalogue_source, parent_meta = delta_catalogue(backend, previous, db, job, work, min_free)
                 catalogue = job / 'catalogue.sqlite3.gz'
-                with (job / 'snapshot.sqlite3').open('rb') as src, catalogue.open('wb') as dst:
+                with catalogue_source.open('rb') as src, catalogue.open('wb') as dst:
                     with gzip.GzipFile(fileobj=dst, mode='wb', mtime=0, compresslevel=6) as z:
                         shutil.copyfileobj(src, z, 1024 * 1024)
                     dst.flush()
@@ -218,10 +231,14 @@ def archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
                     'job': name, 'source': spec, 'snapshot': dict(db.execute('SELECT key,value FROM meta')),
                     'catalogue': catalogue_key, 'catalogue_sha256': catalogue_hash,
                     'catalogue_bytes': catalogue.stat().st_size,
-                    'catalogue_raw_bytes': (job / 'snapshot.sqlite3').stat().st_size,
+                    'catalogue_raw_bytes': catalogue_source.stat().st_size,
                     'files': stats[0], 'source_bytes': stats[1] or 0, 'member_bytes': stats[2] or 0,
                     'packs': stats[3], 'references': db.execute('SELECT count(*) FROM refs').fetchone()[0],
                     'source_retained': True, 'storage_class': 'STANDARD', 'explicit_reference_closure': 'VERIFIED'}
+                if parent_meta is not None:
+                    manifest.update(schema='htx-cos-archive-v2', parent_manifest=previous,
+                        chain_depth=parent_meta.get('chain_depth', 0) + 1,
+                        materialized_bytes=(job / 'snapshot.sqlite3').stat().st_size)
                 manifest_data = canonical(manifest)
                 manifest_key = 'manifests/' + digest(manifest_data) + '.json'
                 atomic(job / 'manifest.json', manifest_data)
@@ -249,36 +266,76 @@ def bounded_download(backend, key, path, expected_hash, maximum, *, start=None, 
 
 @contextmanager
 def open_catalogue(backend, manifest_key, scratch, min_free=1024**3):
-    if not manifest_key.startswith('manifests/') or not manifest_key.endswith('.json'):
-        raise ArchiveError('invalid manifest key')
-    expected = check_hash(Path(manifest_key).stem)
+    """Resolve a bounded delta chain into one authenticated, self-contained view."""
     scratch = Path(scratch)
     scratch.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='archive-read-', dir=scratch) as temp:
-        temp = Path(temp)
-        bounded_download(backend, manifest_key, temp / 'manifest.json', expected, 1024**2)
-        manifest = json.loads((temp / 'manifest.json').read_bytes())
-        if manifest['schema'] != 'htx-cos-archive-v1' or manifest['namespace'] != backend.identity:
-            raise ArchiveError('manifest schema/namespace mismatch')
-        free_guard(scratch, min_free, manifest['catalogue_bytes'] + manifest['catalogue_raw_bytes'])
-        bounded_download(backend, manifest['catalogue'], temp / 'catalogue.gz', manifest['catalogue_sha256'], manifest['catalogue_bytes'])
-        size = 0
-        with gzip.open(temp / 'catalogue.gz', 'rb') as src, (temp / 'catalogue.sqlite3').open('wb') as dst:
-            while block := src.read(1024 * 1024):
-                size += len(block)
-                if size > manifest['catalogue_raw_bytes']:
-                    raise ArchiveError('catalogue size mismatch')
-                dst.write(block)
-        db = sqlite3.connect((temp / 'catalogue.sqlite3').as_uri() + '?mode=ro', uri=True)
-        db.row_factory = sqlite3.Row
+    with tempfile.TemporaryDirectory(prefix='archive-read-', dir=scratch) as directory:
+        temp = Path(directory)
+        chain, seen, key = [], set(), manifest_key
+        while key:
+            if not key.startswith('manifests/') or not key.endswith('.json') or key in seen or len(chain) >= 128:
+                raise ArchiveError('invalid or overlong manifest chain')
+            seen.add(key)
+            expected = check_hash(Path(key).stem)
+            bounded_download(backend, key, temp / 'manifest.json', expected, 1024**2)
+            manifest = json.loads((temp / 'manifest.json').read_bytes())
+            if manifest['schema'] not in {'htx-cos-archive-v1', 'htx-cos-archive-v2'} or manifest['namespace'] != backend.identity:
+                raise ArchiveError('manifest schema/namespace mismatch')
+            if chain and chain[0]['source'] != manifest['source']:
+                raise ArchiveError('delta source mismatch')
+            chain.append(manifest)
+            key = manifest.get('parent_manifest') if manifest['schema'] == 'htx-cos-archive-v2' else None
+            if manifest['schema'] == 'htx-cos-archive-v2' and not key:
+                raise ArchiveError('delta missing parent')
+        if not chain or chain[0].get('chain_depth', 0) != len(chain) - 1:
+            raise ArchiveError('manifest chain depth mismatch')
+        db = None
         try:
-            yield manifest, db
+            for position, manifest in enumerate(reversed(chain)):
+                free_guard(scratch, min_free, manifest['catalogue_bytes'] + manifest['catalogue_raw_bytes'] +
+                           manifest.get('materialized_bytes', 0))
+                bounded_download(backend, manifest['catalogue'], temp / 'catalogue.gz',
+                                 manifest['catalogue_sha256'], manifest['catalogue_bytes'])
+                size = 0
+                raw_path = temp / ('catalogue.sqlite3' if position == 0 else 'delta.sqlite3')
+                with gzip.open(temp / 'catalogue.gz', 'rb') as src, raw_path.open('wb') as dst:
+                    while block := src.read(1024 * 1024):
+                        size += len(block)
+                        if size > manifest['catalogue_raw_bytes']:
+                            raise ArchiveError('catalogue size mismatch')
+                        dst.write(block)
+                if size != manifest['catalogue_raw_bytes']:
+                    raise ArchiveError('catalogue size mismatch')
+                if position == 0:
+                    db = sqlite3.connect(raw_path)
+                    db.row_factory = sqlite3.Row
+                else:
+                    db.execute('ATTACH DATABASE ? AS delta', (str(raw_path),))
+                    try:
+                        db.execute('DELETE FROM refs WHERE parent IN (SELECT path FROM delta.files UNION SELECT path FROM delta.deleted)')
+                        db.execute('DELETE FROM files WHERE path IN (SELECT path FROM delta.deleted)')
+                        db.execute('INSERT OR REPLACE INTO files SELECT * FROM delta.files')
+                        db.execute('INSERT OR REPLACE INTO refs SELECT * FROM delta.refs')
+                        db.execute('DELETE FROM meta')
+                        db.execute('INSERT INTO meta SELECT * FROM delta.meta')
+                        db.commit()
+                    finally:
+                        db.execute('DETACH DATABASE delta')
+                    raw_path.unlink()
+            if db.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+                raise ArchiveError('invalid catalogue SQLite')
+            if db.execute('SELECT count(*) FROM files').fetchone()[0] != chain[0]['files']:
+                raise ArchiveError('catalogue file count mismatch')
+            if db.execute('SELECT 1 FROM refs WHERE NOT EXISTS(SELECT 1 FROM files WHERE semantic=child) LIMIT 1').fetchone():
+                raise ArchiveError('catalogue reference closure missing')
+            yield chain[0], db
         finally:
-            db.close()
+            if db is not None:
+                db.close()
 
 
 def restore(backend, manifest_key, destination, *, scratch, paths=(), cas=(),
-            all_files=False, min_free=1024**3):
+            all_files=False, min_free=1024**3, verify_only=False):
     """Restore full snapshot, selected paths, or a reference-closed CAS subgraph."""
     destination = Path(destination).absolute()
     destination.mkdir(parents=True, exist_ok=True)
@@ -322,7 +379,7 @@ def restore(backend, manifest_key, destination, *, scratch, paths=(), cas=(),
                 if p == destination:
                     break
             target.parent.mkdir(parents=True, exist_ok=True)
-            if target.exists():
+            if target.exists() and not verify_only:
                 if not target.is_file() or file_hash(target) != row['raw_hash']:
                     raise ArchiveError('restore target conflicts with archived bytes')
                 reused += 1
@@ -380,13 +437,14 @@ def restore(backend, manifest_key, destination, *, scratch, paths=(), cas=(),
                 with raw.open('rb') as f:
                     os.fsync(f.fileno())
                 # Publish without replacement, including races after initial target check.
-                os.link(raw, target)
-                sync_directory(target.parent)
+                if not verify_only:
+                    os.link(raw, target)
+                    sync_directory(target.parent)
                 restored += 1
                 total += row['raw_size']
         result = {'manifest': manifest_key, 'restored': restored, 'reused': reused, 'bytes': total,
                   'source_retained': True, 'status': 'COMPLETE',
-                  'scope': 'full_snapshot' if all_files else 'selection',
+                  'scope': ('verification_only' if verify_only else ('full_snapshot' if all_files else 'selection')),
                   'paths': list(paths), 'cas': list(cas)}
         marker = destination / ('.cos-restore-complete-' + Path(manifest_key).stem + '.json')
         if marker.is_symlink():
@@ -415,7 +473,7 @@ def compact_staging(backend, work, name):
             raise ArchiveError('different COS namespace')
         manifest = job / 'manifest.json'
         compressed = job / 'catalogue.sqlite3.gz'
-        raw = job / 'snapshot.sqlite3'
+        raw = job / ('delta.sqlite3' if receipt.get('schema') == 'htx-cos-archive-v2' else 'snapshot.sqlite3')
         from .snapshot import regular
         regular(manifest, job)
         regular(compressed, job)
@@ -441,7 +499,84 @@ def compact_staging(backend, work, name):
                 raise ArchiveError('raw catalogue differs from compressed copy')
             removed = raw.stat().st_size
             raw.unlink()
+            full = job / 'snapshot.sqlite3'
+            if raw != full and full.exists():
+                regular(full, job)
+                removed += full.stat().st_size
+                full.unlink()
             sync_directory(job)
         return {'job': name, 'released_staging_bytes': removed,
                 'retained_compressed_catalogue': str(compressed),
                 'source_deleted': False, 'status': 'VERIFIED'}
+
+
+def inherit_verified(backend, previous, db, spec, scratch, min_free):
+    """Reuse verified immutable members; metadata is always read from this snapshot.
+
+    A fingerprint is a local optimization, not a fresh remote audit. Use archive
+    without previous for a full read/GET audit. Old three-field inventories do
+    not qualify. Incremental v2 catalogues use bounded parent chains with periodic full checkpoints.
+    """
+    with open_catalogue(backend, previous, scratch, min_free) as (manifest, old):
+        if manifest['source'] != spec:
+            raise ArchiveError('incremental source specification mismatch')
+        old_path = old.execute('PRAGMA database_list').fetchone()[2]
+        db.execute('ATTACH DATABASE ? AS prior', (old_path,))
+        try:
+            db.execute("""UPDATE files SET
+                (raw_hash,raw_size,pack,offset,length,encoding,stored_hash)=
+                (SELECT raw_hash,raw_size,pack,offset,length,encoding,stored_hash
+                 FROM prior.files p WHERE p.path=files.path)
+                WHERE raw_hash IS NULL AND fingerprint IS NOT NULL
+                AND json_array_length(fingerprint)=4
+                AND origin NOT LIKE ? AND EXISTS
+                (SELECT 1 FROM prior.files p WHERE p.path=files.path
+                 AND p.origin=files.origin AND p.semantic IS files.semantic
+                 AND p.fingerprint=files.fingerprint AND p.raw_hash IS NOT NULL)""",
+                (str(Path(scratch).absolute()) + '/%',))
+            db.execute("""INSERT OR IGNORE INTO refs SELECT r.parent,r.child FROM prior.refs r
+                JOIN files f ON f.path=r.parent WHERE f.raw_hash IS NOT NULL""")
+            db.commit()
+        finally:
+            db.execute('DETACH DATABASE prior')
+
+
+def unchanged(backend, previous, db, scratch, min_free):
+    with open_catalogue(backend, previous, scratch, min_free) as (_, old):
+        old_path = old.execute('PRAGMA database_list').fetchone()[2]
+        db.execute('ATTACH DATABASE ? AS prior', (old_path,))
+        try:
+            # Metadata timestamps/job paths are observations, not new data.
+            return (db.execute('SELECT count(*) FROM files').fetchone()[0] ==
+                    db.execute('SELECT count(*) FROM prior.files').fetchone()[0] and
+                    db.execute("""SELECT 1 FROM files f LEFT JOIN prior.files p ON f.path=p.path
+                        WHERE p.path IS NULL OR f.raw_hash IS NOT p.raw_hash LIMIT 1""").fetchone() is None)
+        finally:
+            db.execute('DETACH DATABASE prior')
+
+
+def delta_catalogue(backend, previous, db, job, scratch, min_free):
+    with open_catalogue(backend, previous, scratch, min_free) as (manifest, old):
+        if manifest.get('chain_depth', 0) >= 127:
+            raise ArchiveError('delta chain limit reached; run a full audit checkpoint')
+        target = job / 'delta.sqlite3'
+        target.unlink(missing_ok=True)
+        delta = sqlite3.connect(target)
+        try:
+            for row in db.execute("SELECT sql FROM sqlite_master WHERE type IN ('table','index') AND sql IS NOT NULL"):
+                delta.execute(row[0])
+            delta.execute('ATTACH DATABASE ? AS prior', (old.execute('PRAGMA database_list').fetchone()[2],))
+            delta.execute('ATTACH DATABASE ? AS current', (db.execute('PRAGMA database_list').fetchone()[2],))
+            delta.execute('CREATE TABLE deleted(path TEXT PRIMARY KEY)')
+            delta.execute('INSERT INTO deleted SELECT path FROM prior.files WHERE path NOT IN (SELECT path FROM current.files)')
+            delta.execute("""INSERT INTO files SELECT f.* FROM current.files f LEFT JOIN prior.files p ON f.path=p.path
+                WHERE p.path IS NULL OR p.raw_hash IS NOT f.raw_hash OR p.fingerprint IS NOT f.fingerprint
+                OR p.origin IS NOT f.origin""")
+            delta.execute('INSERT INTO refs SELECT r.* FROM current.refs r JOIN files f ON f.path=r.parent')
+            delta.execute('INSERT INTO meta SELECT * FROM current.meta')
+            delta.commit()
+            delta.execute('DETACH DATABASE prior')
+            delta.execute('DETACH DATABASE current')
+        finally:
+            delta.close()
+        return target, manifest
