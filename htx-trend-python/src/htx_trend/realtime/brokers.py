@@ -362,6 +362,11 @@ class LiveBroker:
         self.guard()
         if facts is None or config is None:
             raise ValueError("preflight risk facts required")
+        trial = getattr(self, 'trial', None)
+        if trial is not None:
+            trial.reserve(intent, now_ms, equity=facts.account_equity_usdt,
+                          remaining_account_risk=facts.account_equity_usdt * config.max_total_open_risk_rate - facts.reserved_risk_usdt,
+                          per_trade_rate=config.max_risk_per_trade_rate)
         ident = intent.client_order_id
         position_key = "python-rt-" + ident
         run = "rt:" + intent.plan_id
@@ -467,6 +472,8 @@ class LiveBroker:
                 )
             )
             context = initial_context(intent, trigger, contract, holding_parameters)
+            if trial is not None:
+                context['trial_id'] = trial.state['trial_id']
             context["entry_execution"] = {
                 "schema": "realtime-ioc-v1",
                 "client_order_id": ident,

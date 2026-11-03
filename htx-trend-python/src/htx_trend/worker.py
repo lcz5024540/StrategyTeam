@@ -5,7 +5,6 @@ import argparse
 import json
 import logging
 import os
-import time
 import signal
 from threading import Event
 from contextlib import ExitStack
@@ -57,6 +56,10 @@ def _validate_first_live_cutover() -> None:
 
 
 def _load_admission(strategy_version: str) -> StrategyAdmissionArtifact | None:
+    from .realtime.trial_admission import configured
+    from .realtime import VERSION as RT_VERSION
+    if strategy_version == RT_VERSION and configured():
+        return None  # Separately validated in realtime.factory, including management-only.
     if strategy_version == LEGACY_STRATEGY_VERSION:
         return None
     raw = os.environ.get("HTX_TREND_STRATEGY_ADMISSION_PATH", "").strip()
@@ -76,17 +79,25 @@ def _load_admission(strategy_version: str) -> StrategyAdmissionArtifact | None:
 def _validate_live_approval(instance, account, admission, scan_configs) -> None:
     from .live_approval import validate_margin_config
     validate_margin_config(ExecutionConfig.from_env())
+    from .realtime.trial_admission import configured
+    from .realtime import VERSION as RT_VERSION
+    trial = instance.strategy_name == RT_VERSION and configured()
     approved_risk = LiveRiskPolicy()
+    position_cap = 10 if trial else approved_risk.max_active_positions
     execution_risk = ExecutionConfig.from_env()
     entry_risk = EntryExecutionConfig.from_env()
     if execution_risk.max_risk_per_trade_rate > approved_risk.per_trade_equity_rate:
         raise SystemExit("LIVE per-trade stop risk exceeds approved 0.5% equity")
     if execution_risk.max_total_open_risk_rate > approved_risk.total_open_equity_rate:
         raise SystemExit("LIVE total open stop risk exceeds approved 1.5% equity")
-    if entry_risk.max_active_positions > approved_risk.max_active_positions:
+    if entry_risk.max_active_positions > position_cap:
         raise SystemExit("LIVE active-position limit exceeds approved maximum of three")
-    if any(item.max_active_positions > approved_risk.max_active_positions for item in scan_configs):
+    if any(item.max_active_positions > position_cap for item in scan_configs):
         raise SystemExit("LIVE scan capacity exceeds approved maximum of three")
+    if trial:
+        if len(scan_configs) != 1 or scan_configs[0].timeframe_profile is not TimeframeProfile.INTRADAY_15M:
+            raise SystemExit('trial only manages the 15m profile')
+        return  # Full bound authority is required by factory before worker construction.
     package_sha = os.environ.get("HTX_PYTHON_PACKAGE_SHA256", "").strip()
     source_commit = os.environ.get("HTX_PYTHON_SOURCE_COMMIT", "").strip()
     config_fingerprint = (instance.config_fingerprint or "").strip()
