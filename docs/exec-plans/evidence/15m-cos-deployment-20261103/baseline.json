@@ -1,0 +1,69 @@
+{
+  "observed_at": "2026-11-03T23:12:54.629802+08:00",
+  "units": {
+    "htx-trend-worker@htx-trend-live-primary": {
+      "MainPID": "2213018",
+      "EnvironmentFiles": "/opt/coinstrategy/htx-trend-py-state/trial-management-20261103/runtime.env (ignore_errors=no)",
+      "WorkingDirectory": "/opt/coinstrategy/htx-trend-py/current",
+      "ActiveState": "active",
+      "SubState": "running",
+      "flags": {
+        "HTX_RT_ENTRY_ENABLED": "false",
+        "HTX_CONTINUITY_INITIALIZE": "false",
+        "PYTHONPATH": "/opt/coinstrategy/htx-trend-py/current/src"
+      }
+    },
+    "htx-trend-paper-4h": {
+      "MainPID": "705510",
+      "EnvironmentFiles": "/opt/coinstrategy/htx-trend-paper-4h/htx-python-paper.env (ignore_errors=yes)",
+      "WorkingDirectory": "/opt/coinstrategy/htx-trend-paper/releases/0.1.6-paper-db-dbfee173-4h",
+      "ActiveState": "active",
+      "SubState": "running",
+      "flags": {
+        "HTX_RT_ENTRY_ENABLED": null,
+        "HTX_CONTINUITY_INITIALIZE": null,
+        "PYTHONPATH": "/opt/coinstrategy/htx-trend-paper/releases/0.1.6-paper-db-dbfee173-4h/src"
+      }
+    },
+    "htx-trend-collector": {
+      "MainPID": "425828",
+      "EnvironmentFiles": "/opt/coinstrategy/htx-trend-py-state/collector-business-db.env (ignore_errors=yes)",
+      "WorkingDirectory": "/opt/coinstrategy/htx-trend-py/releases/kline-business-db-926a494a",
+      "ActiveState": "active",
+      "SubState": "running",
+      "flags": {
+        "HTX_RT_ENTRY_ENABLED": null,
+        "HTX_CONTINUITY_INITIALIZE": null,
+        "PYTHONPATH": "/opt/coinstrategy/htx-trend-py/releases/kline-business-db-926a494a/src"
+      }
+    }
+  },
+  "management_approval_fields": {
+    "package_sha256": "7a460e574b26bcb1067797d9d2e26aef81c1789778a6191297b42be5048ed5a5",
+    "permission": "MANAGEMENT",
+    "source_commit": "2502786db1c7915018232d594d84d4eaab21c052",
+    "trial_id": "primary-15m-management-20261103-2502786d"
+  },
+  "management_current": "/opt/coinstrategy/htx-trend-py/releases/0.1.7-realtime-live-2502786d",
+  "disk": "Filesystem       1B-blocks        Used   Available Use% Mounted on\n/dev/vda2      63290032128 44978614272 15610671104  75% /\n",
+  "capture_history": {
+    "long-20261103-aaf3352c": {
+      "pid": 2194768,
+      "final": true,
+      "stop_reason": "CAPTURE_QUOTA_EXCEEDED",
+      "bytes": 2146434085,
+      "started_ms": 1793684171731,
+      "observed_ms": 1793702176409,
+      "trading": false
+    },
+    "realtime-20261103": {
+      "pid": 2148278,
+      "final": true,
+      "stop_reason": "CAPTURE_QUOTA_EXCEEDED",
+      "bytes": 2146377525,
+      "started_ms": 1793673866927,
+      "observed_ms": 1793677798258,
+      "trading": false
+    }
+  }
+}

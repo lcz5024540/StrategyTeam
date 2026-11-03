@@ -283,7 +283,7 @@ class SegmentRecorder:
             self.used = sum(p.stat().st_size for p in self.root.iterdir() if p.is_file())
             self.segment_revision = revision
 
-    def segment_boundary(self, *, extra_roots=(), safe=True):
+    def segment_boundary(self, *, extra_roots=(), safe=True, force=False):
         if not self.segments:
             return
         roots = set(extra_roots)
@@ -292,7 +292,7 @@ class SegmentRecorder:
         try:
             self.segments.ready('recorder', roots, error=None if safe and not self.failure else 'CAPTURE_HANDOFF_FAILED')
             if safe and not self.failure:
-                self.segments.seal()
+                self.segments.seal(force=force)
         except Exception:
             # Maintenance failure blocks deletion; it does not alter order/exit behavior.
             try:

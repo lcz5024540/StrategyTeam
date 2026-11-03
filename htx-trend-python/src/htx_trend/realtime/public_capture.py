@@ -225,6 +225,7 @@ class Capture:
         observed_runtime=None,
         clock=time.time,
         segmented=False,
+        resume=False,
     ):
         if not 1 <= seconds <= 86400 or not CONTROL_RESERVE < max_bytes <= 2 * GIB:
             raise ValueError("capture duration/cap exceeds approved bounds")
@@ -234,10 +235,32 @@ class Capture:
             or any(not re.fullmatch("[A-Z0-9]+-USDT", c) for c in contracts)
         ):
             raise ValueError("invalid explicit contract pool")
-        self.root, self.contracts = Path(output), tuple(dict.fromkeys(contracts))
-        self.root.mkdir(parents=True, exist_ok=False)
-        self.lock = (self.root / "capture.lock").open("w")
-        fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.root, self.contracts = Path(output).absolute(), tuple(dict.fromkeys(contracts))
+        if resume and not segmented:
+            raise ValueError('resume requires explicit segmented storage')
+        existed = self.root.exists()
+        if self.root.resolve() != self.root:
+            raise ValueError('symlink capture root')
+        self.root.mkdir(parents=True, exist_ok=resume)
+        lock_path = self.root / 'capture.lock'
+        if lock_path.is_symlink():
+            raise ValueError('symlink capture lock')
+        self.lock = lock_path.open('a')
+        try:
+            fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            previous = None
+            if existed:
+                previous = json.loads((self.root / 'capture.json').read_bytes())
+                expected = dict(schema='htx-public-market-bundle-v1',contracts=list(self.contracts),
+                                max_bytes=max_bytes,min_free_bytes=min_free_bytes,channels=list(CHANNELS),
+                                observed_runtime=observed_runtime,trading=False)
+                if any(previous.get(k) != v for k,v in expected.items()):
+                    raise ValueError('resume capture configuration changed')
+                if not (self.root / 'segments/.sealing/config.json').exists():
+                    raise ValueError('resume requires enrolled segmented source')
+        except BaseException:
+            self.lock.close()
+            raise
         self.max_bytes, self.min_free_bytes, self.seconds, self.clock = (
             max_bytes,
             min_free_bytes,
@@ -262,25 +285,26 @@ class Capture:
         self.rate_lock, self.next_request = threading.Lock(), 0.0
         self.started_ms = self.now()
         self.specs = {}
-        atomic_json(
-            self.root / "capture.json",
-            dict(
-                schema="htx-public-market-bundle-v1",
-                contracts=self.contracts,
-                max_bytes=max_bytes,
-                min_free_bytes=min_free_bytes,
-                max_seconds=seconds,
-                started_ms=self.started_ms,
-                pid=os.getpid(),
-                channels=CHANNELS,
-                observed_runtime=observed_runtime,
-                trading=False,
-                funding_poll_seconds=60,
-                frame_refresh_seconds=900,
-                rest_max_requests_per_second=4,
-                missing_requirements=MISSING,
-            ),
-        )
+        if not previous:
+            atomic_json(
+                self.root / "capture.json",
+                dict(
+                    schema="htx-public-market-bundle-v1",
+                    contracts=self.contracts,
+                    max_bytes=max_bytes,
+                    min_free_bytes=min_free_bytes,
+                    max_seconds=seconds,
+                    started_ms=self.started_ms,
+                    pid=os.getpid(),
+                    channels=CHANNELS,
+                    observed_runtime=observed_runtime,
+                    trading=False,
+                    funding_poll_seconds=60,
+                    frame_refresh_seconds=900,
+                    rest_max_requests_per_second=4,
+                    missing_requirements=MISSING,
+                ),
+            )
 
     def now(self):
         return int(self.clock() * 1000)
@@ -527,6 +551,7 @@ class Capture:
             observed_ms=now,
             final=final,
             stop_reason=self.failure,
+            counts_scope="CURRENT_PROCESS",
             counts=dict(self.counts),
             channels=dict(self.channels),
             stale_price_channels=stale,
@@ -586,9 +611,11 @@ class Capture:
             while not self.events.empty() and not self.recorder.failure:
                 self.write(self.events.get_nowait())
             self.recorder.flush()
-            self.recorder.segment_boundary()
+            self.recorder.segment_boundary(force=True)
             atomic_json(self.root / "status.json", self.status(final=True))
             self.client.close()
+            if self.recorder.segments:
+                self.recorder.segments.close()
             self.lock.close()
 
 
@@ -602,6 +629,7 @@ def main():
     start.add_argument("--min-free-bytes", type=int, default=5 * GIB)
     start.add_argument("--seconds", type=int, default=86400)
     start.add_argument("--segmented", action="store_true")
+    start.add_argument("--resume", action="store_true", help="Restart an identical segmented source; preserve quota and provenance")
     check = sub.add_parser("audit")
     check.add_argument("--input", type=Path, required=True)
     check.add_argument("--export", type=Path)
@@ -619,11 +647,14 @@ def main():
         seconds=args.seconds,
         observed_runtime=source,
         segmented=args.segmented,
+        resume=args.resume,
     )
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: capture.stop.set())
     capture.run()
     print(json.dumps(capture.status(final=True)))
+    if args.resume and capture.failure not in {'DURATION_LIMIT','SIGNAL_STOP',None}:
+        raise SystemExit(2)  # systemd must preserve a visible capacity/failure stop, not spin.
 
 
 if __name__ == "__main__":

@@ -168,3 +168,56 @@ def test_fast_segments_keep_exact_canonical_identity_and_legacy_reader(tmp_path)
     default.append(dict(kind="test", received_ms=1, price=Decimal("1.20")))
     default.flush()
     assert default.verify()[0]["price"] == "1.2"
+
+
+def close_capture(c):
+    c.client.close()
+    if c.recorder.segments:c.recorder.segments.close()
+    c.lock.close()
+
+
+def test_segmented_capture_resume_preserves_quota_objects_and_original_provenance(tmp_path):
+    root=tmp_path/'capture';pool={'contracts':['ETH-USDT'],'source_commit':'frozen-pool'}
+    c=Capture(root,['ETH-USDT'],seconds=1,segmented=True,resume=True,observed_runtime=pool)
+    c.write(dict(kind='BBO',contract='ETH-USDT',received_ms=1000,bid='100',ask='101'))
+    sha=c.recorder.flush();before=c.recorder.used
+    c.recorder.segment_boundary(force=True)
+    config=(root/'capture.json').read_bytes()
+    close_capture(c)
+    c=Capture(root,['ETH-USDT'],seconds=2,segmented=True,resume=True,observed_runtime=pool)
+    assert c.recorder.used>=before and c.recorder.last_ref==sha
+    assert (root/'capture.json').read_bytes()==config
+    c.write(dict(kind='BBO',contract='ETH-USDT',received_ms=2000,bid='101',ask='102'))
+    c.recorder.flush()
+    assert len(c.recorder.verify())==2
+    assert c.status()['counts_scope']=='CURRENT_PROCESS'
+    assert c.client._access_key is None and c.client._secret_key is None
+    close_capture(c)
+
+
+def test_resume_requires_same_contract_pool_limits_and_exclusive_writer(tmp_path):
+    root=tmp_path/'capture';c=Capture(root,['ETH-USDT'],segmented=True,resume=True)
+    with pytest.raises(BlockingIOError):Capture(root,['ETH-USDT'],segmented=True,resume=True)
+    close_capture(c)
+    for kwargs in [{'contracts':['BTC-USDT']},{'contracts':['ETH-USDT'],'max_bytes':GIB},
+                   {'contracts':['ETH-USDT'],'min_free_bytes':6*GIB}]:
+        with pytest.raises(ValueError,match='configuration changed'):
+            Capture(root,segmented=True,resume=True,**kwargs)
+    with pytest.raises(ValueError,match='requires explicit segmented'):
+        Capture(root,['ETH-USDT'],resume=True)
+    old=Capture(tmp_path/'legacy',['ETH-USDT']);close_capture(old)
+    with pytest.raises(ValueError,match='enrolled segmented'):
+        Capture(tmp_path/'legacy',['ETH-USDT'],segmented=True,resume=True)
+
+
+def test_resume_does_not_reset_remaining_capacity(tmp_path):
+    root=tmp_path/'capture';options=dict(seconds=1,segmented=True,resume=True,max_bytes=CONTROL_RESERVE+500)
+    c=Capture(root,['ETH-USDT'],**options)
+    for n in range(2):c.write(dict(kind='BBO',received_ms=n,raw='data'));c.recorder.flush()
+    used=c.recorder.used;close_capture(c)
+    c=Capture(root,['ETH-USDT'],**options)
+    assert c.recorder.used>=used
+    for n in range(20):c.write(dict(kind='BBO',received_ms=100+n,raw='data'));c.recorder.flush()
+    assert c.recorder.failure=='CAPTURE_QUOTA_EXCEEDED'
+    assert c.recorder.used<=500
+    close_capture(c)

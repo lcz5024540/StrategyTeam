@@ -1,0 +1,31 @@
+[Unit]
+Description=CoinStrategy 15m public market data (no trading credentials)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+UMask=0077
+WorkingDirectory=/opt/coinstrategy/15m-market-data/current
+Environment=PYTHONPATH=/opt/coinstrategy/15m-market-data/current/src
+ExecStart=/opt/coinstrategy/htx-trend-py-venv/bin/python -m htx_trend.realtime.public_capture start --contracts-file /etc/coinstrategy/15m-cos-pool.json --output /home/ubuntu/coinstrategy-data/15m-cos/capture --segmented --resume --seconds 86400
+Restart=always
+RestartSec=60
+RestartPreventExitStatus=2
+TimeoutStopSec=120
+KillSignal=SIGTERM
+Nice=10
+MemoryHigh=512M
+MemoryMax=1G
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/coinstrategy-data/15m-cos
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

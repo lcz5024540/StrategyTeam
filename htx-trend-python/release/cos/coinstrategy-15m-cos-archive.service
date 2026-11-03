@@ -1,0 +1,25 @@
+[Unit]
+Description=CoinStrategy 15m sealed data COS upload only
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/coinstrategy/15m-cos-archive.enabled
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+UMask=0077
+WorkingDirectory=/opt/coinstrategy/15m-market-data/current
+Environment=PYTHONPATH=/opt/coinstrategy/15m-market-data/current/src
+ExecStart=/home/ubuntu/coinstrategy-cos-pilot/venv/bin/python -m htx_trend.archive.cli --config /etc/coinstrategy/15m-cos-archive.json --credentials /home/ubuntu/coinstrategy-cos-pilot/credentials.json --workspace /home/ubuntu/coinstrategy-cos-archive/15m-work run-once
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=50%
+MemoryHigh=512M
+MemoryMax=1G
+TimeoutStartSec=12h
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/coinstrategy-cos-archive/15m-work /home/ubuntu/coinstrategy-data/15m-cos/capture/segments/.sealing
+PrivateTmp=true
