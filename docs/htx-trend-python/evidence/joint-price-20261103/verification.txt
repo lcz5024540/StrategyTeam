@@ -1,0 +1,11 @@
+........................................................................ [ 54%]
+............................................................             [100%]
+132 passed in 0.87s
+
+ruff: passed
+compileall: passed
+original prefix: 69 exact triggers and all rejection/event/per-contract counters equal
+repeat replay: byte-identical gzip
+input/source/protocol SHA256: verified
+qualified opportunity identity sets: J0/J1/J2 equal for all 3 cost assumptions x 3 thresholds
+activation source closure and known_ms <= activation_ms: passed
