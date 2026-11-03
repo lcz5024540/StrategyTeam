@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 from .backend import CosBackend
-from .transfer import archive, open_catalogue, restore
+from .transfer import archive, compact_staging, open_catalogue, restore
 
 
 def main():
@@ -24,6 +24,8 @@ def main():
     r.add_argument('--path', action='append', default=[])
     r.add_argument('--cas', action='append', default=[])
     r.add_argument('--all', action='store_true')
+    compact = sub.add_parser('compact-staging')
+    compact.add_argument('--job', required=True)
     ls = sub.add_parser('list')
     ls.add_argument('--manifest', required=True)
     ls.add_argument('--limit', type=int, default=20)
@@ -37,6 +39,8 @@ def main():
         if args.command == 'archive':
             result = archive(backend, args.workspace, args.job, config['sources'][args.source], min_free=minimum,
                 progress=lambda value: print(json.dumps(value), flush=True))
+        elif args.command == 'compact-staging':
+            result = compact_staging(backend, args.workspace, args.job)
         elif args.command == 'restore':
             result = restore(backend, args.manifest, args.destination, scratch=args.workspace,
                 paths=args.path, cas=args.cas, all_files=args.all, min_free=minimum)

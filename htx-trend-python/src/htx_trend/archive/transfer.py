@@ -66,6 +66,16 @@ def archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
     if work.is_relative_to(source_root) or source_root.is_relative_to(work):
         raise ArchiveError('archive workspace and source must be disjoint')
     with exclusive(work):
+        receipt_path = work / name / 'receipt.json'
+        if receipt_path.exists():
+            completed = json.loads(receipt_path.read_bytes())
+            if completed.get('job') != name:
+                raise ArchiveError('receipt job identity mismatch')
+            if completed['source'] != spec:
+                raise ArchiveError('job belongs to another source/specification')
+            if completed['namespace'] != backend.identity:
+                raise ArchiveError('archive cache belongs to another COS namespace')
+            return completed
         free_guard(work, min_free, max_member)
         with sqlite3.connect(work / 'blobs.sqlite3') as cache:
             cache.execute('CREATE TABLE IF NOT EXISTS scope(identity TEXT PRIMARY KEY)')
@@ -383,3 +393,55 @@ def restore(backend, manifest_key, destination, *, scratch, paths=(), cas=(),
             raise ArchiveError('symlink restore marker')
         atomic(marker, canonical(result))
         return result
+
+
+def compact_staging(backend, work, name):
+    """Release only the completed job's raw catalogue; retain gzip, receipt and cache.
+
+    The source evidence/index/ledger and the frozen source index are never removed.
+    """
+    safe_relative(name)
+    if '/' in name:
+        raise ArchiveError('invalid job name')
+    work = Path(work).absolute()
+    with exclusive(work):
+        job = work / name
+        if job.is_symlink():
+            raise ArchiveError('symlink job')
+        receipt = json.loads((job / 'receipt.json').read_bytes())
+        if receipt.get('job') != name:
+            raise ArchiveError('receipt job identity mismatch')
+        if receipt['namespace'] != backend.identity:
+            raise ArchiveError('different COS namespace')
+        manifest = job / 'manifest.json'
+        compressed = job / 'catalogue.sqlite3.gz'
+        raw = job / 'snapshot.sqlite3'
+        from .snapshot import regular
+        regular(manifest, job)
+        regular(compressed, job)
+        if file_hash(manifest) != check_hash(Path(receipt['manifest']).stem):
+            raise ArchiveError('manifest hash mismatch')
+        declared = json.loads(manifest.read_bytes())
+        if (declared['catalogue'] != receipt['catalogue'] or
+                declared['catalogue_sha256'] != receipt['catalogue_sha256'] or
+                file_hash(compressed) != receipt['catalogue_sha256']):
+            raise ArchiveError('catalogue receipt mismatch')
+        # Verify remote recoverability before releasing our local derived copy.
+        backend.publish(receipt['manifest'], manifest)
+        backend.publish(receipt['catalogue'], compressed)
+        removed = 0
+        if raw.exists():
+            regular(raw, job)
+            from hashlib import sha256
+            h = sha256()
+            with gzip.open(compressed, 'rb') as stream:
+                for block in iter(lambda: stream.read(1024 * 1024), b''):
+                    h.update(block)
+            if h.hexdigest() != file_hash(raw):
+                raise ArchiveError('raw catalogue differs from compressed copy')
+            removed = raw.stat().st_size
+            raw.unlink()
+            sync_directory(job)
+        return {'job': name, 'released_staging_bytes': removed,
+                'retained_compressed_catalogue': str(compressed),
+                'source_deleted': False, 'status': 'VERIFIED'}

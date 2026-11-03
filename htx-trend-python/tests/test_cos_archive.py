@@ -396,3 +396,40 @@ def test_cached_remote_pack_corruption_prevents_new_manifest(tmp_path):
     with pytest.raises(ArchiveError, match='cached remote pack hash'):
         archive(backend, work, 'two', spec, min_free=0)
     assert len([k for k in backend.objects if k.startswith('manifests/')]) == 1
+
+
+def test_completed_staging_compaction_is_recoverable_and_repeatable(tmp_path):
+    from htx_trend.archive.transfer import compact_staging
+    spec, a, b = cas_fixture(tmp_path)
+    backend, work = MemoryBackend(), tmp_path / 'work'
+    receipt = archive(backend, work, 'one', spec, min_free=0)
+    old_size = (work / 'one/snapshot.sqlite3').stat().st_size
+    result = compact_staging(backend, work, 'one')
+    assert result['released_staging_bytes'] == old_size
+    assert (Path(spec['root'])/'index.sqlite3').exists()
+    assert (work/'one/index.sqlite3').exists()
+    assert (work/'one/catalogue.sqlite3.gz').exists()
+    assert not (work/'one/snapshot.sqlite3').exists()
+    assert archive(backend, work, 'one', spec, min_free=0) == receipt
+    assert not (work/'one/snapshot.sqlite3').exists()
+    assert compact_staging(backend, work, 'one')['released_staging_bytes'] == 0
+    dest = tmp_path / 'restored'
+    restore(backend, receipt['manifest'], dest, scratch=work, cas=[b], min_free=0)
+    assert read_object(dest, a)['kind'] == 'raw_kline'
+
+
+def test_staging_compaction_rejects_unfinished_or_corrupt_copy(tmp_path):
+    from htx_trend.archive.transfer import compact_staging
+    spec, _, _ = cas_fixture(tmp_path)
+    backend, work = MemoryBackend(), tmp_path / 'work'
+    archive(backend, work, 'one', spec, min_free=0)
+    raw = work/'one/snapshot.sqlite3'
+    with raw.open('ab') as f:
+        f.write(b'changed')
+    with pytest.raises(ArchiveError, match='differs'):
+        compact_staging(backend, work, 'one')
+    assert raw.exists()
+    (work/'one/receipt.json').unlink()
+    with pytest.raises(FileNotFoundError):
+        compact_staging(backend, work, 'one')
+    assert raw.exists()
