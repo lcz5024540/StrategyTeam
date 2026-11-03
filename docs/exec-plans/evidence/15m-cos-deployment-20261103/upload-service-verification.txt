@@ -1,0 +1,12 @@
+Result=success
+ExecMainStatus=0
+NEXT                        LEFT LAST                           PASSED UNIT                               ACTIVATES
+Tue 2026-11-03 23:35:09 CST 5min Tue 2026-11-03 23:18:14 CST 11min ago coinstrategy-15m-cos-archive.timer coinstrategy-15m-cos-archive.service
+
+1 timers listed.
+Nov 03 23:18:14 VM-0-11-ubuntu systemd[1]: Finished coinstrategy-15m-cos-archive.service - CoinStrategy 15m sealed data COS upload only.
+Nov 03 23:29:16 VM-0-11-ubuntu systemd[1]: Starting coinstrategy-15m-cos-archive.service - CoinStrategy 15m sealed data COS upload only...
+Nov 03 23:29:56 VM-0-11-ubuntu python[2363170]: {"status": "VERIFIED", "receipts": [{"epoch": 4, "manifest": "manifests/cf3c5c45f85c653b15ae23fdfbe5382fb3c72c9b6331995b2e9ca7eb79d496f9.json", "files": 220}, {"epoch": 5, "manifest": "manifests/921154d0301d516d8cdb237fe8ab75cb09c631ef103d1c543975bc50ffb8ee37.json", "files": 227}], "source_deleted": false, "pending_generations": 0}
+Nov 03 23:29:56 VM-0-11-ubuntu systemd[1]: coinstrategy-15m-cos-archive.service: Deactivated successfully.
+Nov 03 23:29:56 VM-0-11-ubuntu systemd[1]: Finished coinstrategy-15m-cos-archive.service - CoinStrategy 15m sealed data COS upload only.
+Nov 03 23:29:56 VM-0-11-ubuntu systemd[1]: coinstrategy-15m-cos-archive.service: Consumed 16.193s CPU time.

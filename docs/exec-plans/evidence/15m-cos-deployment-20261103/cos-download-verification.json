@@ -1,0 +1,109 @@
+{
+  "source_deleted": false,
+  "scope": "PUBLIC_MARKET_DATA_ONLY",
+  "upload": {
+    "status": "VERIFIED",
+    "receipts": [
+      {
+        "epoch": 2,
+        "manifest": "manifests/7e803ba451274bd27d137041bf6631a27c781b5da3a252cb06887de4627baf02.json",
+        "files": 17
+      },
+      {
+        "epoch": 3,
+        "manifest": "manifests/117202d987dc3e96794556fa697741d6b68b288fa831a446b824a393b96f211a.json",
+        "files": 152
+      }
+    ],
+    "source_deleted": false,
+    "pending_generations": 0
+  },
+  "epoch": 3,
+  "manifest": "manifests/117202d987dc3e96794556fa697741d6b68b288fa831a446b824a393b96f211a.json",
+  "download": {
+    "manifest": "manifests/117202d987dc3e96794556fa697741d6b68b288fa831a446b824a393b96f211a.json",
+    "restored": 3,
+    "reused": 0,
+    "bytes": 551211,
+    "source_retained": true,
+    "status": "COMPLETE",
+    "scope": "selection",
+    "paths": [
+      "segments/01af0a2165d3d5af778c40e84b5b6a1de83929b78cc8e183ed26a1f77f8b32d5.json.gz",
+      "segments/01e07d08e4baf0f8563261646009912c33690315f7caa5ee01633e6efa3b4b78.json.gz",
+      "segments/c239f3d9f7a51a7c8298b46ed78a018848b16ff2586e0d0d85aeb950942cd8bd.json.gz"
+    ],
+    "cas": []
+  },
+  "observations": {
+    "DEPTH": {
+      "source_ref": {
+        "segment": "01af0a2165d3d5af778c40e84b5b6a1de83929b78cc8e183ed26a1f77f8b32d5",
+        "index": 0,
+        "event_hash": "03d1de123e2b156780a3fd8e179dd6adb37cce87e4a65948e1bdcd8088eb03f3"
+      },
+      "contract": "ETHFI-USDT",
+      "received_ms": 1793719396931,
+      "exchange_ms": 1793719396807
+    },
+    "BBO": {
+      "source_ref": {
+        "segment": "01af0a2165d3d5af778c40e84b5b6a1de83929b78cc8e183ed26a1f77f8b32d5",
+        "index": 6,
+        "event_hash": "90c3bb062fc61bcb65a37e8f168c3d6b6ec423af580ded3ea951fe686788a52a"
+      },
+      "contract": "PONS-USDT",
+      "received_ms": 1793719396951,
+      "exchange_ms": 1793719396825
+    },
+    "TRADE": {
+      "source_ref": {
+        "segment": "01af0a2165d3d5af778c40e84b5b6a1de83929b78cc8e183ed26a1f77f8b32d5",
+        "index": 9,
+        "event_hash": "6dcfde39519763e8e7fc6a4d60536d7a317c00593faaf35ab108f8ebcf0be8b5"
+      },
+      "contract": "PONS-USDT",
+      "received_ms": 1793719396953,
+      "exchange_ms": 1793719396825
+    },
+    "FRAME": {
+      "source_ref": {
+        "segment": "01e07d08e4baf0f8563261646009912c33690315f7caa5ee01633e6efa3b4b78",
+        "index": 91,
+        "event_hash": "c4ecced9ccce61588f99f21cb9ef81282176e72b33d3077f7393ca34a8c9fa10"
+      },
+      "contract": "LINK-USDT",
+      "received_ms": 1793719377548,
+      "exchange_ms": null,
+      "windows": {
+        "15min": {
+          "bars": 160,
+          "first": 1793574900,
+          "last": 1793718000
+        },
+        "4hour": {
+          "bars": 160,
+          "first": 1791403200,
+          "last": 1793692800
+        },
+        "60min": {
+          "bars": 160,
+          "first": 1793142000,
+          "last": 1793714400
+        }
+      }
+    },
+    "COLLECTION_SESSION": {
+      "source_ref": {
+        "segment": "c239f3d9f7a51a7c8298b46ed78a018848b16ff2586e0d0d85aeb950942cd8bd",
+        "index": 0,
+        "event_hash": "a5d6afe8993266c1a86cad7b97fa58bff67c88e2a04d790319e815c9e6d8d122"
+      },
+      "contract": null,
+      "received_ms": 1793719366981,
+      "exchange_ms": null,
+      "release": "0.1.7-realtime-candidate-869660ab"
+    }
+  },
+  "status": "PASS"
+}

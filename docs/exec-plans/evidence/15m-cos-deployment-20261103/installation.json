@@ -1,0 +1,24 @@
+{
+  "installed_at": "2026-11-03T23:22:46.306947+08:00",
+  "version": "0.1.7-realtime-candidate-869660ab",
+  "source_commit": "869660ab0b657a71e9dd0b1c1258bbf4b81f5e32",
+  "package_sha256": "0401b4d84e3ff814fdefc1bccb4ac5b375485911876b3cb484ffc716afe0e70d",
+  "frozen_tar": "/workspace/frozen/0.1.7-realtime-candidate-869660ab/htx-trend-python-0.1.7-realtime-candidate-869660ab.tar.gz",
+  "release": "/opt/coinstrategy/15m-market-data/releases/0.1.7-realtime-candidate-869660ab",
+  "data_only": true,
+  "contracts": 52,
+  "unmodified_management_pid": 2213018,
+  "unmodified_4h_pid": 705510,
+  "previous_data_release": "/opt/coinstrategy/15m-market-data/releases/0.1.7-realtime-candidate-d2a64d34",
+  "previous_release_validation": "REST_ONLY_INCOMPLETE_DO_NOT_ROLL_BACK",
+  "rollback_mode": "STOP_DATA_SERVICES_RETAIN_DATA",
+  "venv": "/opt/coinstrategy/15m-market-data/venvs/public-data-20261103",
+  "dependency_freeze_sha256": "511630e12bc7eae251ae64456c2170d970836803eb919333e6bb105b3fd17cc7",
+  "files": {
+    "/etc/coinstrategy/15m-cos-pool.json": "6e5d87e4d884b4ea8e2be9180a15e6227b41855cc01bf01a8c888c492d1b75d9",
+    "/etc/coinstrategy/15m-cos-archive.json": "48d10df42ce91826a723ca5ea657880f23df11d029e57883e5d85a0dced304da",
+    "/etc/systemd/system/coinstrategy-15m-market-data.service": "1e988fbf9389e222fd1bfea698098bb84cd8b01d232ffa80f2235c53f8c3bfb2",
+    "/etc/systemd/system/coinstrategy-15m-cos-archive.service": "abe5750baf731027ec1049887ae8f8234f38551afe77ba9050eaccff2f716083",
+    "/etc/systemd/system/coinstrategy-15m-cos-archive.timer": "697f65aed2ae8519cd043eff8c737f41ecf78364a7a53ce82fa07f3c0f0295ba"
+  }
+}
