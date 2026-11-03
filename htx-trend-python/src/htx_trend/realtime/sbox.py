@@ -149,6 +149,16 @@ class SBoxEngine(TriggerEngine):
                 plan = StructurePlan.load(row["plan"])
                 long = plan.side is TrendSide.LONG
                 stop = D(row["trigger"]["invalidation_price"])
+                fact = self.observer.rows.get(row["fact_id"], {})
+                target_time_ok = event.received_ms >= fact.get(
+                    "started_ms", row["trigger"]["trigger_ms"]
+                ) and event.exchange_ms >= fact.get(
+                    "started_exchange_ms", row["trigger"]["exchange_ms"]
+                )
+                stop_time_ok = (
+                    event.received_ms >= row["trigger"]["trigger_ms"]
+                    and event.exchange_ms >= row["trigger"]["exchange_ms"]
+                )
                 price = (
                     event.price
                     if event.kind == "TRADE"
@@ -156,24 +166,17 @@ class SBoxEngine(TriggerEngine):
                     if long
                     else event.ask
                 )
-                if price >= plan.target if long else price <= plan.target:
+                if target_time_ok and (
+                    price >= plan.target if long else price <= plan.target
+                ):
                     self.terminal(ident, "INVALIDATED", reason="TARGET_ALREADY_CROSSED")
-                elif price <= stop if long else price >= stop:
+                elif stop_time_ok and (price <= stop if long else price >= stop):
                     self.terminal(
                         ident, "INVALIDATED", reason="TRIGGER_INVALIDATION_CROSSED"
                     )
         observations = self.observer.accept(
             event, now_ms=now_ms, sequence=self.sequence
         )
-        if event.kind == "TRADE":
-            for ident, row in self.observer.rows.items():
-                if (
-                    row["fact"]["contract"] == event.contract
-                    and row["started_ms"] == event.received_ms
-                    and "started_exchange_ms" not in row
-                ):
-                    row["started_exchange_ms"] = event.exchange_ms
-                    self.observer.save(ident)
         triggers = []
         for observation in observations:
             fact = StructureFact.load(observation["fact"])

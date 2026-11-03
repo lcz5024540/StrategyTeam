@@ -541,6 +541,7 @@ class FactObserver:
                     row.update(count=0, confirmations=[])
             if row["phase"] in ("ARMED", "BROKEN") and row["started_ms"] is None:
                 row["started_ms"] = event.received_ms
+                row["started_exchange_ms"] = event.exchange_ms
                 row["event_id"] = digest(
                     {"fact_id": ident, "first_stage_ref": digest(event)}
                 )

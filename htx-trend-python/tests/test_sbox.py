@@ -532,3 +532,35 @@ def test_pre_activation_exchange_quote_cannot_cancel_frozen_target(engine):
     )
     e.accept(old, now_ms=at + 4)
     assert row["targets"]["J1_BOX32"]["status"] == "AVAILABLE"
+
+
+@pytest.mark.parametrize(
+    "exchange_offset,bid,expected",
+    [
+        (2, 30, "TRIGGERED"),  # before activation; cannot disqualify target
+        (4, 150, "TRIGGERED"),  # before stop exists; cannot disqualify stop
+        (
+            4,
+            30,
+            "INVALIDATED",
+        ),  # after activation; late crossed-target evidence matters
+        (7, 150, "INVALIDATED"),  # after trigger; stop exists
+    ],
+)
+def test_queued_trigger_checks_quote_exchange_time_boundaries(
+    engine, exchange_offset, bid, expected
+):
+    e, at, _ = engine
+    t = trigger(e, at)
+    quote = MarketEvent(
+        "BBO",
+        "ETH-USDT",
+        at + exchange_offset,
+        at + 8,
+        "late",
+        "e",
+        bid=D(bid),
+        ask=D(bid) + D(".01"),
+    )
+    e.accept(quote, now_ms=at + 8)
+    assert e.rows[t.plan.plan_id]["phase"] == expected

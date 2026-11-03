@@ -2,6 +2,726 @@
   "method": "Python AST lexical call extraction; not dynamic resolution or codegraph tool output",
   "functions": [
     {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "utc",
+      "line": 22,
+      "calls": [
+        "datetime.fromtimestamp"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "initial_context",
+      "line": 26,
+      "calls": [
+        "primitive",
+        "result.update",
+        "s.removeprefix",
+        "s.startswith",
+        "str"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "__init__",
+      "line": 74,
+      "calls": []
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "facts",
+      "line": 78,
+      "calls": [
+        "D",
+        "D(str(value)).is_finite",
+        "ExecutionFacts",
+        "ValueError",
+        "abs",
+        "any",
+        "context.get",
+        "len",
+        "next",
+        "owned_leverage",
+        "pending.values",
+        "self.ledger.active_positions",
+        "self.ledger.data.get",
+        "self.ledger.data.get('identity', {}).get",
+        "self.ledger.data.get('identity', {}).get('config', {}).get",
+        "self.ledger.data['orders'][f['order_id']].get",
+        "self.ledger.data['positions'].values",
+        "str",
+        "sum"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "submit",
+      "line": 162,
+      "calls": [
+        "Order",
+        "copy.deepcopy",
+        "data.setdefault",
+        "initial_context",
+        "self.engine.terminal",
+        "self.ledger.record_order",
+        "str",
+        "utc"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "on_book",
+      "line": 217,
+      "calls": [
+        "D",
+        "Fill",
+        "Position",
+        "context.update",
+        "event.fresh",
+        "int",
+        "list",
+        "min",
+        "result.append",
+        "self._finish_no_fill",
+        "self.engine.terminal",
+        "self.ledger.data.get",
+        "self.ledger.data.get('realtime_pending', {}).items",
+        "self.ledger.open_position",
+        "self.ledger.record_fill",
+        "self.ledger.save_position_context",
+        "str",
+        "utc"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "_finish_no_fill",
+      "line": 299,
+      "calls": [
+        "self.engine.terminal",
+        "self.ledger.update_order_status"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "recover",
+      "line": 304,
+      "calls": [
+        "list",
+        "self._finish_no_fill",
+        "self.ledger.data.get",
+        "self.ledger.data.get('realtime_pending', {}).items"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "__init__",
+      "line": 313,
+      "calls": [
+        "FillRecovery",
+        "getattr",
+        "hasattr"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "facts",
+      "line": 331,
+      "calls": [
+        "ValueError",
+        "replace",
+        "self.entry._facts.snapshot",
+        "self.repo.active_contract_position",
+        "self.repo.active_direction_position_count",
+        "self.repo.active_position_count",
+        "self.repo.active_risk_reservation_totals"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "submit",
+      "line": 360,
+      "calls": [
+        "PositionIntent",
+        "SwapOrderRequest",
+        "TrendOrderIntent",
+        "ValueError",
+        "_client_id",
+        "_order_id",
+        "_reservation_key",
+        "getattr",
+        "initial_context",
+        "int",
+        "intent.side.value.lower",
+        "method",
+        "request.position_side.upper",
+        "request.side.upper",
+        "self.engine.terminal",
+        "self.executor.place",
+        "self.executor.set_leverage",
+        "self.guard",
+        "self.repo._connection.begin",
+        "self.repo._connection.commit",
+        "self.repo._connection.rollback",
+        "self.repo.initialize_entry_state",
+        "self.repo.mark_order_accepted",
+        "self.repo.mark_position_status",
+        "self.repo.record_order_intent",
+        "self.repo.record_position_intent",
+        "self.repo.release_risk",
+        "self.repo.reserve_risk",
+        "str",
+        "time.time",
+        "trial.reserve",
+        "type",
+        "utc"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "recover",
+      "line": 554,
+      "calls": [
+        "self._recover",
+        "self.after_recovery",
+        "self.before_recovery"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "close",
+      "line": 561,
+      "calls": [
+        "self.receipts.close"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "_recover",
+      "line": 565,
+      "calls": [
+        "D",
+        "ValueError",
+        "any",
+        "list",
+        "order.get",
+        "results.values",
+        "row.get",
+        "self.engine.rows.items",
+        "self.engine.terminal",
+        "self.entry.reconcile_pending",
+        "self.guard",
+        "self.receipts.poll",
+        "self.repo._one",
+        "self.repo.release_risk",
+        "status.startswith",
+        "str",
+        "str(order.get('status', '')).upper"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "fee_rate",
+      "line": 616,
+      "calls": []
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "submit",
+      "line": 619,
+      "calls": [
+        "ValueError",
+        "super",
+        "super().submit"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "function": "owned_leverage",
+      "line": 105,
+      "calls": [
+        "D",
+        "D(str(value)).is_finite",
+        "ValueError",
+        "context.get",
+        "self.ledger.data.get",
+        "self.ledger.data.get('identity', {}).get",
+        "self.ledger.data.get('identity', {}).get('config', {}).get",
+        "str"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "function": "parameters",
+      "line": 76,
+      "calls": [
+        "D",
+        "Parameters",
+        "os.environ.get"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "function": "_common",
+      "line": 85,
+      "calls": [
+        "FrameLoader",
+        "Path",
+        "Path(os.environ.get('HTX_RT_CAPTURE_DIR', '')).expanduser",
+        "PublicStream",
+        "RealtimeWorker",
+        "SegmentRecorder",
+        "ValueError",
+        "int",
+        "isinstance",
+        "os.environ.get",
+        "os.environ.get('HTX_RT_CAPTURE_SEGMENTED', '').lower",
+        "os.environ.get('HTX_RT_ENTRY_ENABLED', '').lower",
+        "parameters",
+        "policy.to_dict",
+        "root.is_absolute",
+        "str"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "function": "paper",
+      "line": 143,
+      "calls": [
+        "ContinuationConfig",
+        "ExecutionConfig.from_env",
+        "ExitConfig.from_env",
+        "HoldingPolicy.create",
+        "MarketView",
+        "PaperBroker",
+        "PaperFileLedger",
+        "PaperManagement",
+        "PaperPlanStore",
+        "PaperTrendRuntime",
+        "PaperWorkerConfig.from_env",
+        "RealtimePaperExchange",
+        "ValueError",
+        "_common",
+        "asdict",
+        "create_engine",
+        "dict",
+        "dict.fromkeys",
+        "int",
+        "json.dumps",
+        "json.loads",
+        "ledger.active_positions",
+        "os.environ.get",
+        "parameters",
+        "path.exists",
+        "path.read_text",
+        "profile_entry_config",
+        "replace",
+        "tuple"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "function": "live",
+      "line": 252,
+      "calls": [
+        "BackgroundTrialMonitor",
+        "BreadthContext",
+        "HtxTrendMySqlRepository",
+        "IdleManagementStream",
+        "LiveBroker",
+        "LiveManagement",
+        "LiveTrialReader",
+        "MarketView",
+        "MySqlPlanStore",
+        "MySqlSettings.from_env",
+        "MySqlTrialStore",
+        "PublicStream",
+        "TimeframeProfile",
+        "Trial",
+        "ValueError",
+        "_account_client",
+        "_common",
+        "any",
+        "broker.repo.managed_positions",
+        "configured",
+        "connect",
+        "create_engine",
+        "dict.fromkeys",
+        "os.environ.get",
+        "os.environ.get('HTX_RT_ENTRY_ENABLED', '').lower",
+        "parameters",
+        "row.get",
+        "runtime_authority",
+        "tuple"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "function": "start",
+      "line": 32,
+      "calls": []
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "function": "drain",
+      "line": 35,
+      "calls": []
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "function": "close",
+      "line": 38,
+      "calls": []
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "function": "__init__",
+      "line": 45,
+      "calls": []
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "function": "__call__",
+      "line": 50,
+      "calls": [
+        "LiveTrendWorker.market_context_from_breadth",
+        "datetime.fromtimestamp",
+        "self.repository.latest_breadth_stats"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "generate",
+      "line": 147,
+      "calls": [
+        "Parameters",
+        "StructurePlan",
+        "ValueError",
+        "abs",
+        "any",
+        "atr",
+        "digest",
+        "ema",
+        "generate_candidates",
+        "getattr",
+        "item['sources'].append",
+        "len",
+        "levels.items",
+        "levels.setdefault",
+        "max",
+        "min",
+        "output.append",
+        "sorted",
+        "str",
+        "tuple",
+        "v.is_finite"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "create_engine",
+      "line": 295,
+      "calls": [
+        "Parameters",
+        "SBoxEngine",
+        "StructureEventEngine",
+        "TriggerEngine"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "__post_init__",
+      "line": 31,
+      "calls": [
+        "D",
+        "ValueError"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "payload",
+      "line": 59,
+      "calls": [
+        "value.update"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "fingerprint",
+      "line": 71,
+      "calls": [
+        "digest"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "dump",
+      "line": 100,
+      "calls": [
+        "primitive"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "load",
+      "line": 104,
+      "calls": [
+        "D",
+        "TrendSide",
+        "ValueError",
+        "cls",
+        "dict",
+        "tuple"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "side",
+      "line": 131,
+      "calls": []
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "entry_price",
+      "line": 135,
+      "calls": []
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "target_low",
+      "line": 139,
+      "calls": []
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "target_high",
+      "line": 143,
+      "calls": []
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "__init__",
+      "line": 309,
+      "calls": [
+        "EventOrder",
+        "Parameters",
+        "self.disconnect",
+        "store.all"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "_save",
+      "line": 318,
+      "calls": [
+        "self.store.save"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "refresh",
+      "line": 321,
+      "calls": [
+        "plan.dump",
+        "row.update",
+        "self._save",
+        "self.rows.get",
+        "self.rows.items",
+        "wanted.items"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "disconnect",
+      "line": 353,
+      "calls": [
+        "row.update",
+        "self._save",
+        "self.books.clear",
+        "self.order.reset",
+        "self.rows.items"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "terminal",
+      "line": 373,
+      "calls": [
+        "ValueError",
+        "primitive",
+        "row.update",
+        "self._save"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "accept",
+      "line": 384,
+      "calls": [
+        "D",
+        "RealtimeTrigger",
+        "StructurePlan.load",
+        "abs",
+        "book.fresh",
+        "copy.deepcopy",
+        "digest",
+        "event.fresh",
+        "max",
+        "min",
+        "primitive",
+        "row.update",
+        "self._confirm",
+        "self._save",
+        "self.books.get",
+        "self.disconnect",
+        "self.order.accept",
+        "self.rows.items",
+        "str",
+        "triggers.append",
+        "tuple"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "function": "_confirm",
+      "line": 510,
+      "calls": [
+        "digest"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/risk.py",
+      "function": "evaluate",
+      "line": 37,
+      "calls": [
+        "(proposed / p.tick).to_integral_value",
+        "D",
+        "D(str(v)).is_finite",
+        "EntryIntent",
+        "ExecutionConfig",
+        "GateResult",
+        "Parameters",
+        "account_risk_gate",
+        "any",
+        "digest",
+        "funding.rate.is_finite",
+        "int",
+        "len",
+        "max",
+        "min",
+        "replace",
+        "size_plan",
+        "str",
+        "structured_price_plan",
+        "sum"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
+      "function": "__init__",
+      "line": 22,
+      "calls": [
+        "EventOrder",
+        "FactObserver",
+        "ValueError",
+        "len",
+        "self.disconnect",
+        "self.observer.rows.items",
+        "self.observer.save",
+        "self.plan_id",
+        "set",
+        "store.all"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
+      "function": "plan_id",
+      "line": 51,
+      "calls": [
+        "digest"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
+      "function": "_save",
+      "line": 54,
+      "calls": [
+        "self.dirty.add",
+        "self.dirty.discard",
+        "self.store.save"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
+      "function": "flush",
+      "line": 59,
+      "calls": [
+        "self._save",
+        "self.observer.flush",
+        "tuple"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
+      "function": "disconnect",
+      "line": 64,
+      "calls": [
+        "row.update",
+        "self._save",
+        "self.action_order.reset",
+        "self.observer.disconnect",
+        "self.rows.items"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
+      "function": "refresh_frame",
+      "line": 72,
+      "calls": [
+        "StructureEventEngine._invalid",
+        "StructurePlan.load",
+        "primitive",
+        "self.flush",
+        "self.observer.refresh",
+        "self.rows.items",
+        "self.terminal"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
+      "function": "accept",
+      "line": 104,
+      "calls": [
+        "D",
+        "RealtimeTrigger",
+        "StructureFact.load",
+        "StructurePlan.load",
+        "digest",
+        "event.fresh",
+        "fact.get",
+        "fact.plan",
+        "plan.dump",
+        "primitive",
+        "replace",
+        "row.get",
+        "row['targets'].values",
+        "self._save",
+        "self.action_order.accept",
+        "self.disconnect",
+        "self.flush",
+        "self.observer.accept",
+        "self.observer.rows.get",
+        "self.observer.rows.items",
+        "self.observer.save",
+        "self.plan_id",
+        "self.rows.items",
+        "self.terminal",
+        "target.update",
+        "triggers.append",
+        "tuple"
+      ]
+    },
+    {
       "file": "htx-trend-python/src/htx_trend/realtime/structure_facts.py",
       "function": "facts_for_frame",
       "line": 94,
@@ -255,342 +975,58 @@
       ]
     },
     {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "generate",
-      "line": 147,
+      "file": "htx-trend-python/src/htx_trend/realtime/trial_admission.py",
+      "function": "configured",
+      "line": 38,
       "calls": [
-        "Parameters",
-        "StructurePlan",
+        "bool",
+        "os.environ.get",
+        "os.environ.get(PATH, '').strip"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/trial_admission.py",
+      "function": "validate",
+      "line": 42,
+      "calls": [
+        "D",
+        "Limits",
+        "Path",
         "ValueError",
-        "abs",
         "any",
-        "atr",
-        "digest",
-        "ema",
-        "generate_candidates",
-        "getattr",
-        "item['sources'].append",
+        "current.get",
+        "datetime.now",
+        "file_hash",
         "len",
-        "levels.items",
-        "levels.setdefault",
-        "max",
-        "min",
-        "output.append",
+        "read_sealed",
+        "value.get",
+        "window"
+      ]
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/trial_admission.py",
+      "function": "runtime_authority",
+      "line": 101,
+      "calls": [
+        "D",
+        "EntryExecutionConfig.from_env",
+        "ExecutionConfig.from_env",
+        "Path",
+        "ValueError",
+        "any",
+        "asdict",
+        "dict",
+        "digest",
+        "int",
+        "len",
+        "os.environ.get",
+        "os.environ.get(k, '').strip",
+        "policy.to_dict",
+        "read_sealed",
+        "set",
         "sorted",
         "str",
-        "tuple",
-        "v.is_finite"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "create_engine",
-      "line": 295,
-      "calls": [
-        "Parameters",
-        "SBoxEngine",
-        "StructureEventEngine",
-        "TriggerEngine"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "__post_init__",
-      "line": 31,
-      "calls": [
-        "D",
-        "ValueError"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "payload",
-      "line": 59,
-      "calls": [
-        "value.update"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "fingerprint",
-      "line": 71,
-      "calls": [
-        "digest"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "dump",
-      "line": 100,
-      "calls": [
-        "primitive"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "load",
-      "line": 104,
-      "calls": [
-        "D",
-        "TrendSide",
-        "ValueError",
-        "cls",
-        "dict",
-        "tuple"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "side",
-      "line": 131,
-      "calls": []
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "entry_price",
-      "line": 135,
-      "calls": []
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "target_low",
-      "line": 139,
-      "calls": []
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "target_high",
-      "line": 143,
-      "calls": []
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "__init__",
-      "line": 309,
-      "calls": [
-        "EventOrder",
-        "Parameters",
-        "self.disconnect",
-        "store.all"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "_save",
-      "line": 318,
-      "calls": [
-        "self.store.save"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "refresh",
-      "line": 321,
-      "calls": [
-        "plan.dump",
-        "row.update",
-        "self._save",
-        "self.rows.get",
-        "self.rows.items",
-        "wanted.items"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "disconnect",
-      "line": 353,
-      "calls": [
-        "row.update",
-        "self._save",
-        "self.books.clear",
-        "self.order.reset",
-        "self.rows.items"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "terminal",
-      "line": 373,
-      "calls": [
-        "ValueError",
-        "primitive",
-        "row.update",
-        "self._save"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "accept",
-      "line": 384,
-      "calls": [
-        "D",
-        "RealtimeTrigger",
-        "StructurePlan.load",
-        "abs",
-        "book.fresh",
-        "copy.deepcopy",
-        "digest",
-        "event.fresh",
-        "max",
-        "min",
-        "primitive",
-        "row.update",
-        "self._confirm",
-        "self._save",
-        "self.books.get",
-        "self.disconnect",
-        "self.order.accept",
-        "self.rows.items",
-        "str",
-        "triggers.append",
-        "tuple"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
-      "function": "_confirm",
-      "line": 510,
-      "calls": [
-        "digest"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
-      "function": "parameters",
-      "line": 76,
-      "calls": [
-        "D",
-        "Parameters",
-        "os.environ.get"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
-      "function": "_common",
-      "line": 85,
-      "calls": [
-        "FrameLoader",
-        "Path",
-        "Path(os.environ.get('HTX_RT_CAPTURE_DIR', '')).expanduser",
-        "PublicStream",
-        "RealtimeWorker",
-        "SegmentRecorder",
-        "ValueError",
-        "int",
-        "isinstance",
-        "os.environ.get",
-        "os.environ.get('HTX_RT_CAPTURE_SEGMENTED', '').lower",
-        "os.environ.get('HTX_RT_ENTRY_ENABLED', '').lower",
-        "parameters",
-        "policy.to_dict",
-        "root.is_absolute",
-        "str"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
-      "function": "paper",
-      "line": 143,
-      "calls": [
-        "ContinuationConfig",
-        "ExecutionConfig.from_env",
-        "ExitConfig.from_env",
-        "HoldingPolicy.create",
-        "MarketView",
-        "PaperBroker",
-        "PaperFileLedger",
-        "PaperManagement",
-        "PaperPlanStore",
-        "PaperTrendRuntime",
-        "PaperWorkerConfig.from_env",
-        "RealtimePaperExchange",
-        "ValueError",
-        "_common",
-        "asdict",
-        "create_engine",
-        "dict",
-        "dict.fromkeys",
-        "int",
-        "json.dumps",
-        "json.loads",
-        "ledger.active_positions",
-        "os.environ.get",
-        "parameters",
-        "path.exists",
-        "path.read_text",
-        "profile_entry_config",
-        "replace",
-        "tuple"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
-      "function": "live",
-      "line": 252,
-      "calls": [
-        "BackgroundTrialMonitor",
-        "BreadthContext",
-        "HtxTrendMySqlRepository",
-        "IdleManagementStream",
-        "LiveBroker",
-        "LiveManagement",
-        "LiveTrialReader",
-        "MarketView",
-        "MySqlPlanStore",
-        "MySqlSettings.from_env",
-        "MySqlTrialStore",
-        "PublicStream",
-        "TimeframeProfile",
-        "Trial",
-        "ValueError",
-        "_account_client",
-        "_common",
-        "any",
-        "broker.repo.managed_positions",
-        "configured",
-        "connect",
-        "create_engine",
-        "dict.fromkeys",
-        "os.environ.get",
-        "os.environ.get('HTX_RT_ENTRY_ENABLED', '').lower",
-        "parameters",
-        "row.get",
-        "runtime_authority",
-        "tuple"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
-      "function": "start",
-      "line": 32,
-      "calls": []
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
-      "function": "drain",
-      "line": 35,
-      "calls": []
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
-      "function": "close",
-      "line": 38,
-      "calls": []
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
-      "function": "__init__",
-      "line": 45,
-      "calls": []
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
-      "function": "__call__",
-      "line": 50,
-      "calls": [
-        "LiveTrendWorker.market_context_from_breadth",
-        "datetime.fromtimestamp",
-        "self.repository.latest_breadth_stats"
+        "validate"
       ]
     },
     {
@@ -874,440 +1310,6 @@
         "self.stream.close",
         "self.trial_connection.close",
         "self.trial_monitor.close"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "utc",
-      "line": 22,
-      "calls": [
-        "datetime.fromtimestamp"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "initial_context",
-      "line": 26,
-      "calls": [
-        "primitive",
-        "result.update",
-        "s.removeprefix",
-        "s.startswith",
-        "str"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "__init__",
-      "line": 74,
-      "calls": []
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "facts",
-      "line": 78,
-      "calls": [
-        "D",
-        "D(str(value)).is_finite",
-        "ExecutionFacts",
-        "ValueError",
-        "abs",
-        "any",
-        "context.get",
-        "len",
-        "next",
-        "owned_leverage",
-        "pending.values",
-        "self.ledger.active_positions",
-        "self.ledger.data.get",
-        "self.ledger.data.get('identity', {}).get",
-        "self.ledger.data.get('identity', {}).get('config', {}).get",
-        "self.ledger.data['orders'][f['order_id']].get",
-        "self.ledger.data['positions'].values",
-        "str",
-        "sum"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "submit",
-      "line": 162,
-      "calls": [
-        "Order",
-        "copy.deepcopy",
-        "data.setdefault",
-        "initial_context",
-        "self.engine.terminal",
-        "self.ledger.record_order",
-        "str",
-        "utc"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "on_book",
-      "line": 217,
-      "calls": [
-        "D",
-        "Fill",
-        "Position",
-        "context.update",
-        "event.fresh",
-        "int",
-        "list",
-        "min",
-        "result.append",
-        "self._finish_no_fill",
-        "self.engine.terminal",
-        "self.ledger.data.get",
-        "self.ledger.data.get('realtime_pending', {}).items",
-        "self.ledger.open_position",
-        "self.ledger.record_fill",
-        "self.ledger.save_position_context",
-        "str",
-        "utc"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "_finish_no_fill",
-      "line": 299,
-      "calls": [
-        "self.engine.terminal",
-        "self.ledger.update_order_status"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "recover",
-      "line": 304,
-      "calls": [
-        "list",
-        "self._finish_no_fill",
-        "self.ledger.data.get",
-        "self.ledger.data.get('realtime_pending', {}).items"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "__init__",
-      "line": 313,
-      "calls": [
-        "FillRecovery",
-        "getattr",
-        "hasattr"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "facts",
-      "line": 331,
-      "calls": [
-        "ValueError",
-        "replace",
-        "self.entry._facts.snapshot",
-        "self.repo.active_contract_position",
-        "self.repo.active_direction_position_count",
-        "self.repo.active_position_count",
-        "self.repo.active_risk_reservation_totals"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "submit",
-      "line": 360,
-      "calls": [
-        "PositionIntent",
-        "SwapOrderRequest",
-        "TrendOrderIntent",
-        "ValueError",
-        "_client_id",
-        "_order_id",
-        "_reservation_key",
-        "getattr",
-        "initial_context",
-        "int",
-        "intent.side.value.lower",
-        "method",
-        "request.position_side.upper",
-        "request.side.upper",
-        "self.engine.terminal",
-        "self.executor.place",
-        "self.executor.set_leverage",
-        "self.guard",
-        "self.repo._connection.begin",
-        "self.repo._connection.commit",
-        "self.repo._connection.rollback",
-        "self.repo.initialize_entry_state",
-        "self.repo.mark_order_accepted",
-        "self.repo.mark_position_status",
-        "self.repo.record_order_intent",
-        "self.repo.record_position_intent",
-        "self.repo.release_risk",
-        "self.repo.reserve_risk",
-        "str",
-        "time.time",
-        "trial.reserve",
-        "type",
-        "utc"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "recover",
-      "line": 554,
-      "calls": [
-        "self._recover",
-        "self.after_recovery",
-        "self.before_recovery"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "close",
-      "line": 561,
-      "calls": [
-        "self.receipts.close"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "_recover",
-      "line": 565,
-      "calls": [
-        "D",
-        "ValueError",
-        "any",
-        "list",
-        "order.get",
-        "results.values",
-        "row.get",
-        "self.engine.rows.items",
-        "self.engine.terminal",
-        "self.entry.reconcile_pending",
-        "self.guard",
-        "self.receipts.poll",
-        "self.repo._one",
-        "self.repo.release_risk",
-        "status.startswith",
-        "str",
-        "str(order.get('status', '')).upper"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "fee_rate",
-      "line": 616,
-      "calls": []
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "submit",
-      "line": 619,
-      "calls": [
-        "ValueError",
-        "super",
-        "super().submit"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
-      "function": "owned_leverage",
-      "line": 105,
-      "calls": [
-        "D",
-        "D(str(value)).is_finite",
-        "ValueError",
-        "context.get",
-        "self.ledger.data.get",
-        "self.ledger.data.get('identity', {}).get",
-        "self.ledger.data.get('identity', {}).get('config', {}).get",
-        "str"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/risk.py",
-      "function": "evaluate",
-      "line": 37,
-      "calls": [
-        "(proposed / p.tick).to_integral_value",
-        "D",
-        "D(str(v)).is_finite",
-        "EntryIntent",
-        "ExecutionConfig",
-        "GateResult",
-        "Parameters",
-        "account_risk_gate",
-        "any",
-        "digest",
-        "funding.rate.is_finite",
-        "int",
-        "len",
-        "max",
-        "min",
-        "replace",
-        "size_plan",
-        "str",
-        "structured_price_plan",
-        "sum"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/trial_admission.py",
-      "function": "configured",
-      "line": 38,
-      "calls": [
-        "bool",
-        "os.environ.get",
-        "os.environ.get(PATH, '').strip"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/trial_admission.py",
-      "function": "validate",
-      "line": 42,
-      "calls": [
-        "D",
-        "Limits",
-        "Path",
-        "ValueError",
-        "any",
-        "current.get",
-        "datetime.now",
-        "file_hash",
-        "len",
-        "read_sealed",
-        "value.get",
-        "window"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/trial_admission.py",
-      "function": "runtime_authority",
-      "line": 101,
-      "calls": [
-        "D",
-        "EntryExecutionConfig.from_env",
-        "ExecutionConfig.from_env",
-        "Path",
-        "ValueError",
-        "any",
-        "asdict",
-        "dict",
-        "digest",
-        "int",
-        "len",
-        "os.environ.get",
-        "os.environ.get(k, '').strip",
-        "policy.to_dict",
-        "read_sealed",
-        "set",
-        "sorted",
-        "str",
-        "validate"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
-      "function": "__init__",
-      "line": 22,
-      "calls": [
-        "EventOrder",
-        "FactObserver",
-        "ValueError",
-        "len",
-        "self.disconnect",
-        "self.observer.rows.items",
-        "self.observer.save",
-        "self.plan_id",
-        "set",
-        "store.all"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
-      "function": "plan_id",
-      "line": 51,
-      "calls": [
-        "digest"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
-      "function": "_save",
-      "line": 54,
-      "calls": [
-        "self.dirty.add",
-        "self.dirty.discard",
-        "self.store.save"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
-      "function": "flush",
-      "line": 59,
-      "calls": [
-        "self._save",
-        "self.observer.flush",
-        "tuple"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
-      "function": "disconnect",
-      "line": 64,
-      "calls": [
-        "row.update",
-        "self._save",
-        "self.action_order.reset",
-        "self.observer.disconnect",
-        "self.rows.items"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
-      "function": "refresh_frame",
-      "line": 72,
-      "calls": [
-        "StructureEventEngine._invalid",
-        "StructurePlan.load",
-        "primitive",
-        "self.flush",
-        "self.observer.refresh",
-        "self.rows.items",
-        "self.terminal"
-      ]
-    },
-    {
-      "file": "htx-trend-python/src/htx_trend/realtime/sbox.py",
-      "function": "accept",
-      "line": 104,
-      "calls": [
-        "D",
-        "RealtimeTrigger",
-        "StructureFact.load",
-        "StructurePlan.load",
-        "digest",
-        "event.fresh",
-        "fact.plan",
-        "plan.dump",
-        "primitive",
-        "replace",
-        "row.get",
-        "row['targets'].values",
-        "self._save",
-        "self.action_order.accept",
-        "self.disconnect",
-        "self.flush",
-        "self.observer.accept",
-        "self.observer.rows.items",
-        "self.observer.save",
-        "self.plan_id",
-        "self.rows.items",
-        "self.terminal",
-        "target.update",
-        "triggers.append",
-        "tuple"
       ]
     }
   ]
