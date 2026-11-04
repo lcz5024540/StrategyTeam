@@ -12,6 +12,7 @@ from ..holding_adoption import adopted_state
 from ..continuation import latest_completed, reentry_gate
 from ..java_entry_contract import evaluate
 from ..models import TrendSide
+from ..timeframes import TimeframeProfile
 from ..position_manager import timeframe_side, decimal
 from ..strategy_context import MarketContext
 from . import VERSION
@@ -138,8 +139,24 @@ class PaperManagement:
                     if position.side == "LONG"
                     else reference >= boundary
                 )
-                if hard and realtime:
-                    run = f"rt-hard-stop:{position.position_id}"
+                union = context.get("model") == "RT_INDICATOR_UNION"
+                hit_target = False
+                if union and not hard:
+                    policy = resolve_holding_policy(context, required=True)
+                    policy.require_owner(instance_key=self.ledger.data["identity"]["instance"],
+                        account_id=self.account, strategy_family="TREND", strategy_name=VERSION,
+                        mode="PAPER", profile=TimeframeProfile.INTRADAY_15M)
+                    from .indicator_union import bracket_target
+                    target = bracket_target(context)
+                    hit_target = reference >= target if position.side == "LONG" else reference <= target
+                pending_union = context.get("union_pending_exit") if union else None
+                if realtime and (hard or hit_target or pending_union):
+                    reason = pending_union or ("model-or-initial-stop-invalidated" if hard else "indicator-union-target")
+                    if union:
+                        context["union_pending_exit"] = reason
+                        self.ledger.save_position_context(position.position_id, context)
+                        self.ledger.checkpoint()
+                    run = f"rt-bracket:{position.position_id}" if union else f"rt-hard-stop:{position.position_id}"
                     self.runtime._exchange.reduce_position(
                         position,
                         quantity=position.quantity,
@@ -154,7 +171,7 @@ class PaperManagement:
                         "EXIT_DECISION",
                         {
                             "action": "FULL_CLOSE",
-                            "reason": "model-or-initial-stop-invalidated",
+                            "reason": reason,
                             "reference": str(reference),
                             "boundary": str(boundary),
                         },
@@ -162,6 +179,8 @@ class PaperManagement:
                     )
                     self.ledger.checkpoint()
                     continue
+                if union:
+                    continue  # Frozen bracket owns this position; never run legacy V4 on it.
                 frame = self.frames.get(position.contract_code)
                 if frame is None:
                     raise ValueError("exit closed candles unavailable")
@@ -463,7 +482,12 @@ class LiveManagement:
                 price = book.top.bid if row["side"] == "LONG" else book.top.ask
                 stop = decimal(row, "stop_price", decimal(row, "invalidation_price"))
                 hard = price <= stop if row["side"] == "LONG" else price >= stop
+                union = row.get("primary_model") == "RT_INDICATOR_UNION"
                 if hard:
+                    if union:
+                        state = self.state(row["id"])
+                        state.setdefault("pending_realtime_exit", {"target_remaining":0,"reason":"indicator-union-stop","run_id":f"union-stop:{row['id']}"})
+                        self._state(row["id"], state, force=True)
                     try:
                         self.manager._manage(
                             row, now_ms // 1000, MarketContext.neutral()
@@ -472,6 +496,19 @@ class LiveManagement:
                         self.cached_state.pop(row["id"], None)
                     continue
                 state = self.state(row["id"])
+                if union:
+                    from .indicator_union import bracket_target
+                    target = bracket_target(state)
+                    hit = price >= target if row["side"] == "LONG" else price <= target
+                    if hit or state.get("pending_realtime_exit"):
+                        if not state.get("pending_realtime_exit"):
+                            state["pending_realtime_exit"] = {"target_remaining":0,"reason":"indicator-union-target","run_id":f"union-target:{row['id']}"}
+                        self._state(row["id"], state, force=True)
+                        try:
+                            self.manager._manage(row, now_ms // 1000, MarketContext.neutral())
+                        finally:
+                            self.cached_state.pop(row["id"], None)
+                    continue
                 if state.get("position_boundary_initialized") is not True:
                     # Only exchange-confirmed fill receipts may populate first_fill_ms.
                     # An observation bound is explicit and cannot certify full extrema.

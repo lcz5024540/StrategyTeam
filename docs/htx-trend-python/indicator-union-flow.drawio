@@ -1,0 +1,50 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net">
+  <diagram name="Indicator union">
+    <mxGraphModel>
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="Closed 15m + 1h / fresh BBO" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="30" width="440" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="Five patterns → union tags / same-bar ID" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="120" width="440" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="2" target="3" style="endArrow=classic;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="Current book + IOC cost / account checks" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="210" width="440" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="3" target="4" style="endArrow=classic;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="Durable intent → IOC / reconcile" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="300" width="440" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="4" target="5" style="endArrow=classic;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="6" value="Position: frozen ATR stop + target + policy" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="390" width="440" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="5" target="6" style="endArrow=classic;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="7" value="Realtime bracket → pending close / reduce-only" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="480" width="440" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="6" target="7" style="endArrow=classic;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="Entry disabled: continue owned position management" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="570" width="440" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="7" target="8" style="endArrow=classic;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

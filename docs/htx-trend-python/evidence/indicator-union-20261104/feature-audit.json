@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "frames": 1834,
+  "contracts": 52,
+  "comparisons": 14672,
+  "max_absolute_error": {
+    "ema9": 1.4551915228366852e-11,
+    "atr": 2.0747847884194925e-12,
+    "cci": 4.661160346586257e-12,
+    "macd": 1.1525003174028825e-11,
+    "channel": 1.4551915228366852e-11,
+    "cmf": 6.80566714095221e-14,
+    "lower": 1.1638690011750441e-11,
+    "upper": 1.1642242725429242e-11
+  },
+  "direction_sign_differences": [],
+  "source_sha256": "4de9c745d2f3864429295941b2abd715922cee356698b4dc1cb6086f18542897",
+  "reference_sources": {
+    "/Users/lichangzheng.ray/Ray/CoinStrategy-realtime-structure/htx-trend-python/research/cos_multitimeframe_probability/research.py": "235ccfb4735a2ec2adb48866971bca813e40e83b48402ab1455c32ac567d460f",
+    "/Users/lichangzheng.ray/Ray/CoinStrategy-realtime-structure/htx-trend-python/research/cos_expanded_fit/features.py": "7143061ce86c0d09d854d9d9df0ae146ac8254bcaf922c2a7ee83db8fbf65aac",
+    "/Users/lichangzheng.ray/Ray/CoinStrategy-realtime-structure/htx-trend-python/research/cos_indicator_fit/study.py": "e0c4d9712675d5843b02b789574dad7e9747850b4d2300af28e8cde8b4278395"
+  },
+  "scope": "Indicator formula equivalence only; not union entry timing, account return or live admission."
+}

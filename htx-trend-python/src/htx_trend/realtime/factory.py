@@ -74,6 +74,8 @@ class BreadthContext:
 
 
 def parameters():
+    if os.environ.get("HTX_RT_CANDIDATE") == "INDICATOR_UNION_V1":
+        return Parameters(min_net_r=D(0), candidate="INDICATOR_UNION_V1", target_mode=os.environ.get("HTX_UNION_EXIT", ""))
     return Parameters(
         D(os.environ.get("HTX_RT_BAND_ATR", ".10")),
         D(os.environ.get("HTX_RT_MIN_NET_R", "1.5")),

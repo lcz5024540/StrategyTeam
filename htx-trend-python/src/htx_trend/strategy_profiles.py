@@ -46,8 +46,9 @@ class ProfileStrategySpec:
         from .realtime import VERSION
         if self.strategy.version != expected and not (self.strategy.version == VERSION and self.timeframe_profile is TimeframeProfile.INTRADAY_15M):
             raise ValueError(f"{self.timeframe_profile.value} requires strategy version {expected}")
-        if self.exit_version != "HTX_TREND_EXIT_V4":
-            raise ValueError("profile strategy may only reference the formal V4 exit")
+        expected_exit = "INDICATOR_BRACKET_V1" if self.primary_models == ("RT_INDICATOR_UNION",) else "HTX_TREND_EXIT_V4"
+        if self.exit_version != expected_exit:
+            raise ValueError("profile strategy exit does not match model ownership")
         if "entry.profile_contract" not in self.strategy.condition_versions:
             raise ValueError("profile strategy must use entry.profile_contract")
         if "entry.period_15m" in self.strategy.condition_versions:
@@ -143,10 +144,13 @@ def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strate
         if profile is not TimeframeProfile.INTRADAY_15M:
             raise ValueError('realtime strategy is 15m only')
         from .realtime.plans import GRID, ORIGINAL, Parameters
-        parameters = Parameters(Decimal(environ.get('HTX_RT_BAND_ATR', '.10')),
-                                Decimal(environ.get('HTX_RT_MIN_NET_R', '1.5')),
-                                candidate=environ.get('HTX_RT_CANDIDATE', ORIGINAL),
-                                target_mode=environ.get('HTX_RT_TARGET_MODE', 'J1')) if read_env else Parameters()
+        if read_env and environ.get("HTX_RT_CANDIDATE") == "INDICATOR_UNION_V1":
+            parameters = Parameters(min_net_r=Decimal(0), candidate="INDICATOR_UNION_V1", target_mode=environ.get("HTX_UNION_EXIT", ""))
+        else:
+            parameters = Parameters(Decimal(environ.get('HTX_RT_BAND_ATR', '.10')),
+                                    Decimal(environ.get('HTX_RT_MIN_NET_R', '1.5')),
+                                    candidate=environ.get('HTX_RT_CANDIDATE', ORIGINAL),
+                                    target_mode=environ.get('HTX_RT_TARGET_MODE', 'J1')) if read_env else Parameters()
         if realtime_parameters is not None:
             if read_env or not isinstance(realtime_parameters, Parameters):
                 raise ValueError('explicit realtime parameters require an offline typed binding')
@@ -161,5 +165,12 @@ def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strate
                        {'from':'TRIGGERED','to':'ORDER_INTENT','when':'cost/risk/ownership gates pass'},
                        {'from':'OPEN','to':'MANAGED','when':'fill confirmed; v4/linked ownership'}))
         result = replace(result, strategy=rt, primary_models=tuple(sorted(MODELS)), confirmation_models=())
+        if parameters.candidate == "INDICATOR_UNION_V1":
+            rt = replace(rt, feature_versions={"sma_seeded_ema9_macd12_26_9_cci20_cmf20_channel20_wilder_atr14":"v1"},
+                condition_versions={"entry.profile_contract":"v1", "union.five_patterns":"v1", "union.same_bar_identity":"v1", "union.ioc":"v1"},
+                parameters={"parameters":parameters.payload,"exit_profiles":["ATR_1_1","ATR_2_1","ATR_2_2"]},
+                transitions=({"from":"SIGNAL","to":"ORDER_INTENT","when":"union match and execution checks"},
+                             {"from":"OPEN","to":"EXIT_INTENT","when":"frozen bracket stop or target"}))
+            result = replace(result, strategy=rt, primary_models=("RT_INDICATOR_UNION",), confirmation_models=(), exit_version="INDICATOR_BRACKET_V1")
     result.validate()
     return result

@@ -67,6 +67,8 @@ def initial_context(intent, trigger, contract, holding_parameters):
             entry_parameters_fingerprint=trigger.plan.parameter_fingerprint,
             entry_target_rule=trigger.plan.target_kind,
         )
+    if intent.model == "RT_INDICATOR_UNION":
+        result["matched_modes"] = [s.removeprefix("MATCH:") for s in trigger.plan.sources if s.startswith("MATCH:")]
     return result
 
 

@@ -131,7 +131,8 @@ def evaluate(
             False, "CONTRACT", "quote not aligned with current contract tick"
         ), None
     long = p.side is TrendSide.LONG
-    if not (top.bid > p.line + p.band if long else top.ask < p.line - p.band):
+    union = p.model == "RT_INDICATOR_UNION"
+    if not union and not (top.bid > p.line + p.band if long else top.ask < p.line - p.band):
         return GateResult(False, "RECOVERED", "price no longer confirms trigger"), None
     quote = top.ask if long else top.bid
     sign = D(1) if long else D(-1)
@@ -175,7 +176,7 @@ def evaluate(
         return GateResult(
             False, "PRICE_PLAN", "invalid structural reward or risk"
         ), None
-    if price.expected_net_reward <= 0 or price.expected_net_r < parameters.min_net_r:
+    if not union and (price.expected_net_reward <= 0 or price.expected_net_r < parameters.min_net_r):
         return GateResult(
             False, "NET_R", "cost-adjusted target insufficient", price
         ), None
@@ -233,6 +234,7 @@ def evaluate(
         size,
         evidence_ref,
         leverage=facts.leverage,
+        exit_policy_ref=("INDICATOR_BRACKET_V1/" + parameters.target_mode) if union else "TREND_V4/linked-v1",
     )
     return GateResult(
         True, "READY", "realtime structure/cost/account gates passed", price, size

@@ -22,6 +22,8 @@ from htx_trend.strategy_profiles import profile_strategy
 from htx_trend.timeframes import TimeframeProfile
 from htx_trend.realtime import VERSION as REALTIME_VERSION
 from htx_trend.realtime.plans import SBOX, Parameters
+from htx_trend.realtime.indicator_union import CANDIDATE as UNION, EXITS as UNION_EXITS, MODEL as UNION_MODEL
+from decimal import Decimal
 from htx_trend.research.store import primitive
 
 DISCLAIMER = '候选包 ≠ 可以热更 ≠ 可装现网'
@@ -79,7 +81,48 @@ def load_strategy_card(path: Path):
     }
 
 
-def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False, compact_evidence=False, realtime=False):
+def union_parameters(exit_profile):
+    return Parameters(min_net_r=Decimal(0), candidate=UNION, target_mode=exit_profile)
+
+
+def bind_union(config, payload, selected, *, live):
+    required = {'HTX_RT_ENTRY_ENABLED':'false', 'HTX_RT_CANDIDATE':UNION,
+                'HTX_UNION_EXIT':selected.target_mode}
+    config.update(models=[UNION_MODEL], selection_id=UNION,
+                  parameters=primitive(selected.payload), parameter_fingerprint=selected.fingerprint,
+                  exit_policy='INDICATOR_BRACKET_V1/'+selected.target_mode,
+                  runtime_env_required=required, structural_candidate_selected=False,
+                  note='Five-pattern union code; explicit bracket binding, entry disabled. No financial or trial authority.')
+    for key in ('contracts','account_equity_usdt','max_active_positions','max_total_margin_rate'):
+        config.pop(key,None)
+    env_path='deployment/realtime-live.env.example' if live else 'release/realtime.env.example'
+    lines=[line for line in payload[env_path].decode().splitlines()
+           if not line.startswith(('HTX_RT_CANDIDATE=','HTX_RT_ENTRY_ENABLED=','HTX_UNION_EXIT=','HTX_RT_MIN_NET_R=','HTX_RT_TARGET_MODE=','HTX_RT_BAND_ATR='))]
+    payload[env_path]=('\n'.join(lines+[key+'='+value for key,value in required.items()])+'\n').encode()
+    payload['release/INDICATOR-UNION.md']=(ROOT/'release/INDICATOR-UNION.md').read_bytes()
+
+
+def verify_union(cfg, binding, data):
+    selected=union_parameters(cfg['parameters']['target_mode'])
+    spec=profile_strategy(TimeframeProfile.INTRADAY_15M, read_env=False,
+                          strategy_version=REALTIME_VERSION,realtime_parameters=selected)
+    expected={'HTX_RT_ENTRY_ENABLED':'false','HTX_RT_CANDIDATE':UNION,'HTX_UNION_EXIT':selected.target_mode}
+    if (cfg.get('parameters')!=primitive(selected.payload) or cfg.get('parameter_fingerprint')!=selected.fingerprint
+            or binding.get('strategy_spec_hash')!=spec.spec_hash or cfg.get('models')!=[UNION_MODEL]
+            or cfg.get('exit_policy')!='INDICATOR_BRACKET_V1/'+selected.target_mode
+            or cfg.get('runtime_env_required')!=expected or 'release/INDICATOR-UNION.md' not in data):
+        raise ValueError('union bracket/spec binding mismatch')
+    path='deployment/realtime-live.env.example' if cfg['mode']=='LIVE' else 'release/realtime.env.example'
+    lines=data[path].decode().splitlines()
+    for key,value in expected.items():
+        if [line for line in lines if line.startswith(key+'=')]!=[key+'='+value]:
+            raise ValueError('union runtime env differs from frozen parameters')
+    return expected
+
+
+def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False, compact_evidence=False, realtime=False, union_exit=None):
+    selected = union_parameters(union_exit) if union_exit else None
+    if selected: realtime = True
     # paper_4h 仍是 PAPER 候选包，只切换 card / instance，不改 15m paper=True 默认。
     if realtime:
         if paper_4h:
@@ -107,7 +150,7 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False,
             raise ValueError('strategy card references unknown features/experiments')
         refs = {**refs, 'strategy_card': card_ref}
     spec = profile_strategy(TimeframeProfile(card['timeframe_profile']), read_env=False,
-                            strategy_version=card['strategy_version'])
+                            strategy_version=card['strategy_version'], realtime_parameters=selected)
     if spec.strategy.version != card['strategy_version']:
         raise ValueError('card strategy/profile mismatch')
     # Explicit allowlist: no env, keys, SQL, tests, real approvals or state trees.
@@ -149,6 +192,8 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False,
             ROOT.parent / 'sql/htx/2026-11-02__htx_realtime_structure_plan.sql').read_bytes()
         payload['release/migrations/2026-11-03__htx_realtime_live_trial.sql'] = (
             ROOT.parent / 'sql/htx/2026-11-03__htx_realtime_live_trial.sql').read_bytes()
+    if selected and selected.candidate == UNION:
+        bind_union(config,payload,selected,live=False)
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
                 'config_hash': digest(encoded(config)), 'config_path': 'release/config.example.json',
@@ -208,11 +253,13 @@ def _live_payload_paths():
     return paths
 
 
-def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False, sbox=False):
+def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False, sbox=False, union_exit=None):
     """Encode-only 15m LIVE tarball; realtime is explicitly entry-disabled."""
-    if sbox:
+    if sbox and union_exit:
+        raise ValueError("SBOX and indicator union are mutually exclusive")
+    if sbox or union_exit:
         realtime = True
-    selected = Parameters(candidate=SBOX, target_mode='J1_BOX32') if sbox else None
+    selected = union_parameters(union_exit) if union_exit else Parameters(candidate=SBOX, target_mode='J1_BOX32') if sbox else None
     source = git('rev-parse', 'HEAD')
     short = git('rev-parse', '--short=8', 'HEAD')
     if not re.fullmatch('[0-9a-f]{8}', short):
@@ -278,6 +325,8 @@ def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False, sbox=Fa
             lines += [key+'='+value for key,value in required_env.items()]
             payload[env_path]=('\n'.join(lines)+'\n').encode()
             payload['release/SBOX-LIVE.md']=(ROOT/'release/SBOX-LIVE.md').read_bytes()
+    if union_exit:
+        bind_union(config,payload,selected,live=True)
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
                 'config_hash': digest(encoded(config)), 'config_path': 'release/config.example.json',
@@ -377,6 +426,7 @@ def verify_live(archive: Path):
         raise ValueError('LIVE strategy/profile binding mismatch')
     if realtime:
         sbox = cfg.get('selection_id') == 'SBOX_V1_20261104'
+        union = cfg.get('selection_id') == UNION
         required_env = {'HTX_RT_ENTRY_ENABLED':'false'}
         if sbox:
             selected = Parameters(candidate=SBOX, target_mode='J1_BOX32')
@@ -389,6 +439,8 @@ def verify_live(archive: Path):
                     or binding.get('strategy_spec_hash') != selected_spec.spec_hash
                     or 'release/SBOX-LIVE.md' not in data):
                 raise ValueError('SBOX confirmed parameter/spec binding mismatch')
+        if union:
+            required_env = verify_union(cfg,binding,data)
         required = {'release/REALTIME-LIVE-PACKAGE.md', 'release/REALTIME-ENTRY.md',
                     'deployment/realtime-live.env.example',
                     'release/migrations/2026-11-02__htx_realtime_structure_plan.sql',
@@ -400,7 +452,7 @@ def verify_live(archive: Path):
                 or cfg.get('release_status') != 'ENCODE_ONLY_ENTRY_DISABLED'
                 or cfg.get('runtime_env_required') != required_env
                 or cfg.get('entry_period') != '15min' or cfg.get('trend_period') != '60min'
-                or cfg.get('models') != ['RT_RANGE_REJECTION', 'RT_BREAKOUT_RETEST']):
+                or cfg.get('models') != ([UNION_MODEL] if union else ['RT_RANGE_REJECTION', 'RT_BREAKOUT_RETEST'])):
             raise ValueError('realtime LIVE encode-only binding mismatch')
         env = data['deployment/realtime-live.env.example'].decode().splitlines()
         switches = [line.strip() for line in env
@@ -466,6 +518,8 @@ def verify(archive: Path):
                 or cfg['strategy_version'] != REALTIME_VERSION or card['strategy_version'] != REALTIME_VERSION
                 or binding['timeframe_profile'] != 'INTRADAY_15M'):
             raise ValueError('realtime candidate binding mismatch')
+        if cfg.get('selection_id') == UNION:
+            verify_union(cfg,binding,data)
     return receipt
 
 
@@ -501,15 +555,17 @@ def main():
     live_builder.add_argument('--out-root', type=Path, default=Path('/tmp/htx-live/frozen'))
     live_builder.add_argument('--realtime', action='store_true', help='15m realtime LIVE code package; entry off; no trial authority')
     live_builder.add_argument('--sbox', action='store_true', help='confirmed S/J1_BOX32 k=.10 R=1.5 LIVE candidate; does not activate trading')
+    builder.add_argument('--union-exit', choices=tuple(UNION_EXITS), help='explicit five-pattern union exit; does not activate entry')
+    live_builder.add_argument('--union-exit', choices=tuple(UNION_EXITS), help='explicit union code package; entry disabled')
     commands.add_parser('verify').add_argument('archive', type=Path)
     template = commands.add_parser('approval-template')
     template.add_argument('archive', type=Path)
     template.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.command == 'build':
-        print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h, compact_evidence=args.compact_evidence, realtime=args.realtime))
+        print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h, compact_evidence=args.compact_evidence, realtime=args.realtime, union_exit=args.union_exit))
     elif args.command == 'build-live':
-        print(build_live(args.out_root, realtime=args.realtime, sbox=args.sbox))
+        print(build_live(args.out_root, realtime=args.realtime, sbox=args.sbox, union_exit=args.union_exit))
     elif args.command == 'verify':
         print(json.dumps({'status': 'PASS', **verify(args.archive)}, ensure_ascii=False))
     else:

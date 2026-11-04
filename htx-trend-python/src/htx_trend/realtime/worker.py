@@ -285,11 +285,15 @@ class RealtimeWorker:
             raise ValueError("incomplete structure")
         if not 0 <= now // 1000 - (frame["entry"].candles[-1].open_time + 900) < 900:
             raise ValueError("structure cache stale")
-        if signal_for(frame["entry"].candles, self.entry_config).side not in (
+        if not hasattr(self.engine, "refresh_union_frame") and signal_for(frame["entry"].candles, self.entry_config).side not in (
             TrendSide.FLAT,
             trigger.side,
         ):
             raise ValueError("15m direction opposed")
+        if hasattr(self.engine, "refresh_union_frame"):
+            if frame.get("evidence_failed"):
+                raise ValueError("union frame evidence unavailable")
+            self.engine.validate_frame(trigger.plan.contract, now)
         source_ref = self.recorder.flush()
         if source_ref is None:
             raise ValueError("trigger events not durable")
@@ -317,6 +321,8 @@ class RealtimeWorker:
             },
             refs=trigger.plan.evidence_refs,
         )
+        if hasattr(self.engine, "refresh_union_frame") and not self.engine.confirm(trigger, book, check_ms):
+            raise ValueError("union signal no longer confirms")
         effective = self.execution
         if self.trial is not None and self.entry_enabled:
             effective = self.trial.execution_config(effective, facts, check_ms)
@@ -461,7 +467,9 @@ class RealtimeWorker:
                 if self.refreshed.get(code) == key:
                     continue
                 signal = signal_for(frame["entry"].candles, self.entry_config)
-                if hasattr(self.engine, "refresh_frame"):
+                if hasattr(self.engine, "refresh_union_frame"):
+                    plans = self.engine.refresh_union_frame(frame, now_ms=now)
+                elif hasattr(self.engine, "refresh_frame"):
                     plans = self.engine.refresh_frame(
                         frame["entry"],
                         frame["trend"],

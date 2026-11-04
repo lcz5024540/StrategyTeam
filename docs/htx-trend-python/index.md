@@ -23,3 +23,5 @@
 - [新实时结构LIVE待启用打包入口](../../htx-trend-python/release/REALTIME-LIVE-PACKAGE.md)：`build-live --realtime`，身份独立、入场关闭；不提供生产或试运行授权。
 
 - [试运行控制与管理模式发布（2026-11-03）](trial-controls-20261103.md)：10仓、20U锁止、独立准入与真实费用覆盖；新入场仍关闭。
+
+- [五模式并集Python交易接入](indicator-union-20261104.md)：三档ATR退出与IOC/恢复验证，入口关闭。

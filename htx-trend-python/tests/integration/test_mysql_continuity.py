@@ -164,3 +164,35 @@ repo.close();lock.close()
         repo.close()
     finally:
         if first.poll() is None:first.kill();first.communicate(timeout=5)
+
+
+def test_mysql_union_plan_and_frozen_bracket_survive_restart(database,tmp_path):
+    from htx_trend.realtime.storage import MySqlPlanStore
+    from htx_trend.realtime.plans import create_engine,Parameters
+    from htx_trend.realtime.indicator_union import CANDIDATE,MODEL
+    from test_indicator_union import scenario
+    from htx_trend.mysql_store import HtxTrendMySqlRepository
+    s=scenario(tmp_path,'ATR_2_1')
+    db=connect(database)
+    root=Path(__file__).parents[3]
+    with db.cursor() as c:
+        c.execute((root/'sql/htx/2026-11-02__htx_realtime_structure_plan.sql').read_text())
+    db.commit()
+    store=MySqlPlanStore(db);ident=s.trigger.plan.plan_id
+    row={**s.engine.rows[ident],'phase':'PARTIAL','client_order_id':'123','position_id':1}
+    store.save('p',ident,row);store.save('p',ident,row)
+    repo=HtxTrendMySqlRepository(db)
+    repo._write('UPDATE htx_trend_position SET primary_model=%s WHERE id=1',(MODEL,))
+    repo.initialize_entry_state(1,{'exit_policy_ref':'INDICATOR_BRACKET_V1/ATR_2_1','structure_target':'110','initial_stop':'90',
+                                 'matched_modes':['M1','M2'],'pending_realtime_exit':{'target_remaining':0,'reason':'indicator-union-target','run_id':'union-target:1'}})
+    repo.close()
+    resumed=connect(database);store=MySqlPlanStore(resumed)
+    engine=create_engine(store,'p',parameters=Parameters(min_net_r=D(0),candidate=CANDIDATE,target_mode='ATR_1_1'))
+    assert len(engine.rows)==1 and engine.rows[ident]['phase']=='PARTIAL'
+    assert engine.rows[ident]['plan']['target_kind']=='ATR_2_1'
+    assert store.all('other-instance')=={}
+    repo=HtxTrendMySqlRepository(resumed)
+    state=repo.exit_state(1)
+    assert state['exit_policy_ref']=='INDICATOR_BRACKET_V1/ATR_2_1'
+    assert state['pending_realtime_exit']['target_remaining']==0
+    repo.close();s.ledger.close()

@@ -24,7 +24,7 @@ SCHEMA = 'htx-holding-policy-v1'
 IMPLEMENTATION = 'htx-exit-20261102-v1'
 _SOURCES = ('exits.py', 'continuation.py', 'java_entry_contract.py', 'indicators.py', 'models.py',
             'timeframes.py', 'position_manager.py', 'runtime.py', 'realtime/ownership.py',
-            'realtime/management.py')
+            'realtime/management.py', 'realtime/indicator_union.py')
 # Audited deployment baseline 44d3150b (also the 8e0a0cc4 management implementations).
 # All pure calculations must still match. These two legacy orchestration sources
 # are adapted by the policy-aware manager/runtime and covered by equivalence tests.
@@ -37,7 +37,8 @@ LEGACY_MANAGEMENT = {
 def supports_observed_implementation(hashes: dict) -> bool:
     current = implementation_hashes()
     from .realtime.legacy_implementations import LEGACY_IMPLEMENTATIONS
-    return hashes == current or hashes in LEGACY_IMPLEMENTATIONS
+    from .realtime.union_compatibility import UNION_PREDECESSOR
+    return hashes == current or hashes in LEGACY_IMPLEMENTATIONS or hashes == UNION_PREDECESSOR
 
 
 class HoldingPolicyError(ValueError):
@@ -141,8 +142,10 @@ class HoldingPolicy:
         if value['implementation_hashes'] != implementation_hashes():
             from .realtime.legacy_implementations import LEGACY_IMPLEMENTATIONS
             from .realtime import VERSION
-            if (value['implementation_hashes'] not in LEGACY_IMPLEMENTATIONS
-                    or value.get('owner', {}).get('strategy_name') == VERSION):
+            from .realtime.union_compatibility import UNION_PREDECESSOR
+            union_compatible = value['implementation_hashes'] == UNION_PREDECESSOR
+            if (not union_compatible and (value['implementation_hashes'] not in LEGACY_IMPLEMENTATIONS
+                    or value.get('owner', {}).get('strategy_name') == VERSION)):
                 raise HoldingPolicyError('holding policy implementation changed; compatible adapter required')
         owner = value['owner']
         names = {'instance_key','account_id','strategy_family','strategy_name','execution_mode','timeframe_profile'}

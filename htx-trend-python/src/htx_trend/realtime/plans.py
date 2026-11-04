@@ -29,6 +29,10 @@ class Parameters:
     target_mode: str = "J1"
 
     def __post_init__(self):
+        if self.candidate == "INDICATOR_UNION_V1":
+            if self.target_mode not in ("ATR_1_1", "ATR_2_1", "ATR_2_2") or self.min_net_r != 0 or self.max_age_ms != 2000:
+                raise ValueError("union requires explicit ATR exit, no signal netR threshold and2s freshness")
+            return
         if self.band_atr not in (D(".05"), D(".10")) or self.min_net_r not in (
             D(1),
             D("1.5"),
@@ -110,7 +114,7 @@ class StructurePlan:
             tuple(row["sources"]),
             tuple(row["evidence_refs"]),
         )
-        if row["model"] not in MODELS:
+        if row["model"] not in MODELS and row["model"] != "RT_INDICATOR_UNION":
             raise ValueError("unknown realtime model")
         return cls(**row)
 
@@ -294,6 +298,9 @@ def generate(
 
 def create_engine(store, instance, *, parameters=None):
     parameters = Parameters() if parameters is None else parameters
+    if parameters.candidate == "INDICATOR_UNION_V1":
+        from .indicator_union import IndicatorUnionEngine
+        return IndicatorUnionEngine(store, instance, parameters=parameters)
     if parameters.candidate == SBOX:
         from .sbox import SBoxEngine
 
