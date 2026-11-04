@@ -50,11 +50,15 @@ Calibration alone cannot authorize production or prove future profitability.
 - [x] M1 baseline, isolated branch and protocol.
 - [x] M2 discovery, selection, calibration and deterministic tests.
 - [x] M3 opt-in lifecycle integration and backwards compatibility.
-- [ ] M4 identical-framework ablation replay and explicit data limitations.
-- [ ] M5 full Python regression, review, runbook and delivery evidence.
+- [x] M4 identical-framework ablation replay and explicit data limitations.
+- [x] M5 full Python regression, review, runbook and delivery evidence.
 
 The existing committed real research prefix excludes execution depth and cannot
 prove net performance. Synthetic tapes are technical tests only. Formal selection
 requires original point-in-time depth, contract metadata, funding schedule, costs,
 latency and configuration; retrieve sealed COS data through the verified offline
 cache, not through the transaction loop.
+
+## Delivery evidence
+
+Full Python: 1205 passed, 8 optional MySQL skips. Real public ETH:12 candidates,6 raw/window CAS objects verified. Synthetic four-way replay includes entry and hard-stop settlement; no profit approval. See [review](evidence/opportunity-selection-20261104/review.md) and [runbook](opportunity-selection-runbook-20261104.md).

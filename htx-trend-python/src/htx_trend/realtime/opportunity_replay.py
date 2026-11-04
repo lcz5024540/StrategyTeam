@@ -26,9 +26,10 @@ def interval_metrics(result, lo, hi):
         prior = [p for p in curve if datetime.fromisoformat(p["at"]).timestamp()*1000 <= at]
         if not prior:
             return None
-        latest = max(prior, key=lambda p: datetime.fromisoformat(p["at"]).timestamp())
+        latest = max(enumerate(prior), key=lambda item: (
+            datetime.fromisoformat(item[1]["at"]).timestamp(), item[0]))[1]
         curve.append({"at": iso(at), "equity": latest["equity"]})
-    curve.sort(key=lambda p: p["at"])
+    curve.sort(key=lambda p: datetime.fromisoformat(p["at"]).timestamp())
     return metric({**result, "curve": curve}, lo, hi)
 
 

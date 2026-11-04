@@ -230,6 +230,16 @@ def test_ablation_uses_identical_discoveries_and_never_promotes_synthetic_data()
     assert report["selection_uses_holdout"] is False
 
 
+def test_metric_boundary_uses_last_event_at_same_timestamp():
+    from htx_trend.realtime.opportunity_replay import interval_metrics
+    from htx_trend.realtime.replay import iso
+    result = {"curve": [{"at": iso(t), "equity": str(v)} for t,v in
+                        ((1000, 300), (2000, 305), (2000, 297))], "fills": []}
+    assert interval_metrics(result, 1000, 2000)["net"] == -3
+    assert interval_metrics(result, 1000, 1500)["net"] == 0
+    assert interval_metrics(result, 1500, 2000)["net"] == -3
+
+
 def test_entry_off_still_manages_open_position_and_never_reopens():
     data = tape()
     actor = Actor(data, parameters())
@@ -296,6 +306,43 @@ def test_ranking_evidence_failure_blocks_new_risk_without_breaking_management(mo
         assert any("evidence disk full" in r.get("reason", "") for r in result["plans"].values())
     finally:
         actor.close()
+
+
+def test_selection_reference_closure_includes_4h_and_actual_decision():
+    data = tape()
+    actor = Actor(data, parameters())
+    try:
+        actor.step(data["observations"][0])
+        f = actor.market.frames["ETH-USDT"]
+        reference = actor.evidence.put("fixture_4h_input", {"window": f["windows"]["4hour"]})
+        f["windows"]["4hour"] = replace(f["windows"]["4hour"], evidence_refs=(reference,))
+        for row in data["observations"][1:]:
+            actor.step(row)
+        decisions = [o for o in actor.evidence.objects.values() if o["kind"] == "realtime_entry_decision"]
+        assert decisions and all(reference in d["refs"] for d in decisions)
+        ranks = [o for o in actor.evidence.objects.values() if o["kind"] == "opportunity_ranking"]
+        assert ranks and all(r["refs"] for r in ranks)
+        assert all(actor.evidence.objects[ref]["kind"] == "realtime_entry_decision"
+                   for r in ranks for ref in r["refs"])
+    finally:
+        actor.close()
+
+
+def test_optional_4h_failure_is_explicit_unknown_only_for_new_loader():
+    from types import SimpleNamespace
+    from htx_trend.realtime.worker import FrameLoader
+    f, now = frame()
+    def read(code, period, size, **kwargs):
+        if period == "4hour":
+            raise OSError("source unavailable")
+        return f["windows"][period]
+    market = SimpleNamespace(kline_window=read, contract_spec=lambda _: f["contract"])
+    with pytest.raises(OSError):
+        FrameLoader(market, ("ETH-USDT",), {}, clock=lambda: now/1000).fetch("ETH-USDT")
+    result = FrameLoader(market, ("ETH-USDT",), {}, clock=lambda: now/1000,
+                         optional_periods=("4hour",)).fetch("ETH-USDT")
+    assert result["optional_unavailable"] == {"4hour": "OSError"}
+    assert "4hour" not in result["windows"]
 
 
 def test_pullback_model_executes_and_reaches_normal_exit_management():
