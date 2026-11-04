@@ -1,0 +1,78 @@
+{
+  "scope": "PUBLIC_FEED_FRESHNESS_SMOKE_NO_BROKER",
+  "observed_at_ms": 1793723579422,
+  "elapsed_seconds": 1.506,
+  "counts": {
+    "TRADE": 1,
+    "BBO": 1
+  },
+  "fresh_counts": {
+    "TRADE": 1,
+    "BBO": 1
+  },
+  "stale_rejected": 0,
+  "failure": null,
+  "samples": {
+    "TRADE": {
+      "kind": "TRADE",
+      "contract": "ETH-USDT",
+      "exchange_ms": 1793723579239,
+      "received_ms": 1793723579264,
+      "event_id": "1001183467489350000",
+      "epoch": "1027a15892eb4567866b51a2fee181f4",
+      "price": "2290.7",
+      "bid": null,
+      "ask": null,
+      "bid_size": null,
+      "ask_size": null,
+      "amount": "64",
+      "raw": {
+        "ch": "market.ETH-USDT.trade.detail",
+        "trade": {
+          "amount": 64,
+          "quantity": 0.64,
+          "trade_turnover": 1466.048,
+          "ts": 1793723579239,
+          "id": 1001183467489350000,
+          "price": 2290.7,
+          "direction": "buy",
+          "is_rpi_trade": false
+        }
+      }
+    },
+    "BBO": {
+      "kind": "BBO",
+      "contract": "ETH-USDT",
+      "exchange_ms": 1793723579390,
+      "received_ms": 1793723579323,
+      "event_id": "100118346749094",
+      "epoch": "1027a15892eb4567866b51a2fee181f4",
+      "price": null,
+      "bid": "2290.69",
+      "ask": "2290.7",
+      "bid_size": "11194",
+      "ask_size": "2228",
+      "amount": null,
+      "raw": {
+        "ch": "market.ETH-USDT.bbo",
+        "ts": 1793723579393,
+        "tick": {
+          "mrid": 100118346749094,
+          "id": 1793723579,
+          "bid": [
+            2290.69,
+            11194
+          ],
+          "ask": [
+            2290.7,
+            2228
+          ],
+          "ts": 1793723579390,
+          "version": 100118346749094,
+          "ch": "market.ETH-USDT.bbo"
+        }
+      }
+    }
+  },
+  "orders_submitted": 0
+}

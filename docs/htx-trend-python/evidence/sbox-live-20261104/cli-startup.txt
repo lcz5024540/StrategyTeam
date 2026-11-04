@@ -1,0 +1,52 @@
+usage: python -m htx_trend [-h]
+                           {init-ledger,replay,compare,dataset-replay,validate-admission,validate-approval,self-test,validate-live-waiver,validate-live-approval,collect-history,collect-market-facts,collect-tick,backfill-runtime-kline-business,verify-evidence,evidence-entry-replay,profile-research,candidate-labels,condition-audit,intraday-optimize,swing-optimize,exit-optimize,combination-study,preregister-independent-round,audit-independent-data,independent-profile-study} ...
+
+HTX Python trend research and paper tools
+
+positional arguments:
+  {init-ledger,replay,compare,dataset-replay,validate-admission,validate-approval,self-test,validate-live-waiver,validate-live-approval,collect-history,collect-market-facts,collect-tick,backfill-runtime-kline-business,verify-evidence,evidence-entry-replay,profile-research,candidate-labels,condition-audit,intraday-optimize,swing-optimize,exit-optimize,combination-study,preregister-independent-round,audit-independent-data,independent-profile-study}
+    init-ledger         explicitly initialize a local SQLite ledger
+    replay              summarize immutable runtime K-line evidence
+    compare             compare exported Java and Python decisions
+    dataset-replay      replay an existing frozen HTX public K-line dataset
+    validate-admission  validate a sealed strategy admission artifact
+    validate-approval   cross-validate G2 approval and admission
+    self-test           run offline synthetic artifact checks
+    validate-live-waiver
+                        validate a sealed legacy LIVE waiver
+    validate-live-approval
+                        validate a sealed V2 LIVE approval
+    collect-history     freeze immutable public HTX K-lines
+    collect-market-facts
+                        freeze HTX contract specifications and historical
+                        funding events
+    collect-tick        run one resumable continuous collection tick
+    backfill-runtime-kline-business
+                        R1 business candle replay
+    verify-evidence     verify an evidence reference closure
+    evidence-entry-replay
+                        replay a frozen CAS dataset through the shared entry
+                        core
+    profile-research    run frozen 15m/4h lifecycle research through the
+                        shared decision stack
+    candidate-labels    record every model evaluation and descriptive future
+                        outcome label
+    condition-audit     audit candidate condition hits, lift and temporal
+                        stability
+    intraday-optimize   run pre-registered 15m model-specific P4 research
+    swing-optimize      run pre-registered expanded-sample 4h model-specific
+                        P5 research
+    exit-optimize       run P6 paired exit research over a frozen parent entry
+                        ledger
+    combination-study   execute the P7 eligibility gate before nested walk-
+                        forward
+    preregister-independent-round
+                        freeze the R3 hypotheses and unseen-data boundary
+    audit-independent-data
+                        check R3 data age and integrity without reading
+                        outcomes
+    independent-profile-study
+                        run the gated R3 R4/R5 single-condition study
+
+options:
+  -h, --help            show this help message and exit

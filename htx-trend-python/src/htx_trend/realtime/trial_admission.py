@@ -9,6 +9,7 @@ from ..admission import file_hash, read_sealed, window
 from ..execution import ExecutionConfig
 from ..research.store import digest
 from . import VERSION
+from .plans import EVENT_LOCAL, ORIGINAL, SBOX
 from .trial import Limits
 
 SCHEMA = "htx-realtime-trial-approval-v1"
@@ -38,7 +39,7 @@ def configured():
     return bool(os.environ.get(PATH, "").strip())
 
 
-def validate(path, current, *, entry=False, now=None):
+def validate(path, current, *, entry=False, now=None, candidate=ORIGINAL):
     now = now or datetime.now(UTC)
     value = read_sealed(path, SCHEMA)
     if value["synthetic"] or value.get("formal_admission") != "NOT_ELIGIBLE":
@@ -83,7 +84,8 @@ def validate(path, current, *, entry=False, now=None):
         window(value, now)
         if (
             value["permission"] != "TRIAL"
-            or value.get("candidate") != "ORIGINAL_20_32_V1"
+            or candidate not in (ORIGINAL, EVENT_LOCAL, SBOX)
+            or value.get("candidate") != candidate
         ):
             raise ValueError("unique production candidate not confirmed")
         if not value.get("candidate_confirmation_ref"):
@@ -129,6 +131,7 @@ def runtime_authority(instance, account, *, policy, contracts, parameters, entry
     # Trial ID is a disk identity, never generated on restart.
     raw = read_sealed(path, SCHEMA)
     from dataclasses import asdict
+
     from ..execution_service import EntryExecutionConfig
 
     binding = dict(
@@ -149,4 +152,4 @@ def runtime_authority(instance, account, *, policy, contracts, parameters, entry
             }
         ),
     )
-    return validate(path, binding, entry=entry)
+    return validate(path, binding, entry=entry, candidate=parameters.candidate)

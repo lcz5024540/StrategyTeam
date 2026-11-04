@@ -1,12 +1,13 @@
+from dataclasses import replace
 from decimal import Decimal as D
 from types import SimpleNamespace
-from dataclasses import replace
+
 import pytest
-from test_realtime_plans import plan, book, trade
-from htx_trend.realtime.plans import TriggerEngine, RealtimeTrigger
+from htx_trend.realtime import VERSION
+from htx_trend.realtime.plans import RealtimeTrigger, TriggerEngine
 from htx_trend.realtime.storage import PlanStore, SegmentRecorder
 from htx_trend.realtime.worker import RealtimeWorker
-from htx_trend.realtime import VERSION
+from test_realtime_plans import book, plan, trade
 
 
 class Management:
@@ -204,8 +205,8 @@ def test_clock_is_refreshed_after_reconcile_before_consuming_messages(worker):
 
 
 def test_loader_publishes_valid_candles_despite_evidence_failure():
+    from htx_trend.market_data import Candle, ContractSpec, KlineWindow
     from htx_trend.realtime.worker import FrameLoader
-    from htx_trend.market_data import Candle, KlineWindow, ContractSpec
 
     class Market:
         def kline_window(self, c, p, n, **kw):
@@ -246,10 +247,11 @@ def test_current_package_decodes_realtime_checkpoint_and_rejects_unknown_version
     tmp_path,
 ):
     from pathlib import Path
-    from htx_trend.tools.holding_preflight import target_accepts
-    from htx_trend.runtime_checkpoint import SCHEMA, encode
+
     from htx_trend.realtime.plans import Parameters
     from htx_trend.realtime.worker import RealtimeWorker
+    from htx_trend.runtime_checkpoint import SCHEMA, encode
+    from htx_trend.tools.holding_preflight import target_accepts
 
     state = dict(
         instance="p",
@@ -283,3 +285,71 @@ def test_quota_reached_inside_batch_blocks_that_batch_but_keeps_stop_checks(work
     assert health.status == "DEGRADED"
     assert any(c[0] == "book" for c in management.calls)
     assert sum(c[0] == "stop" for c in management.calls) >= 2
+
+
+@pytest.mark.parametrize("mode", ["PAPER", "LIVE"])
+def test_conservative_generator_is_connected_to_shared_worker(worker, mode):
+    from htx_trend.realtime.plans import create_engine
+    from test_structure_events import PARAMS, inputs
+
+    w, events, _ = worker
+    entry, hour, spec, at = inputs()
+    w.engine = create_engine(w.engine.store, "conservative", parameters=PARAMS)
+    w.parameters = PARAMS
+    w.instance.execution_mode = mode
+    w.frames["ETH-USDT"] = {
+        "entry": entry,
+        "trend": hour,
+        "contract": spec,
+        "windows": {"15min": entry, "60min": hour},
+    }
+    w.clock = lambda: at / 1000
+    w.tick()
+    assert any(D(r["plan"]["line"]) == 110 for r in w.engine.rows.values())
+    seen = []
+    w._preflight = lambda t: (
+        seen.append(t) or SimpleNamespace(reason="TEST"),
+        None,
+        None,
+        None,
+        at + 500,
+    )
+    events.extend(
+        [
+            book(at + 1, "108", "108.1"),
+            trade(at + 2, "108"),
+            trade(at + 3, "110"),
+            trade(at + 4, "108"),
+            trade(at + 5, "107.9"),
+        ]
+    )
+    w.clock = lambda: (at + 500) / 1000
+    w.tick()
+    assert len(seen) == 1 and seen[0].plan.line == 110
+    assert seen[0].plan.parameter_fingerprint == PARAMS.fingerprint
+    assert w.engine.rows[seen[0].plan.plan_id]["phase"] == "REJECTED"
+
+
+def test_conservative_preflight_rejects_invalidated_event_before_network(worker):
+    from htx_trend.realtime.plans import create_engine
+    from test_structure_events import PARAMS, inputs
+
+    w, _, _ = worker
+    entry, hour, spec, at = inputs()
+    w.engine = create_engine(w.engine.store, "events", parameters=PARAMS)
+    w.parameters = PARAMS
+    w.frames["ETH-USDT"] = {"entry": entry, "trend": hour, "contract": spec}
+    p = w.engine.refresh_frame(
+        entry,
+        hour,
+        spec,
+        now_ms=at,
+        signal_side=__import__(
+            "htx_trend.models", fromlist=["TrendSide"]
+        ).TrendSide.FLAT,
+    )[0]
+    w.engine.terminal(p.plan_id, "INVALIDATED", reason="test")
+    t = RealtimeTrigger(p, at, at, D(98), D(101), D(101), ("a", "b"), "book", "a")
+    w.clock = lambda: at / 1000
+    with pytest.raises(ValueError, match="no longer actionable"):
+        w._preflight(t)

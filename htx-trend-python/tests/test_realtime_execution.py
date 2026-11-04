@@ -1,21 +1,21 @@
+import json
 from dataclasses import replace
 from decimal import Decimal as D
 from types import SimpleNamespace
-import json
-import pytest
 
-from test_realtime_plans import plan, book
+import pytest
 from htx_trend.execution import ExecutionFacts
-from htx_trend.market_data import ContractSpec, OrderBook, FundingRate
-from htx_trend.realtime.plans import TriggerEngine, RealtimeTrigger
-from htx_trend.realtime.storage import PaperPlanStore
-from htx_trend.realtime.brokers import PaperBroker, LiveBroker
-from htx_trend.realtime.risk import evaluate
-from htx_trend.paper_worker import PaperFileLedger
 from htx_trend.holding_policy import HoldingPolicy, paper_exit_config
 from htx_trend.java_entry_contract import JavaEntryConfig
-from htx_trend.timeframes import TimeframeProfile
+from htx_trend.market_data import ContractSpec, FundingRate, OrderBook
+from htx_trend.paper_worker import PaperFileLedger
 from htx_trend.realtime import VERSION
+from htx_trend.realtime.brokers import LiveBroker, PaperBroker
+from htx_trend.realtime.plans import RealtimeTrigger, TriggerEngine
+from htx_trend.realtime.risk import evaluate
+from htx_trend.realtime.storage import PaperPlanStore
+from htx_trend.timeframes import TimeframeProfile
+from test_realtime_plans import book, plan
 
 
 def policy():
@@ -140,8 +140,8 @@ def test_ledger_failure_never_advertises_submitted_intent(setup, monkeypatch):
 
 
 def test_real_factory_constructs_disabled_paper(tmp_path, monkeypatch):
-    from htx_trend.realtime.factory import paper
     from htx_trend.mysql_store import RuntimeInstance
+    from htx_trend.realtime.factory import paper
     from htx_trend.research.store import FileEvidenceStore
 
     monkeypatch.setenv("HTX_RT_CAPTURE_DIR", str(tmp_path / "capture"))
@@ -170,8 +170,8 @@ def test_real_factory_constructs_disabled_paper(tmp_path, monkeypatch):
 def test_live_durable_ioc_before_send_and_unknown_never_retries(
     setup, monkeypatch, failure, phase
 ):
-    from test_execution_service import Repository, Executor, executor
     from htx_trend.execution import ExecutionConfig
+    from test_execution_service import Executor, Repository, executor
 
     s = setup
     repo = Repository()
@@ -275,4 +275,35 @@ def test_budget_keeps_saved_leverage_after_new_config_change(setup):
     )
     assert next(iter(s.ledger.data["orders"].values()))["client_order_id"].startswith(
         "paper-rt-"
+    )
+
+
+@pytest.mark.parametrize(
+    "failure,phase",
+    [
+        (None, "SUBMITTED"),
+        ("network", "UNKNOWN"),
+        ("leverage", "REJECTED"),
+        ("intent", "REJECTED"),
+    ],
+)
+def test_conservative_candidate_uses_same_live_ioc_and_unknown_recovery(
+    setup, monkeypatch, failure, phase
+):
+    from htx_trend.realtime.plans import EVENT_LOCAL, Parameters, create_engine
+
+    s = setup
+    parameters = Parameters(candidate=EVENT_LOCAL)
+    s.engine = create_engine(
+        PaperPlanStore(s.ledger), "new-live", parameters=parameters
+    )
+    p = replace(
+        s.trigger.plan,
+        parameter_fingerprint=parameters.fingerprint,
+        sources=("20:HIGH", "RULE:" + EVENT_LOCAL),
+    )
+    s.engine.refresh(p.contract, [p])
+    s.trigger = replace(s.trigger, plan=p)
+    test_live_durable_ioc_before_send_and_unknown_never_retries(
+        s, monkeypatch, failure, phase
     )

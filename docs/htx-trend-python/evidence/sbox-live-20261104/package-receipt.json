@@ -1,0 +1,13 @@
+{
+  "archive": "/Users/lichangzheng.ray/Ray/htx-frozen/20261104-sbox-live/0.1.7-realtime-live-e6577b52/htx-trend-python-0.1.7-realtime-live-e6577b52.tar.gz",
+  "sha256": "b42e2c9c0c6de7a5891b151a0a0dc4988fbfc3d7e8e26e7a0b3947f321faac96",
+  "bytes": 467960,
+  "source_commit": "e6577b522582aa797ee4bdda325c9082efc9e36a",
+  "unpack": "/var/folders/d2/pr2p05593gzfxx0bbkpy_8qm0000gp/T/sbox-final-unpack-60b0zzfi",
+  "compileall": "PASS",
+  "CLI": "PASS",
+  "trial_ops_help": "PASS",
+  "production_changes": false,
+  "activation": false,
+  "release_status": "OFFLINE_CANDIDATE_VERIFIED_NOT_DEPLOYED"
+}

@@ -106,7 +106,7 @@ def profile_entry_config(profile: TimeframeProfile, *, read_env: bool = True) ->
     )
 
 
-def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strategy_version: str | None = None) -> ProfileStrategySpec:
+def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strategy_version: str | None = None, realtime_parameters=None) -> ProfileStrategySpec:
     contract = profile.contract
     config = profile_entry_config(profile, read_env=read_env)
     conditions = {item.condition_id: item.version for item in CONDITIONS
@@ -136,19 +136,27 @@ def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strate
                                       ModelCode.EMA_MOMENTUM_CONTINUATION)),
         tuple(item.value for item in ModelCode),
     )
-    from .realtime import VERSION, MODELS
+    from .realtime import MODELS, VERSION
+    if realtime_parameters is not None and strategy_version != VERSION:
+        raise ValueError("realtime parameters require the realtime strategy")
     if strategy_version == VERSION:
         if profile is not TimeframeProfile.INTRADAY_15M:
             raise ValueError('realtime strategy is 15m only')
-        from .realtime.plans import Parameters, GRID
+        from .realtime.plans import GRID, ORIGINAL, Parameters
         parameters = Parameters(Decimal(environ.get('HTX_RT_BAND_ATR', '.10')),
-                                Decimal(environ.get('HTX_RT_MIN_NET_R', '1.5'))) if read_env else Parameters()
+                                Decimal(environ.get('HTX_RT_MIN_NET_R', '1.5')),
+                                candidate=environ.get('HTX_RT_CANDIDATE', ORIGINAL),
+                                target_mode=environ.get('HTX_RT_TARGET_MODE', 'J1')) if read_env else Parameters()
+        if realtime_parameters is not None:
+            if read_env or not isinstance(realtime_parameters, Parameters):
+                raise ValueError('explicit realtime parameters require an offline typed binding')
+            parameters = realtime_parameters
         rt = replace(strategy, version=VERSION,
             feature_versions={'closed_1h_ema20_60':'v1','closed_15m_structure20_32_atr14':'v1',
                               'trade_bbo_2s':'v1'},
             condition_versions={'entry.profile_contract':'v1','rt.two_distinct_trades':'v1',
                                 'rt.ioc_cost_risk':'v1','rt.protection_reentry':'linked-v1'},
-            parameters={'parameters':asdict(parameters),'preregistered_grid':[asdict(x) for x in GRID]},
+            parameters={'parameters':parameters.payload,'preregistered_grid':[x.payload for x in GRID]},
             transitions=({'from':'STRUCTURE','to':'TRIGGERED','when':'two trades and fresh BBO'},
                        {'from':'TRIGGERED','to':'ORDER_INTENT','when':'cost/risk/ownership gates pass'},
                        {'from':'OPEN','to':'MANAGED','when':'fill confirmed; v4/linked ownership'}))
