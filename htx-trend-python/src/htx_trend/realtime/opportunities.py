@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 from decimal import Decimal as D, ROUND_FLOOR, ROUND_CEILING
 from itertools import pairwise
 
@@ -39,7 +40,8 @@ def discover(entry, trend, contract, *, now_ms, parameters, audit):
         audit.append({"reason": "NO_ATR"})
         return ()
     band = max(2 * contract.price_tick, parameters.band_atr * volatility)
-    inventory = levels(entry, contract.price_tick, parameters.band_atr)
+    basis = replace(entry, candles=entry.candles[-32:], expected_size=32)
+    inventory = levels(basis, contract.price_tick, parameters.band_atr)
     box_high = max(c.high for c in entry.candles[-32:])
     box_low = min(c.low for c in entry.candles[-32:])
     output = []

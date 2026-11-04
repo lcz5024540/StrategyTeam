@@ -9,7 +9,7 @@ from itertools import pairwise
 from ..indicators import atr, ema
 from ..models import TrendSide
 from ..research.store import digest
-from .plans import EVENT_LOCAL, EVENT_WINDOWS, ORIGINAL, SBOX, StructurePlan
+from .plans import EVENT_LOCAL, EVENT_WINDOWS, OPPORTUNITY, ORIGINAL, SBOX, StructurePlan
 
 
 def direction(entry, trend, contract, now_ms, signal_side):
@@ -111,6 +111,8 @@ def generate_candidates(
     signal_side=TrendSide.FLAT,
     audit=None,
 ):
+    if parameters.candidate == OPPORTUNITY:
+        raise ValueError("opportunity discovery requires its independent engine")
     if parameters.candidate == SBOX:
         raise ValueError("SBOX targets freeze at activation; use create_engine.refresh_frame")
     audit = [] if audit is None else audit

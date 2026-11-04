@@ -377,7 +377,7 @@ class RealtimeWorker:
                 trigger, frame, book, check_ms,
                 price.expected_net_r if price is not None else D(0),
             )
-        self.evidence.put(
+        decision_ref = self.evidence.put(
             "realtime_entry_decision",
             {
                 "trigger": trigger,
@@ -388,8 +388,10 @@ class RealtimeWorker:
                 "at_ms": check_ms,
                 **({"selection": selection} if selection is not None else {}),
             },
-            refs=(ref,),
+            refs=(ref, *(selection["features"]["direction_refs"] if selection else ())),
         )
+        if selection is not None:
+            self.engine.selections[trigger.plan.plan_id] = {**selection, "evidence_ref": decision_ref}
         return gate, intent, contract, facts, check_ms
 
     @realtime_capture_tick
@@ -586,14 +588,20 @@ class RealtimeWorker:
                 except Exception as error:
                     self._reject(trigger, error, failures)
             if hasattr(self.engine, "rank_batch"):
-                ordered, ranking_basis = self.engine.rank_batch(ready)
-                self.evidence.put("opportunity_ranking", {
-                    "basis": ranking_basis,
-                    "ordered_plan_ids": [t.plan.plan_id for _, t in ordered],
-                    "selections": {t.plan.plan_id: self.engine.selections[t.plan.plan_id]
-                                   for _, t in ordered},
-                    "at_ms": int(self.clock() * 1000),
-                })
+                try:
+                    ordered, ranking_basis = self.engine.rank_batch(ready)
+                    self.evidence.put("opportunity_ranking", {
+                        "basis": ranking_basis,
+                        "ordered_plan_ids": [t.plan.plan_id for _, t in ordered],
+                        "selections": {t.plan.plan_id: self.engine.selections[t.plan.plan_id]
+                                       for _, t in ordered},
+                        "at_ms": int(self.clock() * 1000),
+                    }, refs=tuple(self.engine.selections[t.plan.plan_id]["evidence_ref"]
+                                  for _, t in ordered))
+                except Exception as error:
+                    for _, trigger in ready:
+                        self._reject(trigger, error, failures)
+                    ordered = []
             else:
                 ordered = sorted(ready, key=lambda item: (-item[0], item[1].plan.plan_id))
             for _, trigger in ordered:

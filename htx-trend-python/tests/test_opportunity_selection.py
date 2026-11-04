@@ -72,6 +72,9 @@ def test_frame_refresh_freezes_geometry_revision_invalidates_without_new_identit
 
 def test_replay_uses_shared_broker_opens_despite_opposing_legacy_direction():
     data = tape()
+    for i, c in enumerate(data["observations"][0]["windows"]["60min"]["candles"]):
+        value = D(100)+D(i)/10
+        c.update(open=str(value), close=str(value), high=str(value+2), low=str(value-2))
     actor = Actor(data, parameters())
     try:
         for row in data["observations"]:
@@ -80,6 +83,7 @@ def test_replay_uses_shared_broker_opens_despite_opposing_legacy_direction():
         assert result["plans"]
         assert result["fills"], result["errors"]
         assert result["fills"][0]["action"] == "OPEN"
+        assert result["fills"][0]["side"] == "SHORT"
         ctx = next(iter(actor.ledger.data["contexts"].values()))
         assert ctx["entry_candidate_rule"] == OPPORTUNITY
         assert ctx["holding_policy"]["continuation_version"] == "linked-v1"
@@ -144,6 +148,12 @@ def test_old_parameter_payload_unchanged_and_new_candidate_is_explicit(monkeypat
     assert configured() == parameters()
     with pytest.raises(ValueError):
         Parameters(min_net_r=D(0))
+    from htx_trend.realtime.plans import generate
+    from htx_trend.realtime.structures import generate_candidates
+    f, now = frame()
+    for entry_point in (generate, generate_candidates):
+        with pytest.raises(ValueError, match="opportunity"):
+            entry_point(f["entry"], f["trend"], f["contract"], now_ms=now, parameters=parameters())
 
 
 @pytest.mark.parametrize("side", [TrendSide.LONG, TrendSide.SHORT])
@@ -241,5 +251,94 @@ def test_entry_off_still_manages_open_position_and_never_reopens():
         actor.step(book(at, price, price+D(".01")).dump())
         assert not actor.ledger.active_positions(actor.account)
         assert len(actor.result()["fills"]) > initial_fills
+    finally:
+        actor.close()
+
+
+def test_ranking_features_do_not_pretend_to_be_probabilities():
+    from types import SimpleNamespace
+    from htx_trend.realtime.selection import rank
+    a, b = (SimpleNamespace(plan=SimpleNamespace(plan_id=i)) for i in ("a", "b"))
+    ready = [(D(2), a), (D(2), b)]
+    decisions = {
+        "a": {"features": {"direction": "-1", "book": "-.2"}, "estimate": {"mean_net_r": None}},
+        "b": {"features": {"direction": "1", "book": ".2"}, "estimate": {"mean_net_r": None}},
+    }
+    assert rank(ready, decisions, "STRUCTURE")[0][0][1] is a
+    assert rank(ready, decisions, "BOTH")[0][0][1] is b
+    decisions["a"]["estimate"]["mean_net_r"] = 9
+    assert rank(ready, decisions, "BOTH")[1] == "UNCALIBRATED_NET_R"
+    decisions["b"]["estimate"]["mean_net_r"] = .1
+    ordered, basis = rank(ready, decisions, "BOTH")
+    assert ordered[0][1] is a and basis == "EMPIRICAL_MEAN_NET_R"
+
+
+def test_ranking_evidence_failure_blocks_new_risk_without_breaking_management(monkeypatch):
+    data = tape()
+    actor = Actor(data, parameters())
+    original = actor.evidence.put
+    calls = []
+    manage = actor.worker.management.tick
+    def counted(*a, **kw):
+        calls.append(1)
+        return manage(*a, **kw)
+    def failing(kind, payload, **kwargs):
+        if kind == "opportunity_ranking":
+            raise OSError("evidence disk full")
+        return original(kind, payload, **kwargs)
+    monkeypatch.setattr(actor.evidence, "put", failing)
+    monkeypatch.setattr(actor.worker.management, "tick", counted)
+    try:
+        for row in data["observations"]:
+            actor.step(row)
+        result = actor.result()
+        assert calls and not result["fills"]
+        assert any("evidence disk full" in r.get("reason", "") for r in result["plans"].values())
+    finally:
+        actor.close()
+
+
+def test_pullback_model_executes_and_reaches_normal_exit_management():
+    import copy
+    data = tape()
+    frame_row = data["observations"][0]
+    bars = frame_row["windows"]["15min"]["candles"]
+    bars[141].update(high="102", low="98")
+    bars[135]["high"] = "112"
+    bars[149]["high"] = "108"
+    mapping = {"110": "108", "108.9": "106.9", "108.8": "106.8"}
+    for row in data["observations"]:
+        if row["kind"] == "TRADE" and row["price"] in mapping:
+            row["price"] = mapping[row["price"]]
+        if row["kind"] == "BBO":
+            for field in ("bid", "ask"):
+                if D("108.7") <= D(row[field]) <= D(110):
+                    row[field] = str(D(row[field])-2)
+        if row["kind"] == "DEPTH":
+            for field in ("bids", "asks"):
+                for level in row[field]:
+                    if D("108.7") <= D(level[0]) <= D(110):
+                        level[0] = str(D(level[0])-2)
+    actor = Actor(data, parameters())
+    try:
+        for row in data["observations"]:
+            actor.step(row)
+        result = actor.result()
+        assert result["fills"] and result["fills"][0]["model"] == "RT_TREND_PULLBACK"
+        now = frame_row["received_ms"]+900000
+        actor.step(dict(kind="DEPTH", received_ms=now, requested_ms=now,
+                        contract="ETH-USDT", bids=[["103", "10000"]], asks=[["103.01", "10000"]]))
+        new = copy.deepcopy(frame_row)
+        new["received_ms"] = now
+        entry = new["windows"]["15min"]
+        entry["received_ms"] = now
+        last = entry["candles"][-1]
+        entry["candles"] = entry["candles"][1:] + [{**last, "open_time": last["open_time"]+900}]
+        actor.step(new)
+        assert not any("ValueError" in r["detail"] for r in actor.result()["errors"])
+        decisions = [d for d in actor.ledger.data["decisions"] if d["kind"] == "EXIT_DECISION"]
+        assert decisions
+        assert all("unsupported" not in d["payload"].get("reason", "") for d in decisions)
+        assert next(iter(actor.ledger.data["contexts"].values()))["last_bar"] == last["open_time"]+900
     finally:
         actor.close()

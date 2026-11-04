@@ -177,6 +177,8 @@ def generate(
     parameters=Parameters(),
     signal_side=TrendSide.FLAT,
 ) -> tuple[StructurePlan, ...]:
+    if parameters.candidate == OPPORTUNITY:
+        raise ValueError("opportunity geometry freezes at registration; use create_engine.refresh_frame")
     if parameters.candidate == SBOX:
         raise ValueError("SBOX targets freeze at activation; use create_engine.refresh_frame")
     if parameters.candidate != ORIGINAL:
