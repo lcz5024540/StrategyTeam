@@ -61,11 +61,11 @@ def test_invalid_strategy_profile_combination():
 
 
 D1_DEEPEN_KLINES_SHA256 = 'b2cddb23d9dbd1b382ea7c1c9b74271ccfe73c09115ad19fe2a20debb95cd082'
-SWING_4H_TRADES_SHA256 = '307549210aad2ea6e9a1ffae3535f2e2df983e651ecd56e86ed2bb3e006c5053'
+SWING_4H_TRADES_SHA256 = '5cc4dade5ec500fc5e826fdbb1e2600639de431ae9d0722bb1ec9fed653ad74a'
 
 
 def test_swing_4h_klines_lock_is_d1_btceth_deepen_fixture():
-    """SWING_4H klines lock is the D1 BTC/ETH deepen fixture; trades lock stays put."""
+    """SWING_4H klines lock remains the D1 BTC/ETH deepen fixture; trades lock is the N1 DONE12 fixture (incl TRX)."""
     from htx_trend.scan_replay import LOCKED_HASHES_BY_PROFILE
 
     swing = LOCKED_HASHES_BY_PROFILE['SWING_4H']
