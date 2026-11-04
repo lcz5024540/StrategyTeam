@@ -117,7 +117,8 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False,
               ROOT / 'release/EVIDENCE-RETENTION.md', ROOT / 'release/HOT-DEPLOY.md']
     paths += [ROOT / 'COS-ARCHIVE.md', ROOT / 'SEGMENT-SEALING.md',
               ROOT / 'config/archive/cos-server-sources.json', ROOT / 'config/archive/cos-sealed-sources.example.json']
-    paths += sorted((ROOT / 'release/cos').glob('*'))
+    paths += sorted(p for p in (ROOT / 'release/cos').glob('*')
+                    if p.is_file() and p.suffix in {'.py', '.md', '.service', '.timer'})
     paths += sorted((ROOT / 'release/artifacts').glob('*.json'))
     payload = {}
     for path in paths:
@@ -200,7 +201,8 @@ def _live_payload_paths():
               ROOT / 'release/seal_product_live_waiver.py', ROOT / 'release/EVIDENCE-RETENTION.md', ROOT / 'release/HOT-DEPLOY.md']
     paths += [ROOT / 'COS-ARCHIVE.md', ROOT / 'SEGMENT-SEALING.md',
               ROOT / 'config/archive/cos-server-sources.json', ROOT / 'config/archive/cos-sealed-sources.example.json']
-    paths += sorted((ROOT / 'release/cos').glob('*'))
+    paths += sorted(p for p in (ROOT / 'release/cos').glob('*')
+                    if p.is_file() and p.suffix in {'.py', '.md', '.service', '.timer'})
     paths += sorted((ROOT / 'release/artifacts').glob('*.json'))
     paths += sorted(p for p in (ROOT / 'deployment').rglob('*') if p.is_file())
     return paths

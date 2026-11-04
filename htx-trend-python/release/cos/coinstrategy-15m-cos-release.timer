@@ -1,0 +1,11 @@
+[Unit]
+Description=CoinStrategy verified local release cadence
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=1min
+AccuracySec=10s
+Unit=coinstrategy-15m-cos-release.service
+
+[Install]
+WantedBy=timers.target

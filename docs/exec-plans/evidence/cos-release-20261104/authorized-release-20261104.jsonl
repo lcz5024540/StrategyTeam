@@ -1,0 +1,30 @@
+{"epoch": 1, "status": "DEFERRED", "reason": "consumer handoff incomplete or interrupted mutation; local maintenance blocked", "source_deleted_this_attempt": "see durable deletes journal"}
+{"status": "RETIRED", "epoch": 1, "released_bytes": 1768806, "removed_this_run": 9, "remaining_local_members": 0, "manifest": "manifests/7423fe897bbfa5d6192bc67fc39af6f35693fc4b52e4e8b538f337708454202f.json", "approval_sha256": "037b4685f8e5ce54e98ec69f82cb82a07f52e401bbbf33f4eb24620864595072"}
+{"status": "RETIRED", "epoch": 2, "released_bytes": 516187, "removed_this_run": 14, "remaining_local_members": 0, "manifest": "manifests/7e803ba451274bd27d137041bf6631a27c781b5da3a252cb06887de4627baf02.json", "approval_sha256": "ec61abca3282d38b5a48b51de9fdc98386b29ded53be435185a831420f77a685"}
+{"epoch": 3, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 3, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 3, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 3, "status": "DEFERRED", "reason": "consumer handoff incomplete or interrupted mutation; local maintenance blocked", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 4, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 4, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 4, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 4, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 5, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 5, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"status": "RETIRED", "epoch": 5, "released_bytes": 10257831, "removed_this_run": 32, "remaining_local_members": 0, "manifest": "manifests/921154d0301d516d8cdb237fe8ab75cb09c631ef103d1c543975bc50ffb8ee37.json", "approval_sha256": "6de753bffd5c794abcbedfa4b430bd1709af10c097fc7dd28484199861e5674c"}
+{"epoch": 6, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 6, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 6, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 6, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"status": "RETAINED_OR_PARTIAL", "epoch": 7, "released_bytes": 0, "removed_this_run": 0, "remaining_local_members": 222, "manifest": "manifests/9665167db436c86689234a803309c21d7cd5639de4a1e2252a3a8340cebf98ca.json", "approval_sha256": "1354e52f09405515834bb255a9c116c7657efff2e22fefa87e0c6a21c7263df7"}
+{"epoch": 7, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 7, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 7, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 8, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 8, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 8, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"status": "RETIRED", "epoch": 8, "released_bytes": 4921694, "removed_this_run": 15, "remaining_local_members": 0, "manifest": "manifests/9f2e1d201dfaabf13bbe7f51b2f58fbefb14685c47f14fba6990894d700b596e.json", "approval_sha256": "ac933f097f4887712ff413cf6ad901a07b2ade4e699b426210cad5b838842892"}
+{"status": "RETAINED_OR_PARTIAL", "epoch": 9, "released_bytes": 0, "removed_this_run": 0, "remaining_local_members": 213, "manifest": "manifests/e46c46c4ca19549837cf75e1daab54c5d24d1d9dfda099f9011ad4e643fddc22.json", "approval_sha256": "990aa91ef4c65d63fbbdfc7fe020a3ff4dbd398a5cc6124f1eead1e0e4a61846"}
+{"epoch": 9, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 9, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}
+{"epoch": 9, "status": "DEFERRED", "reason": "source is in use; retry local maintenance", "source_deleted_this_attempt": "see durable deletes journal"}

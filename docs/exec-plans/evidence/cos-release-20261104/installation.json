@@ -1,0 +1,14 @@
+{
+  "installed": "2026-11-04T00:15:17.531638+08:00",
+  "release": "/opt/coinstrategy/15m-cos-maintenance/releases/15m-cos-release-895663f9",
+  "source_commit": "895663f95987d19d294a802ab878d9299199f771",
+  "tar_sha256": "b0d46e26e897a84f73341c3a11e1bb1e74057ded3481242cb6a6e3e0ce544b7c",
+  "policy": {
+    "enabled": true,
+    "root": "/home/ubuntu/coinstrategy-data/15m-cos/capture/segments",
+    "namespace": "{\"bucket\": \"rayquant-strategy-1253235498\", \"prefix\": \"coinstrategy/archive/v1/\", \"region\": \"na-siliconvalley\"}",
+    "authorization": "user-20261104-upload-verified-server-local-release"
+  },
+  "adopted_plans": 9,
+  "data_package_unchanged": true
+}
