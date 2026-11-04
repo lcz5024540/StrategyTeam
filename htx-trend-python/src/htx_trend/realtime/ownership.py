@@ -8,6 +8,7 @@ from . import VERSION
 class RealtimeModel(StrEnum):
     RT_RANGE_REJECTION = "RT_RANGE_REJECTION"
     RT_BREAKOUT_RETEST = "RT_BREAKOUT_RETEST"
+    RT_TREND_PULLBACK = "RT_TREND_PULLBACK"
 
 
 def parse_model(value):

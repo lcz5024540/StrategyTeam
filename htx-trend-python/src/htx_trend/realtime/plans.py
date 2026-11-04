@@ -18,6 +18,8 @@ ORIGINAL = "ORIGINAL_20_32_V1"
 EVENT_WINDOWS = "EVENT_WINDOWS_CONSERVATIVE_V1"
 EVENT_LOCAL = "EVENT_LOCAL_CONSERVATIVE_V1"
 SBOX = "SBOX_FACTS_CONSERVATIVE_V1"
+OPPORTUNITY = "OPPORTUNITY_SELECTION_V1"
+OPPORTUNITY_MODELS = frozenset({"RT_TREND_PULLBACK"})
 
 
 @dataclass(frozen=True)
@@ -27,8 +29,27 @@ class Parameters:
     max_age_ms: int = 2000
     candidate: str = ORIGINAL
     target_mode: str = "J1"
+    selection_variant: str = "STRUCTURE"
+    calibration_hash: str | None = None
 
     def __post_init__(self):
+        if self.candidate == OPPORTUNITY:
+            if (
+                self.band_atr != D(".10")
+                or not self.min_net_r.is_finite()
+                or self.min_net_r < 0
+                or self.max_age_ms != 2000
+                or self.target_mode != "OWN_STRUCTURE"
+                or self.selection_variant not in {"STRUCTURE", "DIRECTION", "BOOK", "BOTH"}
+                or (self.calibration_hash is not None and (
+                    len(self.calibration_hash) != 64
+                    or any(c not in "0123456789abcdef" for c in self.calibration_hash)
+                ))
+            ):
+                raise ValueError("invalid opportunity-v1 parameters")
+            return
+        if self.selection_variant != "STRUCTURE" or self.calibration_hash is not None:
+            raise ValueError("selection features require opportunity-v1")
         if self.band_atr not in (D(".05"), D(".10")) or self.min_net_r not in (
             D(1),
             D("1.5"),
@@ -65,6 +86,9 @@ class Parameters:
         }
         if self.candidate != ORIGINAL:
             value.update(candidate=self.candidate, target_mode=self.target_mode)
+        if self.candidate == OPPORTUNITY:
+            value.update(selection_variant=self.selection_variant,
+                         calibration_hash=self.calibration_hash)
         return value
 
     @property
@@ -110,7 +134,7 @@ class StructurePlan:
             tuple(row["sources"]),
             tuple(row["evidence_refs"]),
         )
-        if row["model"] not in MODELS:
+        if row["model"] not in MODELS | OPPORTUNITY_MODELS:
             raise ValueError("unknown realtime model")
         return cls(**row)
 
@@ -294,6 +318,10 @@ def generate(
 
 def create_engine(store, instance, *, parameters=None):
     parameters = Parameters() if parameters is None else parameters
+    if parameters.candidate == OPPORTUNITY:
+        from .opportunities import OpportunityEngine
+
+        return OpportunityEngine(store, instance, parameters=parameters)
     if parameters.candidate == SBOX:
         from .sbox import SBoxEngine
 

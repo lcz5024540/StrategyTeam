@@ -67,6 +67,12 @@ def initial_context(intent, trigger, contract, holding_parameters):
             entry_parameters_fingerprint=trigger.plan.parameter_fingerprint,
             entry_target_rule=trigger.plan.target_kind,
         )
+    for prefix, key in (("FAMILY:", "entry_opportunity_family"),
+                        ("SELECTOR:", "entry_selection_variant"),
+                        ("CALIBRATION:", "entry_calibration_hash")):
+        values = [s.removeprefix(prefix) for s in trigger.plan.sources if s.startswith(prefix)]
+        if values:
+            result[key] = values[0]
     return result
 
 

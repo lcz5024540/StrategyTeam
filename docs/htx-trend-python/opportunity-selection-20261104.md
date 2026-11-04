@@ -48,8 +48,8 @@ Calibration alone cannot authorize production or prove future profitability.
 ## Verification sequence (WIP=1)
 
 - [x] M1 baseline, isolated branch and protocol.
-- [ ] M2 discovery, selection, calibration and deterministic tests.
-- [ ] M3 opt-in lifecycle integration and backwards compatibility.
+- [x] M2 discovery, selection, calibration and deterministic tests.
+- [x] M3 opt-in lifecycle integration and backwards compatibility.
 - [ ] M4 identical-framework ablation replay and explicit data limitations.
 - [ ] M5 full Python regression, review, runbook and delivery evidence.
 

@@ -40,7 +40,7 @@ from . import VERSION
 from .brokers import PaperBroker, RealtimePaperExchange
 from .feed import MarketEvent
 from .management import PaperManagement
-from .plans import GRID, TriggerEngine
+from .plans import GRID, create_engine
 from .storage import PlanStore
 from .worker import RealtimeWorker, MarketView
 
@@ -301,7 +301,7 @@ class TapeReference:
 
 
 class Actor:
-    def __init__(self, tape, parameters=None):
+    def __init__(self, tape, parameters=None, *, calibration=None):
         self.tape = tape
         self.parameters = parameters
         self.market = FrozenMarket()
@@ -373,7 +373,7 @@ class Actor:
             self.worker = worker
         else:
             self.store = PlanStore(":memory:")
-            engine = TriggerEngine(self.store, "offline", parameters=parameters)
+            engine = create_engine(self.store, "offline", parameters=parameters)
             broker = PaperBroker(
                 self.ledger,
                 engine,
@@ -391,6 +391,11 @@ class Actor:
                 exit_config=_decode_config(ExitConfig, config["exit"]),
                 continuation_version=LINKED,
             )
+            if hasattr(engine, "selection"):
+                from .selection import policy_fingerprint
+
+                engine.calibration = calibration
+                engine.policy_hash = policy_fingerprint(self.execution, policy, broker.latency_ms)
             runtime = PaperTrendRuntime(
                 self.ledger,
                 RealtimePaperExchange(self.ledger),
@@ -429,9 +434,11 @@ class Actor:
                 queue.clear()
                 return values
 
+            initial_epoch = next((o["epoch"] for o in tape["observations"]
+                                  if o["kind"] in {"BBO", "TRADE"}), "replay")
             stream = SimpleNamespace(
                 connected=True,
-                epoch="replay",
+                epoch=initial_epoch,
                 drain=drain,
                 start=lambda: None,
                 close=lambda: None,
@@ -461,7 +468,7 @@ class Actor:
                 entry_config=entry,
             )
             self.worker.started = True
-            self.worker.last_epoch = "replay"
+            self.worker.last_epoch = initial_epoch
 
     def _context(self):
         if self.market.context is None:

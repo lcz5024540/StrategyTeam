@@ -21,7 +21,8 @@ from .storage import TERMINAL
 
 
 class FrameLoader:
-    def __init__(self, market, contracts, frames, *, clock=time.time):
+    def __init__(self, market, contracts, frames, *, clock=time.time, optional_periods=()):
+        self.optional_periods = frozenset(optional_periods)
         self.market, self.contracts, self.frames, self.clock = (
             market,
             tuple(contracts),
@@ -41,10 +42,18 @@ class FrameLoader:
 
     def fetch(self, code):
         now = int(self.clock())
-        windows = {
-            p: self.market.kline_window(code, p, 160, now_epoch=now)
-            for p in ("15min", "60min", "4hour")
-        }
+        windows, unavailable = {}, {}
+        for p in ("15min", "60min", "4hour"):
+            try:
+                window = self.market.kline_window(code, p, 160, now_epoch=now)
+                if not window.is_complete and p in self.optional_periods:
+                    unavailable[p] = "INCOMPLETE"
+                else:
+                    windows[p] = window
+            except Exception as error:
+                if p not in self.optional_periods:
+                    raise
+                unavailable[p] = type(error).__name__
         if any(not w.is_complete for w in windows.values()):
             raise ValueError("incomplete structure evidence")
         return {
@@ -52,6 +61,7 @@ class FrameLoader:
             "trend": windows["60min"],
             "windows": windows,
             "contract": self.market.contract_spec(code),
+            "optional_unavailable": unavailable,
             "received_ms": int(self.clock() * 1000),
             "evidence_failed": any(
                 w.evidence_status == "FAILED" for w in windows.values()
@@ -263,7 +273,10 @@ class RealtimeWorker:
         if not self.stream.connected or self.stream.epoch != trigger.epoch:
             raise ValueError("trigger connection interrupted")
         frame = self.frames[trigger.plan.contract]
-        if hasattr(self.engine, "refresh_frame"):
+        independent_preflight = hasattr(self.engine, "preflight")
+        if independent_preflight:
+            self.engine.preflight(trigger, frame, now)
+        elif hasattr(self.engine, "refresh_frame"):
             from .structures import direction
 
             self.engine.flush()
@@ -285,7 +298,7 @@ class RealtimeWorker:
             raise ValueError("incomplete structure")
         if not 0 <= now // 1000 - (frame["entry"].candles[-1].open_time + 900) < 900:
             raise ValueError("structure cache stale")
-        if signal_for(frame["entry"].candles, self.entry_config).side not in (
+        if not independent_preflight and signal_for(frame["entry"].candles, self.entry_config).side not in (
             TrendSide.FLAT,
             trigger.side,
         ):
@@ -357,6 +370,13 @@ class RealtimeWorker:
             )
         if block is not None:
             gate, intent = block, None
+        selection = None
+        if hasattr(self.engine, "selection"):
+            price = intent.price if intent is not None else gate.price_plan
+            selection = self.engine.selection(
+                trigger, frame, book, check_ms,
+                price.expected_net_r if price is not None else D(0),
+            )
         self.evidence.put(
             "realtime_entry_decision",
             {
@@ -366,6 +386,7 @@ class RealtimeWorker:
                 "previous_exit": previous,
                 "entry_enabled": self.entry_enabled,
                 "at_ms": check_ms,
+                **({"selection": selection} if selection is not None else {}),
             },
             refs=(ref,),
         )
@@ -542,7 +563,7 @@ class RealtimeWorker:
 
         for _, batch in groupby(
             sorted(triggers, key=lambda t: (t.trigger_ms, t.plan.plan_id)),
-            key=lambda t: t.trigger_ms,
+            key=lambda t: 0 if hasattr(self.engine, "rank_batch") else t.trigger_ms,
         ):
             ready = []
             for trigger in batch:
@@ -564,9 +585,18 @@ class RealtimeWorker:
                         ready.append((intent.price.expected_net_r, trigger))
                 except Exception as error:
                     self._reject(trigger, error, failures)
-            for _, trigger in sorted(
-                ready, key=lambda item: (-item[0], item[1].plan.plan_id)
-            ):
+            if hasattr(self.engine, "rank_batch"):
+                ordered, ranking_basis = self.engine.rank_batch(ready)
+                self.evidence.put("opportunity_ranking", {
+                    "basis": ranking_basis,
+                    "ordered_plan_ids": [t.plan.plan_id for _, t in ordered],
+                    "selections": {t.plan.plan_id: self.engine.selections[t.plan.plan_id]
+                                   for _, t in ordered},
+                    "at_ms": int(self.clock() * 1000),
+                })
+            else:
+                ordered = sorted(ready, key=lambda item: (-item[0], item[1].plan.plan_id))
+            for _, trigger in ordered:
                 try:
                     # Re-read depth and account risk after any preceding intent.
                     failures.extend(self.management.tick(int(self.clock() * 1000)))

@@ -19,7 +19,7 @@ from . import VERSION
 from .brokers import LiveBroker, PaperBroker, RealtimePaperExchange
 from .feed import PublicStream
 from .management import LiveManagement, PaperManagement
-from .plans import ORIGINAL, Parameters, create_engine
+from .plans import ORIGINAL, OPPORTUNITY, Parameters, create_engine
 from .storage import MySqlPlanStore, PaperPlanStore, SegmentRecorder
 from .worker import FrameLoader, MarketView, RealtimeWorker
 
@@ -74,11 +74,14 @@ class BreadthContext:
 
 
 def parameters():
+    candidate = os.environ.get("HTX_RT_CANDIDATE", ORIGINAL)
     return Parameters(
         D(os.environ.get("HTX_RT_BAND_ATR", ".10")),
-        D(os.environ.get("HTX_RT_MIN_NET_R", "1.5")),
-        candidate=os.environ.get("HTX_RT_CANDIDATE", ORIGINAL),
-        target_mode=os.environ.get("HTX_RT_TARGET_MODE", "J1"),
+        D(os.environ.get("HTX_RT_MIN_NET_R", "0" if candidate == OPPORTUNITY else "1.5")),
+        candidate=candidate,
+        target_mode=os.environ.get("HTX_RT_TARGET_MODE", "OWN_STRUCTURE" if candidate == OPPORTUNITY else "J1"),
+        selection_variant=os.environ.get("HTX_RT_SELECTION_VARIANT", "STRUCTURE"),
+        calibration_hash=os.environ.get("HTX_RT_CALIBRATION_SHA256") or None,
     )
 
 
@@ -113,7 +116,16 @@ def _common(
     if isinstance(management, LiveManagement):
         management.coverage_recorder = recorder
         management.coverage_evidence = evidence
-    loader = FrameLoader(public, contracts, frames)
+    loader = FrameLoader(public, contracts, frames,
+                         optional_periods=("4hour",) if engine.parameters.candidate == OPPORTUNITY else ())
+    if engine.parameters.candidate == OPPORTUNITY and engine.parameters.calibration_hash:
+        from .selection import Calibration, policy_fingerprint
+
+        artifact = json.loads(Path(os.environ["HTX_RT_CALIBRATION_FILE"]).read_text())
+        engine.calibration = Calibration(artifact)
+        if artifact["hash"] != engine.parameters.calibration_hash:
+            raise ValueError("calibration file differs from configured hash")
+        engine.policy_hash = policy_fingerprint(execution, policy, broker.latency_ms)
     stream = PublicStream(contracts)
     if isinstance(management, LiveManagement):
         management.coverage_stream = stream
@@ -265,6 +277,8 @@ def live(
     admission_guard,
     scan_config,
 ):
+    if parameters().candidate == OPPORTUNITY:
+        raise ValueError("opportunity-v1 is a PAPER/research candidate; LIVE not admitted")
     if instance.strategy_name != VERSION or instance.execution_mode != "LIVE":
         raise ValueError("realtime LIVE ownership mismatch")
     from .trial_admission import BINDINGS, configured, runtime_authority
