@@ -1,0 +1,54 @@
+{
+  "status": "PASS",
+  "packages": [
+    {
+      "mode": "PAPER",
+      "exit_profile": "ATR_1_1",
+      "archive": "/Users/lichangzheng.ray/Ray/research-results/indicator-union-packages-20261104-6183f160/PAPER/ATR_1_1/0.1.7-realtime-candidate-6183f160/htx-trend-python-0.1.7-realtime-candidate-6183f160.tar.gz",
+      "package_sha256": "bb92575f681bab15b660fa170790bac828a445951149894a6323e8cb5fdece22",
+      "source_commit": "6183f160116483617db881ddfc43623d33ce98c7",
+      "entry_enabled": false
+    },
+    {
+      "mode": "LIVE",
+      "exit_profile": "ATR_1_1",
+      "archive": "/Users/lichangzheng.ray/Ray/research-results/indicator-union-packages-20261104-6183f160/LIVE/ATR_1_1/0.1.7-realtime-live-6183f160/htx-trend-python-0.1.7-realtime-live-6183f160.tar.gz",
+      "package_sha256": "50ed8c7fe73803f7612856879deddb19f050a48b2334d00ed8f5a01c056efa82",
+      "source_commit": "6183f160116483617db881ddfc43623d33ce98c7",
+      "entry_enabled": false
+    },
+    {
+      "mode": "PAPER",
+      "exit_profile": "ATR_2_1",
+      "archive": "/Users/lichangzheng.ray/Ray/research-results/indicator-union-packages-20261104-6183f160/PAPER/ATR_2_1/0.1.7-realtime-candidate-6183f160/htx-trend-python-0.1.7-realtime-candidate-6183f160.tar.gz",
+      "package_sha256": "f223919316fe1703beb8060e932b78818e7a7b5cb214d7a601e6e019beb22635",
+      "source_commit": "6183f160116483617db881ddfc43623d33ce98c7",
+      "entry_enabled": false
+    },
+    {
+      "mode": "LIVE",
+      "exit_profile": "ATR_2_1",
+      "archive": "/Users/lichangzheng.ray/Ray/research-results/indicator-union-packages-20261104-6183f160/LIVE/ATR_2_1/0.1.7-realtime-live-6183f160/htx-trend-python-0.1.7-realtime-live-6183f160.tar.gz",
+      "package_sha256": "ed1a44f39a84ec9fad39649fa56435c41bcd8748ac0058585accc22d1977bbc2",
+      "source_commit": "6183f160116483617db881ddfc43623d33ce98c7",
+      "entry_enabled": false
+    },
+    {
+      "mode": "PAPER",
+      "exit_profile": "ATR_2_2",
+      "archive": "/Users/lichangzheng.ray/Ray/research-results/indicator-union-packages-20261104-6183f160/PAPER/ATR_2_2/0.1.7-realtime-candidate-6183f160/htx-trend-python-0.1.7-realtime-candidate-6183f160.tar.gz",
+      "package_sha256": "deb70d5bf81518448f2794423f2fddfc9396fcdec50feb4d539ad9bf6cef173d",
+      "source_commit": "6183f160116483617db881ddfc43623d33ce98c7",
+      "entry_enabled": false
+    },
+    {
+      "mode": "LIVE",
+      "exit_profile": "ATR_2_2",
+      "archive": "/Users/lichangzheng.ray/Ray/research-results/indicator-union-packages-20261104-6183f160/LIVE/ATR_2_2/0.1.7-realtime-live-6183f160/htx-trend-python-0.1.7-realtime-live-6183f160.tar.gz",
+      "package_sha256": "1e55eec89772821983e2fa83ff1426adfaa4d7ab4874fc67fc4c1ce3de9e4cef",
+      "source_commit": "6183f160116483617db881ddfc43623d33ce98c7",
+      "entry_enabled": false
+    }
+  ],
+  "deployed": false
+}

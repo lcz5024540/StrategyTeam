@@ -60,3 +60,5 @@ PYTHONPATH=htx-trend-python/src python htx-trend-python/research/indicator_union
 1. 用户启用前选择三档之一及实际账户/风险配置；本轮只完成三档功能验证，没有以某档作为默认赢家。
 2. 在独立PAPER环境做连续实时验证，分模式/并集、档位输出全部候选、拒绝、成交、费用、未平仓估值及净收益；不能以该模块测试中的合成利润作为收益证据。
 3. 满足准入后另批部署。回滚先关闭新入口，保留本版管理已成交并集仓；禁止换不识别该模型的旧包。
+
+六个实际离线包已从代码提交`6183f160`构建并验证，位置`/Users/lichangzheng.ray/Ray/research-results/indicator-union-packages-20261104-6183f160`，见[逐包SHA与档位](evidence/indicator-union-20261104/packages.json)。这些是本地入口关闭的候选/编码包，没有上传或部署。
