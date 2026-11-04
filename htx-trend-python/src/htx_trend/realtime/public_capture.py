@@ -13,6 +13,7 @@ from decimal import Decimal as D
 import fcntl
 import gzip
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -34,6 +35,17 @@ from .storage import SegmentRecorder
 GIB = 1024**3
 CONTROL_RESERVE = 1024**2
 CHANNELS = ("trade.detail", "bbo", "depth.step0")
+# 4096 held ~6–7s at the observed 610–640 msg/s BBO/DEPTH rate and then
+# fail-closed. 65536 is about 100s of mean-rate buffer; batch drain and
+# rarer seal/status syncs are what keep that buffer from filling.
+EVENT_QUEUE_MAXSIZE = 65536
+EVENT_DRAIN_BATCH = 512
+FLUSH_INTERVAL_S = 10.0
+SEAL_INTERVAL_S = 60.0
+HEARTBEAT_INTERVAL_S = 10.0
+QUEUE_HIGH_WATER_FRACTIONS = (0.5, 0.75, 0.9)
+SLOW_IO_LOG_MS = 50.0
+logger = logging.getLogger(__name__)
 MISSING = [
     "INDEPENDENT_BASELINE_SCANS_AND_DECISIONS",
     "OBSERVED_ACCOUNT_FEES",
@@ -90,7 +102,7 @@ def normalize_window(code, period, raw, received_ms):
     return dict(received_ms=received_ms, candles=primitive(candles))
 
 
-def atomic_json(path, value):
+def atomic_json(path, value, *, sync=True):
     raw = canonical(value)
     if len(raw) > CONTROL_RESERVE // 4:
         raise ValueError("control document exceeded reserve")
@@ -98,7 +110,10 @@ def atomic_json(path, value):
     with temporary.open("wb") as f:
         f.write(raw)
         f.flush()
-        os.fsync(f.fileno())
+        # Heartbeats skip fsync. A process crash still sees the page cache;
+        # the durable copy is the 60s full status and the final document.
+        if sync:
+            os.fsync(f.fileno())
     os.replace(temporary, path)
 
 
@@ -268,7 +283,19 @@ class Capture:
             clock,
         )
         self.stop = threading.Event()
-        self.events = queue.Queue(maxsize=4096)
+        self.events = queue.Queue(maxsize=EVENT_QUEUE_MAXSIZE)
+        self.queue_depth_high_water = 0
+        self._queue_warn_level = 0
+        self._queue_hw_lock = threading.Lock()
+        self.last_flush_ms = None
+        self.last_seal_ms = None
+        self.flush_ms_high_water = 0.0
+        self.seal_ms_high_water = 0.0
+        self._flush_at = 0.0
+        self._seal_at = 0.0
+        self._heartbeat_at = 0.0
+        self._maintenance_deferred = False
+        self._seal_due = False
         self.failure = None
         self.socket = None
         self.counts, self.channels = Counter(), Counter()
@@ -313,8 +340,45 @@ class Capture:
         try:
             self.events.put_nowait(event)
         except queue.Full:
+            # Fail closed: the event is not queued and the process stops.
+            # Do not block the producer and do not drop quietly.
+            self._observe_queue_depth(self.events.maxsize)
             self.failure = "QUEUE_OVERFLOW"
-            self.stop.set()  # stop rather than silently lose coverage
+            self.stop.set()
+            logger.error(
+                "public capture QUEUE_OVERFLOW fail-closed high_water=%s maxsize=%s last_flush_ms=%s last_seal_ms=%s",
+                self.queue_depth_high_water,
+                self.events.maxsize,
+                self.last_flush_ms,
+                self.last_seal_ms,
+            )
+            return
+        self._observe_queue_depth(self.events.qsize())
+
+    def _observe_queue_depth(self, depth):
+        if depth <= self.queue_depth_high_water:
+            return
+        crossed = None
+        with self._queue_hw_lock:
+            if depth <= self.queue_depth_high_water:
+                return
+            self.queue_depth_high_water = depth
+            limit = self.events.maxsize
+            for fraction in QUEUE_HIGH_WATER_FRACTIONS:
+                mark = int(limit * fraction)
+                if mark and self._queue_warn_level < mark <= depth:
+                    self._queue_warn_level = mark
+                    crossed = (depth, limit)
+        if crossed:
+            seen, limit = crossed
+            logger.warning(
+                "public capture queue high-water depth=%s high_water=%s maxsize=%s last_flush_ms=%s last_seal_ms=%s",
+                seen,
+                self.queue_depth_high_water,
+                limit,
+                self.last_flush_ms,
+                self.last_seal_ms,
+            )
 
     def get(self, path, params):
         # Fixed public allowlist: arbitrary URLs/private paths never enter this tool.
@@ -537,7 +601,108 @@ class Capture:
         if kind in ("SOURCE_ERROR", "GAP"):
             self.errors[event.get("source", event.get("reason", "unknown"))] += 1
 
-    def status(self, final=False):
+    def drain_batch(self, limit=None):
+        """Take one timed get, then up to limit-1 waiting events.
+
+        The timed get only covers an idle queue. When a backlog is present
+        that first get returns immediately and the rest of the batch is
+        pulled with get_nowait before any append, so a flush or seal does
+        not run between individual events.
+        """
+        if limit is None:
+            limit = EVENT_DRAIN_BATCH
+        if limit < 1:
+            raise ValueError("drain batch must be positive")
+        batch = []
+        try:
+            batch.append(self.events.get(timeout=0.1))
+        except queue.Empty:
+            return batch
+        while len(batch) < limit:
+            try:
+                batch.append(self.events.get_nowait())
+            except queue.Empty:
+                break
+        self._observe_queue_depth(self.events.qsize() + len(batch))
+        return batch
+
+    def write_batch(self, events):
+        for event in events:
+            self.write(event)
+            if self.recorder.failure:
+                return False
+        return True
+
+    def _timed(self, kind, fn):
+        started = time.monotonic()
+        try:
+            return fn()
+        finally:
+            elapsed = round((time.monotonic() - started) * 1000.0, 3)
+            if kind == "flush":
+                self.last_flush_ms = elapsed
+                if elapsed > self.flush_ms_high_water:
+                    self.flush_ms_high_water = elapsed
+            else:
+                self.last_seal_ms = elapsed
+                if elapsed > self.seal_ms_high_water:
+                    self.seal_ms_high_water = elapsed
+            if kind == "seal" or elapsed >= SLOW_IO_LOG_MS:
+                logger.info(
+                    "public capture %s duration_ms=%s queue_depth=%s high_water=%s",
+                    kind,
+                    elapsed,
+                    self.events.qsize(),
+                    self.queue_depth_high_water,
+                )
+
+    def publish_status(self, *, detail="full", sync=True, final=False):
+        atomic_json(
+            self.root / "status.json",
+            self.status(final=final, detail=detail),
+            sync=sync,
+        )
+
+    def maintain(self, now=None):
+        """Flush often; seal and the full channel map on a slower cadence.
+
+        Gzip flush and segment_boundary are not run in the same turn, and a
+        deep backlog defers maintenance for one turn so the consumer can drain.
+        Deferred work is not skipped twice. Returns False when the recorder
+        has failed and the run loop must stop.
+        """
+        now = time.monotonic() if now is None else now
+        if self.events.qsize() >= EVENT_DRAIN_BATCH and not self._maintenance_deferred:
+            self._maintenance_deferred = True
+            return True
+        self._maintenance_deferred = False
+        flushed = False
+        if now - self._flush_at >= FLUSH_INTERVAL_S:
+            self._timed("flush", self.recorder.flush)
+            self._flush_at = now
+            flushed = True
+            if self.recorder.failure:
+                self.failure = self.recorder.failure
+                return False
+        seal_due = self._seal_due or now - self._seal_at >= SEAL_INTERVAL_S
+        if seal_due and flushed and not self._seal_due:
+            self._seal_due = True
+        elif seal_due:
+            self._seal_due = False
+            self._timed("seal", self.recorder.segment_boundary)
+            self._seal_at = now
+            if self.recorder.failure:
+                self.failure = self.recorder.failure
+                return False
+            self.publish_status(detail="full", sync=True)
+            self._heartbeat_at = now
+            return True
+        if now - self._heartbeat_at >= HEARTBEAT_INTERVAL_S:
+            self.publish_status(detail="heartbeat", sync=False)
+            self._heartbeat_at = now
+        return True
+
+    def status(self, final=False, *, detail="full"):
         now = self.now()
         stale = [
             c + ":" + k
@@ -545,7 +710,8 @@ class Capture:
             for k in ("BBO", "DEPTH")
             if now - self.last_seen.get(c + ":" + k, 0) > 2000
         ]
-        return dict(
+        full = final or detail == "full"
+        body = dict(
             pid=os.getpid(),
             started_ms=self.started_ms,
             observed_ms=now,
@@ -554,16 +720,27 @@ class Capture:
             release=os.environ.get('HTX_PUBLIC_CAPTURE_RELEASE_ID','UNSPECIFIED'),
             counts_scope="CURRENT_PROCESS",
             counts=dict(self.counts),
-            channels=dict(self.channels),
             stale_price_channels=stale,
             errors=dict(self.errors),
             bytes=self.recorder.used,
             min_free_bytes=self.min_free_bytes,
             disk_free_bytes=shutil.disk_usage(self.root).free,
             queue_depth=self.events.qsize(),
+            queue_depth_high_water=self.queue_depth_high_water,
+            queue_maxsize=self.events.maxsize,
+            last_flush_ms=self.last_flush_ms,
+            last_seal_ms=self.last_seal_ms,
+            flush_ms_high_water=self.flush_ms_high_water,
+            seal_ms_high_water=self.seal_ms_high_water,
+            channel_keys=len(self.channels),
+            channels_omitted=not full,
+            status_detail="full" if full else "heartbeat",
             admission="NOT_ELIGIBLE",
             trading=False,
         )
+        if full:
+            body["channels"] = dict(self.channels)
+        return body
 
     @staticmethod
     def stream_dependency_check():
@@ -591,7 +768,7 @@ class Capture:
             ]
             for t in threads:
                 t.start()
-            deadline, flush_at, checked_at = time.monotonic() + self.seconds, 0.0, 0.0
+            deadline, checked_at = time.monotonic() + self.seconds, 0.0
             while not self.stop.is_set() and time.monotonic() < deadline:
                 if time.monotonic() - checked_at >= 1:
                     checked_at = time.monotonic()
@@ -601,18 +778,11 @@ class Capture:
                     if shutil.disk_usage(self.root).free < self.min_free_bytes:
                         self.failure = "LOW_DISK_HEADROOM"
                         break
-                try:
-                    self.write(self.events.get(timeout=0.1))
-                except queue.Empty:
-                    pass
-                if time.monotonic() - flush_at >= 10:
-                    self.recorder.flush()
-                    self.recorder.segment_boundary()
-                    if self.recorder.failure:
-                        self.failure = self.recorder.failure
-                        break
-                    atomic_json(self.root / "status.json", self.status())
-                    flush_at = time.monotonic()
+                batch = self.drain_batch()
+                if batch and not self.write_batch(batch):
+                    break
+                if not self.maintain():
+                    break
             self.failure = self.failure or (
                 "SIGNAL_STOP" if self.stop.is_set() else "DURATION_LIMIT"
             )
@@ -626,10 +796,17 @@ class Capture:
             for t in threads:
                 t.join(timeout=55)
             while not self.events.empty() and not self.recorder.failure:
-                self.write(self.events.get_nowait())
-            self.recorder.flush()
-            self.recorder.segment_boundary(force=True)
-            atomic_json(self.root / "status.json", self.status(final=True))
+                leftover = []
+                while len(leftover) < EVENT_DRAIN_BATCH:
+                    try:
+                        leftover.append(self.events.get_nowait())
+                    except queue.Empty:
+                        break
+                if not leftover or not self.write_batch(leftover):
+                    break
+            self._timed("flush", self.recorder.flush)
+            self._timed("seal", lambda: self.recorder.segment_boundary(force=True))
+            self.publish_status(detail="full", sync=True, final=True)
             self.client.close()
             if self.recorder.segments:
                 self.recorder.segments.close()
