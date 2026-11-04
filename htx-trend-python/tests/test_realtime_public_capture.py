@@ -47,6 +47,8 @@ def test_closed_window_revisions_preserved_and_forming_bar_excluded():
     assert updated["candles"][-1]["close"] == "101"
     with pytest.raises(ValueError, match="incomplete"):
         normalize_window("ETH-USDT", "15min", dict(data=bars[2:]), 160 * 900000)
+    with pytest.raises(ValueError, match="stale"):
+        normalize_window("ETH-USDT", "15min", raw, 162 * 900000)
 
 
 def test_streaming_export_hashes_and_explicit_missing_baseline(tmp_path):
@@ -243,3 +245,48 @@ def test_unexpected_capture_thread_exit_is_visible_and_stops_run(tmp_path,monkey
     monkeypatch.setattr('htx_trend.realtime.public_capture.shutil.disk_usage',lambda _:SimpleNamespace(free=20*GIB))
     c.run()
     assert c.failure=='CAPTURE_THREAD_EXITED'
+
+
+def test_status_never_calls_missing_or_stale_channels_healthy(tmp_path):
+    now = [2_000_000]
+    c = Capture(tmp_path/'health',['ETH-USDT'],seconds=1,clock=lambda:now[0]/1000)
+    try:
+        assert c.status()['continuity']=='STARTING'
+        for kind in ('BBO','DEPTH','FRAME'):
+            c.write(dict(kind=kind,contract='ETH-USDT',received_ms=now[0]))
+        assert c.status()['continuity']=='HEALTHY'
+        now[0] += 20 * 60 * 1000 + 1
+        status = c.status()
+        assert status['continuity']=='DEGRADED'
+        assert status['stale_kline_channels']==['ETH-USDT:FRAME']
+        c.failure='LOW_DISK_HEADROOM'
+        assert c.status(final=True)['continuity']=='STOPPED'
+    finally:
+        close_capture(c)
+
+
+def test_stream_recovery_records_measured_gap(tmp_path, monkeypatch):
+    c = Capture(tmp_path/'gap',['ETH-USDT'],seconds=1,clock=lambda:1.5)
+
+    class Socket:
+        calls = 0
+        def __enter__(self): return self
+        def __exit__(self, *_): return None
+        def send(self, _): return None
+        def recv(self, timeout):
+            self.calls += 1
+            if self.calls == 1:
+                return json.dumps(depth(1000))
+            c.stop.set()
+            raise TimeoutError
+
+    monkeypatch.setattr('websockets.sync.client.connect',lambda *_,**__:Socket())
+    try:
+        c.stream_loop()
+        events=[]
+        while not c.events.empty(): events.append(c.events.get_nowait())
+        assert [e['kind'] for e in events]==['GAP','DEPTH','GAP_RECOVERED']
+        assert events[-1]['epoch']==events[0]['epoch']
+        assert events[-1]['gap_started_ms']==1500 and events[-1]['gap_ms']==0
+    finally:
+        close_capture(c)

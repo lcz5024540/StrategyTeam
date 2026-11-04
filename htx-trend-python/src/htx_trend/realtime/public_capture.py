@@ -87,6 +87,10 @@ def normalize_window(code, period, raw, received_ms):
     window = KlineWindow(code, period, candles, 160)
     if len(candles) != 160 or not window.is_complete:
         raise ValueError("incomplete closed candle window")
+    seconds = period_seconds(period)
+    expected_last_open = ((received_ms // 1000) // seconds - 1) * seconds
+    if candles[-1].open_time != expected_last_open:
+        raise ValueError("stale closed candle window")
     return dict(received_ms=received_ms, candles=primitive(candles))
 
 
@@ -442,10 +446,11 @@ class Capture:
         backoff = 1
         while not self.stop.is_set():
             epoch = uuid.uuid4().hex
+            gap_started_ms = self.now()
             self.emit(
                 dict(
                     kind="GAP",
-                    received_ms=self.now(),
+                    received_ms=gap_started_ms,
                     reason="CONNECT_OR_RECONNECT",
                     epoch=epoch,
                 )
@@ -466,6 +471,7 @@ class Capture:
                         0.0,
                         time.monotonic(),
                     )
+                    recovered = False
                     while not self.stop.is_set():
                         if pending and time.monotonic() >= after:
                             c, k = pending
@@ -507,6 +513,18 @@ class Capture:
                         for event in observations:
                             self.emit(event)
                         if observations:
+                            if not recovered:
+                                recovered_ms = self.now()
+                                self.emit(
+                                    dict(
+                                        kind="GAP_RECOVERED",
+                                        received_ms=recovered_ms,
+                                        gap_started_ms=gap_started_ms,
+                                        gap_ms=max(0, recovered_ms - gap_started_ms),
+                                        epoch=epoch,
+                                    )
+                                )
+                                recovered = True
                             backoff = 1
             except Exception as error:
                 if not self.stop.is_set():
@@ -539,12 +557,23 @@ class Capture:
 
     def status(self, final=False):
         now = self.now()
-        stale = [
+        stale_price = [
             c + ":" + k
             for c in self.contracts
             for k in ("BBO", "DEPTH")
             if now - self.last_seen.get(c + ":" + k, 0) > 2000
         ]
+        stale_kline = [
+            c + ":FRAME"
+            for c in self.contracts
+            if now - self.last_seen.get(c + ":FRAME", 0) > 20 * 60 * 1000
+        ]
+        if self.failure:
+            continuity = "STOPPED" if final else "FAILED"
+        elif stale_kline or stale_price:
+            continuity = "STARTING" if not self.channels else "DEGRADED"
+        else:
+            continuity = "HEALTHY"
         return dict(
             pid=os.getpid(),
             started_ms=self.started_ms,
@@ -555,7 +584,9 @@ class Capture:
             counts_scope="CURRENT_PROCESS",
             counts=dict(self.counts),
             channels=dict(self.channels),
-            stale_price_channels=stale,
+            continuity=continuity,
+            stale_price_channels=stale_price,
+            stale_kline_channels=stale_kline,
             errors=dict(self.errors),
             bytes=self.recorder.used,
             min_free_bytes=self.min_free_bytes,
