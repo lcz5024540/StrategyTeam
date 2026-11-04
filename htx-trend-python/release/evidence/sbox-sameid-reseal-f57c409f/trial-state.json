@@ -1,0 +1,44 @@
+{
+  "binding": {
+    "account_id": 7,
+    "config_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "contracts_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "execution_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "exit_policy_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "instance_key": "htx-trend-live-primary",
+    "package_sha256": "107302a4a436eac8cbe47d5d825e9d36337273e9255b51a8018c96ae5d413150",
+    "parameters_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "source_commit": "5fd066de4b44c1e6de77120abfb163150bebd006",
+    "strategy_version": "HTX_REALTIME_STRUCTURE_15M_V1",
+    "trial_id": "primary-15m-sbox-20261104-5fd066de"
+  },
+  "expires_ms": 1762327200000,
+  "intents": {
+    "cid-1": {
+      "contract": "BTC-USDT",
+      "plan_id": "plan-1",
+      "position_id": 11,
+      "risk": "1",
+      "status": "OPEN",
+      "submitted_ms": 1762240800000
+    }
+  },
+  "last_clock_ms": 1762240800000,
+  "limits": {
+    "duration_ms": 86400000,
+    "loss": "20",
+    "per_trade": "2",
+    "slots": 10,
+    "trades": 10
+  },
+  "revision": 4,
+  "schema": "htx-realtime-trial-state-v1",
+  "snapshot": {
+    "coverage": true,
+    "loss": "0",
+    "observed_ms": 1762240800000
+  },
+  "started_ms": 1762240800000,
+  "stop_reason": null,
+  "trial_id": "primary-15m-sbox-20261104-5fd066de"
+}
