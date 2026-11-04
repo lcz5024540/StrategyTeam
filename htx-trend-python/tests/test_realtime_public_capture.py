@@ -1,5 +1,8 @@
 import gzip
 import json
+import logging
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,6 +12,7 @@ from htx_trend.realtime.public_capture import (
     Capture,
     CONTROL_RESERVE,
     GIB,
+    atomic_json,
     audit,
     iter_records,
     normalize_window,
@@ -102,9 +106,15 @@ def test_headroom_stops_before_network_and_queue_loss_stops_capture(
     assert json.loads((c.root / "status.json").read_text())["final"]
     c = Capture(tmp_path / "queue", ["ETH-USDT"], seconds=1)
     try:
-        for _ in range(4097):
-            c.emit(dict(kind="GAP", received_ms=1))
+        assert c.events.maxsize == 65536
+        for _ in range(c.events.maxsize):
+            c.emit(dict(kind="GAP", received_ms=1, reason="fill"))
+        assert c.failure is None and not c.stop.is_set()
+        assert c.events.qsize() == c.events.maxsize
+        c.emit(dict(kind="GAP", received_ms=2, reason="overflow"))
         assert c.stop.is_set() and c.failure == "QUEUE_OVERFLOW"
+        # The rejected event is not queued and earlier events are not dropped.
+        assert c.events.qsize() == c.events.maxsize
     finally:
         c.client.close()
         c.lock.close()
@@ -232,6 +242,156 @@ def test_missing_stream_dependency_stops_before_partial_rest_only_capture(tmp_pa
     c.run()
     assert c.failure=='STREAM_DEPENDENCY_UNAVAILABLE'
     assert json.loads((c.root/'status.json').read_bytes())['final']
+
+
+def test_overflow_is_nonblocking_fail_closed_and_logs_high_water(tmp_path, caplog):
+    c = Capture(tmp_path / "overflow", ["ETH-USDT"], seconds=1)
+    try:
+        caplog.set_level(logging.WARNING)
+        limit = c.events.maxsize
+        for _ in range(limit):
+            c.emit(dict(kind="GAP", received_ms=1, reason="fill"))
+        assert c.failure is None
+        assert c.queue_depth_high_water >= int(limit * 0.9)
+        assert any("high-water" in record.message for record in caplog.records)
+        held = c.events.qsize()
+        box = {}
+
+        def once():
+            c.emit(dict(kind="GAP", received_ms=2, reason="overflow"))
+            box["failure"] = c.failure
+            box["stop"] = c.stop.is_set()
+
+        worker = threading.Thread(target=once)
+        worker.start()
+        worker.join(2)
+        assert not worker.is_alive()
+        assert box["failure"] == "QUEUE_OVERFLOW" and box["stop"] is True
+        assert c.events.qsize() == held
+        body = c.status()
+        assert body["queue_depth_high_water"] >= limit
+        assert body["queue_maxsize"] == limit
+        assert "last_flush_ms" in body and "last_seal_ms" in body
+        assert "flush_ms_high_water" in body and "seal_ms_high_water" in body
+    finally:
+        close_capture(c)
+
+
+def test_consumer_drains_backlog_in_bounded_batches(tmp_path):
+    c = Capture(tmp_path / "batch", ["ETH-USDT"], seconds=1)
+    try:
+        burst = 2000
+        started = time.monotonic()
+        for i in range(burst):
+            c.emit(
+                dict(
+                    kind="BBO",
+                    contract="ETH-USDT",
+                    received_ms=i,
+                    bid="100",
+                    ask="101",
+                )
+            )
+        assert c.failure is None
+        seen = 0
+        while c.events.qsize():
+            batch = c.drain_batch()
+            assert 1 <= len(batch) <= 512
+            assert c.write_batch(batch) is True
+            seen += len(batch)
+        elapsed = time.monotonic() - started
+        assert seen == burst
+        assert c.counts["BBO"] == burst and c.channels["ETH-USDT:BBO"] == burst
+        assert c.queue_depth_high_water >= 512
+        # 2000 events is a short burst, not a multi-second stall.
+        assert elapsed < 2
+    finally:
+        close_capture(c)
+
+
+def test_run_loop_uses_nowait_batches_and_writes_every_event(tmp_path, monkeypatch):
+    c = Capture(tmp_path / "run-batch", ["ETH-USDT"], seconds=1)
+    monkeypatch.setattr(c, "stream_dependency_check", lambda: None)
+    monkeypatch.setattr(c, "load_specifications", lambda: None)
+    monkeypatch.setattr(c, "stream_loop", lambda: c.stop.wait(5))
+    monkeypatch.setattr(c, "rest_loop", lambda: c.stop.wait(5))
+    monkeypatch.setattr(
+        "htx_trend.realtime.public_capture.shutil.disk_usage",
+        lambda _: SimpleNamespace(free=20 * GIB),
+    )
+    calls = {"nowait": 0}
+    original = c.events.get_nowait
+
+    def counted():
+        calls["nowait"] += 1
+        return original()
+
+    c.events.get_nowait = counted
+    for i in range(1000):
+        c.events.put_nowait(dict(kind="GAP", received_ms=i, reason="burst"))
+    c.run()
+    assert c.failure == "DURATION_LIMIT"
+    assert c.counts["GAP"] == 1000
+    assert calls["nowait"] >= 500
+    final = json.loads((c.root / "status.json").read_bytes())
+    assert final["final"] is True
+    assert final["status_detail"] == "full"
+    assert "channels" in final
+    assert final["queue_maxsize"] == 65536
+    assert "queue_depth_high_water" in final
+    assert "last_flush_ms" in final and "last_seal_ms" in final
+
+
+def test_heartbeat_omits_channels_and_seal_is_split_from_flush(tmp_path, monkeypatch):
+    c = Capture(tmp_path / "maintain", ["ETH-USDT"], seconds=1)
+    try:
+        seals, flushes, syncs = [], [], []
+        monkeypatch.setattr(
+            c.recorder,
+            "segment_boundary",
+            lambda *args, **kwargs: seals.append(1),
+        )
+
+        def flush():
+            flushes.append(1)
+            return None
+
+        monkeypatch.setattr(c.recorder, "flush", flush)
+        real_atomic = atomic_json
+
+        def spy(path, value, *, sync=True):
+            syncs.append((value.get("status_detail"), sync))
+            return real_atomic(path, value, sync=sync)
+
+        monkeypatch.setattr("htx_trend.realtime.public_capture.atomic_json", spy)
+        c.write(dict(kind="BBO", contract="ETH-USDT", received_ms=1000, bid="1", ask="2"))
+        t0 = 10_000.0
+        c._flush_at = c._seal_at = c._heartbeat_at = t0
+        assert c.maintain(t0 + 10) is True
+        assert flushes == [1] and seals == []
+        heartbeat = json.loads((c.root / "status.json").read_bytes())
+        assert heartbeat["status_detail"] == "heartbeat"
+        assert "channels" not in heartbeat
+        assert heartbeat["channel_keys"] == 1
+        assert heartbeat["counts"]["BBO"] == 1
+        assert "ETH-USDT:BBO" in heartbeat["stale_price_channels"]
+        assert "queue_depth_high_water" in heartbeat
+        assert heartbeat["last_flush_ms"] >= 0
+        assert "last_seal_ms" in heartbeat
+        assert syncs == [("heartbeat", False)]
+        # Flush and seal both become due together; seal waits one turn.
+        assert c.maintain(t0 + 60) is True
+        assert flushes == [1, 1] and seals == []
+        assert c.maintain(t0 + 60) is True
+        assert seals == [1]
+        full = json.loads((c.root / "status.json").read_bytes())
+        assert full["status_detail"] == "full"
+        assert full["channels"]["ETH-USDT:BBO"] == 1
+        assert full["channel_keys"] == 1
+        assert full["last_seal_ms"] >= 0
+        assert syncs[-1] == ("full", True)
+    finally:
+        close_capture(c)
 
 
 def test_unexpected_capture_thread_exit_is_visible_and_stops_run(tmp_path,monkeypatch):
