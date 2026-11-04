@@ -1,0 +1,14 @@
+{
+  "package": "/tmp/cos-merge-validation-20261104/0.1.7-realtime-candidate-28af5647/htx-trend-python-0.1.7-realtime-candidate-28af5647.tar.gz",
+  "sha256": "2e4deeac47c296807487bb2f9fa65717ad31f72ded471624d281fa59fb05b536",
+  "required_files": {
+    "release/cos/release_verified.py": true,
+    "release/cos/coinstrategy-15m-cos-release.service": true,
+    "release/cos/coinstrategy-15m-cos-release.timer": true,
+    "release/cos/coinstrategy-15m-cos-archive.service": true,
+    "release/cos/coinstrategy-15m-cos-archive.timer": true,
+    "src/htx_trend/archive/cli.py": true
+  },
+  "no_bytecode_directories": true,
+  "production_deployed": false
+}

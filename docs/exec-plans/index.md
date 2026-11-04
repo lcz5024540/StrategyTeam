@@ -10,3 +10,5 @@
 - [COS continuous archive](completed/plan-20261103-cos-continuous-archive.md) — scheduler, replay cache and verified frozen-source retirement.
 
 - [COS verified local release](completed/plan-20261104-cos-verified-release.md) - deployed; [evidence](evidence/cos-release-20261104/report.md).
+
+- [COS merge and upload activation](completed/plan-20261104-merge-cos-upload.md) - completed; [verification](evidence/cos-merge-20261104/report.md).

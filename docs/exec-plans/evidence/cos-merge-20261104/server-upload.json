@@ -1,0 +1,48 @@
+{
+  "observed": "2026-11-04T14:36:53.028644+08:00",
+  "capture": {
+    "pid": 2595135,
+    "release": "0.1.7-realtime-candidate-869660ab",
+    "bytes": 165940401,
+    "final": false,
+    "stop_reason": null,
+    "observed_ms": 1793774210703,
+    "trading": false
+  },
+  "control": {
+    "config": {
+      "contract": "capture-public",
+      "delivery_consumer": false,
+      "kind": "capture",
+      "max_bytes": 67108864,
+      "max_files": 20000,
+      "schema": "htx-local-sealing-v1"
+    },
+    "revision": 145880,
+    "blocked_release": false,
+    "pending_mutations": 0,
+    "cold_files": 35290,
+    "consumers": [
+      {
+        "owner": "recorder",
+        "ready": 1,
+        "error": null
+      }
+    ],
+    "generation_counts": {
+      "RETIRED": 164,
+      "COS_VERIFIED": 1,
+      "SEALED": 1,
+      "OPEN": 1
+    }
+  },
+  "units": "MainPID=2595135\nResult=success\nExecMainStatus=0\nId=coinstrategy-15m-market-data.service\nActiveState=active\nUnitFileState=enabled\n\nMainPID=0\nResult=success\nExecMainStatus=0\nId=coinstrategy-15m-cos-archive.service\nActiveState=inactive\nUnitFileState=static\n\nResult=success\nId=coinstrategy-15m-cos-archive.timer\nActiveState=active\nUnitFileState=enabled\n\nMainPID=0\nResult=success\nExecMainStatus=0\nId=coinstrategy-15m-cos-release.service\nActiveState=inactive\nUnitFileState=static\n\nResult=success\nId=coinstrategy-15m-cos-release.timer\nActiveState=active\nUnitFileState=enabled\n",
+  "upload_journal": "Nov 04 14:32:06 VM-0-11-ubuntu systemd[1]: coinstrategy-15m-cos-archive.service: Deactivated successfully.\nNov 04 14:32:06 VM-0-11-ubuntu systemd[1]: Finished coinstrategy-15m-cos-archive.service - CoinStrategy 15m sealed data COS upload only.\nNov 04 14:32:06 VM-0-11-ubuntu systemd[1]: coinstrategy-15m-cos-archive.service: Consumed 28.994s CPU time.\nNov 04 14:34:58 VM-0-11-ubuntu systemd[1]: Starting coinstrategy-15m-cos-archive.service - CoinStrategy 15m sealed data COS upload only...\nNov 04 14:35:55 VM-0-11-ubuntu python[2599771]: {\"status\": \"VERIFIED\", \"receipts\": [{\"epoch\": 164, \"manifest\": \"manifests/7fa1a053f69af53aa23d5ce0e268bbf91b6cb48b8573df170524ede720be1589.json\", \"files\": 290}, {\"epoch\": 165, \"manifest\": \"manifests/b75540a47d1deeb5a7212adbfeff2e90672210da195cd908f9a999ae456cff32.json\", \"files\": 221}], \"source_deleted\": false, \"pending_generations\": 0}\nNov 04 14:35:55 VM-0-11-ubuntu systemd[1]: coinstrategy-15m-cos-archive.service: Deactivated successfully.\nNov 04 14:35:55 VM-0-11-ubuntu systemd[1]: Finished coinstrategy-15m-cos-archive.service - CoinStrategy 15m sealed data COS upload only.\nNov 04 14:35:55 VM-0-11-ubuntu systemd[1]: coinstrategy-15m-cos-archive.service: Consumed 20.923s CPU time, 73.6M memory peak, 0B memory swap peak.\n",
+  "disk": {
+    "total": 63290032128,
+    "used": 45695987712,
+    "free": 14893297664
+  },
+  "data_release": "/opt/coinstrategy/15m-market-data/releases/0.1.7-realtime-candidate-869660ab",
+  "maintenance_release": "/opt/coinstrategy/15m-cos-maintenance/releases/15m-cos-release-895663f9"
+}
