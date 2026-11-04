@@ -1,0 +1,233 @@
+import bisect
+import collections
+import csv
+import datetime as dt
+import pathlib
+import statistics
+
+ROOT = pathlib.Path(__file__).resolve().parent
+START = dt.date(2023, 9, 23)
+END = dt.date(2026, 9, 23)
+EDGES = [dt.date(y, 9, 23) for y in [2023, 2024, 2025, 2026]]
+EXCLUDED = {'USDT', 'USDC', 'DAI', 'TUSD', 'BUSD', 'FDUSD', 'PYUSD',
+            'USD1', 'USDG', 'USDe', 'WBTC', 'XAUt'}
+INITIAL_EQUITY = 1_000_000.0
+SLOT_NOTIONAL = 200_000.0
+ENTRY_OR_EXIT_COST = 0.002  # two legs combined, half of 0.4% roundtrip
+MIN_SEVEN_DAY_DAILY_VOLUME = 20_000_000.0  # on EACH Binance market
+
+snapshots = collections.defaultdict(list)
+for r in csv.DictReader((ROOT / 'cmc-top30-monthly-snapshots.csv').open()):
+    if r['symbol'] not in EXCLUDED:
+        snapshots[dt.date.fromisoformat(r['snapshot'])].append(r)
+snapshot_dates = sorted(snapshots)
+
+data = {}
+mark_overlay = {(r['symbol'], r['time_utc']): float(r['mark_price_estimate'])
+                for r in csv.DictReader((ROOT / 'binance-missing-mark-prices.csv').open())}
+for funding_path in (ROOT / 'binance').glob('*.csv'):
+    symbol = funding_path.stem
+    # Binance 1000SHIB/1000PEPE contracts quote a thousand spot units.
+    contract_multiplier = 1000.0 if symbol in {'SHIB', 'PEPE'} else 1.0
+    spot_path = ROOT / 'spot' / funding_path.name
+    volume_path = ROOT / 'perp-volume' / funding_path.name
+    if not spot_path.exists() or not volume_path.exists():
+        continue
+    spot = {dt.date.fromisoformat(r['date_utc']): (float(r['open']), float(r['close']), float(r['quote_volume_usdt']))
+            for r in csv.DictReader(spot_path.open())}
+    volume = {dt.date.fromisoformat(r['date_utc']): float(r['quote_volume_usdt'])
+              for r in csv.DictReader(volume_path.open())}
+    events = sorted((int(dt.datetime.fromisoformat(r['time_utc']).timestamp() // 3600),
+                     float(r['funding_rate']),
+                     (float(r['mark_price']) if r['mark_price'] else mark_overlay[(symbol, r['time_utc'])]) / contract_multiplier)
+                    for r in csv.DictReader(funding_path.open()))
+    hours = [r[0] for r in events]
+    rate_prefix = [0.0]
+    cash_prefix = [0.0]
+    for _, rate, price in events:
+        rate_prefix.append(rate_prefix[-1] + rate)
+        cash_prefix.append(cash_prefix[-1] + rate * price)
+    data[symbol] = {'spot': spot, 'volume': volume, 'events': events,
+                    'hours': hours, 'rate_prefix': rate_prefix,
+                    'cash_prefix': cash_prefix}
+
+def hour(date):
+    return int(dt.datetime.combine(date, dt.time(), dt.timezone.utc).timestamp() // 3600)
+
+def mark(symbol, date):
+    d = data[symbol]
+    h = hour(date)
+    idx = bisect.bisect_right(d['hours'], h) - 1
+    if idx < 0 or h - d['hours'][idx] > 12:
+        return None
+    return d['events'][idx][2]
+
+def funding_cash(symbol, quantity, start, end):
+    d = data[symbol]
+    lo = bisect.bisect_right(d['hours'], hour(start))
+    hi = bisect.bisect_right(d['hours'], hour(end))
+    return quantity * (d['cash_prefix'][hi] - d['cash_prefix'][lo])
+
+def trailing_rate(symbol, date):
+    d = data[symbol]
+    now = hour(date)
+    lo = bisect.bisect_right(d['hours'], now - 30 * 24)
+    hi = bisect.bisect_right(d['hours'], now)
+    if hi - lo < 70 or d['hours'][lo] > now - 27 * 24 or d['hours'][hi - 1] < now - 12:
+        return None
+    return d['rate_prefix'][hi] - d['rate_prefix'][lo]
+
+def volume_ok(symbol, date):
+    d = data[symbol]
+    dates = [date - dt.timedelta(days=n) for n in range(1, 8)]
+    if any(day not in d['spot'] or day not in d['volume'] for day in dates):
+        return False
+    spot_avg = statistics.mean(d['spot'][day][2] for day in dates)
+    perp_avg = statistics.mean(d['volume'][day] for day in dates)
+    return spot_avg >= MIN_SEVEN_DAY_DAILY_VOLUME and perp_avg >= MIN_SEVEN_DAY_DAILY_VOLUME
+
+def selection(date, threshold):
+    # CMC Sunday snapshots are end-of-day; a rebalance at 00:00 UTC can
+    # only use snapshots dated strictly before that day.
+    idx = bisect.bisect_left(snapshot_dates, date) - 1
+    snapshot_date = snapshot_dates[idx]
+    candidates = []
+    for row in snapshots[snapshot_date]:
+        symbol = row['symbol']
+        if symbol not in data or date not in data[symbol]['spot'] or mark(symbol, date) is None:
+            continue
+        if not volume_ok(symbol, date):
+            continue
+        rate = trailing_rate(symbol, date)
+        if rate is not None and rate >= threshold:
+            candidates.append((symbol, rate, int(row['rank'])))
+    candidates.sort(key=lambda r: r[1], reverse=True)
+    return snapshot_date, candidates[:3], len(candidates)
+
+monthly = {START}
+monthly.update(dt.date(y, m, 1) for y in [2023, 2024, 2025, 2026]
+               for m in range(1, 13) if START < dt.date(y, m, 1) < END)
+
+def simulate(name, threshold):
+    positions = {}
+    realized_basis = funding = costs = 0.0
+    entries = exits = forced_exits = 0
+    daily = []
+    choices = []
+    worst_short = (0.0, None, None)
+    worst_aggregate_short = (0.0, None)
+    short_over_slot_margin_days = 0
+    short_over_total_margin_days = 0
+    previous = START
+    current = START
+    while current <= END:
+        if current != START:
+            for symbol, pos in positions.items():
+                funding += funding_cash(symbol, pos['quantity'], previous, current)
+        for symbol in list(positions):
+            if current in data[symbol]['spot'] and mark(symbol, current) is not None:
+                continue
+            pos = positions.pop(symbol)
+            last_spot = data[symbol]['spot'].get(previous)
+            if last_spot is None:
+                raise RuntimeError(('unpriceable forced exit', symbol, current))
+            spot_price = last_spot[1]
+            future_price = mark(symbol, current) or mark(symbol, previous)
+            if future_price is None:
+                raise RuntimeError(('missing forced-exit perp price', symbol, current))
+            q = pos['quantity']
+            realized_basis += q * ((spot_price - pos['spot_entry']) - (future_price - pos['future_entry']))
+            costs += ENTRY_OR_EXIT_COST * q * (spot_price + future_price) / 2
+            exits += 1
+            forced_exits += 1
+        if current in monthly or current == END:
+            snap, desired_rows, candidate_count = selection(current, threshold) if current != END else (None, [], 0)
+            desired = {r[0] for r in desired_rows}
+            for symbol in list(positions):
+                if symbol in desired:
+                    continue
+                pos = positions.pop(symbol)
+                spot_price = data[symbol]['spot'][current][0]
+                future_price = mark(symbol, current)
+                if future_price is None:
+                    raise RuntimeError(('missing exit price', symbol, current))
+                q = pos['quantity']
+                realized_basis += q * ((spot_price - pos['spot_entry']) - (future_price - pos['future_entry']))
+                costs += ENTRY_OR_EXIT_COST * q * (spot_price + future_price) / 2
+                exits += 1
+            for symbol in desired:
+                if symbol in positions:
+                    continue
+                spot_price = data[symbol]['spot'][current][0]
+                future_price = mark(symbol, current)
+                q = SLOT_NOTIONAL / spot_price
+                positions[symbol] = {'quantity': q, 'spot_entry': spot_price,
+                                     'future_entry': future_price}
+                costs += ENTRY_OR_EXIT_COST * q * (spot_price + future_price) / 2
+                entries += 1
+            if current != END:
+                choices.append({'date': current.isoformat(), 'snapshot': snap.isoformat(),
+                                'selected': ','.join(r[0] for r in desired_rows),
+                                'trailing_30d_rate_pct': ','.join(f'{r[1]*100:.3f}' for r in desired_rows),
+                                'eligible_count': candidate_count})
+        unrealized = 0.0
+        aggregate_short_loss = 0.0
+        any_short_over_slot_margin = False
+        for symbol, pos in positions.items():
+            if current not in data[symbol]['spot']:
+                raise RuntimeError(('missing spot valuation', symbol, current))
+            future_price = mark(symbol, current)
+            if future_price is None:
+                raise RuntimeError(('missing perp valuation', symbol, current))
+            spot_price = data[symbol]['spot'][current][0]
+            short_loss = pos['quantity'] * (future_price - pos['future_entry'])
+            if short_loss > worst_short[0]:
+                worst_short = (short_loss, current.isoformat(), symbol)
+            aggregate_short_loss += short_loss
+            any_short_over_slot_margin |= short_loss > SLOT_NOTIONAL / 2
+            unrealized += pos['quantity'] * ((spot_price - pos['spot_entry']) -
+                                               (future_price - pos['future_entry']))
+        if aggregate_short_loss > worst_aggregate_short[0]:
+            worst_aggregate_short = (aggregate_short_loss, current.isoformat())
+        short_over_slot_margin_days += any_short_over_slot_margin
+        short_over_total_margin_days += aggregate_short_loss > 400_000
+        nav = INITIAL_EQUITY + funding + realized_basis + unrealized - costs
+        daily.append({'date': current.isoformat(), 'nav': nav, 'funding': funding,
+                      'realized_basis': realized_basis, 'unrealized_basis': unrealized,
+                      'costs': costs, 'open_symbols': ','.join(sorted(positions))})
+        previous = current
+        current += dt.timedelta(days=1)
+    with (ROOT / f'{name}-daily.csv').open('w', newline='') as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(daily[0])); writer.writeheader();writer.writerows(daily)
+    with (ROOT / f'{name}-choices.csv').open('w', newline='') as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(choices[0])); writer.writeheader();writer.writerows(choices)
+    by_date = {dt.date.fromisoformat(r['date']):r for r in daily}
+    high=INITIAL_EQUITY; max_dd=0
+    for item in daily:
+        high=max(high,item['nav'])
+        max_dd=min(max_dd,item['nav']/high-1)
+    last=daily[-1]
+    print(name, 'start', daily[0]['nav'], 'end', last['nav'],
+          'three_year_return_pct', (last['nav']/INITIAL_EQUITY-1)*100,
+          'annualized_pct', ((last['nav']/INITIAL_EQUITY)**(365/(END-START).days)-1)*100,
+          'funding_usd', funding, 'basis_usd', realized_basis,
+          'cost_usd', costs, 'entries', entries, 'exits', exits,
+          'forced_exits',forced_exits,
+          'daily_mark_drawdown_pct',max_dd*100,flush=True)
+    print('MARGIN_STRESS', name, 'worst_individual_short_loss', worst_short,
+          'worst_aggregate_short_loss', worst_aggregate_short,
+          'days_with_single_short_loss_over_100k', short_over_slot_margin_days,
+          'days_with_aggregate_short_loss_over_400k', short_over_total_margin_days, flush=True)
+    for a,b in zip(EDGES, EDGES[1:]):
+        start_nav = INITIAL_EQUITY if a == START else by_date[a]['nav']
+        end_nav = by_date[b]['nav']
+        print('YEAR',name,a,b,'pnl_usd',end_nav-start_nav,
+              'return_pct_of_start_equity',(end_nav/start_nav-1)*100,
+              'funding_usd',by_date[b]['funding']-(0 if a==START else by_date[a]['funding']),
+              'basis_delta_usd',by_date[b]['realized_basis']+by_date[b]['unrealized_basis']-
+                      (0 if a==START else by_date[a]['realized_basis']+by_date[a]['unrealized_basis']),
+              'cost_delta_usd',by_date[b]['costs']-(0 if a==START else by_date[a]['costs']),flush=True)
+    print('CHOICES',name,choices[:4],choices[-4:],flush=True)
+
+simulate('top3-positive',0.0)
+simulate('top3-after-cost',0.004)

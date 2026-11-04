@@ -1,0 +1,41 @@
+import concurrent.futures
+import csv
+import datetime as dt
+import json
+import pathlib
+import time
+import urllib.parse
+import urllib.request
+
+ROOT=pathlib.Path(__file__).resolve().parent.parent
+market={r['symbol']:r['market'] for r in csv.DictReader(open(ROOT/'binance-funding-manifest.csv'))}
+
+def one(path):
+    symbol=path.stem
+    rows=[r for r in csv.DictReader(open(path)) if not r['mark_price']]
+    if not rows:return []
+    start=int(dt.datetime.fromisoformat(rows[0]['time_utc']).timestamp()*1000)
+    end=int(dt.datetime.fromisoformat(rows[-1]['time_utc']).timestamp()*1000)
+    args=urllib.parse.urlencode({'symbol':market[symbol],'interval':'8h','startTime':start,'endTime':end,'limit':1000})
+    url='https://fapi.binance.com/fapi/v1/markPriceKlines?'+args
+    for attempt in range(5):
+        try:
+            with urllib.request.urlopen(url,timeout=30) as response:klines=json.load(response)
+            break
+        except Exception:
+            if attempt==4:raise
+            time.sleep(1+attempt*2)
+    by_hour={r[0]//3600000:r[1] for r in klines}
+    found=[]
+    for row in rows:
+        h=int(dt.datetime.fromisoformat(row['time_utc']).timestamp()//3600)
+        if h in by_hour:found.append((symbol,row['time_utc'],by_hour[h],'8h_mark_kline_open'))
+    print(symbol,len(found),'/',len(rows),flush=True)
+    return found
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    replacements=[r for chunk in pool.map(one,(ROOT/'binance').glob('*.csv')) for r in chunk]
+with (ROOT/'binance-missing-mark-prices.csv').open('w',newline='') as handle:
+    writer=csv.writer(handle);writer.writerow(['symbol','time_utc','mark_price_estimate','source'])
+    writer.writerows(replacements)
+print('total',len(replacements),flush=True)

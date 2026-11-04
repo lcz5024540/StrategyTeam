@@ -1,0 +1,48 @@
+import concurrent.futures
+import csv
+import datetime as dt
+import json
+import pathlib
+import time
+import urllib.request
+
+OUT = pathlib.Path(__file__).resolve().parent.parent / 'hyperliquid'
+OUT.mkdir(parents=True, exist_ok=True)
+START = int(dt.datetime(2023, 9, 23, tzinfo=dt.timezone.utc).timestamp() * 1000)
+END = int(dt.datetime(2026, 9, 23, tzinfo=dt.timezone.utc).timestamp() * 1000)
+
+def fetch(coin):
+    rows = []
+    cursor = START
+    while cursor < END:
+        payload = {'type': 'fundingHistory', 'coin': coin, 'startTime': cursor,
+                   'endTime': END - 1}
+        for attempt in range(5):
+            try:
+                request = urllib.request.Request('https://api.hyperliquid.xyz/info',
+                    data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'})
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    batch = json.load(response)
+                break
+            except Exception:
+                if attempt == 4:
+                    raise
+                time.sleep(1 + 2 * attempt)
+        if not batch:
+            break
+        rows.extend(batch)
+        cursor = batch[-1]['time'] + 1
+        if len(rows) % 3000 < len(batch):
+            print(coin, len(rows), flush=True)
+    assert len(rows) == len(set(row['time']//3600000 for row in rows))
+    path = OUT / f'{coin}.csv'
+    with path.open('w', newline='') as handle:
+        writer = csv.writer(handle)
+        writer.writerow(['time_utc', 'funding_rate', 'premium'])
+        for row in rows:
+            writer.writerow([dt.datetime.fromtimestamp(row['time']/1000, dt.timezone.utc).isoformat(),
+                             row['fundingRate'], row['premium']])
+    print('FINISHED', coin, len(rows), rows[0]['time'], rows[-1]['time'], flush=True)
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+    list(pool.map(fetch, ['BTC', 'ETH']))

@@ -1,0 +1,90 @@
+[
+  {
+    "source_checkout": "coinstrategy",
+    "source_path": "funding-rate/SINGLE_EXCHANGE_PERPETUAL_CARRY_STRATEGY_V2.md",
+    "source_head": "20e6293ad92cb51fba84ce170715584b2282821e",
+    "source_sha256": "1cf4bfd4d2b42b0fa67e3a3849611a5cfcd60c188903a4966cf60a8ecf67fe08",
+    "archive_path": "migration/jd-20261104/coinstrategy/funding-rate/SINGLE_EXCHANGE_PERPETUAL_CARRY_STRATEGY_V2.md.source",
+    "bytes": 18607,
+    "sha256": "1cf4bfd4d2b42b0fa67e3a3849611a5cfcd60c188903a4966cf60a8ecf67fe08",
+    "secret_scan": "pass",
+    "review_note": null
+  },
+  {
+    "source_checkout": "coinstrategy",
+    "source_path": "reports/funding-rate-3y-2026-09-23/screen.py",
+    "source_head": "20e6293ad92cb51fba84ce170715584b2282821e",
+    "source_sha256": "11c7f9ddf9894251d90086d63e662c5ee60cb24ef9475619e5ab16aebb3a4730",
+    "archive_path": "migration/jd-20261104/coinstrategy/reports/funding-rate-3y-2026-09-23/screen.py.source",
+    "bytes": 11785,
+    "sha256": "11c7f9ddf9894251d90086d63e662c5ee60cb24ef9475619e5ab16aebb3a4730",
+    "secret_scan": "pass",
+    "review_note": null
+  },
+  {
+    "source_checkout": "coinstrategy",
+    "source_path": "reports/funding-rate-3y-2026-09-23/scripts/coinstrategy_fill_mark.py",
+    "source_head": "20e6293ad92cb51fba84ce170715584b2282821e",
+    "source_sha256": "eee41fac78d275c9890ae6b3991f772068a51a34369f8d10cbab0743b8a493a1",
+    "archive_path": "migration/jd-20261104/coinstrategy/reports/funding-rate-3y-2026-09-23/scripts/coinstrategy_fill_mark.py.source",
+    "bytes": 1763,
+    "sha256": "eee41fac78d275c9890ae6b3991f772068a51a34369f8d10cbab0743b8a493a1",
+    "secret_scan": "pass",
+    "review_note": null
+  },
+  {
+    "source_checkout": "coinstrategy",
+    "source_path": "reports/funding-rate-3y-2026-09-23/scripts/coinstrategy_binance_top30_perp_volume.py",
+    "source_head": "20e6293ad92cb51fba84ce170715584b2282821e",
+    "source_sha256": "4a6d0a4fe36b058286b940bf1beae31376f6c4997c7460d2c09c771b8934f7b2",
+    "archive_path": "migration/jd-20261104/coinstrategy/reports/funding-rate-3y-2026-09-23/scripts/coinstrategy_binance_top30_perp_volume.py.source",
+    "bytes": 2070,
+    "sha256": "4a6d0a4fe36b058286b940bf1beae31376f6c4997c7460d2c09c771b8934f7b2",
+    "secret_scan": "pass",
+    "review_note": null
+  },
+  {
+    "source_checkout": "coinstrategy",
+    "source_path": "reports/funding-rate-3y-2026-09-23/scripts/coinstrategy_hl_3y_funding.py",
+    "source_head": "20e6293ad92cb51fba84ce170715584b2282821e",
+    "source_sha256": "1ae7a113daf190cc20db58eabc876e794cc6c800cd5363f562eb849196bcb8f9",
+    "archive_path": "migration/jd-20261104/coinstrategy/reports/funding-rate-3y-2026-09-23/scripts/coinstrategy_hl_3y_funding.py.source",
+    "bytes": 1935,
+    "sha256": "1ae7a113daf190cc20db58eabc876e794cc6c800cd5363f562eb849196bcb8f9",
+    "secret_scan": "pass",
+    "review_note": null
+  },
+  {
+    "source_checkout": "coinstrategy",
+    "source_path": "reports/funding-rate-3y-2026-09-23/scripts/coinstrategy_top30_snapshots.py",
+    "source_head": "20e6293ad92cb51fba84ce170715584b2282821e",
+    "source_sha256": "017cada473c95d482f2cd62acddfca76dbb1fa183e1ed94d505ef0b584358c75",
+    "archive_path": "migration/jd-20261104/coinstrategy/reports/funding-rate-3y-2026-09-23/scripts/coinstrategy_top30_snapshots.py.source",
+    "bytes": 2915,
+    "sha256": "017cada473c95d482f2cd62acddfca76dbb1fa183e1ed94d505ef0b584358c75",
+    "secret_scan": "pass",
+    "review_note": null
+  },
+  {
+    "source_checkout": "coinstrategy",
+    "source_path": "reports/funding-rate-3y-2026-09-23/scripts/coinstrategy_binance_top30_spot.py",
+    "source_head": "20e6293ad92cb51fba84ce170715584b2282821e",
+    "source_sha256": "1753ad2ad42435f40e77caee5ccc64bc5d6d37faaa0577c9153635e4d7dee8b7",
+    "archive_path": "migration/jd-20261104/coinstrategy/reports/funding-rate-3y-2026-09-23/scripts/coinstrategy_binance_top30_spot.py.source",
+    "bytes": 2556,
+    "sha256": "1753ad2ad42435f40e77caee5ccc64bc5d6d37faaa0577c9153635e4d7dee8b7",
+    "secret_scan": "pass",
+    "review_note": null
+  },
+  {
+    "source_checkout": "coinstrategy",
+    "source_path": "reports/funding-rate-3y-2026-09-23/scripts/coinstrategy_binance_top30_funding.py",
+    "source_head": "20e6293ad92cb51fba84ce170715584b2282821e",
+    "source_sha256": "f6747a5f9d4aeefec74a77cad2034e59476bdcb5def1a936dbf1ace39a8f60c2",
+    "archive_path": "migration/jd-20261104/coinstrategy/reports/funding-rate-3y-2026-09-23/scripts/coinstrategy_binance_top30_funding.py.source",
+    "bytes": 3361,
+    "sha256": "f6747a5f9d4aeefec74a77cad2034e59476bdcb5def1a936dbf1ace39a8f60c2",
+    "secret_scan": "pass",
+    "review_note": null
+  }
+]
