@@ -1,0 +1,62 @@
+{
+  "schema": "regime-ab-protocol-v1",
+  "version": "REGIME_AB_V1",
+  "model": "RT_REGIME_AB",
+  "scenarios": {
+    "A": {
+      "side": "LONG",
+      "h1_ema": -1,
+      "h1_macd": 1,
+      "m15_macd": -1,
+      "wick": "lower"
+    },
+    "B": {
+      "side": "SHORT",
+      "h1_ema": 1,
+      "h1_macd": 1,
+      "m15_macd": -1,
+      "wick": "upper"
+    }
+  },
+  "exits": [
+    "ATR_1_1",
+    "ATR_2_1",
+    "ATR_2_2"
+  ],
+  "timings": [
+    "FIRST_QUOTE",
+    "WINDOW"
+  ],
+  "spread_max": "0.001",
+  "max_age_ms": 2000,
+  "posterior": {
+    "prior": [
+      1,
+      1
+    ],
+    "draws": 50000,
+    "seed": 20261105,
+    "positive_label": "complete net return > 0",
+    "minimum_complete": 20,
+    "minimum_hour_blocks": 10,
+    "bootstrap_draws": 10000,
+    "block_minutes": [
+      30,
+      60,
+      120
+    ],
+    "main_block_minutes": 60,
+    "thresholds": [
+      "0.80",
+      "0.90",
+      "0.95"
+    ],
+    "update": "original prior plus all unique mature nonoverlapping labels"
+  },
+  "primary_return": "unlevered net return fraction",
+  "account": null,
+  "training": "SEEN only; no protected holdout",
+  "test": "UNSEEN only, snapshot frozen before prediction",
+  "selection": "diagnostic mean_net descending, drawdown ascending, invalid_roundtrips ascending, threshold descending; no live admission",
+  "entry_enabled": false
+}

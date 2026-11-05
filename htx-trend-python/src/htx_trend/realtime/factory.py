@@ -74,6 +74,14 @@ class BreadthContext:
 
 
 def parameters():
+    if os.environ.get("HTX_RT_CANDIDATE") == "REGIME_AB_V1":
+        threshold = os.environ.get("HTX_REGIME_BAYES_THRESHOLD", "")
+        return Parameters(min_net_r=D(0), candidate="REGIME_AB_V1",
+            target_mode=os.environ.get("HTX_REGIME_EXIT", ""),
+            regime_timing=os.environ.get("HTX_REGIME_TIMING", "WINDOW"),
+            bayes_threshold=D(threshold) if threshold else None,
+            bayes_snapshot_hash=os.environ.get("HTX_REGIME_SNAPSHOT_SHA256", ""),
+            bayes_cost_id=os.environ.get("HTX_REGIME_COST_ID", ""))
     if os.environ.get("HTX_RT_CANDIDATE") == "INDICATOR_UNION_V1":
         return Parameters(min_net_r=D(0), candidate="INDICATOR_UNION_V1", target_mode=os.environ.get("HTX_UNION_EXIT", ""))
     return Parameters(
@@ -101,6 +109,9 @@ def _common(
     guard=lambda: None,
     admission_guard=lambda: None,
 ):
+    if engine.parameters.candidate == "REGIME_AB_V1":
+        from .regime_bayes import bind_snapshot
+        bind_snapshot(engine, os.environ.get("HTX_REGIME_SNAPSHOT", ""), live=isinstance(management, LiveManagement))
     root = Path(os.environ.get("HTX_RT_CAPTURE_DIR", "")).expanduser()
     if not root.is_absolute():
         raise ValueError(

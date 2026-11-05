@@ -131,7 +131,7 @@ def evaluate(
             False, "CONTRACT", "quote not aligned with current contract tick"
         ), None
     long = p.side is TrendSide.LONG
-    union = p.model == "RT_INDICATOR_UNION"
+    union = p.model in ("RT_INDICATOR_UNION", "RT_REGIME_AB")
     if not union and not (top.bid > p.line + p.band if long else top.ask < p.line - p.band):
         return GateResult(False, "RECOVERED", "price no longer confirms trigger"), None
     quote = top.ask if long else top.bid

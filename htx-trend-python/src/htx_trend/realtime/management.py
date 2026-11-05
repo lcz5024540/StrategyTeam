@@ -139,7 +139,7 @@ class PaperManagement:
                     if position.side == "LONG"
                     else reference >= boundary
                 )
-                union = context.get("model") == "RT_INDICATOR_UNION"
+                union = context.get("model") in ("RT_INDICATOR_UNION", "RT_REGIME_AB")
                 hit_target = False
                 if union and not hard:
                     policy = resolve_holding_policy(context, required=True)
@@ -482,7 +482,7 @@ class LiveManagement:
                 price = book.top.bid if row["side"] == "LONG" else book.top.ask
                 stop = decimal(row, "stop_price", decimal(row, "invalidation_price"))
                 hard = price <= stop if row["side"] == "LONG" else price >= stop
-                union = row.get("primary_model") == "RT_INDICATOR_UNION"
+                union = row.get("primary_model") in ("RT_INDICATOR_UNION", "RT_REGIME_AB")
                 if hard:
                     if union:
                         state = self.state(row["id"])

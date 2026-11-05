@@ -40,7 +40,7 @@ from . import VERSION
 from .brokers import PaperBroker, RealtimePaperExchange
 from .feed import MarketEvent
 from .management import PaperManagement
-from .plans import GRID, TriggerEngine
+from .plans import GRID, TriggerEngine, create_engine
 from .storage import PlanStore
 from .worker import RealtimeWorker, MarketView
 
@@ -94,7 +94,7 @@ def decode_window(code, period, source, now_ms):
     return window
 
 
-def validate(tape):
+def validate(tape, *, fixed_protocol=True):
     if tape.get("schema") != SCHEMA:
         raise ValueError("unsupported realtime tape")
     if not tape.get("observations"):
@@ -109,13 +109,14 @@ def validate(tape):
     configuration(JavaEntryConfig, config["entry"])
     configuration(MakerExecutionConfig, config["maker"])
     _decode_config(ExitConfig, config["exit"])
-    if (
+    if fixed_protocol and (
         worker.equity != 300
         or not 0 < worker.margin_rate <= D(".10")
         or not 0 < worker.leverage <= 10
     ):
         raise ValueError("unapproved account budget")
-    if not 1 <= worker.max_active_positions <= 5 or len(set(worker.contracts)) != len(
+    if (worker.equity <= 0 or worker.leverage <= 0 or worker.max_active_positions < 1
+            or (fixed_protocol and worker.max_active_positions > 5)) or len(set(worker.contracts)) != len(
         worker.contracts
     ):
         raise ValueError("invalid portfolio capacity or pool")
@@ -148,7 +149,7 @@ def validate(tape):
                 raise ValueError("exchange clock ahead of reception")
         elif kind == "FRAME":
             code = observation["contract"]
-            for period in ("15min", "60min", "4hour"):
+            for period in (("15min", "60min", "4hour") if fixed_protocol else ("15min", "60min")):
                 decode_window(code, period, observation["windows"][period], at)
             if observation["spec"]["contract_code"] != code:
                 raise ValueError("contract metadata mismatch")
@@ -180,7 +181,8 @@ def validate(tape):
                 raise ValueError("invalid settlement mark")
         elif kind not in ("SCAN", "FUNDING", "CONTEXT", "GAP", "RESTART"):
             raise ValueError("unsupported observation kind")
-    if not {"FRAME", "SCAN", "BBO", "TRADE", "DEPTH", "FUNDING"} <= kinds:
+    required = {"FRAME", "SCAN", "BBO", "TRADE", "DEPTH", "FUNDING"} if fixed_protocol else {"FRAME", "BBO", "DEPTH", "FUNDING"}
+    if not required <= kinds:
         raise ValueError(
             "missing candles, actual scans, ticks, depth or funding quotes"
         )
@@ -188,7 +190,8 @@ def validate(tape):
 
 
 class FrozenMarket:
-    def __init__(self):
+    def __init__(self, required_periods=None):
+        self.required_periods = required_periods
         self.now_ms = 0
         self.frames = {}
         self.depth = {}
@@ -204,6 +207,7 @@ class FrozenMarket:
             windows = {
                 p: decode_window(code, p, v, self.now_ms)
                 for p, v in observation["windows"].items()
+                if self.required_periods is None or p in self.required_periods
             }
             spec = observation["spec"]
             self.frames[code] = {
@@ -301,10 +305,10 @@ class TapeReference:
 
 
 class Actor:
-    def __init__(self, tape, parameters=None):
+    def __init__(self, tape, parameters=None, *, engine_factory=create_engine):
         self.tape = tape
         self.parameters = parameters
-        self.market = FrozenMarket()
+        self.market = FrozenMarket(("15min", "60min") if parameters and parameters.candidate in ("REGIME_AB_V1", "INDICATOR_UNION_V1") else None)
         self.evidence = ReplayEvidence()
         config = tape["configuration"]
         self.config = configuration(PaperWorkerConfig, config["worker"])
@@ -373,7 +377,7 @@ class Actor:
             self.worker = worker
         else:
             self.store = PlanStore(":memory:")
-            engine = TriggerEngine(self.store, "offline", parameters=parameters)
+            engine = engine_factory(self.store, "offline", parameters=parameters)
             broker = PaperBroker(
                 self.ledger,
                 engine,

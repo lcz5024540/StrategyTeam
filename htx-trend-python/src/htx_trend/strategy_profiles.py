@@ -46,7 +46,7 @@ class ProfileStrategySpec:
         from .realtime import VERSION
         if self.strategy.version != expected and not (self.strategy.version == VERSION and self.timeframe_profile is TimeframeProfile.INTRADAY_15M):
             raise ValueError(f"{self.timeframe_profile.value} requires strategy version {expected}")
-        expected_exit = "INDICATOR_BRACKET_V1" if self.primary_models == ("RT_INDICATOR_UNION",) else "HTX_TREND_EXIT_V4"
+        expected_exit = "INDICATOR_BRACKET_V1" if self.primary_models in (("RT_INDICATOR_UNION",), ("RT_REGIME_AB",)) else "HTX_TREND_EXIT_V4"
         if self.exit_version != expected_exit:
             raise ValueError("profile strategy exit does not match model ownership")
         if "entry.profile_contract" not in self.strategy.condition_versions:
@@ -144,7 +144,14 @@ def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strate
         if profile is not TimeframeProfile.INTRADAY_15M:
             raise ValueError('realtime strategy is 15m only')
         from .realtime.plans import GRID, ORIGINAL, Parameters
-        if read_env and environ.get("HTX_RT_CANDIDATE") == "INDICATOR_UNION_V1":
+        if read_env and environ.get("HTX_RT_CANDIDATE") == "REGIME_AB_V1":
+            parameters = Parameters(min_net_r=Decimal(0), candidate="REGIME_AB_V1",
+                target_mode=environ.get("HTX_REGIME_EXIT", ""),
+                regime_timing=environ.get("HTX_REGIME_TIMING", "WINDOW"),
+                bayes_threshold=Decimal(environ["HTX_REGIME_BAYES_THRESHOLD"]) if environ.get("HTX_REGIME_BAYES_THRESHOLD") else None,
+                bayes_snapshot_hash=environ.get("HTX_REGIME_SNAPSHOT_SHA256", ""),
+                bayes_cost_id=environ.get("HTX_REGIME_COST_ID", ""))
+        elif read_env and environ.get("HTX_RT_CANDIDATE") == "INDICATOR_UNION_V1":
             parameters = Parameters(min_net_r=Decimal(0), candidate="INDICATOR_UNION_V1", target_mode=environ.get("HTX_UNION_EXIT", ""))
         else:
             parameters = Parameters(Decimal(environ.get('HTX_RT_BAND_ATR', '.10')),
@@ -172,5 +179,12 @@ def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strate
                 transitions=({"from":"SIGNAL","to":"ORDER_INTENT","when":"union match and execution checks"},
                              {"from":"OPEN","to":"EXIT_INTENT","when":"frozen bracket stop or target"}))
             result = replace(result, strategy=rt, primary_models=("RT_INDICATOR_UNION",), confirmation_models=(), exit_version="INDICATOR_BRACKET_V1")
+        if parameters.candidate == "REGIME_AB_V1":
+            rt = replace(rt, feature_versions={"closed_h1_ema20_60_macd_m15_macd_wick_atr14":"v1"},
+                condition_versions={"regime.A_B":"v1", "regime.window_bbo":"v1", "regime.bayesian_snapshot":"v1"},
+                parameters={"parameters":parameters.payload,"exit_profiles":["ATR_1_1","ATR_2_1","ATR_2_2"]},
+                transitions=({"from":"SCENARIO","to":"ORDER_INTENT","when":"fresh BBO, optional posterior and execution gates"},
+                             {"from":"OPEN","to":"EXIT_INTENT","when":"frozen bracket stop or target"}))
+            result = replace(result, strategy=rt, primary_models=("RT_REGIME_AB",), confirmation_models=(), exit_version="INDICATOR_BRACKET_V1")
     result.validate()
     return result

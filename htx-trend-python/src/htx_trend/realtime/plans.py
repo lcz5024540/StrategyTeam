@@ -28,7 +28,20 @@ class Parameters:
     candidate: str = ORIGINAL
     target_mode: str = "J1"
 
+    regime_timing: str = "WINDOW"
+    bayes_threshold: D | None = None
+    bayes_snapshot_hash: str = ""
+    bayes_cost_id: str = ""
+
     def __post_init__(self):
+        if self.candidate == "REGIME_AB_V1":
+            if self.regime_timing not in ("WINDOW", "FIRST_QUOTE"):
+                raise ValueError("unknown regime timing")
+            if self.bayes_threshold not in (None, D(".80"), D(".90"), D(".95")):
+                raise ValueError("unregistered posterior threshold")
+            if self.target_mode not in ("ATR_1_1", "ATR_2_1", "ATR_2_2") or self.min_net_r != 0 or self.max_age_ms != 2000:
+                raise ValueError("regime requires explicit bracket, no signal netR, 2s freshness")
+            return
         if self.candidate == "INDICATOR_UNION_V1":
             if self.target_mode not in ("ATR_1_1", "ATR_2_1", "ATR_2_2") or self.min_net_r != 0 or self.max_age_ms != 2000:
                 raise ValueError("union requires explicit ATR exit, no signal netR threshold and2s freshness")
@@ -69,6 +82,9 @@ class Parameters:
         }
         if self.candidate != ORIGINAL:
             value.update(candidate=self.candidate, target_mode=self.target_mode)
+        if self.candidate == "REGIME_AB_V1":
+            value.update(regime_timing=self.regime_timing, bayes_threshold=self.bayes_threshold,
+                         bayes_snapshot_hash=self.bayes_snapshot_hash, bayes_cost_id=self.bayes_cost_id)
         return value
 
     @property
@@ -114,7 +130,7 @@ class StructurePlan:
             tuple(row["sources"]),
             tuple(row["evidence_refs"]),
         )
-        if row["model"] not in MODELS and row["model"] != "RT_INDICATOR_UNION":
+        if row["model"] not in MODELS and row["model"] not in ("RT_INDICATOR_UNION", "RT_REGIME_AB"):
             raise ValueError("unknown realtime model")
         return cls(**row)
 
@@ -298,6 +314,9 @@ def generate(
 
 def create_engine(store, instance, *, parameters=None):
     parameters = Parameters() if parameters is None else parameters
+    if parameters.candidate == "REGIME_AB_V1":
+        from .regime import RegimeEngine
+        return RegimeEngine(store, instance, parameters=parameters)
     if parameters.candidate == "INDICATOR_UNION_V1":
         from .indicator_union import IndicatorUnionEngine
         return IndicatorUnionEngine(store, instance, parameters=parameters)

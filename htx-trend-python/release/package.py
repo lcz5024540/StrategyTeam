@@ -81,36 +81,74 @@ def load_strategy_card(path: Path):
     }
 
 
+def regime_parameters(exit_profile, timing="WINDOW", snapshot=None, threshold=None):
+    from htx_trend.realtime.regime_bayes import Snapshot
+    frozen = Snapshot.load(snapshot) if snapshot else None
+    if bool(frozen) != bool(threshold):
+        raise ValueError("posterior package requires both snapshot and threshold")
+    return Parameters(min_net_r=Decimal(0), candidate="REGIME_AB_V1", target_mode=exit_profile,
+        regime_timing=timing, bayes_threshold=Decimal(threshold) if threshold else None,
+        bayes_snapshot_hash=frozen.hash if frozen else "", bayes_cost_id=frozen.value["cost_id"] if frozen else "")
+
+
+def bracket_env(selected):
+    if selected.candidate == UNION:
+        return {"HTX_RT_ENTRY_ENABLED":"false", "HTX_RT_CANDIDATE":UNION, "HTX_UNION_EXIT":selected.target_mode}
+    value = {"HTX_RT_ENTRY_ENABLED":"false", "HTX_RT_CANDIDATE":"REGIME_AB_V1",
+             "HTX_REGIME_EXIT":selected.target_mode,"HTX_REGIME_TIMING":selected.regime_timing}
+    if selected.bayes_threshold is not None:
+        value.update(HTX_REGIME_BAYES_THRESHOLD=str(selected.bayes_threshold),
+                     HTX_REGIME_SNAPSHOT_SHA256=selected.bayes_snapshot_hash,HTX_REGIME_COST_ID=selected.bayes_cost_id,
+                     HTX_REGIME_SNAPSHOT="release/regime-posterior.json")
+    return value
+
+
 def union_parameters(exit_profile):
     return Parameters(min_net_r=Decimal(0), candidate=UNION, target_mode=exit_profile)
 
 
 def bind_union(config, payload, selected, *, live):
-    required = {'HTX_RT_ENTRY_ENABLED':'false', 'HTX_RT_CANDIDATE':UNION,
-                'HTX_UNION_EXIT':selected.target_mode}
-    config.update(models=[UNION_MODEL], selection_id=UNION,
+    regime = selected.candidate == 'REGIME_AB_V1'
+    required = bracket_env(selected)
+    model = 'RT_REGIME_AB' if regime else UNION_MODEL
+    config.update(models=[model], selection_id=selected.candidate,
                   parameters=primitive(selected.payload), parameter_fingerprint=selected.fingerprint,
                   exit_policy='INDICATOR_BRACKET_V1/'+selected.target_mode,
                   runtime_env_required=required, structural_candidate_selected=False,
-                  note='Five-pattern union code; explicit bracket binding, entry disabled. No financial or trial authority.')
+                  note='Explicit indicator/scenario bracket binding, entry disabled. No financial or trial authority.')
     for key in ('contracts','account_equity_usdt','max_active_positions','max_total_margin_rate'):
         config.pop(key,None)
     env_path='deployment/realtime-live.env.example' if live else 'release/realtime.env.example'
     lines=[line for line in payload[env_path].decode().splitlines()
-           if not line.startswith(('HTX_RT_CANDIDATE=','HTX_RT_ENTRY_ENABLED=','HTX_UNION_EXIT=','HTX_RT_MIN_NET_R=','HTX_RT_TARGET_MODE=','HTX_RT_BAND_ATR='))]
+           if not line.startswith(('HTX_RT_CANDIDATE=','HTX_RT_ENTRY_ENABLED=','HTX_UNION_EXIT=','HTX_RT_MIN_NET_R=','HTX_RT_TARGET_MODE=','HTX_RT_BAND_ATR=','HTX_REGIME_'))]
     payload[env_path]=('\n'.join(lines+[key+'='+value for key,value in required.items()])+'\n').encode()
-    payload['release/INDICATOR-UNION.md']=(ROOT/'release/INDICATOR-UNION.md').read_bytes()
+    doc='REGIME-BAYESIAN.md' if regime else 'INDICATOR-UNION.md'
+    payload['release/'+doc]=(ROOT/'release'/doc).read_bytes()
 
 
 def verify_union(cfg, binding, data):
-    selected=union_parameters(cfg['parameters']['target_mode'])
+    regime = cfg.get('selection_id') == 'REGIME_AB_V1'
+    if regime:
+        params=dict(cfg['parameters'])
+        for key in ('band_atr','min_net_r','bayes_threshold'):
+            if params.get(key) is not None: params[key]=Decimal(str(params[key]))
+        selected=Parameters(**params)
+    else:
+        selected=union_parameters(cfg['parameters']['target_mode'])
+    model='RT_REGIME_AB' if regime else UNION_MODEL
+    doc='REGIME-BAYESIAN.md' if regime else 'INDICATOR-UNION.md'
     spec=profile_strategy(TimeframeProfile.INTRADAY_15M, read_env=False,
                           strategy_version=REALTIME_VERSION,realtime_parameters=selected)
-    expected={'HTX_RT_ENTRY_ENABLED':'false','HTX_RT_CANDIDATE':UNION,'HTX_UNION_EXIT':selected.target_mode}
+    expected=bracket_env(selected)
+    if regime and selected.bayes_threshold is not None:
+        from htx_trend.realtime.regime_bayes import Snapshot
+        snap=Snapshot(json.loads(data['release/regime-posterior.json']))
+        if snap.hash!=selected.bayes_snapshot_hash or snap.value['cost_id']!=selected.bayes_cost_id:
+            raise ValueError('posterior binding mismatch')
     if (cfg.get('parameters')!=primitive(selected.payload) or cfg.get('parameter_fingerprint')!=selected.fingerprint
-            or binding.get('strategy_spec_hash')!=spec.spec_hash or cfg.get('models')!=[UNION_MODEL]
+            or binding.get('strategy_spec_hash')!=spec.spec_hash or cfg.get('models')!=[model]
             or cfg.get('exit_policy')!='INDICATOR_BRACKET_V1/'+selected.target_mode
-            or cfg.get('runtime_env_required')!=expected or 'release/INDICATOR-UNION.md' not in data):
+            or cfg.get('runtime_env_required')!=expected or 'release/'+doc not in data):
         raise ValueError('union bracket/spec binding mismatch')
     path='deployment/realtime-live.env.example' if cfg['mode']=='LIVE' else 'release/realtime.env.example'
     lines=data[path].decode().splitlines()
@@ -120,8 +158,9 @@ def verify_union(cfg, binding, data):
     return expected
 
 
-def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False, compact_evidence=False, realtime=False, union_exit=None):
-    selected = union_parameters(union_exit) if union_exit else None
+def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False, compact_evidence=False, realtime=False, union_exit=None, regime_exit=None, regime_timing="WINDOW", regime_snapshot=None, regime_threshold=None):
+    if union_exit and regime_exit: raise ValueError("choose one candidate")
+    selected = regime_parameters(regime_exit,regime_timing,regime_snapshot,regime_threshold) if regime_exit else union_parameters(union_exit) if union_exit else None
     if selected: realtime = True
     # paper_4h 仍是 PAPER 候选包，只切换 card / instance，不改 15m paper=True 默认。
     if realtime:
@@ -192,8 +231,9 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False,
             ROOT.parent / 'sql/htx/2026-11-02__htx_realtime_structure_plan.sql').read_bytes()
         payload['release/migrations/2026-11-03__htx_realtime_live_trial.sql'] = (
             ROOT.parent / 'sql/htx/2026-11-03__htx_realtime_live_trial.sql').read_bytes()
-    if selected and selected.candidate == UNION:
+    if selected and selected.candidate in (UNION,"REGIME_AB_V1"):
         bind_union(config,payload,selected,live=False)
+        if regime_snapshot: payload["release/regime-posterior.json"]=Path(regime_snapshot).read_bytes()
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
                 'config_hash': digest(encoded(config)), 'config_path': 'release/config.example.json',
@@ -253,13 +293,13 @@ def _live_payload_paths():
     return paths
 
 
-def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False, sbox=False, union_exit=None):
+def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False, sbox=False, union_exit=None, regime_exit=None, regime_timing="WINDOW", regime_snapshot=None, regime_threshold=None):
     """Encode-only 15m LIVE tarball; realtime is explicitly entry-disabled."""
-    if sbox and union_exit:
+    if sum(bool(x) for x in (sbox, union_exit, regime_exit)) > 1:
         raise ValueError("SBOX and indicator union are mutually exclusive")
-    if sbox or union_exit:
+    if sbox or union_exit or regime_exit:
         realtime = True
-    selected = union_parameters(union_exit) if union_exit else Parameters(candidate=SBOX, target_mode='J1_BOX32') if sbox else None
+    selected = regime_parameters(regime_exit,regime_timing,regime_snapshot,regime_threshold) if regime_exit else union_parameters(union_exit) if union_exit else Parameters(candidate=SBOX, target_mode='J1_BOX32') if sbox else None
     source = git('rev-parse', 'HEAD')
     short = git('rev-parse', '--short=8', 'HEAD')
     if not re.fullmatch('[0-9a-f]{8}', short):
@@ -325,8 +365,9 @@ def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False, sbox=Fa
             lines += [key+'='+value for key,value in required_env.items()]
             payload[env_path]=('\n'.join(lines)+'\n').encode()
             payload['release/SBOX-LIVE.md']=(ROOT/'release/SBOX-LIVE.md').read_bytes()
-    if union_exit:
+    if union_exit or regime_exit:
         bind_union(config,payload,selected,live=True)
+        if regime_snapshot: payload["release/regime-posterior.json"]=Path(regime_snapshot).read_bytes()
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
                 'config_hash': digest(encoded(config)), 'config_path': 'release/config.example.json',
@@ -426,7 +467,8 @@ def verify_live(archive: Path):
         raise ValueError('LIVE strategy/profile binding mismatch')
     if realtime:
         sbox = cfg.get('selection_id') == 'SBOX_V1_20261104'
-        union = cfg.get('selection_id') == UNION
+        union = cfg.get('selection_id') in (UNION, 'REGIME_AB_V1')
+        bracket_model = 'RT_REGIME_AB' if cfg.get('selection_id') == 'REGIME_AB_V1' else UNION_MODEL
         required_env = {'HTX_RT_ENTRY_ENABLED':'false'}
         if sbox:
             selected = Parameters(candidate=SBOX, target_mode='J1_BOX32')
@@ -452,7 +494,7 @@ def verify_live(archive: Path):
                 or cfg.get('release_status') != 'ENCODE_ONLY_ENTRY_DISABLED'
                 or cfg.get('runtime_env_required') != required_env
                 or cfg.get('entry_period') != '15min' or cfg.get('trend_period') != '60min'
-                or cfg.get('models') != ([UNION_MODEL] if union else ['RT_RANGE_REJECTION', 'RT_BREAKOUT_RETEST'])):
+                or cfg.get('models') != ([bracket_model] if union else ['RT_RANGE_REJECTION', 'RT_BREAKOUT_RETEST'])):
             raise ValueError('realtime LIVE encode-only binding mismatch')
         env = data['deployment/realtime-live.env.example'].decode().splitlines()
         switches = [line.strip() for line in env
@@ -518,7 +560,7 @@ def verify(archive: Path):
                 or cfg['strategy_version'] != REALTIME_VERSION or card['strategy_version'] != REALTIME_VERSION
                 or binding['timeframe_profile'] != 'INTRADAY_15M'):
             raise ValueError('realtime candidate binding mismatch')
-        if cfg.get('selection_id') == UNION:
+        if cfg.get('selection_id') in (UNION, 'REGIME_AB_V1'):
             verify_union(cfg,binding,data)
     return receipt
 
@@ -557,15 +599,20 @@ def main():
     live_builder.add_argument('--sbox', action='store_true', help='confirmed S/J1_BOX32 k=.10 R=1.5 LIVE candidate; does not activate trading')
     builder.add_argument('--union-exit', choices=tuple(UNION_EXITS), help='explicit five-pattern union exit; does not activate entry')
     live_builder.add_argument('--union-exit', choices=tuple(UNION_EXITS), help='explicit union code package; entry disabled')
+    for target in (builder, live_builder):
+        target.add_argument('--regime-exit', choices=tuple(UNION_EXITS))
+        target.add_argument('--regime-timing', choices=('WINDOW','FIRST_QUOTE'), default='WINDOW')
+        target.add_argument('--regime-snapshot', type=Path)
+        target.add_argument('--regime-threshold', choices=('.80','.90','.95'))
     commands.add_parser('verify').add_argument('archive', type=Path)
     template = commands.add_parser('approval-template')
     template.add_argument('archive', type=Path)
     template.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.command == 'build':
-        print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h, compact_evidence=args.compact_evidence, realtime=args.realtime, union_exit=args.union_exit))
+        print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h, compact_evidence=args.compact_evidence, realtime=args.realtime, union_exit=args.union_exit, regime_exit=args.regime_exit, regime_timing=args.regime_timing, regime_snapshot=args.regime_snapshot, regime_threshold=args.regime_threshold))
     elif args.command == 'build-live':
-        print(build_live(args.out_root, realtime=args.realtime, sbox=args.sbox, union_exit=args.union_exit))
+        print(build_live(args.out_root, realtime=args.realtime, sbox=args.sbox, union_exit=args.union_exit, regime_exit=args.regime_exit, regime_timing=args.regime_timing, regime_snapshot=args.regime_snapshot, regime_threshold=args.regime_threshold))
     elif args.command == 'verify':
         print(json.dumps({'status': 'PASS', **verify(args.archive)}, ensure_ascii=False))
     else:

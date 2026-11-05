@@ -67,8 +67,12 @@ def initial_context(intent, trigger, contract, holding_parameters):
             entry_parameters_fingerprint=trigger.plan.parameter_fingerprint,
             entry_target_rule=trigger.plan.target_kind,
         )
-    if intent.model == "RT_INDICATOR_UNION":
+    if intent.model in ("RT_INDICATOR_UNION", "RT_REGIME_AB"):
         result["matched_modes"] = [s.removeprefix("MATCH:") for s in trigger.plan.sources if s.startswith("MATCH:")]
+    if intent.model == "RT_REGIME_AB":
+        result.update(regime_scenario=next(s[9:] for s in trigger.plan.sources if s.startswith("SCENARIO:")),
+                      regime_timing=next(s[7:] for s in trigger.plan.sources if s.startswith("TIMING:")),
+                      posterior_hash=next(s[10:] for s in trigger.plan.sources if s.startswith("POSTERIOR:")))
     return result
 
 
