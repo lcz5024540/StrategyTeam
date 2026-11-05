@@ -1,0 +1,40 @@
+{
+  "qa_only": true,
+  "snapshot_is_synthetic_fixture": true,
+  "deployment_performed": false,
+  "root": "/tmp/coinstrategy-regime-observation-release.22sY79",
+  "packages": [
+    {
+      "label": "paper-disabled",
+      "archive": "/tmp/coinstrategy-regime-observation-release.22sY79/paper-disabled/0.1.7-realtime-candidate-80a2a65d/htx-trend-python-0.1.7-realtime-candidate-80a2a65d.tar.gz",
+      "package_sha256": "17eb3717802276e6146b042a8599090e668414ef73948277ab958602c1fe386b",
+      "source_commit": "80a2a65de6848d2a546c5c8cead938e59083a461",
+      "entry_enabled": false,
+      "verified": true
+    },
+    {
+      "label": "paper-enabled",
+      "archive": "/tmp/coinstrategy-regime-observation-release.22sY79/paper-enabled/0.1.7-realtime-candidate-80a2a65d/htx-trend-python-0.1.7-realtime-candidate-80a2a65d.tar.gz",
+      "package_sha256": "f4afd62e119ca48a0ba12a2c2688273297925c80ff1156c773deda65c856be13",
+      "source_commit": "80a2a65de6848d2a546c5c8cead938e59083a461",
+      "entry_enabled": true,
+      "verified": true
+    },
+    {
+      "label": "live-disabled",
+      "archive": "/tmp/coinstrategy-regime-observation-release.22sY79/live-disabled/0.1.7-realtime-live-80a2a65d/htx-trend-python-0.1.7-realtime-live-80a2a65d.tar.gz",
+      "package_sha256": "410ca3b1232391b3c3583f6b0424b1a50f7e5f0853fb34b7cada18d1ca0155ee",
+      "source_commit": "80a2a65de6848d2a546c5c8cead938e59083a461",
+      "entry_enabled": false,
+      "verified": true
+    },
+    {
+      "label": "live-enabled",
+      "archive": "/tmp/coinstrategy-regime-observation-release.22sY79/live-enabled/0.1.7-realtime-live-80a2a65d/htx-trend-python-0.1.7-realtime-live-80a2a65d.tar.gz",
+      "package_sha256": "469e4c6e346272768e7a4a062b887cab023795a70c3d2b40e922fd911b5fed23",
+      "source_commit": "80a2a65de6848d2a546c5c8cead938e59083a461",
+      "entry_enabled": true,
+      "verified": true
+    }
+  ]
+}
