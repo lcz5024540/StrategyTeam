@@ -2,6 +2,13 @@
 
 The bundle supplies observed market inputs, not a fabricated baseline/latency.
 Each normalized record keeps its raw response in the same hashed gzip segment.
+
+Path-B (mdqueue-b) keeps the Path-A queue at 65536. A keepalive ping timeout
+reconnects into a DEPTH.step0 snapshot plus BBO flood; that storm ran ~14
+minutes and a ~2 minute buffer cannot absorb it. Relief is reconnect
+throttling, a cheaper gzip/flush path, and a visible DEPTH catch-up window.
+TRADE and BBO are never coalesced or downsampled. QUEUE_OVERFLOW stays
+fail-closed: the rejected event is not queued and the process stops.
 """
 
 from __future__ import annotations
@@ -36,15 +43,61 @@ GIB = 1024**3
 CONTROL_RESERVE = 1024**2
 CHANNELS = ("trade.detail", "bbo", "depth.step0")
 # 4096 held ~6–7s at the observed 610–640 msg/s BBO/DEPTH rate and then
-# fail-closed. 65536 is about 100s of mean-rate buffer; batch drain and
-# rarer seal/status syncs are what keep that buffer from filling.
+# fail-closed. 65536 is about 100s of mean-rate buffer. Path-A's batch drain
+# did run on the recurrence and was not enough: keepalive → full DEPTH
+# resubscribe stayed ahead of one consumer for ~14 min. Do not raise this
+# queue as the fix (R1). Path-B throttles reconnects and sheds DEPTH only
+# inside a marked catch-up window.
 EVENT_QUEUE_MAXSIZE = 65536
 EVENT_DRAIN_BATCH = 512
+DRAIN_BATCH_MIN = 64
+DRAIN_BATCH_MAX = 4096
 FLUSH_INTERVAL_S = 10.0
+FLUSH_INTERVAL_MIN_S = 1.0
+FLUSH_INTERVAL_MAX_S = 60.0
+# SegmentRecorder still defaults to gzip 9. Public capture pins 1: flush
+# high-water on the recurrence was 802ms, and the segment hash is the
+# canonical payload, so the level does not change identity. 3 remains
+# available through HTX_PUBLIC_CAPTURE_GZIP_LEVEL when disk, not CPU, binds.
+CAPTURE_GZIP_LEVEL = 1
+GZIP_LEVEL_MIN = 1
+GZIP_LEVEL_MAX = 9
 SEAL_INTERVAL_S = 60.0
 HEARTBEAT_INTERVAL_S = 10.0
 QUEUE_HIGH_WATER_FRACTIONS = (0.5, 0.75, 0.9)
+# At/above half the queue, skip flush/seal for several turns and drain a
+# second batch. At/above 75%, take a wider batch. The deferral cap still
+# forces a flush so a segment cannot sit in memory for the whole overload.
+YIELD_WATER_FRACTION = 0.5
+YIELD_HIGH_DRAIN_FRACTION = 0.75
+YIELD_MAX_DEFERRALS = 8
+HIGH_WATER_DRAIN_MULTIPLIER = 4
 SLOW_IO_LOG_MS = 50.0
+# Reconnect throttle. The old loop waited 1s then doubled to 30s and
+# resubscribed every channel at 10/s (~16s for 156 subs), which is the
+# keepalive → DEPTH+BBO storm. Attempts are at least MIN apart, backoff
+# starts at INITIAL, and CONSECUTIVE connect failures open a circuit that
+# pauses DEPTH until one session stays healthy.
+RECONNECT_MIN_INTERVAL_S = 5.0
+RECONNECT_BACKOFF_INITIAL_S = 5.0
+RECONNECT_BACKOFF_MAX_S = 60.0
+RECONNECT_FAILURE_CIRCUIT = 5
+RECONNECT_CIRCUIT_OPEN_S = 120.0
+RECONNECT_HEALTHY_S = 30.0
+RESUBSCRIBE_INITIAL_DELAY_S = 2.0
+RESUBSCRIBE_CHUNK = 12
+RESUBSCRIBE_CHUNK_PAUSE_S = 1.0
+RESUBSCRIBE_INTERVAL_S = 0.1
+# Catch-up applies only after a reconnect. One buffered DEPTH per contract;
+# a newer snapshot replaces the older one. After a snapshot is written, the
+# same contract is not written again until MIN_INTERVAL; intermediates count
+# as downsampled and the newest is what eventually lands. TRADE and every
+# BBO stay on the main queue in full — this process has no core/non-core
+# split, so every BBO is core.
+DEPTH_CATCHUP_WINDOW_S = 45.0
+DEPTH_CATCHUP_MAX_S = 180.0
+DEPTH_CATCHUP_MIN_INTERVAL_MS = 1000
+DEPTH_CATCHUP_POLICY = "DEPTH_STEP0_COALESCE_LATEST_AND_DOWNSAMPLE"
 logger = logging.getLogger(__name__)
 MISSING = [
     "INDEPENDENT_BASELINE_SCANS_AND_DECISIONS",
@@ -228,6 +281,284 @@ def audit(root, export=None):
     )
 
 
+def _env_number(name, default, lo, hi, cast):
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = cast(raw.strip())
+    except (TypeError, ValueError):
+        logger.warning(
+            "public capture ignored invalid %s=%s; using %s", name, raw, default
+        )
+        return default
+    if value < lo or value > hi:
+        clamped = hi if value > hi else lo
+        logger.warning("public capture clamped %s=%s to %s", name, raw, clamped)
+        return cast(clamped)
+    return value
+
+
+def read_gzip_level():
+    return _env_number(
+        "HTX_PUBLIC_CAPTURE_GZIP_LEVEL",
+        CAPTURE_GZIP_LEVEL,
+        GZIP_LEVEL_MIN,
+        GZIP_LEVEL_MAX,
+        int,
+    )
+
+
+def read_drain_batch():
+    return _env_number(
+        "HTX_PUBLIC_CAPTURE_DRAIN_BATCH",
+        EVENT_DRAIN_BATCH,
+        DRAIN_BATCH_MIN,
+        DRAIN_BATCH_MAX,
+        int,
+    )
+
+
+def read_flush_interval_s():
+    return _env_number(
+        "HTX_PUBLIC_CAPTURE_FLUSH_INTERVAL_S",
+        FLUSH_INTERVAL_S,
+        FLUSH_INTERVAL_MIN_S,
+        FLUSH_INTERVAL_MAX_S,
+        float,
+    )
+
+
+def drain_limit(depth, maxsize, base):
+    """Widen the consumer batch once the queue is in the top quartile."""
+    if maxsize and depth >= int(maxsize * YIELD_HIGH_DRAIN_FRACTION):
+        return min(base * HIGH_WATER_DRAIN_MULTIPLIER, DRAIN_BATCH_MAX)
+    return base
+
+
+def consumer_extra_drain(depth, maxsize):
+    """True when the consumer should take another batch before maintenance."""
+    return bool(maxsize) and depth >= int(maxsize * YIELD_WATER_FRACTION)
+
+
+def resubscribe_schedule(
+    contracts,
+    *,
+    include_depth,
+    chunk=RESUBSCRIBE_CHUNK,
+    initial_delay=RESUBSCRIBE_INITIAL_DELAY_S,
+    pace=RESUBSCRIBE_INTERVAL_S,
+    chunk_pause=RESUBSCRIBE_CHUNK_PAUSE_S,
+):
+    """TRADE, then BBO, then DEPTH. DEPTH is omitted while the circuit pauses it.
+
+    The first subscription waits ``initial_delay`` so the socket can settle.
+    Every ``chunk`` subscriptions add ``chunk_pause`` on top of the 10/s pace,
+    spreading the depth.step0 snapshot burst that follows a reconnect.
+    """
+    channels = ["trade.detail", "bbo"]
+    if include_depth:
+        channels.append("depth.step0")
+    items = [(contract, channel) for channel in channels for contract in contracts]
+    schedule = []
+    cursor = initial_delay
+    for index, (contract, channel) in enumerate(items):
+        if index > 0 and chunk > 0 and index % chunk == 0:
+            cursor += chunk_pause
+        schedule.append((cursor, contract, channel))
+        cursor += pace
+    return schedule
+
+
+class ReconnectGovernor:
+    """Max reconnect rate plus a DEPTH pause after consecutive CONNECT failures.
+
+    ``circuit`` is closed, open, or half_open. Open means the next attempt
+    waits RECONNECT_CIRCUIT_OPEN_S and then comes up without DEPTH. DEPTH
+    stays paused until the half-open session has observed the market for
+    RECONNECT_HEALTHY_S. Failures of that half-open attempt re-open.
+    """
+
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
+        self.lock = threading.Lock()
+        self.attempts = 0
+        self.consecutive_failures = 0
+        self.circuit = "closed"
+        self.circuit_opens = 0
+        self.depth_paused = False
+        self._next_attempt_at = 0.0
+        self._first_observation_at = None
+
+    def seconds_until_attempt(self, now=None):
+        now = self.clock() if now is None else now
+        with self.lock:
+            return max(0.0, self._next_attempt_at - now)
+
+    def begin_attempt(self, now=None):
+        now = self.clock() if now is None else now
+        with self.lock:
+            self.attempts += 1
+            if self.circuit == "open":
+                self.circuit = "half_open"
+            self._first_observation_at = None
+            self._next_attempt_at = max(
+                self._next_attempt_at, now + RECONNECT_MIN_INTERVAL_S
+            )
+            return self.circuit
+
+    def note_failure(self, now=None):
+        now = self.clock() if now is None else now
+        with self.lock:
+            self.consecutive_failures += 1
+            self._first_observation_at = None
+            if (
+                self.circuit == "half_open"
+                or self.consecutive_failures >= RECONNECT_FAILURE_CIRCUIT
+            ):
+                newly_opened = self.circuit != "open"
+                self.circuit = "open"
+                self.depth_paused = True
+                if newly_opened:
+                    self.circuit_opens += 1
+                self._next_attempt_at = now + RECONNECT_CIRCUIT_OPEN_S
+                return "opened" if newly_opened else "open"
+            delay = RECONNECT_BACKOFF_INITIAL_S * (2 ** (self.consecutive_failures - 1))
+            delay = min(max(delay, RECONNECT_MIN_INTERVAL_S), RECONNECT_BACKOFF_MAX_S)
+            self._next_attempt_at = now + delay
+            return "backoff"
+
+    def note_observation(self, now=None):
+        now = self.clock() if now is None else now
+        with self.lock:
+            if self._first_observation_at is None:
+                self._first_observation_at = now
+
+    def poll_health(self, now=None):
+        now = self.clock() if now is None else now
+        with self.lock:
+            started = self._first_observation_at
+            if started is None or now - started < RECONNECT_HEALTHY_S:
+                return False
+            self.consecutive_failures = 0
+            self.circuit = "closed"
+            self.depth_paused = False
+            return True
+
+    def snapshot(self):
+        with self.lock:
+            return dict(
+                reconnect_attempts=self.attempts,
+                reconnect_consecutive_failures=self.consecutive_failures,
+                reconnect_circuit=self.circuit,
+                reconnect_circuit_opens=self.circuit_opens,
+                depth_paused=self.depth_paused,
+            )
+
+
+class DepthCatchup:
+    """Reconnect-window buffer for DEPTH.step0 only.
+
+    TRADE and BBO must not be passed to ``offer`` as something to drop; the
+    caller leaves them on the main queue. While the window is active there is
+    at most one buffered DEPTH per contract. Replacing a snapshot that has
+    not been written counts as a coalesce, unless a snapshot for that contract
+    was written inside DEPTH_CATCHUP_MIN_INTERVAL_MS — those replacements
+    count as downsample. The buffered event is always the newest. ``end``
+    returns that newest snapshot plus a GAP marker so the loss is visible.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.active = False
+        self.extended = False
+        self.started_mono = 0.0
+        self.epoch = None
+        self.buffered = {}
+        self.last_release_ms = {}
+        self.coalesced = 0
+        self.downsampled = 0
+        self._window_coalesced = 0
+        self._window_downsampled = 0
+
+    def begin(self, now_ms, now_mono, epoch):
+        with self.lock:
+            self.active = True
+            self.extended = False
+            self.started_mono = now_mono
+            self.epoch = epoch
+            self._window_coalesced = 0
+            self._window_downsampled = 0
+            # Interval is per window. A new reconnect may write one fresh
+            # snapshot immediately instead of inheriting the previous pace.
+            self.last_release_ms.clear()
+
+    def _within_interval(self, contract, now_ms):
+        last = self.last_release_ms.get(contract)
+        return last is not None and now_ms - last < DEPTH_CATCHUP_MIN_INTERVAL_MS
+
+    def offer(self, event, now_ms):
+        with self.lock:
+            contract = event.get("contract")
+            if not self.active or event.get("kind") != "DEPTH" or not contract:
+                return "passthrough"
+            current = self.buffered.get(contract)
+            if current is not None:
+                self.buffered[contract] = event
+                if self._within_interval(contract, now_ms):
+                    self.downsampled += 1
+                    self._window_downsampled += 1
+                    return "downsampled"
+                self.coalesced += 1
+                self._window_coalesced += 1
+                return "coalesced"
+            self.buffered[contract] = event
+            return "held" if self._within_interval(contract, now_ms) else "buffered"
+
+    def release(self, now_ms, limit):
+        with self.lock:
+            ready = []
+            if limit <= 0:
+                return ready
+            for contract, event in list(self.buffered.items()):
+                if len(ready) >= limit:
+                    break
+                if self._within_interval(contract, now_ms):
+                    continue
+                ready.append(event)
+                del self.buffered[contract]
+                self.last_release_ms[contract] = now_ms
+            return ready
+
+    def end(self, now_ms):
+        with self.lock:
+            if not self.active and not self.buffered:
+                return None, None
+            was_active = self.active
+            self.active = False
+            leftover = list(self.buffered.values())
+            self.buffered.clear()
+            for event in leftover:
+                contract = event.get("contract")
+                if contract:
+                    self.last_release_ms[contract] = now_ms
+            if not was_active:
+                return leftover, None
+            marker = dict(
+                kind="GAP",
+                received_ms=now_ms,
+                reason="DEPTH_CATCHUP_END",
+                epoch=self.epoch,
+                coalesced=self._window_coalesced,
+                downsampled=self._window_downsampled,
+                policy=DEPTH_CATCHUP_POLICY,
+            )
+            self._window_coalesced = 0
+            self._window_downsampled = 0
+            self.extended = False
+            return leftover, marker
+
+
 class Capture:
     def __init__(
         self,
@@ -284,6 +615,12 @@ class Capture:
         )
         self.stop = threading.Event()
         self.events = queue.Queue(maxsize=EVENT_QUEUE_MAXSIZE)
+        self.drain_batch_limit = read_drain_batch()
+        self.flush_interval_s = read_flush_interval_s()
+        self.gzip_level = read_gzip_level()
+        self.reconnect = ReconnectGovernor()
+        self.catchup = DepthCatchup()
+        self._monotonic = time.monotonic
         self.queue_depth_high_water = 0
         self._queue_warn_level = 0
         self._queue_hw_lock = threading.Lock()
@@ -294,7 +631,7 @@ class Capture:
         self._flush_at = 0.0
         self._seal_at = 0.0
         self._heartbeat_at = 0.0
-        self._maintenance_deferred = False
+        self._maintenance_deferred = 0
         self._seal_due = False
         self.failure = None
         self.socket = None
@@ -303,7 +640,7 @@ class Capture:
         self.recorder = SegmentRecorder(
             self.root / "segments",
             max_bytes=max_bytes - CONTROL_RESERVE,
-            gzip_level=1,
+            gzip_level=self.gzip_level,
             json_ready=True,
             segmented=segmented,
             segment_contract="capture-public",
@@ -337,6 +674,13 @@ class Capture:
         return int(self.clock() * 1000)
 
     def emit(self, event):
+        if event.get("kind") == "DEPTH":
+            # Outside the reconnect window this is a passthrough and the
+            # event still fail-closes the queue. Inside it, DEPTH is held
+            # per contract so a snapshot storm cannot be the overflow.
+            action = self.catchup.offer(event, event.get("received_ms", self.now()))
+            if action != "passthrough":
+                return
         try:
             self.events.put_nowait(event)
         except queue.Full:
@@ -354,6 +698,67 @@ class Capture:
             )
             return
         self._observe_queue_depth(self.events.qsize())
+
+    def open_catchup(self, epoch):
+        """Start (or restart) the reconnect DEPTH window and mark it."""
+        if self.catchup.active:
+            self.close_catchup()
+        self.catchup.begin(self.now(), self._monotonic(), epoch)
+        self.emit(
+            dict(
+                kind="GAP",
+                received_ms=self.now(),
+                reason="DEPTH_CATCHUP_BEGIN",
+                epoch=epoch,
+                policy=DEPTH_CATCHUP_POLICY,
+                preserve="TRADE_AND_BBO",
+                min_interval_ms=DEPTH_CATCHUP_MIN_INTERVAL_MS,
+            )
+        )
+
+    def close_catchup(self):
+        """Write the newest unsent DEPTH snapshots and the loss marker."""
+        leftover, marker = self.catchup.end(self.now())
+        if leftover is None and marker is None:
+            return
+        for event in leftover or ():
+            self.emit(event)
+        if marker:
+            self.emit(marker)
+
+    def poll_catchup(self, now_mono):
+        """End the window, or extend it once while the queue is still high.
+
+        Extension is capped by DEPTH_CATCHUP_MAX_S so a stuck backlog cannot
+        downsample DEPTH for the rest of the process. Both edges emit a GAP.
+        """
+        if not self.catchup.active:
+            return
+        elapsed = now_mono - self.catchup.started_mono
+        if elapsed >= DEPTH_CATCHUP_MAX_S:
+            self.close_catchup()
+            return
+        if elapsed < DEPTH_CATCHUP_WINDOW_S:
+            return
+        high = self.events.qsize() >= int(
+            (self.events.maxsize or EVENT_QUEUE_MAXSIZE) * YIELD_HIGH_DRAIN_FRACTION
+        )
+        if high and not self.catchup.extended:
+            self.catchup.extended = True
+            self.emit(
+                dict(
+                    kind="GAP",
+                    received_ms=self.now(),
+                    reason="DEPTH_CATCHUP_EXTENDED",
+                    epoch=self.catchup.epoch,
+                    queue_depth=self.events.qsize(),
+                    policy=DEPTH_CATCHUP_POLICY,
+                )
+            )
+            return
+        if high:
+            return
+        self.close_catchup()
 
     def _observe_queue_depth(self, depth):
         if depth <= self.queue_depth_high_water:
@@ -500,20 +905,47 @@ class Capture:
                     )
                 self.stop.wait(0.1)
 
-    def stream_loop(self):
+    def _ws_connect(self):
         from websockets.sync.client import connect
 
-        backoff = 1
+        return connect
+
+    def _send_subscription(self, sock, step):
+        _offset, contract, channel = step
+        sock.send(
+            json.dumps({"sub": f"market.{contract}.{channel}", "id": f"{contract}:{channel}"})
+        )
+
+    def stream_loop(self):
+        connect = self._ws_connect()
         while not self.stop.is_set():
+            delay = self.reconnect.seconds_until_attempt(self._monotonic())
+            if delay > 0 and self.stop.wait(delay):
+                return
+            if self.stop.is_set():
+                return
             epoch = uuid.uuid4().hex
+            self.reconnect.begin_attempt(self._monotonic())
             self.emit(
                 dict(
                     kind="GAP",
                     received_ms=self.now(),
                     reason="CONNECT_OR_RECONNECT",
                     epoch=epoch,
+                    circuit=self.reconnect.circuit,
+                    attempt=self.reconnect.attempts,
                 )
             )
+            if self.reconnect.depth_paused:
+                self.emit(
+                    dict(
+                        kind="GAP",
+                        received_ms=self.now(),
+                        reason="DEPTH_SUBSCRIPTION_PAUSED",
+                        epoch=epoch,
+                        consecutive_failures=self.reconnect.consecutive_failures,
+                    )
+                )
             try:
                 with connect(
                     "wss://api.hbdm.com/linear-swap-ws",
@@ -521,59 +953,10 @@ class Capture:
                     close_timeout=2,
                     max_size=8 * 1024**2,
                 ) as sock:
-                    self.socket = sock
-                    subscriptions = iter(
-                        (c, k) for c in self.contracts for k in CHANNELS
-                    )
-                    pending, after, last = (
-                        next(subscriptions, None),
-                        0.0,
-                        time.monotonic(),
-                    )
-                    while not self.stop.is_set():
-                        if pending and time.monotonic() >= after:
-                            c, k = pending
-                            sock.send(
-                                json.dumps({"sub": f"market.{c}.{k}", "id": f"{c}:{k}"})
-                            )
-                            after = time.monotonic() + 0.1  # <=10 subscriptions/sec
-                            pending = next(subscriptions, None)
-                        try:
-                            raw = sock.recv(
-                                timeout=max(0.001, after - time.monotonic())
-                                if pending
-                                else 1
-                            )
-                        except TimeoutError:
-                            if time.monotonic() - last > 15:
-                                raise
-                            continue
-                        last = time.monotonic()
-                        value = json.loads(
-                            gzip.decompress(raw)
-                            if isinstance(raw, bytes) and raw[:2] == b"\x1f\x8b"
-                            else raw
-                        )
-                        received = self.now()
-                        if value.get("status") == "error":
-                            self.emit(
-                                dict(
-                                    kind="SOURCE_ERROR",
-                                    received_ms=received,
-                                    source="SUBSCRIPTION",
-                                    raw=value,
-                                )
-                            )
-                            continue  # one unavailable symbol does not erase the other 51
-                        observations, pong = normalize_ws(value, epoch, received)
-                        if pong:
-                            sock.send(json.dumps(pong))
-                        for event in observations:
-                            self.emit(event)
-                        if observations:
-                            backoff = 1
+                    self._pump_socket(sock, epoch)
             except Exception as error:
                 if not self.stop.is_set():
+                    transition = self.reconnect.note_failure(self._monotonic())
                     self.emit(
                         dict(
                             kind="GAP",
@@ -582,10 +965,110 @@ class Capture:
                             epoch=epoch,
                         )
                     )
-                    self.stop.wait(backoff)
-                    backoff = min(backoff * 2, 30)
+                    if transition == "opened":
+                        logger.warning(
+                            "public capture reconnect circuit open failures=%s pause_s=%s",
+                            self.reconnect.consecutive_failures,
+                            RECONNECT_CIRCUIT_OPEN_S,
+                        )
+                        self.emit(
+                            dict(
+                                kind="GAP",
+                                received_ms=self.now(),
+                                reason="RECONNECT_CIRCUIT_OPEN",
+                                epoch=epoch,
+                                consecutive_failures=self.reconnect.consecutive_failures,
+                                depth_paused=True,
+                            )
+                        )
             finally:
                 self.socket = None
+                self.close_catchup()
+
+    def _pump_socket(self, sock, epoch):
+        """Subscribe TRADE+BBO first, DEPTH last, and pace the burst.
+
+        A subscription send counts as liveness. Chunked resubscribe is longer
+        than 15s on the full contract set; treating that pace as a dead socket
+        would reconnect in the middle of the snapshot storm.
+        """
+        self.socket = sock
+        depth_was_paused = self.reconnect.depth_paused
+        self.open_catchup(epoch)
+        steps = resubscribe_schedule(
+            self.contracts, include_depth=not depth_was_paused
+        )
+        step_i = 0
+        follow = []
+        follow_i = 0
+        follow_origin = None
+        origin = self._monotonic()
+        last = origin
+        while not self.stop.is_set():
+            now_m = self._monotonic()
+            self.poll_catchup(now_m)
+            if (
+                depth_was_paused
+                and follow_origin is None
+                and self.reconnect.poll_health(now_m)
+            ):
+                follow = [
+                    row
+                    for row in resubscribe_schedule(
+                        self.contracts, include_depth=True
+                    )
+                    if row[2] == "depth.step0"
+                ]
+                follow_origin = now_m
+                self.open_catchup(epoch)
+            if step_i < len(steps) and now_m >= origin + steps[step_i][0]:
+                self._send_subscription(sock, steps[step_i])
+                step_i += 1
+                last = now_m
+            if (
+                follow_origin is not None
+                and follow_i < len(follow)
+                and now_m >= follow_origin + follow[follow_i][0]
+            ):
+                self._send_subscription(sock, follow[follow_i])
+                follow_i += 1
+                last = now_m
+            pending_at = []
+            if step_i < len(steps):
+                pending_at.append(origin + steps[step_i][0])
+            if follow_origin is not None and follow_i < len(follow):
+                pending_at.append(follow_origin + follow[follow_i][0])
+            timeout = max(0.001, min(pending_at) - now_m) if pending_at else 1
+            try:
+                raw = sock.recv(timeout=timeout)
+            except TimeoutError:
+                if self._monotonic() - last > 15:
+                    raise
+                continue
+            last = self._monotonic()
+            value = json.loads(
+                gzip.decompress(raw)
+                if isinstance(raw, bytes) and raw[:2] == b"\x1f\x8b"
+                else raw
+            )
+            received = self.now()
+            if value.get("status") == "error":
+                self.emit(
+                    dict(
+                        kind="SOURCE_ERROR",
+                        received_ms=received,
+                        source="SUBSCRIPTION",
+                        raw=value,
+                    )
+                )
+                continue  # one unavailable symbol does not erase the other 51
+            observations, pong = normalize_ws(value, epoch, received)
+            if pong:
+                sock.send(json.dumps(pong))
+            for event in observations:
+                self.emit(event)
+            if observations:
+                self.reconnect.note_observation(self._monotonic())
 
     def write(self, event):
         if not self.recorder.append(event):
@@ -610,20 +1093,28 @@ class Capture:
         not run between individual events.
         """
         if limit is None:
-            limit = EVENT_DRAIN_BATCH
+            limit = drain_limit(
+                self.events.qsize(), self.events.maxsize, self.drain_batch_limit
+            )
         if limit < 1:
             raise ValueError("drain batch must be positive")
         batch = []
         try:
             batch.append(self.events.get(timeout=0.1))
         except queue.Empty:
-            return batch
+            pass
         while len(batch) < limit:
             try:
                 batch.append(self.events.get_nowait())
             except queue.Empty:
                 break
-        self._observe_queue_depth(self.events.qsize() + len(batch))
+        # Queue events (TRADE, BBO, GAP) fill the batch first. Catch-up DEPTH
+        # only uses the room that is left, and only when its interval allows.
+        room = limit - len(batch)
+        if room > 0:
+            batch.extend(self.catchup.release(self.now(), room))
+        if batch:
+            self._observe_queue_depth(self.events.qsize() + len(batch))
         return batch
 
     def write_batch(self, events):
@@ -666,18 +1157,26 @@ class Capture:
     def maintain(self, now=None):
         """Flush often; seal and the full channel map on a slower cadence.
 
-        Gzip flush and segment_boundary are not run in the same turn, and a
-        deep backlog defers maintenance for one turn so the consumer can drain.
-        Deferred work is not skipped twice. Returns False when the recorder
-        has failed and the run loop must stop.
+        Gzip flush and segment_boundary are not run in the same turn. A short
+        backlog defers maintenance one turn. At or above half the queue the
+        consumer keeps draining for up to YIELD_MAX_DEFERRALS turns, then
+        flushes anyway. Returns False when the recorder has failed.
         """
         now = time.monotonic() if now is None else now
-        if self.events.qsize() >= EVENT_DRAIN_BATCH and not self._maintenance_deferred:
-            self._maintenance_deferred = True
-            return True
-        self._maintenance_deferred = False
+        depth = self.events.qsize()
+        limit = self.events.maxsize or EVENT_QUEUE_MAXSIZE
+        # Below half full, a backlog still defers maintenance one turn (Path-A).
+        # At/above half, keep yielding up to YIELD_MAX_DEFERRALS so gzip/seal
+        # does not sit in front of a reconnect flood. The cap still flushes.
+        high = depth >= int(limit * YIELD_WATER_FRACTION)
+        if high or depth >= self.drain_batch_limit:
+            cap = YIELD_MAX_DEFERRALS if high else 1
+            if self._maintenance_deferred < cap:
+                self._maintenance_deferred += 1
+                return True
+        self._maintenance_deferred = 0
         flushed = False
-        if now - self._flush_at >= FLUSH_INTERVAL_S:
+        if now - self._flush_at >= self.flush_interval_s:
             self._timed("flush", self.recorder.flush)
             self._flush_at = now
             flushed = True
@@ -737,7 +1236,14 @@ class Capture:
             status_detail="full" if full else "heartbeat",
             admission="NOT_ELIGIBLE",
             trading=False,
+            gzip_level=self.recorder.gzip_level,
+            drain_batch=self.drain_batch_limit,
+            flush_interval_s=self.flush_interval_s,
+            catchup_active=self.catchup.active,
+            depth_coalesced=self.catchup.coalesced,
+            depth_downsampled=self.catchup.downsampled,
         )
+        body.update(self.reconnect.snapshot())
         if full:
             body["channels"] = dict(self.channels)
         return body
@@ -781,6 +1287,10 @@ class Capture:
                 batch = self.drain_batch()
                 if batch and not self.write_batch(batch):
                     break
+                if consumer_extra_drain(self.events.qsize(), self.events.maxsize):
+                    extra = self.drain_batch()
+                    if extra and not self.write_batch(extra):
+                        break
                 if not self.maintain():
                     break
             self.failure = self.failure or (
@@ -795,9 +1305,10 @@ class Capture:
                 self.socket.close()
             for t in threads:
                 t.join(timeout=55)
+            self.close_catchup()
             while not self.events.empty() and not self.recorder.failure:
                 leftover = []
-                while len(leftover) < EVENT_DRAIN_BATCH:
+                while len(leftover) < self.drain_batch_limit:
                     try:
                         leftover.append(self.events.get_nowait())
                     except queue.Empty:
