@@ -18,6 +18,7 @@ ORIGINAL = "ORIGINAL_20_32_V1"
 EVENT_WINDOWS = "EVENT_WINDOWS_CONSERVATIVE_V1"
 EVENT_LOCAL = "EVENT_LOCAL_CONSERVATIVE_V1"
 SBOX = "SBOX_FACTS_CONSERVATIVE_V1"
+BAYES_EXIT = "BAYES_NET_V1"
 
 
 @dataclass(frozen=True)
@@ -39,8 +40,10 @@ class Parameters:
                 raise ValueError("unknown regime timing")
             if self.bayes_threshold not in (None, D(".80"), D(".90"), D(".95")):
                 raise ValueError("unregistered posterior threshold")
-            if self.target_mode not in ("ATR_1_1", "ATR_2_1", "ATR_2_2") or self.min_net_r != 0 or self.max_age_ms != 2000:
-                raise ValueError("regime requires explicit bracket, no signal netR, 2s freshness")
+            if self.target_mode not in ("ATR_1_1", "ATR_2_1", "ATR_2_2", BAYES_EXIT) or self.min_net_r != 0 or self.max_age_ms != 2000:
+                raise ValueError("regime requires registered exit, no signal netR, 2s freshness")
+            if self.target_mode == BAYES_EXIT and self.bayes_threshold is None:
+                raise ValueError("Bayesian exit selection requires an explicit evidence threshold")
             return
         if self.candidate == "INDICATOR_UNION_V1":
             if self.target_mode not in ("ATR_1_1", "ATR_2_1", "ATR_2_2") or self.min_net_r != 0 or self.max_age_ms != 2000:

@@ -185,6 +185,8 @@ def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strate
                 parameters={"parameters":parameters.payload,"exit_profiles":["ATR_1_1","ATR_2_1","ATR_2_2"]},
                 transitions=({"from":"SCENARIO","to":"ORDER_INTENT","when":"fresh BBO, optional posterior and execution gates"},
                              {"from":"OPEN","to":"EXIT_INTENT","when":"frozen bracket stop or target"}))
+            if parameters.target_mode == "BAYES_NET_V1":
+                rt = replace(rt, condition_versions={**rt.condition_versions, "regime.exit_selection":"BAYES_NET_V1"})
             result = replace(result, strategy=rt, primary_models=("RT_REGIME_AB",), confirmation_models=(), exit_version="INDICATOR_BRACKET_V1")
     result.validate()
     return result

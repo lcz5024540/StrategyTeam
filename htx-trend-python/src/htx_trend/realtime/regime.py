@@ -8,7 +8,7 @@ from decimal import Decimal as D, ROUND_FLOOR, ROUND_CEILING
 from ..models import TrendSide
 from ..research.store import digest, primitive
 from .indicator_union import IndicatorUnionEngine, EXITS, features, series
-from .plans import StructurePlan, RealtimeTrigger
+from .plans import StructurePlan, RealtimeTrigger, BAYES_EXIT
 
 CANDIDATE = "REGIME_AB_V1"
 MODEL = "RT_REGIME_AB"
@@ -65,19 +65,36 @@ class RegimeEngine(IndicatorUnionEngine):
                                  "features": primitive(f)}]
         return ()
 
-    def assessment(self, scenario, now_ms):
+    def assessment(self, scenario, now_ms, *, exit_profile=None):
         if self.parameters.bayes_threshold is None:
             return {"allowed": True, "reason": "BAYES_DISABLED"}
         if self.snapshot is None:
             return {"allowed": False, "reason": self.snapshot_error}
-        return self.snapshot.assess(scenario, self.parameters, now_ms)
+        return self.snapshot.assess(scenario, self.parameters, now_ms, exit_profile=exit_profile)
+
+    def choose_exit(self, scenario, now_ms):
+        if self.parameters.target_mode != BAYES_EXIT:
+            return self.parameters.target_mode, self.assessment(scenario, now_ms)
+        if self.snapshot is None:
+            return None, {"allowed":False, "reason":self.snapshot_error,
+                          "policy":BAYES_EXIT, "selected_exit":None, "assessments":{}}
+        decision = self.snapshot.select_exit(scenario, self.parameters, now_ms)
+        return decision["selected_exit"], decision
 
     def confirm(self, trigger, book, now_ms):
         _, f = self.validate_frame(trigger.plan.contract, now_ms)
         row = self.rows[trigger.plan.plan_id]
+        if row["trigger"] != primitive(trigger):
+            return False
+        if self.parameters.target_mode == BAYES_EXIT:
+            decision = row["bayes_assessment"]
+            if (not decision["allowed"] or decision["selected_exit"] != trigger.plan.target_kind
+                    or decision["snapshot_hash"] != self.parameters.bayes_snapshot_hash
+                    or "EXIT_SELECTION_EVIDENCE:" + digest(decision) not in trigger.plan.sources):
+                return False
         return (row["phase"] == "TRIGGERED" and f["bar"] == trigger.plan.structure_bar
                 and confirms(f, row["scenario"], book.top.bid, book.top.ask)
-                and self.assessment(row["scenario"], now_ms)["allowed"])
+                and self.assessment(row["scenario"], now_ms, exit_profile=trigger.plan.target_kind)["allowed"])
 
     def accept(self, event, *, now_ms):
         if self.epoch != event.epoch:
@@ -115,16 +132,19 @@ class RegimeEngine(IndicatorUnionEngine):
         sign = D(1) if side is TrendSide.LONG else D(-1)
         reference = event.ask if sign > 0 else event.bid
         tick = frame["contract"].price_tick
-        loss, profit = EXITS[self.parameters.target_mode]
+        mode, assessment = self.choose_exit(scenario, now_ms)
+        # A durable rejected opportunity has no executable bracket and no fallback.
+        loss, profit = EXITS[mode] if mode is not None else (D(0), D(0))
         rounding = ROUND_FLOOR if sign > 0 else ROUND_CEILING
         stop = ((reference - sign * loss * f["atr"]) / tick).to_integral_value(rounding=rounding) * tick
         target = ((reference + sign * profit * f["atr"]) / tick).to_integral_value(rounding=rounding) * tick
-        assessment = self.assessment(scenario, now_ms)
         plan = StructurePlan(ident, event.contract, MODEL, side, f["close"], D(0),
-            f["atr"], tick, target, self.parameters.target_mode, f["bar"], f["hour"],
+            f["atr"], tick, target, mode or "UNSELECTED", f["bar"], f["hour"],
             f["bar"], ("RULE:" + CANDIDATE, "SCENARIO:" + scenario,
                        "TIMING:" + self.parameters.regime_timing,
-                       "POSTERIOR:" + self.parameters.bayes_snapshot_hash),
+                       "POSTERIOR:" + self.parameters.bayes_snapshot_hash) +
+                       (("EXIT_SELECTION:" + BAYES_EXIT, "EXIT_SELECTION_EVIDENCE:" + digest(assessment))
+                        if self.parameters.target_mode == BAYES_EXIT else ()) ,
             tuple(frame["entry"].evidence_refs + frame["trend"].evidence_refs),
             self.parameters.fingerprint, now_ms)
         trigger = RealtimeTrigger(plan, event.received_ms, event.exchange_ms, reference,

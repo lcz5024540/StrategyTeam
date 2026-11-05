@@ -166,14 +166,14 @@ class Snapshot:
     def load(cls,path):
         return cls(json.loads(Path(path).read_text()))
 
-    def assess(self, scenario, parameters, now_ms):
+    def assess(self, scenario, parameters, now_ms, *, exit_profile=None):
         v = self.value
         base = {'allowed':False,'snapshot_hash':self.hash,'cutoff_ms':v['cutoff_ms']}
         if self.hash != parameters.bayes_snapshot_hash or v['cost_id'] != parameters.bayes_cost_id:
             return {**base,'reason':'SNAPSHOT_BINDING_MISMATCH'}
         if v['cutoff_ms'] > now_ms:
             return {**base,'reason':'FUTURE_TRAINING_CUTOFF'}
-        group = v['groups'].get(group_key(scenario,parameters.regime_timing,parameters.target_mode,v['cost_id']))
+        group = v['groups'].get(group_key(scenario,parameters.regime_timing,exit_profile or parameters.target_mode,v['cost_id']))
         if not group or group['n']<20 or group['blocks']['60']['count']<10:
             return {**base,'reason':'INSUFFICIENT_EVIDENCE'}
         mass = D(str(group['blocks']['60']['positive_mean_mass']))
@@ -181,9 +181,37 @@ class Snapshot:
             raise ValueError('invalid posterior mass')
         allowed = mass >= parameters.bayes_threshold
         return {**base,'allowed':allowed,'reason':'PASS' if allowed else 'NET_EXPECTATION_UNCERTAIN',
-                'positive_mean_mass':str(mass),'posterior_mean':group['posterior_mean'],
-                'posterior_ci95':group['posterior_ci95'],'n':group['n'],
+                'positive_mean_mass':str(mass),'posterior_mean':str(group['posterior_mean']),
+                'mean_net_return':str(group['mean_net_return']),
+                'posterior_ci95':[str(value) for value in group['posterior_ci95']],'n':group['n'],
                 'hour_blocks':group['blocks']['60']['count'],'cost_mode':v['cost_mode']}
+
+
+    def select_exit(self, scenario, parameters, now_ms):
+        """Rank prior mature evidence, never the outcomes of this opportunity."""
+        from .plans import BAYES_EXIT
+        from .indicator_union import EXITS
+        if parameters.target_mode != BAYES_EXIT:
+            raise ValueError('exit selector requires its explicit policy')
+        assessments = {mode:self.assess(scenario, parameters, now_ms, exit_profile=mode)
+                       for mode in EXITS}
+        eligible = []
+        for mode, assessment in assessments.items():
+            if not assessment['allowed']:
+                continue
+            mean = D(str(assessment['mean_net_return']))
+            win = D(str(assessment['posterior_mean']))
+            if not mean.is_finite() or not win.is_finite() or not 0 <= win <= 1:
+                raise ValueError('invalid exit ranking statistics')
+            if mean <= 0:
+                assessment.update(allowed=False, reason='NONPOSITIVE_MEAN_NET_RETURN')
+                continue
+            eligible.append((mode, mean, win))
+        ranked = sorted(eligible, key=lambda x:(-x[1], -x[2], x[0]))
+        return {'allowed':bool(ranked), 'reason':'PASS' if ranked else 'NO_ELIGIBLE_EXIT',
+                'policy':BAYES_EXIT, 'selected_exit':ranked[0][0] if ranked else None,
+                'snapshot_hash':self.hash, 'selected_ms':now_ms, 'cutoff_ms':self.value['cutoff_ms'],
+                'ranked_exits':[x[0] for x in ranked], 'assessments':assessments}
 
 
 def bind_snapshot(engine, path, *, live=False):

@@ -70,6 +70,13 @@ def initial_context(intent, trigger, contract, holding_parameters):
     if intent.model in ("RT_INDICATOR_UNION", "RT_REGIME_AB"):
         result["matched_modes"] = [s.removeprefix("MATCH:") for s in trigger.plan.sources if s.startswith("MATCH:")]
     if intent.model == "RT_REGIME_AB":
+        if intent.exit_policy_ref != "INDICATOR_BRACKET_V1/" + trigger.plan.target_kind:
+            raise ValueError("intent and scenario plan exits differ")
+        for prefix, key in (("EXIT_SELECTION:", "exit_selection_policy"),
+                            ("EXIT_SELECTION_EVIDENCE:", "exit_selection_evidence_hash")):
+            matches = [s[len(prefix):] for s in trigger.plan.sources if s.startswith(prefix)]
+            if matches:
+                result[key] = matches[0]
         result.update(regime_scenario=next(s[9:] for s in trigger.plan.sources if s.startswith("SCENARIO:")),
                       regime_timing=next(s[7:] for s in trigger.plan.sources if s.startswith("TIMING:")),
                       posterior_hash=next(s[10:] for s in trigger.plan.sources if s.startswith("POSTERIOR:")))

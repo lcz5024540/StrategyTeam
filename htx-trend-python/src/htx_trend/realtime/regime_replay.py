@@ -142,6 +142,7 @@ class Paths:
                 engine.terminal(trigger.plan.plan_id,'NO_FILL',reason='QUOTE_PATH_ONLY_NO_ORDER')
                 if at<self.protocol['start_ms']:continue
                 source=engine.rows[trigger.plan.plan_id]
+                exit_rows = {}
                 for mode,(loss,profit) in EXITS.items():
                     sign=D(1) if trigger.side.value=='LONG' else D(-1);tick=trigger.plan.tick
                     rounding=ROUND_FLOOR if sign>0 else ROUND_CEILING
@@ -155,6 +156,7 @@ class Paths:
                         net_return=None,mfe=None,mae=None,cost_id=self.protocol['cost_id'],cost_status='ASSUMPTION',
                         exposure=self.protocol['exposure'],fee_rate=self.protocol['fee_rate'],funding_cost=None,ioc_fill_verified=False,
                         label_code_seal=code_seal(),label_protocol_hash=digest(self.protocol))
+                    exit_rows[mode] = base
                     row={**base,'policy':name+'/'+mode};self.rows.append(row);self.pending[code].append(row)
                     if name=='AB_WINDOW':
                         for threshold in ('.80','.90','.95'):
@@ -165,6 +167,22 @@ class Paths:
                             if not assessment['allowed']:gated.update(status='REJECTED',reason=assessment['reason'])
                             else:self.pending[code].append(gated)
                             self.rows.append(gated)
+
+                if name == 'AB_WINDOW' and self.protocol.get('exit_selection'):
+                    for threshold in ('.80', '.90', '.95'):
+                        p = replace(engine.parameters, target_mode='BAYES_NET_V1', bayes_threshold=D(threshold),
+                            bayes_snapshot_hash=self.snapshot.hash if self.snapshot else '',
+                            bayes_cost_id=self.protocol['cost_id'])
+                        decision = self.snapshot.select_exit(source['scenario'], p, at) if self.snapshot else {
+                            'allowed':False, 'reason':'SNAPSHOT_MISSING', 'selected_exit':None}
+                        mode = decision['selected_exit']
+                        selected = dict(exit_rows[mode or 'ATR_1_1'],
+                            policy='AB_SELECT_'+threshold+'/BAYES_NET_V1', assessment=decision, exit_profile=mode)
+                        if decision['allowed']:
+                            self.pending[code].append(selected)
+                        else:
+                            selected.update(status='REJECTED', reason=decision['reason'], stop=None, target=None)
+                        self.rows.append(selected)
 
     def settle(self,row,event,ref):
         self.mark(row,event,ref)
@@ -223,6 +241,8 @@ def statistics(rows):
 
 def report(paths):
     rows=paths.rows;policies=sorted(name+'/'+mode for name in ('UNION','AB_FIRST','AB_WINDOW','AB_GATE_.80','AB_GATE_.90','AB_GATE_.95') for mode in EXITS);comparison={}
+    if paths.protocol.get('exit_selection'):
+        policies += ['AB_SELECT_'+t+'/BAYES_NET_V1' for t in ('.80','.90','.95')]
     for key in policies:
         if not key.startswith('AB_GATE_'):continue
         gate={r['opportunity_id']:r for r in rows if r['policy']==key}
@@ -253,7 +273,7 @@ def report(paths):
         limitations=['not IOC fills or account profit','funding and additional slippage unknown','censored paths remain unknown','previously studied data are not independent validation'])
 
 
-def freeze(source, root, *, start_ms, end_ms, fee_rate, latency_ms, cost_id, exposure, snapshot=None):
+def freeze(source, root, *, start_ms, end_ms, fee_rate, latency_ms, cost_id, exposure, snapshot=None, exit_selection=False):
     source=Path(source).resolve();m=read(source)
     if not m.get('complete') or exposure not in ('SEEN','UNSEEN') or not cost_id.startswith('ASSUMPTION:'):
         raise ValueError('complete authorized manifest and explicit assumption cost experiment required')
@@ -268,7 +288,7 @@ def freeze(source, root, *, start_ms, end_ms, fee_rate, latency_ms, cost_id, exp
     if snap:Snapshot(snap)
     p=dict(schema='regime-replay-protocol-v1',files=files,source_manifest=str(source),source_manifest_sha256=file_hash(source),
         code_seal=implementation(),start_ms=start_ms,end_ms=end_ms,fee_rate=str(fee_rate),latency_ms=latency_ms,
-        cost_id=cost_id,exposure=exposure,snapshot=snap)
+        cost_id=cost_id,exposure=exposure,snapshot=snap,exit_selection=exit_selection)
     atomic(root/'protocol.json',p)
     atomic(root/'protocol-seal.json',{'hash':digest(p)})
 
@@ -336,7 +356,7 @@ def account_replay(tape, parameters, snapshot=None):
     finally:actor.close()
 
 
-def account_matrix(tape, parameters, snapshot=None):
+def account_matrix(tape, parameters, snapshot=None, *, exit_selection=False):
     """Same account and full opportunity stream, independently scheduled 18 ways."""
     seal=implementation();results={}
     for mode in EXITS:
@@ -350,6 +370,14 @@ def account_matrix(tape, parameters, snapshot=None):
             result=account_replay(tape,p,snapshot if threshold else None)
             result['metrics']=metric(result,tape['start_ms'],tape['end_ms'])
             results[name+'/'+mode]=result
+    if exit_selection:
+        for threshold in ('.80', '.90', '.95'):
+            p = replace(parameters, candidate=CANDIDATE, target_mode='BAYES_NET_V1', regime_timing='WINDOW',
+                bayes_threshold=D(threshold), bayes_snapshot_hash=snapshot['hash'] if snapshot else '',
+                bayes_cost_id=snapshot['cost_id'] if snapshot else '')
+            result = account_replay(tape, p, snapshot)
+            result['metrics'] = metric(result, tape['start_ms'], tape['end_ms'])
+            results['AB_SELECT_'+threshold+'/BAYES_NET_V1'] = result
     if implementation()!=seal:raise ValueError('code changed during account replay')
     comparison={}
     for key,gated in results.items():
@@ -398,6 +426,7 @@ def main():
     for name in ('start-ms','end-ms','latency-ms'):f.add_argument('--'+name,type=int,required=True)
     for name in ('fee-rate','cost-id'):f.add_argument('--'+name,required=True)
     f.add_argument('--exposure',choices=['SEEN','UNSEEN'],required=True);f.add_argument('--snapshot',type=Path)
+    f.add_argument('--exit-selection',action='store_true')
     r=sub.add_parser('run');r.add_argument('--root',type=Path,required=True);r.add_argument('--max-events',type=int)
     b=sub.add_parser('fit');b.add_argument('--records',type=Path,required=True);b.add_argument('--out',type=Path,required=True)
     b.add_argument('--cutoff-ms',type=int,required=True);b.add_argument('--cost-id',required=True)
@@ -405,8 +434,9 @@ def main():
     x.add_argument('--root',type=Path,required=True);x.add_argument('--end-ms',type=int,required=True)
     a=sub.add_parser('account');a.add_argument('--tape',type=Path,required=True);a.add_argument('--parameters',type=Path,required=True);a.add_argument('--out',type=Path,required=True)
     a.add_argument('--snapshot',type=Path);a.add_argument('--matrix',action='store_true')
+    a.add_argument('--exit-selection',action='store_true',help='include three pre-entry selectors in account matrix')
     args=ap.parse_args()
-    if args.command=='freeze':freeze(args.source,args.root,start_ms=args.start_ms,end_ms=args.end_ms,fee_rate=args.fee_rate,latency_ms=args.latency_ms,cost_id=args.cost_id,exposure=args.exposure,snapshot=args.snapshot)
+    if args.command=='freeze':freeze(args.source,args.root,start_ms=args.start_ms,end_ms=args.end_ms,fee_rate=args.fee_rate,latency_ms=args.latency_ms,cost_id=args.cost_id,exposure=args.exposure,snapshot=args.snapshot,exit_selection=args.exit_selection)
     elif args.command=='run':print(json.dumps(run(args.root,max_events=args.max_events),ensure_ascii=False))
     elif args.command=='extend':extend(args.previous,args.source,args.root,end_ms=args.end_ms)
     elif args.command=='fit':
@@ -418,8 +448,11 @@ def main():
         value=read(args.parameters)
         for k in ('min_net_r','band_atr','bayes_threshold'):
             if value.get(k) is not None:value[k]=D(str(value[k]))
+        if args.exit_selection and not args.matrix:
+            raise ValueError('--exit-selection requires --matrix; single run uses explicit parameters')
         runner=account_matrix if args.matrix else account_replay
-        atomic(args.out,runner(read(args.tape),Parameters(**value),read(args.snapshot) if args.snapshot else None))
+        atomic(args.out,runner(read(args.tape),Parameters(**value),read(args.snapshot) if args.snapshot else None,
+                              **({'exit_selection':args.exit_selection} if args.matrix else {})))
 
 
 if __name__=='__main__':main()

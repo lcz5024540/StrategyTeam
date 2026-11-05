@@ -33,3 +33,33 @@ def test_regime_scenarios_and_brackets_survive_mysql_restart(database):
         assert e.rows[key]['plan']['model']=='RT_REGIME_AB'
         e.terminal(key,'PARTIAL',filled_contracts=1)
     db.close()
+
+
+def test_selected_exit_and_evidence_survive_mysql_restart(database):
+    from htx_trend.realtime.plans import BAYES_EXIT
+    from htx_trend.realtime.regime_bayes import Snapshot
+    from test_regime_exit_selection import snapshot_for, params
+
+    value=snapshot_for('ATR_2_2','A');p=params(value)
+    db=connect(database)
+    sql=(Path(__file__).parents[3]/'sql/htx/2026-11-02__htx_realtime_structure_plan.sql').read_text()
+    with db.cursor() as c:c.execute(sql)
+    db.commit()
+    engine=create_engine(MySqlPlanStore(db),'selected',parameters=p)
+    engine.snapshot=Snapshot(value);frame=ab_frame('A')
+    engine.refresh_union_frame(frame,now_ms=NOW);price=frame['entry'].candles[-1].close
+    engine.accept(book(NOW,str(price),str(price+D('.001'))),now_ms=NOW)
+    price+=D('.02')
+    trigger,=engine.accept(book(NOW+1,str(price),str(price+D('.001'))),now_ms=NOW+1)
+    engine.terminal(trigger.plan.plan_id,'SUBMITTED',client_order_id='selected-client')
+    expected=engine.rows[trigger.plan.plan_id]['bayes_assessment']
+    db.close()
+
+    db=connect(database)
+    restored=create_engine(MySqlPlanStore(db),'selected',parameters=p)
+    row=restored.rows[trigger.plan.plan_id]
+    assert p.target_mode==BAYES_EXIT and row['phase']=='SUBMITTED'
+    assert row['plan']['target_kind']=='ATR_2_2'
+    assert row['bayes_assessment']==expected
+    assert row['bayes_assessment']['selected_exit']=='ATR_2_2'
+    db.close()

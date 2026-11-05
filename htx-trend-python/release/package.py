@@ -113,7 +113,7 @@ def bind_union(config, payload, selected, *, live):
     model = 'RT_REGIME_AB' if regime else UNION_MODEL
     config.update(models=[model], selection_id=selected.candidate,
                   parameters=primitive(selected.payload), parameter_fingerprint=selected.fingerprint,
-                  exit_policy='INDICATOR_BRACKET_V1/'+selected.target_mode,
+                  exit_policy=('BAYES_NET_V1' if selected.target_mode == 'BAYES_NET_V1' else 'INDICATOR_BRACKET_V1/'+selected.target_mode),
                   runtime_env_required=required, structural_candidate_selected=False,
                   note='Explicit indicator/scenario bracket binding, entry disabled. No financial or trial authority.')
     for key in ('contracts','account_equity_usdt','max_active_positions','max_total_margin_rate'):
@@ -147,7 +147,7 @@ def verify_union(cfg, binding, data):
             raise ValueError('posterior binding mismatch')
     if (cfg.get('parameters')!=primitive(selected.payload) or cfg.get('parameter_fingerprint')!=selected.fingerprint
             or binding.get('strategy_spec_hash')!=spec.spec_hash or cfg.get('models')!=[model]
-            or cfg.get('exit_policy')!='INDICATOR_BRACKET_V1/'+selected.target_mode
+            or cfg.get('exit_policy')!=('BAYES_NET_V1' if selected.target_mode == 'BAYES_NET_V1' else 'INDICATOR_BRACKET_V1/'+selected.target_mode)
             or cfg.get('runtime_env_required')!=expected or 'release/'+doc not in data):
         raise ValueError('union bracket/spec binding mismatch')
     path='deployment/realtime-live.env.example' if cfg['mode']=='LIVE' else 'release/realtime.env.example'
@@ -600,7 +600,7 @@ def main():
     builder.add_argument('--union-exit', choices=tuple(UNION_EXITS), help='explicit five-pattern union exit; does not activate entry')
     live_builder.add_argument('--union-exit', choices=tuple(UNION_EXITS), help='explicit union code package; entry disabled')
     for target in (builder, live_builder):
-        target.add_argument('--regime-exit', choices=tuple(UNION_EXITS))
+        target.add_argument('--regime-exit', choices=(*UNION_EXITS, 'BAYES_NET_V1'))
         target.add_argument('--regime-timing', choices=('WINDOW','FIRST_QUOTE'), default='WINDOW')
         target.add_argument('--regime-snapshot', type=Path)
         target.add_argument('--regime-threshold', choices=('.80','.90','.95'))

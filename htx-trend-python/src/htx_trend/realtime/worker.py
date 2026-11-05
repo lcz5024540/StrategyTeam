@@ -316,6 +316,7 @@ class RealtimeWorker:
             {
                 "trigger": trigger,
                 "segment_hash": source_ref,
+                "exit_selection": self.engine.rows.get(trigger.plan.plan_id, {}).get("bayes_assessment"),
                 "book": book,
                 "book_requested_ms": started_ms,
                 "book_received_ms": check_ms,

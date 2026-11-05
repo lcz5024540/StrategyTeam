@@ -38,8 +38,8 @@ def supports_observed_implementation(hashes: dict) -> bool:
     current = implementation_hashes()
     from .realtime.legacy_implementations import LEGACY_IMPLEMENTATIONS
     from .realtime.union_compatibility import UNION_PREDECESSOR
-    from .realtime.regime_compatibility import REGIME_PREDECESSOR
-    return hashes == current or hashes in LEGACY_IMPLEMENTATIONS or hashes in (UNION_PREDECESSOR, REGIME_PREDECESSOR)
+    from .realtime.regime_compatibility import REGIME_PREDECESSOR, FIXED_REGIME_PREDECESSOR
+    return hashes == current or hashes in LEGACY_IMPLEMENTATIONS or hashes in (UNION_PREDECESSOR, REGIME_PREDECESSOR, FIXED_REGIME_PREDECESSOR)
 
 
 class HoldingPolicyError(ValueError):
@@ -144,8 +144,8 @@ class HoldingPolicy:
             from .realtime.legacy_implementations import LEGACY_IMPLEMENTATIONS
             from .realtime import VERSION
             from .realtime.union_compatibility import UNION_PREDECESSOR
-            from .realtime.regime_compatibility import REGIME_PREDECESSOR
-            union_compatible = value['implementation_hashes'] in (UNION_PREDECESSOR, REGIME_PREDECESSOR)
+            from .realtime.regime_compatibility import REGIME_PREDECESSOR, FIXED_REGIME_PREDECESSOR
+            union_compatible = value['implementation_hashes'] in (UNION_PREDECESSOR, REGIME_PREDECESSOR, FIXED_REGIME_PREDECESSOR)
             if (not union_compatible and (value['implementation_hashes'] not in LEGACY_IMPLEMENTATIONS
                     or value.get('owner', {}).get('strategy_name') == VERSION)):
                 raise HoldingPolicyError('holding policy implementation changed; compatible adapter required')
