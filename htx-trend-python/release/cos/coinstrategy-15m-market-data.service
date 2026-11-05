@@ -1,9 +1,8 @@
 [Unit]
 Description=CoinStrategy 15m public market data (no trading credentials)
-Wants=network-online.target
+Wants=network-online.target coinstrategy-15m-cos-archive.timer coinstrategy-15m-cos-release.timer
 After=network-online.target
-StartLimitIntervalSec=300
-StartLimitBurst=3
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -16,7 +15,6 @@ EnvironmentFile=/etc/coinstrategy/15m-cos-release.env
 ExecStart=/opt/coinstrategy/15m-market-data/venv/bin/python -m htx_trend.realtime.public_capture start --contracts-file /etc/coinstrategy/15m-cos-pool.json --output /home/ubuntu/coinstrategy-data/15m-cos/capture --segmented --resume --seconds 86400
 Restart=always
 RestartSec=60
-RestartPreventExitStatus=2
 TimeoutStopSec=120
 KillSignal=SIGTERM
 Nice=10

@@ -51,6 +51,8 @@ def test_closed_window_revisions_preserved_and_forming_bar_excluded():
     assert updated["candles"][-1]["close"] == "101"
     with pytest.raises(ValueError, match="incomplete"):
         normalize_window("ETH-USDT", "15min", dict(data=bars[2:]), 160 * 900000)
+    with pytest.raises(ValueError, match="stale"):
+        normalize_window("ETH-USDT", "15min", raw, 162 * 900000)
 
 
 def test_streaming_export_hashes_and_explicit_missing_baseline(tmp_path):
@@ -403,3 +405,101 @@ def test_unexpected_capture_thread_exit_is_visible_and_stops_run(tmp_path,monkey
     monkeypatch.setattr('htx_trend.realtime.public_capture.shutil.disk_usage',lambda _:SimpleNamespace(free=20*GIB))
     c.run()
     assert c.failure=='CAPTURE_THREAD_EXITED'
+
+
+@pytest.mark.parametrize('detail', ['full', 'heartbeat'])
+def test_status_never_calls_missing_or_stale_channels_healthy(tmp_path, detail):
+    now = [2_000_000]
+    c = Capture(tmp_path/'health',['ETH-USDT'],seconds=1,clock=lambda:now[0]/1000)
+    try:
+        assert c.status(detail=detail)['continuity']=='STARTING'
+        for kind in ('BBO','DEPTH','FRAME'):
+            c.write(dict(kind=kind,contract='ETH-USDT',received_ms=now[0]))
+        status = c.status(detail=detail)
+        assert status['continuity']=='HEALTHY'
+        assert ('channels' in status) == (detail == 'full')
+        assert 'queue_depth' in status and 'catchup_active' in status
+        now[0] += 20 * 60 * 1000 + 1
+        status = c.status(detail=detail)
+        assert status['continuity']=='DEGRADED'
+        assert status['stale_kline_channels']==['ETH-USDT:FRAME']
+        c.failure='LOW_DISK_HEADROOM'
+        assert c.status(detail=detail)['continuity']=='FAILED'
+        assert c.status(final=True)['continuity']=='STOPPED'
+    finally:
+        close_capture(c)
+
+
+def test_stream_recovery_records_measured_gap(tmp_path, monkeypatch):
+    now = [1500]
+    c = Capture(tmp_path/'gap',['ETH-USDT'],seconds=1,clock=lambda:now[0]/1000)
+    messages = [dict(ping=1000), dict(status='ok', subbed='market.ETH-USDT.depth.step0'),
+                dict(status='error', err_msg='unavailable'), depth(1800), depth(1900)]
+
+    class Socket:
+        calls = 0
+        def __enter__(self): return self
+        def __exit__(self, *_): return None
+        def send(self, _): return None
+        def recv(self, timeout):
+            self.calls += 1
+            now[0] += 100
+            if self.calls <= len(messages):
+                return json.dumps(messages[self.calls - 1])
+            c.stop.set()
+            raise TimeoutError
+
+    monkeypatch.setattr('websockets.sync.client.connect',lambda *_,**__:Socket())
+    try:
+        c.stream_loop()
+        events=[]
+        while not c.events.empty(): events.append(c.events.get_nowait())
+        recovered = [e for e in events if e['kind']=='GAP_RECOVERED']
+        assert len(recovered)==1
+        assert recovered[0]['epoch']==events[0]['epoch']
+        assert recovered[0]['gap_started_ms']==1500 and recovered[0]['gap_ms']==400
+        reasons = [e.get('reason') for e in events if e['kind']=='GAP']
+        assert 'DEPTH_CATCHUP_BEGIN' in reasons and 'DEPTH_CATCHUP_END' in reasons
+        assert c.catchup.coalesced == 1
+        assert any(e['kind']=='DEPTH' and e['exchange_ms']==1900 for e in events)
+    finally:
+        close_capture(c)
+
+
+def test_queue_overflow_does_not_emit_recovery(tmp_path, monkeypatch):
+    import queue
+    c = Capture(tmp_path/'full',['ETH-USDT'],seconds=1)
+    c.events = queue.Queue(maxsize=2)
+
+    class Socket:
+        def __enter__(self): return self
+        def __exit__(self, *_): return None
+        def send(self, _): return None
+        def recv(self, timeout):
+            return json.dumps(dict(ch='market.ETH-USDT.bbo',
+                tick=dict(ts=1000,bid=[100,1],ask=[101,1],mrid=1)))
+
+    monkeypatch.setattr(c,'_ws_connect',lambda:lambda *_,**__:Socket())
+    try:
+        c.stream_loop()
+        events=[]
+        while not c.events.empty(): events.append(c.events.get_nowait())
+        assert c.failure=='QUEUE_OVERFLOW'
+        assert not any(e['kind']=='GAP_RECOVERED' for e in events)
+    finally:
+        close_capture(c)
+
+
+@pytest.mark.parametrize('period,seconds', [('15min',900),('60min',3600),('4hour',14400)])
+def test_closed_window_must_match_latest_period_boundary(period, seconds):
+    raw=dict(data=[dict(id=i*seconds,open=100,high=101,low=99,close=100) for i in range(161)])
+    assert normalize_window('ETH-USDT',period,raw,161*seconds*1000)['candles'][-1]['open_time']==160*seconds
+    with pytest.raises(ValueError,match='stale'):
+        normalize_window('ETH-USDT',period,raw,162*seconds*1000)
+
+
+def test_data_unit_keeps_capacity_retry_and_both_cos_timers():
+    unit=(Path(__file__).parents[1]/'release/cos/coinstrategy-15m-market-data.service').read_text()
+    assert 'StartLimitIntervalSec=0' in unit and 'Restart=always' in unit
+    assert 'RestartPreventExitStatus=' not in unit and 'StartLimitBurst=' not in unit
+    assert 'coinstrategy-15m-cos-archive.timer coinstrategy-15m-cos-release.timer' in unit

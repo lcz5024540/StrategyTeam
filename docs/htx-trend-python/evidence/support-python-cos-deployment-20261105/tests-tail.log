@@ -1,0 +1,14 @@
+Command: HTX_TEST_MYSQL_PORT=33319 /tmp/coinstrategy-public-capture-py314/bin/python -m pytest -q
+Isolated MySQL: colima-hot-deploy-tests / hot-deploy-mysql, 127.0.0.1:33319. No production DB.
+Final output chunk (not a full transcript):
+.......................................................... [ 88%]
+........................................................................ [ 93%]
+........................................................................ [ 98%]
+...................                                                      [100%]
+=============================== warnings summary ===============================
+tests/test_paper_db_persist.py: 89 warnings
+  /Users/lichangzheng.ray/Ray/CoinStrategy-regime-bayesian-entry/htx-trend-python/tests/test_order_accounting.py:19: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    self.cursor.execute(sql, tuple(str(x) if isinstance(x,D) else x for x in args))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1387 passed, 89 warnings in 72.86s (0:01:12)

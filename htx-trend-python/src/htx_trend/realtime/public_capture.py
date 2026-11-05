@@ -152,6 +152,10 @@ def normalize_window(code, period, raw, received_ms):
     window = KlineWindow(code, period, candles, 160)
     if len(candles) != 160 or not window.is_complete:
         raise ValueError("incomplete closed candle window")
+    seconds = period_seconds(period)
+    expected_last_open = ((received_ms // 1000) // seconds - 1) * seconds
+    if candles[-1].open_time != expected_last_open:
+        raise ValueError("stale closed candle window")
     return dict(received_ms=received_ms, candles=primitive(candles))
 
 
@@ -926,10 +930,11 @@ class Capture:
                 return
             epoch = uuid.uuid4().hex
             self.reconnect.begin_attempt(self._monotonic())
+            gap_started_ms = self.now()
             self.emit(
                 dict(
                     kind="GAP",
-                    received_ms=self.now(),
+                    received_ms=gap_started_ms,
                     reason="CONNECT_OR_RECONNECT",
                     epoch=epoch,
                     circuit=self.reconnect.circuit,
@@ -953,7 +958,7 @@ class Capture:
                     close_timeout=2,
                     max_size=8 * 1024**2,
                 ) as sock:
-                    self._pump_socket(sock, epoch)
+                    self._pump_socket(sock, epoch, gap_started_ms)
             except Exception as error:
                 if not self.stop.is_set():
                     transition = self.reconnect.note_failure(self._monotonic())
@@ -985,7 +990,7 @@ class Capture:
                 self.socket = None
                 self.close_catchup()
 
-    def _pump_socket(self, sock, epoch):
+    def _pump_socket(self, sock, epoch, gap_started_ms):
         """Subscribe TRADE+BBO first, DEPTH last, and pace the burst.
 
         A subscription send counts as liveness. Chunked resubscribe is longer
@@ -1004,6 +1009,7 @@ class Capture:
         follow_origin = None
         origin = self._monotonic()
         last = origin
+        recovered = False
         while not self.stop.is_set():
             now_m = self._monotonic()
             self.poll_catchup(now_m)
@@ -1068,6 +1074,20 @@ class Capture:
             for event in observations:
                 self.emit(event)
             if observations:
+                if not recovered and not self.stop.is_set() and not self.failure:
+                    # First market observation in this connection attempt;
+                    # this does not certify all channels or recover lost data.
+                    recovered_ms = self.now()
+                    self.emit(
+                        dict(
+                            kind="GAP_RECOVERED",
+                            received_ms=recovered_ms,
+                            gap_started_ms=gap_started_ms,
+                            gap_ms=max(0, recovered_ms - gap_started_ms),
+                            epoch=epoch,
+                        )
+                    )
+                    recovered = True
                 self.reconnect.note_observation(self._monotonic())
 
     def write(self, event):
@@ -1203,12 +1223,23 @@ class Capture:
 
     def status(self, final=False, *, detail="full"):
         now = self.now()
-        stale = [
+        stale_price = [
             c + ":" + k
             for c in self.contracts
             for k in ("BBO", "DEPTH")
             if now - self.last_seen.get(c + ":" + k, 0) > 2000
         ]
+        stale_kline = [
+            c + ":FRAME"
+            for c in self.contracts
+            if now - self.last_seen.get(c + ":FRAME", 0) > 20 * 60 * 1000
+        ]
+        if self.failure:
+            continuity = "STOPPED" if final else "FAILED"
+        elif stale_kline or stale_price:
+            continuity = "STARTING" if not self.channels else "DEGRADED"
+        else:
+            continuity = "HEALTHY"
         full = final or detail == "full"
         body = dict(
             pid=os.getpid(),
@@ -1219,7 +1250,9 @@ class Capture:
             release=os.environ.get('HTX_PUBLIC_CAPTURE_RELEASE_ID','UNSPECIFIED'),
             counts_scope="CURRENT_PROCESS",
             counts=dict(self.counts),
-            stale_price_channels=stale,
+            continuity=continuity,
+            stale_price_channels=stale_price,
+            stale_kline_channels=stale_kline,
             errors=dict(self.errors),
             bytes=self.recorder.used,
             min_free_bytes=self.min_free_bytes,
