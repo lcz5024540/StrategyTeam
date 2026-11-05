@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "real_source": "/Users/lichangzheng.ray/Ray/research-data/cos-night-20261104-1800/manifest.json",
+  "processed": 470713,
+  "rows": 21,
+  "split_at": 250000,
+  "report_digest": "43b1ec8a66cb9d42d93ec4771b883e5a55b502efa50558f6b5e6f8b0c7388946",
+  "records_digest": "3a9c69fc2724d68c274dd00e1fd5806e0d2fdce27fe7c1d8368e4597fd5d7e20",
+  "paths": [
+    "/Users/lichangzheng.ray/Ray/research-results/regime-bayesian-recovery-split-20261105",
+    "/Users/lichangzheng.ray/Ray/research-results/regime-bayesian-recovery-full-20261105"
+  ]
+}

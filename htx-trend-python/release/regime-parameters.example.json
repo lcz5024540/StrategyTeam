@@ -1,0 +1,11 @@
+{
+  "candidate": "REGIME_AB_V1",
+  "target_mode": "ATR_1_1",
+  "regime_timing": "WINDOW",
+  "band_atr": "0.10",
+  "min_net_r": "0",
+  "max_age_ms": 2000,
+  "bayes_threshold": null,
+  "bayes_snapshot_hash": "",
+  "bayes_cost_id": ""
+}

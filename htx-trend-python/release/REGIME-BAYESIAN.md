@@ -2,6 +2,8 @@
 
 2026-11-05。代码可独立选择A/B、实时价格确认及三档固定ATR退出；后验门是可选独立实验。安装不启用交易，收益准入不随测试或打包自动获得。
 
+完整交付与实际诊断结果见 `docs/htx-trend-python/regime-bayesian-20261105.md`、`docs/htx-trend-python/regime-bayesian-night-20261105.md`。流程图源在 `docs/htx-trend-python/evidence/regime-bayesian-20261105/flow.drawio`。
+
 ## 规则与归属
 A多头：闭合1h EMA20<EMA60、1h MACD柱>0、15m MACD柱<0；最新15m阳线、下影>=实体、bid>收盘。B空头：EMA20>EMA60、两个MACD符号与A相同；阴线、上影>=实体、ask<收盘。spread<=10bp。相等、零值、无效/不完整窗口不匹配。EMA使用SMA种子、MACD12/26/9、ATR14使用Wilder。
 
@@ -46,6 +48,24 @@ PYTHONPATH=htx-trend-python/src python -m htx_trend.realtime.regime_replay fit -
 上面250ms和双边4bp仅明确标识的假设示例，不是恢复的真实成交延迟/全部费用。source manifest须含complete=true及files[path,sha256]；gzip JSONL每行segment/index/event，event使用现有公共采集标准对象。run按接收时间合并，checkpoint保留待进入路径、观察历史和去重状态；文件/协议/代码变化停止。--max-events可分轮处理，validator.lock禁止同时写。report和逐笔记录区分QUOTE_PATH与IOC/账户；不接私有API。
 
 account子命令要求显式tape和Parameters JSON，复用实际worker/broker/ledger/management；tape须有真实FRAME/DEPTH/BBO/FUNDING、成本、延迟及账户配置，缺深度不以收盘补成交。原固定300U协议不应用于该入口。无账户配置则只输出机会收益率，不生成账户盈亏。
+
+Parameters文件可使用 `release/regime-parameters.example.json`（不是账户资金配置）。在用户提供且冻结账户配置后执行：
+
+```bash
+PYTHONPATH=htx-trend-python/src python -m htx_trend.realtime.regime_replay account --tape /absolute/account-tape.json.gz --parameters htx-trend-python/release/regime-parameters.example.json --matrix --out /absolute/new-account-matrix.json
+PYTHONPATH=htx-trend-python/src python htx-trend-python/tools/regime_report.py --root /absolute/new-study --out /absolute/new-report.md
+```
+
+`--matrix`依次独立运行四组共18配置，保持同一账户配置与完整输入、重新计算实际持仓占用及开仓调度；输出各组净权益/回撤、费用、逐笔、拒绝及门控后新增的实际开仓计划。没有快照时概率组完整记录拒绝，不伪造通过。上述命令只操作本地文件。
+
+采集新增封口文件时，先确认旧前缀已完成，再创建子研究，禁止覆盖旧结果：
+
+```bash
+PYTHONPATH=htx-trend-python/src python -m htx_trend.realtime.regime_replay extend --previous /absolute/old-study --source /absolute/extended-manifest.json --root /absolute/new-child-study --end-ms NEW_END
+PYTHONPATH=htx-trend-python/src python -m htx_trend.realtime.regime_replay run --root /absolute/new-child-study
+```
+
+扩展必须保持原文件绝对路径、顺序、哈希的精确前缀并只追加封口文件。代码/规则/成本/快照变化需新freeze；不能延用旧检查点。后验fit每次从最终唯一成熟记录全量重算，不能把前后两个报告重复累计。新数据在看策略结果前冻结exposure与快照；未见数据结果只能一次检验，转入后续开发须显式记录SEEN，不得借extend偷看受保护留出。
 
 ## 恢复与回滚
 精确兼容3d793d6d持仓源码向量，保留更早已验向量；未知hash拒绝。关闭新入口后本包继续管理新旧仓；禁止切回不认识RT_REGIME_AB的旧包漏管。快照改变不能追溯修改旧决策，规则/退出变化必须新建模型版本。合并、部署、档位选择及启用须另行执行。

@@ -1,0 +1,20 @@
+{
+  "python": {
+    "passed": 1295,
+    "failed": 0,
+    "skipped": 0,
+    "warnings": 89,
+    "command": "PYTHONPATH=htx-trend-python/src HTX_TEST_MYSQL_PORT=23319 python -m pytest -q htx-trend-python/tests",
+    "log_sha256": "260fa3f6138bc6b7b69b12756ddd806336b2393ba44b0b48b6241feded68fa3d",
+    "log": "python-tests-final.log"
+  },
+  "isolated_mysql": {
+    "passed": 10,
+    "port": 23319,
+    "host": "127.0.0.1",
+    "production_access": false
+  },
+  "public_api": "public-api.json",
+  "independent_review": "code-relations-final.json",
+  "admission": "NOT_ELIGIBLE"
+}

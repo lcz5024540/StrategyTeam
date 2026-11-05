@@ -1,5 +1,8 @@
 # HTX Python交付索引
 
+- [A/B场景交易与贝叶斯验证](regime-bayesian-20261105.md)：独立候选、冻结概率门、三档退出和同源回放，入口关闭。
+- [A/B夜间冻结数据逐笔结果](regime-bayesian-night-20261105.md)：报价路径、标签完整性及后验评估，非账户收益。
+
 - [15m开仓执行修复、输入复算与部署材料](entry-fixes-20261102.md)
 - [本轮执行计划](../exec-plans/active/plan-20261102-15m-entry-execution-fixes.md)
 - [角色待办](ROLE-TODOS.md)

@@ -1,0 +1,4533 @@
+{
+  "schema": "regime-code-relations-review-v1",
+  "generated_utc": "2026-11-05T06:59:10.003405+00:00",
+  "method": "python_ast",
+  "tool_availability": {
+    "codegraph_tools_exposed": false
+  },
+  "limitations": [
+    "Static AST lexical call/import/reference inventory; dynamic dispatch and runtime call edges are not inferred.",
+    "Not codegraph output.",
+    "Four in-memory fixture account cases validate wiring, not production execution or financial admission."
+  ],
+  "git_head": "ea77c2e4469209c6e557ca152efe472df99d1700",
+  "source_hashes": {
+    "htx-trend-python/src/htx_trend/__init__.py": "1fa3da7bec171fe770cadda10885cd000c09f1ce8b35eb73d7aec799a3417671",
+    "htx-trend-python/src/htx_trend/__main__.py": "cf7390a2508a0fcad4777a4a629fc5212ab655cb45845975995f835676a834e3",
+    "htx-trend-python/src/htx_trend/account_facts.py": "91344554944f5eb5ca8beb9ddfdc8c539db0afe5e32a1164f0004013dd770bcd",
+    "htx-trend-python/src/htx_trend/admission.py": "336eb6d45a1d5dbd9e4eeb9ba4b72bf0da9d43273bd25680149093fd5f8e42ab",
+    "htx-trend-python/src/htx_trend/admission_self_test.py": "c0836fa188983fd21ef7499d2f4b4a70db2f7cfe9cea2639704f018b4630a3f7",
+    "htx-trend-python/src/htx_trend/archive/__init__.py": "16a2b3cf2cd803d60a7c6b95a38a3d36f4e32afb570f182abe3872bb909af0de",
+    "htx-trend-python/src/htx_trend/archive/backend.py": "c82c31593e8177a00b5e358e58b947a1c91d6fdef3fd5cec04b59b2c737cb6ce",
+    "htx-trend-python/src/htx_trend/archive/cache.py": "5b6fed24b5c4d3b88324251ca4426c127ae7628475942456c9b74a715200c5d2",
+    "htx-trend-python/src/htx_trend/archive/cli.py": "01c3b6c4c2e573e5332b6f8233cae1e39a3a51f80181cffdb41ff8fb4d0189f7",
+    "htx-trend-python/src/htx_trend/archive/retirement.py": "18d67d8963d2a24b6df87dab601c04191634835de12b3982cf86e35441e7920f",
+    "htx-trend-python/src/htx_trend/archive/scheduler.py": "79cdaa188ff6fb4577d0711b5dbe46478a977c1304d4e1780c78bc5f3fd5dd23",
+    "htx-trend-python/src/htx_trend/archive/snapshot.py": "9ef4c27e190c67e3e428144d1d2c0d5132031cc1711a692ba3b30d76daa7e090",
+    "htx-trend-python/src/htx_trend/archive/transfer.py": "db48d0715b63fafea6942c7646a112d4ec49677a945ee9b7fa0429d9681db7bb",
+    "htx-trend-python/src/htx_trend/cli.py": "8c5402029eebba9ad314143136aedb909f2d0345c8b303e1b684977fbe19813a",
+    "htx-trend-python/src/htx_trend/context_recovery.py": "39c2abe0e49d8da92863ffc82999df13659c94a69e201de6537aebbf9d7ad4a3",
+    "htx-trend-python/src/htx_trend/continuation.py": "7cb1471018e262b4f3be7dd1e420c0096cef09e1adaa6b4c6c3eac4dbada3456",
+    "htx-trend-python/src/htx_trend/continuation_replay.py": "c82f3e44e3045f23cf7ce47d3334e9fdb611ebfc4439cccf1409d973e7e50506",
+    "htx-trend-python/src/htx_trend/credentials.py": "bcca1b7a264ad4401f3b3a5492aad96b4f02ddd4098536d6009b56b7c5f58084",
+    "htx-trend-python/src/htx_trend/datasets.py": "e00bf0fbcf0e71610b91624fe42c46956142d46e63fe317715e944d3f4ddea37",
+    "htx-trend-python/src/htx_trend/diagnostics.py": "e21f04d706964de77aa6c34a8787682f7a2a2b883aec6d770350c26053e5b181",
+    "htx-trend-python/src/htx_trend/entry_plan_audit.py": "80ed77aa4ba60422b0b8269d6672855a05d578889b203a16f396f692710fbb5d",
+    "htx-trend-python/src/htx_trend/evidence.py": "d83532cba4945d45625491a243d293187dbd7ad65a007ac1a57112fbf0f060d4",
+    "htx-trend-python/src/htx_trend/execution.py": "1890c238fbd1a5546edb2fbafd4ce889617641a7c78c2c25d6cb2ccbcd9137ac",
+    "htx-trend-python/src/htx_trend/execution_service.py": "3fdd1e37271943ad178559da979060ba97b601b11efa1ca792d08a5aca7e0d37",
+    "htx-trend-python/src/htx_trend/exit_config.py": "92fccfb2931062b00bf7a83c4c026b3072e7f3d033e12a262f950e10f17f7ed9",
+    "htx-trend-python/src/htx_trend/exit_contract_v5.py": "90d4588adaa27a256002dd8c19da1db8dc1d3395e25340061f7b1b2bcd7e7471",
+    "htx-trend-python/src/htx_trend/exit_experiment_v5.py": "b7f2f9cbe1ec8aa0f23c5c453420f8163c5eb6c42b3f987b9b6297fce2ebc0f6",
+    "htx-trend-python/src/htx_trend/exit_kernel_v5.py": "4a7d2da813f1ad2eb19b69474b0c18eb0be8cfdc6f5eac50631992a65c1e3f4f",
+    "htx-trend-python/src/htx_trend/exit_observer_v5.py": "2f3549853c02d8860ada112fb75fe899fa472c87d9ae634c81c821b6fc956ba8",
+    "htx-trend-python/src/htx_trend/exits.py": "a48376825731b7a4d70f6defd18d4e91f9e67e3cd3bb65c08072cd36ad6ee202",
+    "htx-trend-python/src/htx_trend/fee_allocator_v5.py": "4dbf72452142d404e8e60ee4188cc4608dee85dcd1f2fe5b2a85d30d224c63d4",
+    "htx-trend-python/src/htx_trend/holding_adoption.py": "4ea3a9441b5554de6325beb628136d7076429d36ae44d9ba17cbb5b09c388c62",
+    "htx-trend-python/src/htx_trend/holding_policy.py": "af68404f14ae2be5605a39064cbb326a3b8b812a6ade7a79a0656aa61fcbd462",
+    "htx-trend-python/src/htx_trend/htx_v5.py": "e2754adbdfcfab0ac0a29cbbaf71969a065804d19f046b78505e517e3b7a9c58",
+    "htx-trend-python/src/htx_trend/indicators.py": "b2d5c297f306c8014e50f5cc0a82ebe802d9a6ea0e1e66efd9fb42f0015f922c",
+    "htx-trend-python/src/htx_trend/java_entry_contract.py": "662a11f04785d12f7d2543894b8ad5076a0422ddaeb5851ef3630c80c4521831",
+    "htx-trend-python/src/htx_trend/ledger.py": "641b27cfa4c5a44de975e41cdbbf109ca775bcdc6bc1f4427a420b1427ba346b",
+    "htx-trend-python/src/htx_trend/live.py": "652f20191cc4e925b18b9d5de79bcdf3c16cf25789a395af6c00294f85b656e0",
+    "htx-trend-python/src/htx_trend/live_approval.py": "f84145eb35715c1e9c718502afdd111cb31778413e9e0f7fa68851c9155c53d1",
+    "htx-trend-python/src/htx_trend/live_close_ledger.py": "10b4f18e38ce4627edb2ab8ebe9ee4fa25f1adcb9005997b06bb30d22f386afb",
+    "htx-trend-python/src/htx_trend/live_worker.py": "9a546eb824f1c7da694d935d8d22f2cf3d4b826a37293a94aef486444108a6d3",
+    "htx-trend-python/src/htx_trend/maker_execution.py": "a60c5c69e7a7f985dac3856bacf2fa71c8dc339594bab55e5f6d278d81cc7576",
+    "htx-trend-python/src/htx_trend/market_data.py": "12b922af03ecde3be0ee82df839c263aee27fe6e6d9fac658f9eb610f736b95e",
+    "htx-trend-python/src/htx_trend/mirror.py": "b55c616d817d7c60b485168da6b7f3bc8555e5ccb10bdb2f8b3dcc04f4136d38",
+    "htx-trend-python/src/htx_trend/model_holding_v5.py": "a89740354bf805ce4f2d2cd626c06e1e2486298f29afd410ea23464f11178518",
+    "htx-trend-python/src/htx_trend/models.py": "0143c0dc07f6f9b6985ec0973e4319cdb73841aaeb86506e8c2e4cee297d5fe2",
+    "htx-trend-python/src/htx_trend/mysql_store.py": "2e23851640dcaa3d1b7a0d99e340d519167e797c4493f87bffe6bdd97e9d34c1",
+    "htx-trend-python/src/htx_trend/order_accounting.py": "e2229b979d66d72c8bb1d7ae2efa8e9af268f621b7c6983be4cedd0c508e9450",
+    "htx-trend-python/src/htx_trend/order_px_fields.py": "eeb62d1e4efae83b6975ed0a1e37a6cbe37ed07db13d5fc3df5ed0a9d397c64c",
+    "htx-trend-python/src/htx_trend/ownership.py": "1937c9eb02eec1501af2186a27c6eca1191873491adc0d606c9e148a92cca4cb",
+    "htx-trend-python/src/htx_trend/paper.py": "668547eca570950485809acc4e3f312096fe27b1ab6f731d7ead7a2466cf9e85",
+    "htx-trend-python/src/htx_trend/paper_db_persist.py": "de1c21080744995838945cfab8c59f0047ab5f3127e69083db66a0e176843e19",
+    "htx-trend-python/src/htx_trend/paper_worker.py": "3d1ec11094f15de71923c34e610b97761060181aad4bd8bf822e7720356a45e4",
+    "htx-trend-python/src/htx_trend/policy.py": "1358abc6f288748005f37cc414700ee846a7ad79769169549236d41760df0259",
+    "htx-trend-python/src/htx_trend/position_manager.py": "1863d454e41b616e05f44e969bbf6445ccd0434973cae04886cfc1b8176755d2",
+    "htx-trend-python/src/htx_trend/product_live_waiver.py": "df947386316cc0f4a2a029ae03d1616cea92c5dc6bb814a7c2bf2fbf5bd5f9f7",
+    "htx-trend-python/src/htx_trend/realtime/__init__.py": "f0ab99db05b6235876f47a044fec0e234fcabec776515e406919fd837210d257",
+    "htx-trend-python/src/htx_trend/realtime/__main__.py": "f5d0003b27b4b9a7378a3be97542320b0a29eb9ff1a4c5b9c1902efcd1ab614b",
+    "htx-trend-python/src/htx_trend/realtime/brokers.py": "130886e360a97ea9d2e161c8426f18b45d32b9c880664b7d79d4a923f158f5b4",
+    "htx-trend-python/src/htx_trend/realtime/capture_prefix_export.py": "a2fee237fcaa3f914e150243a0af66baa541fff3755899e1a678fb53e9f51be5",
+    "htx-trend-python/src/htx_trend/realtime/coverage.py": "75fd2b35af06cc7ca8bafc88d9b72c26e94ea079af6cd20ec794418fbae8640e",
+    "htx-trend-python/src/htx_trend/realtime/factory.py": "4ba1e96d3e8404a0deaf5d86c55d933cd0af6bb10c80526e9060d5e69d3f9c3c",
+    "htx-trend-python/src/htx_trend/realtime/fast_structure_diagnostic.py": "103a28b2fcd2f9280c6bdf08b88d84cd4d0f5bcc746865ddc4075b7f4b62a2f9",
+    "htx-trend-python/src/htx_trend/realtime/feed.py": "f2ed693e40f0f6f494113c7fae08a742e3aaf641c5845d9e9358356a3919d32d",
+    "htx-trend-python/src/htx_trend/realtime/fills.py": "c5ef66fd3f3b14a6560569c46afa130aa7ecc8dd938d25c138886740249926fc",
+    "htx-trend-python/src/htx_trend/realtime/indicator_union.py": "056ff1d5c9df0be081376ecd657d5aa16565fff93ea71d87d4cf7ad56540a6a3",
+    "htx-trend-python/src/htx_trend/realtime/joint_price_diagnostic.py": "117faa7c9007afeafa02873f2054dcf5e3fbcedaa54b1fe3b789b057c134e21b",
+    "htx-trend-python/src/htx_trend/realtime/legacy_implementations.py": "3e8ee01643832d4d4a1e6c75469139702db60a57804cb4209f4aec652a222d2c",
+    "htx-trend-python/src/htx_trend/realtime/local_structure_diagnostic.py": "cfc745d0890311abce6cd336ab0fdba8656714ed41c3fb56ba58cf5f388b0577",
+    "htx-trend-python/src/htx_trend/realtime/management.py": "be2d46ee40669d32de4fbffe6c68a63c21ac5dfeb1018deac8c7278b44d25c90",
+    "htx-trend-python/src/htx_trend/realtime/ohlc_diagnostic.py": "38a7e32e233f8b4f9fbfe75bf5e14dcf6a6fc7945efecbecc5631d81c2b93b21",
+    "htx-trend-python/src/htx_trend/realtime/ownership.py": "4223443f93068ea02c7569543aeb31517834e4137bace8f5fd86c7016b86065a",
+    "htx-trend-python/src/htx_trend/realtime/plans.py": "b3884089d74d575da48869d2ba31eecc1b4da5e9017ecf6aa3b7502b4697e5ad",
+    "htx-trend-python/src/htx_trend/realtime/public_capture.py": "7c2351273e761a2fbe539bc67eab6571a845b51b3b1ffc033379569d55ca71bf",
+    "htx-trend-python/src/htx_trend/realtime/regime.py": "1ea212e36ebd81610b17bff87dbb9d16c04936ec8578bd390c04a26ec561de26",
+    "htx-trend-python/src/htx_trend/realtime/regime_bayes.py": "7e8370c20ddc1532008db9790533d8d8286da2c97ae0e475aab520b304945368",
+    "htx-trend-python/src/htx_trend/realtime/regime_compatibility.py": "466b163b324f8fdcf97c7999f1d0a9123a5771c5c987bf3dae3aad9a8003d9f7",
+    "htx-trend-python/src/htx_trend/realtime/regime_replay.py": "40ac2dea44e56561adb9fd6c876c97374b2053d231b64ba71390bd9d85974b80",
+    "htx-trend-python/src/htx_trend/realtime/replay.py": "635cfb996aa9f18404efa45c8df2523e7461ee1d40b17d834f438e7b70d37645",
+    "htx-trend-python/src/htx_trend/realtime/risk.py": "06b24a764f0773a5096e4be35bbb336ca5d9cd0df5ff8809fbb02dfe63379cc3",
+    "htx-trend-python/src/htx_trend/realtime/sbox.py": "608c0fe0892f4362f222ac3a7f63d31f49893d05c4694965306809c05ad4083d",
+    "htx-trend-python/src/htx_trend/realtime/segment_codec.py": "864b119d07642f7a3e6207718c42d8fdebe166885d18d34a04436a528487cf18",
+    "htx-trend-python/src/htx_trend/realtime/storage.py": "e2103ec13cd0e43cbb721e11582044697c339c062c568a48ebd7387a496bfe26",
+    "htx-trend-python/src/htx_trend/realtime/structure_events.py": "7432edb6533481c1553598aaa7b71aca9c02ff12727cb002bff52d6cd62e49f7",
+    "htx-trend-python/src/htx_trend/realtime/structure_facts.py": "a2e2e5bb916fc84efdc8477a2d14764966452163e103e61127b14ba1a7ae5e88",
+    "htx-trend-python/src/htx_trend/realtime/structures.py": "e8c2b9765aa3d956e4f7ab51b344e1fda9947b01a82dbb30266dc5a31b79f361",
+    "htx-trend-python/src/htx_trend/realtime/target_continuation_replay.py": "8a6a01f3b026bcbb820b3de31dc9bf65bbd2c52cb226acc396cb76cef1692562",
+    "htx-trend-python/src/htx_trend/realtime/trial.py": "9292a0f37c9cc3c1c39e7e74bb1a7a80c01f79c517d47833d720a083e0c3756a",
+    "htx-trend-python/src/htx_trend/realtime/trial_admission.py": "bc8b1cb48f1395209522fd5261611a0a79298d44375cbf0cd2b061f4ada2e816",
+    "htx-trend-python/src/htx_trend/realtime/trial_facts.py": "5a83960c7e0d4baf18970e40f570f7178d094ba8faa2d09a483307f7f1c8a17e",
+    "htx-trend-python/src/htx_trend/realtime/trial_ops.py": "dd85e120e9ce4f03b22125cca4eb69eeaee74620322a67c97cf6c3044c4f007d",
+    "htx-trend-python/src/htx_trend/realtime/union_compatibility.py": "c3941361a2037af2dd4400c336fab215c1481eb34aedeb642d0b3bf372b6705a",
+    "htx-trend-python/src/htx_trend/realtime/worker.py": "59f96cb34f4f9af97c75900ca031b776d0eeb94712e0a873f76f668f3a35ba80",
+    "htx-trend-python/src/htx_trend/release_artifacts.py": "49df2984426968bb381afe07331ef9eacf3c51a191d12630ee870f83f5b43947",
+    "htx-trend-python/src/htx_trend/replay.py": "8e05f19886c9de30c3e3c0286ea26957eed06c58853c5df7079ec7114f7282c4",
+    "htx-trend-python/src/htx_trend/research/__init__.py": "14b8a989a46a6d120fd34bc4d3affbce8c2080d9a372708702ba7c4b92245ecd",
+    "htx-trend-python/src/htx_trend/research/baseline.py": "c238fe25449c331ec9fdcae57064087606ed232e8d41755b47d492728d8e72ad",
+    "htx-trend-python/src/htx_trend/research/candidate_labels.py": "9907c34575e61fc0422ed95f5dae529b70a50373f28b2bf2e4c761583eeed22a",
+    "htx-trend-python/src/htx_trend/research/collector.py": "fb9d93414bb21f6ff43806702aa4a5d69357f65e153b13d9f3153b05192b3e55",
+    "htx-trend-python/src/htx_trend/research/combination_study.py": "b2d61fee825b1eedcfe66830d05264104f5e655f65d5450af48777da89fe9f83",
+    "htx-trend-python/src/htx_trend/research/compact.py": "1fa3385c4a39c686fbb4eb785936d2d42470732e6c9203a1996c19587bfba806",
+    "htx-trend-python/src/htx_trend/research/condition_audit.py": "74a5769239abbed5112b08fdb349cd0a2037005ab3879cc8e63e6c23fce25680",
+    "htx-trend-python/src/htx_trend/research/conditions.py": "730453c3d3a6351d45f4d6e17b718b65b8cb05a48721b1347fdbbe1528bb7334",
+    "htx-trend-python/src/htx_trend/research/contracts.py": "88dca91944b9d5997fc4322f1d7bebd1dceb7090a0b2bdc6e4b6f9a0b963ada1",
+    "htx-trend-python/src/htx_trend/research/evidence_audit.py": "7fc07cb283d0a4209426f5f52ed6b2d77a592fde82a7f69ef07f8a7c6a55fb2f",
+    "htx-trend-python/src/htx_trend/research/exit_conditions.py": "c022de38e20ab2bf080c1ef7a1ff824d2aa2caf168af416ef8ee94fdf7400470",
+    "htx-trend-python/src/htx_trend/research/exit_optimization.py": "886c40e3ee114edfc542ce49734f28b28ce84fd6f16f649f3c6cd85ab0fc7235",
+    "htx-trend-python/src/htx_trend/research/experiments.py": "d73d15fcbb27dc35a9e0076dc9562a9d764bb30d14c813a7d5609f95a175105c",
+    "htx-trend-python/src/htx_trend/research/features.py": "6df5aa67587ae82a0ff71f213d6a912d5af67df16f1550d3f5b41fd33227eebb",
+    "htx-trend-python/src/htx_trend/research/independent_conditions.py": "6ec35fdfef573ca62b30eb4d2c5af1dcf2dda9a440b02ef239c357569d876075",
+    "htx-trend-python/src/htx_trend/research/independent_experiments.py": "426ce57e134c1dbf061f5d15650c07bd2c337dd4e6a29aa333be8df79930424c",
+    "htx-trend-python/src/htx_trend/research/independent_round.py": "e16abe17badcf7b4784b007af10ba29095760c914a434fee7b7c8886229579e6",
+    "htx-trend-python/src/htx_trend/research/lifecycle.py": "55c8034f1d4c7d4c6d7dc68998180771b9e59b928d8ffd0577d4b96d3a1f5d8e",
+    "htx-trend-python/src/htx_trend/research/market_facts.py": "5494c50741c5306f5a4bd83b3e90d956374b7425a9ba01836645d9e999c68a62",
+    "htx-trend-python/src/htx_trend/research/model_conditions.py": "b8f605f74d685890d68182c682c9a16115ef0733a065763922525d2d3f314dd8",
+    "htx-trend-python/src/htx_trend/research/model_optimization.py": "e8a9a6548ec01b93f19e7bb91c75c709cfea912c6390185f40346de51b66225d",
+    "htx-trend-python/src/htx_trend/research/mysql_sink.py": "d70d59fc5aeebc0c8ecfda00577d273592e9c9afea63e52ba72ad0cb87c43401",
+    "htx-trend-python/src/htx_trend/research/profile_backtest.py": "09636ddf613b5cc2dacde3b8cd6f11dd30fd6d51609fe38ef6e2a1078e77ec8b",
+    "htx-trend-python/src/htx_trend/research/quality.py": "afb7fe50fd53a4087008f3491e42937e85bbde91d9439afa4eb244e3f1f47a14",
+    "htx-trend-python/src/htx_trend/research/regime.py": "ae5741a7ea5301260774630f7c562d9172beb233445ebe09a3c893dcff8f3c79",
+    "htx-trend-python/src/htx_trend/research/replay.py": "07866150119a17b361d06a73e39b86697fdd1e3c256ad59bb46a8879b08d1fc7",
+    "htx-trend-python/src/htx_trend/research/store.py": "fd9b15ae4b8718297d09c314ad18c67b973701c11ced24404543e1d6a4322352",
+    "htx-trend-python/src/htx_trend/research/swing_model_optimization.py": "c06baa7f0d272ec4902ee20b84592cb26b4dacc3b207f48db564b49b3e13c8df",
+    "htx-trend-python/src/htx_trend/runner.py": "f89049463243e6388c33cddb3a0c6bab5e30d80b877387556743fb90737cde2a",
+    "htx-trend-python/src/htx_trend/runtime.py": "5f9dcbc279f3259ca3eabb38045abb3ada394190d8de6844d8e881c1b5244316",
+    "htx-trend-python/src/htx_trend/runtime_checkpoint.py": "42d37eeb61f1358ef5358e11fecce6d3800328b75f7a1d403889843b2cb6f570",
+    "htx-trend-python/src/htx_trend/runtime_kline_backfill.py": "d79b32d9ceb1d9937c4f09f7404dfef83e02b46fa17eaabbb612afd6e9b788a8",
+    "htx-trend-python/src/htx_trend/runtime_kline_business.py": "b6108188ef5c23925ffc6148b01cbb12997654f4fb2c7538fbdfc98315e70c0b",
+    "htx-trend-python/src/htx_trend/scan_replay.py": "3efff73d066ce59c90216ccb74af2c7e92039d2ac703a5d44b320368c088ed78",
+    "htx-trend-python/src/htx_trend/sealing/__init__.py": "a71af3f60ee9e91c41bdc7b31ca8dc63d9504f79966e9a48824e7ab33bc8d98b",
+    "htx-trend-python/src/htx_trend/sealing/consumers.py": "b63b99ea329f01a967db880fe57806496f579cd253bf7c18d832185c9ef820c2",
+    "htx-trend-python/src/htx_trend/sealing/control.py": "d26bfadb8b6c6a6784e18789ed0dbac4d3da462ce6d74fae033fbbf643e094c2",
+    "htx-trend-python/src/htx_trend/sealing/lifecycle.py": "955d59347527be8bf6aad023e1b654c57d1b6aeebd6c1301334251db7d788da7",
+    "htx-trend-python/src/htx_trend/sealing/snapshot.py": "17a2291187e1c63af6adf33e3eb2f80b4a4eb763c66ab91e278377ba8e3c0a0c",
+    "htx-trend-python/src/htx_trend/strategy_admission.py": "24b6dc3554e6d991219909d1f601285cfbc83d7a3b9339c3d4932f25f041dff6",
+    "htx-trend-python/src/htx_trend/strategy_context.py": "e06f48318bfb5cb51ba31cce74dfcaa271f67eb114affc6a75a9d6e84c908a29",
+    "htx-trend-python/src/htx_trend/strategy_decision.py": "3a254f69855dee86d87f56b35aa5f2e8a95ada1d35092253adde3e7d01bec95d",
+    "htx-trend-python/src/htx_trend/strategy_platform.py": "dcf869e9f2b0fdf96b3e129b881c85468fad1365044eaac53fb7f6f7e7f5951b",
+    "htx-trend-python/src/htx_trend/strategy_profiles.py": "9908f9496432690ec4a2c278c6e5d24ebc9a4480fe8a5ac72a3d204aabca4238",
+    "htx-trend-python/src/htx_trend/timeframes.py": "cf68aee9b1ee5a6a970054f5ba7754264f32a558d2986bac519f2818557171f8",
+    "htx-trend-python/src/htx_trend/tools/context_recovery_r1.py": "b61798898108ca33d93899870d80b452f40b58e1c03e1ef6cc20d9d1f2acdc4f",
+    "htx-trend-python/src/htx_trend/tools/holding_export.py": "9f85a364e9ef356738fb4ae68870dd5d43a6e27a2ae3a8b149e0c7658850d9bd",
+    "htx-trend-python/src/htx_trend/tools/holding_preflight.py": "68da8f18d55fc7267ccc4d39e94696f6386db095fd02a6f5b81371b6823e5bae",
+    "htx-trend-python/src/htx_trend/tools/holding_probe.py": "531e9bb993f34e90673b24526ad1d05979d95d21a8347ff4d74d077aea160510",
+    "htx-trend-python/src/htx_trend/tools/ledger_db_recon.py": "369d921abdffef3460d3b8f176d706430b268af9687f823882d3448d6f3e0176",
+    "htx-trend-python/src/htx_trend/tools/live_close_ledger_backfill.py": "a493f75520f585af207299d19fcaa86d3631a787f57e1711cafe0883f7eae52e",
+    "htx-trend-python/src/htx_trend/validation.py": "5cdc8488f9c4ff5894c96fa86f9191d83c1bcd0a80b38c9deb8dcbb80c7feac2",
+    "htx-trend-python/src/htx_trend/worker.py": "17e9633eb743885cdf9e4ec7bd1e9266f9875970348587bce19f7749cfcd4fb8",
+    "htx-trend-python/src/htx_trend/writer_lock.py": "291704685c1ccc68a9a2d5f003d55483c2fd2cba85bdcb1a21f42a197e18b66a"
+  },
+  "new_modules": [
+    {
+      "module": "htx_trend.realtime.regime",
+      "file": "htx-trend-python/src/htx_trend/realtime/regime.py",
+      "sha256": "1ea212e36ebd81610b17bff87dbb9d16c04936ec8578bd390c04a26ec561de26",
+      "imports": [
+        {
+          "line": 6,
+          "module": "decimal",
+          "names": [
+            {
+              "name": "Decimal",
+              "alias": "D"
+            },
+            {
+              "name": "ROUND_FLOOR",
+              "alias": null
+            },
+            {
+              "name": "ROUND_CEILING",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 8,
+          "module": "htx_trend.models",
+          "names": [
+            {
+              "name": "TrendSide",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 9,
+          "module": "htx_trend.research.store",
+          "names": [
+            {
+              "name": "digest",
+              "alias": null
+            },
+            {
+              "name": "primitive",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 10,
+          "module": "htx_trend.realtime.indicator_union",
+          "names": [
+            {
+              "name": "IndicatorUnionEngine",
+              "alias": null
+            },
+            {
+              "name": "EXITS",
+              "alias": null
+            },
+            {
+              "name": "features",
+              "alias": null
+            },
+            {
+              "name": "series",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 11,
+          "module": "htx_trend.realtime.plans",
+          "names": [
+            {
+              "name": "StructurePlan",
+              "alias": null
+            },
+            {
+              "name": "RealtimeTrigger",
+              "alias": null
+            }
+          ]
+        }
+      ],
+      "definitions": [
+        {
+          "name": "macd",
+          "line": 17,
+          "kind": "function"
+        },
+        {
+          "name": "regime_features",
+          "line": 23,
+          "kind": "function"
+        },
+        {
+          "name": "classify",
+          "line": 31,
+          "kind": "function"
+        },
+        {
+          "name": "confirms",
+          "line": 41,
+          "kind": "function"
+        },
+        {
+          "name": "RegimeEngine",
+          "line": 52,
+          "kind": "class",
+          "bases": [
+            "IndicatorUnionEngine"
+          ]
+        },
+        {
+          "name": "RegimeEngine.__init__",
+          "line": 53,
+          "kind": "function"
+        },
+        {
+          "name": "RegimeEngine.refresh_union_frame",
+          "line": 58,
+          "kind": "function"
+        },
+        {
+          "name": "RegimeEngine.assessment",
+          "line": 68,
+          "kind": "function"
+        },
+        {
+          "name": "RegimeEngine.confirm",
+          "line": 75,
+          "kind": "function"
+        },
+        {
+          "name": "RegimeEngine.accept",
+          "line": 82,
+          "kind": "function"
+        }
+      ],
+      "calls": [
+        {
+          "line": 18,
+          "scope": "macd",
+          "callee": "series"
+        },
+        {
+          "line": 18,
+          "scope": "macd",
+          "callee": "series"
+        },
+        {
+          "line": 19,
+          "scope": "macd",
+          "callee": "zip"
+        },
+        {
+          "line": 19,
+          "scope": "macd",
+          "callee": "len"
+        },
+        {
+          "line": 20,
+          "scope": "macd",
+          "callee": "series"
+        },
+        {
+          "line": 24,
+          "scope": "regime_features",
+          "callee": "features"
+        },
+        {
+          "line": 26,
+          "scope": "regime_features",
+          "callee": "result.update"
+        },
+        {
+          "line": 26,
+          "scope": "regime_features",
+          "callee": "series"
+        },
+        {
+          "line": 26,
+          "scope": "regime_features",
+          "callee": "series"
+        },
+        {
+          "line": 27,
+          "scope": "regime_features",
+          "callee": "macd"
+        },
+        {
+          "line": 42,
+          "scope": "confirms",
+          "callee": "classify"
+        },
+        {
+          "line": 44,
+          "scope": "confirms",
+          "callee": "D"
+        },
+        {
+          "line": 56,
+          "scope": "RegimeEngine.__init__",
+          "callee": "super().__init__"
+        },
+        {
+          "line": 56,
+          "scope": "RegimeEngine.__init__",
+          "callee": "super"
+        },
+        {
+          "line": 60,
+          "scope": "RegimeEngine.refresh_union_frame",
+          "callee": "self.frames.pop"
+        },
+        {
+          "line": 61,
+          "scope": "RegimeEngine.refresh_union_frame",
+          "callee": "regime_features"
+        },
+        {
+          "line": 64,
+          "scope": "RegimeEngine.refresh_union_frame",
+          "callee": "classify"
+        },
+        {
+          "line": 65,
+          "scope": "RegimeEngine.refresh_union_frame",
+          "callee": "primitive"
+        },
+        {
+          "line": 73,
+          "scope": "RegimeEngine.assessment",
+          "callee": "self.snapshot.assess"
+        },
+        {
+          "line": 76,
+          "scope": "RegimeEngine.confirm",
+          "callee": "self.validate_frame"
+        },
+        {
+          "line": 79,
+          "scope": "RegimeEngine.confirm",
+          "callee": "confirms"
+        },
+        {
+          "line": 80,
+          "scope": "RegimeEngine.confirm",
+          "callee": "self.assessment"
+        },
+        {
+          "line": 84,
+          "scope": "RegimeEngine.accept",
+          "callee": "self.disconnect"
+        },
+        {
+          "line": 86,
+          "scope": "RegimeEngine.accept",
+          "callee": "event.fresh"
+        },
+        {
+          "line": 87,
+          "scope": "RegimeEngine.accept",
+          "callee": "self.order.accept"
+        },
+        {
+          "line": 92,
+          "scope": "RegimeEngine.accept",
+          "callee": "self.books.get"
+        },
+        {
+          "line": 96,
+          "scope": "RegimeEngine.accept",
+          "callee": "self.validate_frame"
+        },
+        {
+          "line": 99,
+          "scope": "RegimeEngine.accept",
+          "callee": "self.history.get"
+        },
+        {
+          "line": 100,
+          "scope": "RegimeEngine.accept",
+          "callee": "dict"
+        },
+        {
+          "line": 106,
+          "scope": "RegimeEngine.accept",
+          "callee": "classify"
+        },
+        {
+          "line": 107,
+          "scope": "RegimeEngine.accept",
+          "callee": "confirms"
+        },
+        {
+          "line": 110,
+          "scope": "RegimeEngine.accept",
+          "callee": "digest"
+        },
+        {
+          "line": 115,
+          "scope": "RegimeEngine.accept",
+          "callee": "D"
+        },
+        {
+          "line": 115,
+          "scope": "RegimeEngine.accept",
+          "callee": "D"
+        },
+        {
+          "line": 120,
+          "scope": "RegimeEngine.accept",
+          "callee": "((reference - sign * loss * f['atr']) / tick).to_integral_value"
+        },
+        {
+          "line": 121,
+          "scope": "RegimeEngine.accept",
+          "callee": "((reference + sign * profit * f['atr']) / tick).to_integral_value"
+        },
+        {
+          "line": 122,
+          "scope": "RegimeEngine.accept",
+          "callee": "self.assessment"
+        },
+        {
+          "line": 123,
+          "scope": "RegimeEngine.accept",
+          "callee": "StructurePlan"
+        },
+        {
+          "line": 123,
+          "scope": "RegimeEngine.accept",
+          "callee": "D"
+        },
+        {
+          "line": 128,
+          "scope": "RegimeEngine.accept",
+          "callee": "tuple"
+        },
+        {
+          "line": 130,
+          "scope": "RegimeEngine.accept",
+          "callee": "RealtimeTrigger"
+        },
+        {
+          "line": 131,
+          "scope": "RegimeEngine.accept",
+          "callee": "digest"
+        },
+        {
+          "line": 131,
+          "scope": "RegimeEngine.accept",
+          "callee": "digest"
+        },
+        {
+          "line": 132,
+          "scope": "RegimeEngine.accept",
+          "callee": "plan.dump"
+        },
+        {
+          "line": 135,
+          "scope": "RegimeEngine.accept",
+          "callee": "primitive"
+        },
+        {
+          "line": 136,
+          "scope": "RegimeEngine.accept",
+          "callee": "primitive"
+        },
+        {
+          "line": 136,
+          "scope": "RegimeEngine.accept",
+          "callee": "primitive"
+        },
+        {
+          "line": 137,
+          "scope": "RegimeEngine.accept",
+          "callee": "self._save"
+        }
+      ]
+    },
+    {
+      "module": "htx_trend.realtime.regime_bayes",
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_bayes.py",
+      "sha256": "7e8370c20ddc1532008db9790533d8d8286da2c97ae0e475aab520b304945368",
+      "imports": [
+        {
+          "line": 8,
+          "module": "collections",
+          "names": [
+            {
+              "name": "Counter",
+              "alias": null
+            },
+            {
+              "name": "defaultdict",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 9,
+          "module": "functools",
+          "names": [
+            {
+              "name": "lru_cache",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 10,
+          "module": "hashlib",
+          "names": [
+            {
+              "name": "sha256",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 11,
+          "module": "json",
+          "names": [],
+          "alias": null
+        },
+        {
+          "line": 12,
+          "module": "pathlib",
+          "names": [
+            {
+              "name": "Path",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 13,
+          "module": "decimal",
+          "names": [
+            {
+              "name": "Decimal",
+              "alias": "D"
+            }
+          ]
+        },
+        {
+          "line": 15,
+          "module": "htx_trend.research.store",
+          "names": [
+            {
+              "name": "digest",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 34,
+          "module": "numpy",
+          "names": [],
+          "alias": "np"
+        },
+        {
+          "line": 35,
+          "module": "htx_trend.realtime.indicator_union",
+          "names": [
+            {
+              "name": "EXITS",
+              "alias": null
+            }
+          ]
+        }
+      ],
+      "definitions": [
+        {
+          "name": "code_seal",
+          "line": 22,
+          "kind": "function"
+        },
+        {
+          "name": "group_key",
+          "line": 29,
+          "kind": "function"
+        },
+        {
+          "name": "fit",
+          "line": 33,
+          "kind": "function"
+        },
+        {
+          "name": "Snapshot",
+          "line": 154,
+          "kind": "class",
+          "bases": []
+        },
+        {
+          "name": "Snapshot.__init__",
+          "line": 155,
+          "kind": "function"
+        },
+        {
+          "name": "Snapshot.load",
+          "line": 166,
+          "kind": "function"
+        },
+        {
+          "name": "Snapshot.assess",
+          "line": 169,
+          "kind": "function"
+        },
+        {
+          "name": "bind_snapshot",
+          "line": 189,
+          "kind": "function"
+        }
+      ],
+      "calls": [
+        {
+          "line": 23,
+          "scope": "code_seal",
+          "callee": "Path"
+        },
+        {
+          "line": 25,
+          "scope": "code_seal",
+          "callee": "digest"
+        },
+        {
+          "line": 25,
+          "scope": "code_seal",
+          "callee": "str"
+        },
+        {
+          "line": 25,
+          "scope": "code_seal",
+          "callee": "p.relative_to"
+        },
+        {
+          "line": 25,
+          "scope": "code_seal",
+          "callee": "sha256(p.read_bytes()).hexdigest"
+        },
+        {
+          "line": 25,
+          "scope": "code_seal",
+          "callee": "sha256"
+        },
+        {
+          "line": 25,
+          "scope": "code_seal",
+          "callee": "p.read_bytes"
+        },
+        {
+          "line": 26,
+          "scope": "code_seal",
+          "callee": "sorted"
+        },
+        {
+          "line": 26,
+          "scope": "code_seal",
+          "callee": "root.rglob"
+        },
+        {
+          "line": 21,
+          "scope": "code_seal",
+          "callee": "lru_cache"
+        },
+        {
+          "line": 30,
+          "scope": "group_key",
+          "callee": "json.dumps"
+        },
+        {
+          "line": 37,
+          "scope": "fit",
+          "callee": "type"
+        },
+        {
+          "line": 38,
+          "scope": "fit",
+          "callee": "ValueError"
+        },
+        {
+          "line": 40,
+          "scope": "fit",
+          "callee": "Counter"
+        },
+        {
+          "line": 43,
+          "scope": "fit",
+          "callee": "dict"
+        },
+        {
+          "line": 44,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 45,
+          "scope": "fit",
+          "callee": "ValueError"
+        },
+        {
+          "line": 46,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 47,
+          "scope": "fit",
+          "callee": "ValueError"
+        },
+        {
+          "line": 48,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 48,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 49,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 49,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 50,
+          "scope": "fit",
+          "callee": "ValueError"
+        },
+        {
+          "line": 51,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 51,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 51,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 52,
+          "scope": "fit",
+          "callee": "ValueError"
+        },
+        {
+          "line": 53,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 53,
+          "scope": "fit",
+          "callee": "code_seal"
+        },
+        {
+          "line": 53,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 54,
+          "scope": "fit",
+          "callee": "ValueError"
+        },
+        {
+          "line": 55,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 56,
+          "scope": "fit",
+          "callee": "ValueError"
+        },
+        {
+          "line": 57,
+          "scope": "fit",
+          "callee": "group_key"
+        },
+        {
+          "line": 60,
+          "scope": "fit",
+          "callee": "ValueError"
+        },
+        {
+          "line": 64,
+          "scope": "fit",
+          "callee": "defaultdict"
+        },
+        {
+          "line": 65,
+          "scope": "fit",
+          "callee": "defaultdict"
+        },
+        {
+          "line": 66,
+          "scope": "fit",
+          "callee": "sorted"
+        },
+        {
+          "line": 66,
+          "scope": "fit",
+          "callee": "unique.items"
+        },
+        {
+          "line": 66,
+          "scope": "fit",
+          "callee": "item[1].get"
+        },
+        {
+          "line": 66,
+          "scope": "fit",
+          "callee": "item[1].get"
+        },
+        {
+          "line": 66,
+          "scope": "fit",
+          "callee": "item[1].get"
+        },
+        {
+          "line": 67,
+          "scope": "fit",
+          "callee": "all_ids.append"
+        },
+        {
+          "line": 67,
+          "scope": "fit",
+          "callee": "digest"
+        },
+        {
+          "line": 69,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 70,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 71,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 73,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 77,
+          "scope": "fit",
+          "callee": "cost_id.startswith"
+        },
+        {
+          "line": 78,
+          "scope": "fit",
+          "callee": "ValueError"
+        },
+        {
+          "line": 79,
+          "scope": "fit",
+          "callee": "any"
+        },
+        {
+          "line": 79,
+          "scope": "fit",
+          "callee": "type"
+        },
+        {
+          "line": 79,
+          "scope": "fit",
+          "callee": "r.get"
+        },
+        {
+          "line": 80,
+          "scope": "fit",
+          "callee": "ValueError"
+        },
+        {
+          "line": 82,
+          "scope": "fit",
+          "callee": "ValueError"
+        },
+        {
+          "line": 87,
+          "scope": "fit",
+          "callee": "D"
+        },
+        {
+          "line": 87,
+          "scope": "fit",
+          "callee": "str"
+        },
+        {
+          "line": 88,
+          "scope": "fit",
+          "callee": "value.is_finite"
+        },
+        {
+          "line": 89,
+          "scope": "fit",
+          "callee": "ValueError"
+        },
+        {
+          "line": 90,
+          "scope": "fit",
+          "callee": "groups[key].append"
+        },
+        {
+          "line": 95,
+          "scope": "fit",
+          "callee": "group_key"
+        },
+        {
+          "line": 99,
+          "scope": "fit",
+          "callee": "end_by_contract.get"
+        },
+        {
+          "line": 103,
+          "scope": "fit",
+          "callee": "rows.append"
+        },
+        {
+          "line": 105,
+          "scope": "fit",
+          "callee": "len"
+        },
+        {
+          "line": 106,
+          "scope": "fit",
+          "callee": "sum"
+        },
+        {
+          "line": 106,
+          "scope": "fit",
+          "callee": "D"
+        },
+        {
+          "line": 106,
+          "scope": "fit",
+          "callee": "str"
+        },
+        {
+          "line": 107,
+          "scope": "fit",
+          "callee": "int"
+        },
+        {
+          "line": 107,
+          "scope": "fit",
+          "callee": "sha256(key.encode()).hexdigest"
+        },
+        {
+          "line": 107,
+          "scope": "fit",
+          "callee": "sha256"
+        },
+        {
+          "line": 107,
+          "scope": "fit",
+          "callee": "key.encode"
+        },
+        {
+          "line": 108,
+          "scope": "fit",
+          "callee": "np.random.default_rng"
+        },
+        {
+          "line": 109,
+          "scope": "fit",
+          "callee": "rng.beta"
+        },
+        {
+          "line": 112,
+          "scope": "fit",
+          "callee": "defaultdict"
+        },
+        {
+          "line": 114,
+          "scope": "fit",
+          "callee": "by_block[r['entry_ms'] // (minutes * 60000)].append"
+        },
+        {
+          "line": 114,
+          "scope": "fit",
+          "callee": "float"
+        },
+        {
+          "line": 115,
+          "scope": "fit",
+          "callee": "len"
+        },
+        {
+          "line": 118,
+          "scope": "fit",
+          "callee": "list"
+        },
+        {
+          "line": 118,
+          "scope": "fit",
+          "callee": "by_block.values"
+        },
+        {
+          "line": 119,
+          "scope": "fit",
+          "callee": "np.array"
+        },
+        {
+          "line": 119,
+          "scope": "fit",
+          "callee": "len"
+        },
+        {
+          "line": 120,
+          "scope": "fit",
+          "callee": "np.array"
+        },
+        {
+          "line": 120,
+          "scope": "fit",
+          "callee": "sum"
+        },
+        {
+          "line": 122,
+          "scope": "fit",
+          "callee": "range"
+        },
+        {
+          "line": 123,
+          "scope": "fit",
+          "callee": "rng.dirichlet"
+        },
+        {
+          "line": 123,
+          "scope": "fit",
+          "callee": "np.ones"
+        },
+        {
+          "line": 123,
+          "scope": "fit",
+          "callee": "min"
+        },
+        {
+          "line": 124,
+          "scope": "fit",
+          "callee": "means.extend"
+        },
+        {
+          "line": 124,
+          "scope": "fit",
+          "callee": "(weights @ sums / (weights @ counts)).tolist"
+        },
+        {
+          "line": 125,
+          "scope": "fit",
+          "callee": "np.asarray"
+        },
+        {
+          "line": 126,
+          "scope": "fit",
+          "callee": "b.update"
+        },
+        {
+          "line": 126,
+          "scope": "fit",
+          "callee": "np.quantile(a, [0.025, 0.975]).tolist"
+        },
+        {
+          "line": 126,
+          "scope": "fit",
+          "callee": "np.quantile"
+        },
+        {
+          "line": 127,
+          "scope": "fit",
+          "callee": "float"
+        },
+        {
+          "line": 127,
+          "scope": "fit",
+          "callee": "np.mean"
+        },
+        {
+          "line": 128,
+          "scope": "fit",
+          "callee": "str"
+        },
+        {
+          "line": 130,
+          "scope": "fit",
+          "callee": "dict"
+        },
+        {
+          "line": 132,
+          "scope": "fit",
+          "callee": "sum"
+        },
+        {
+          "line": 132,
+          "scope": "fit",
+          "callee": "D"
+        },
+        {
+          "line": 132,
+          "scope": "fit",
+          "callee": "str"
+        },
+        {
+          "line": 135,
+          "scope": "fit",
+          "callee": "np.quantile(probabilities, [0.025, 0.975]).tolist"
+        },
+        {
+          "line": 135,
+          "scope": "fit",
+          "callee": "np.quantile"
+        },
+        {
+          "line": 137,
+          "scope": "fit",
+          "callee": "sum"
+        },
+        {
+          "line": 137,
+          "scope": "fit",
+          "callee": "float"
+        },
+        {
+          "line": 145,
+          "scope": "fit",
+          "callee": "code_seal"
+        },
+        {
+          "line": 146,
+          "scope": "fit",
+          "callee": "cost_id.startswith"
+        },
+        {
+          "line": 147,
+          "scope": "fit",
+          "callee": "dict"
+        },
+        {
+          "line": 148,
+          "scope": "fit",
+          "callee": "digest"
+        },
+        {
+          "line": 148,
+          "scope": "fit",
+          "callee": "sorted"
+        },
+        {
+          "line": 149,
+          "scope": "fit",
+          "callee": "sorted"
+        },
+        {
+          "line": 149,
+          "scope": "fit",
+          "callee": "unique.values"
+        },
+        {
+          "line": 151,
+          "scope": "fit",
+          "callee": "digest"
+        },
+        {
+          "line": 156,
+          "scope": "Snapshot.__init__",
+          "callee": "json.loads"
+        },
+        {
+          "line": 156,
+          "scope": "Snapshot.__init__",
+          "callee": "json.dumps"
+        },
+        {
+          "line": 157,
+          "scope": "Snapshot.__init__",
+          "callee": "value.pop"
+        },
+        {
+          "line": 158,
+          "scope": "Snapshot.__init__",
+          "callee": "digest"
+        },
+        {
+          "line": 159,
+          "scope": "Snapshot.__init__",
+          "callee": "ValueError"
+        },
+        {
+          "line": 160,
+          "scope": "Snapshot.__init__",
+          "callee": "value.get"
+        },
+        {
+          "line": 160,
+          "scope": "Snapshot.__init__",
+          "callee": "value.get"
+        },
+        {
+          "line": 161,
+          "scope": "Snapshot.__init__",
+          "callee": "value.get"
+        },
+        {
+          "line": 161,
+          "scope": "Snapshot.__init__",
+          "callee": "code_seal"
+        },
+        {
+          "line": 162,
+          "scope": "Snapshot.__init__",
+          "callee": "ValueError"
+        },
+        {
+          "line": 167,
+          "scope": "Snapshot.load",
+          "callee": "cls"
+        },
+        {
+          "line": 167,
+          "scope": "Snapshot.load",
+          "callee": "json.loads"
+        },
+        {
+          "line": 167,
+          "scope": "Snapshot.load",
+          "callee": "Path(path).read_text"
+        },
+        {
+          "line": 167,
+          "scope": "Snapshot.load",
+          "callee": "Path"
+        },
+        {
+          "line": 176,
+          "scope": "Snapshot.assess",
+          "callee": "v['groups'].get"
+        },
+        {
+          "line": 176,
+          "scope": "Snapshot.assess",
+          "callee": "group_key"
+        },
+        {
+          "line": 179,
+          "scope": "Snapshot.assess",
+          "callee": "D"
+        },
+        {
+          "line": 179,
+          "scope": "Snapshot.assess",
+          "callee": "str"
+        },
+        {
+          "line": 180,
+          "scope": "Snapshot.assess",
+          "callee": "mass.is_finite"
+        },
+        {
+          "line": 181,
+          "scope": "Snapshot.assess",
+          "callee": "ValueError"
+        },
+        {
+          "line": 184,
+          "scope": "Snapshot.assess",
+          "callee": "str"
+        },
+        {
+          "line": 193,
+          "scope": "bind_snapshot",
+          "callee": "Snapshot.load"
+        },
+        {
+          "line": 195,
+          "scope": "bind_snapshot",
+          "callee": "ValueError"
+        },
+        {
+          "line": 199,
+          "scope": "bind_snapshot",
+          "callee": "type"
+        }
+      ]
+    },
+    {
+      "module": "htx_trend.realtime.regime_compatibility",
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_compatibility.py",
+      "sha256": "466b163b324f8fdcf97c7999f1d0a9123a5771c5c987bf3dae3aad9a8003d9f7",
+      "imports": [],
+      "definitions": [],
+      "calls": []
+    },
+    {
+      "module": "htx_trend.realtime.regime_replay",
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_replay.py",
+      "sha256": "40ac2dea44e56561adb9fd6c876c97374b2053d231b64ba71390bd9d85974b80",
+      "imports": [
+        {
+          "line": 7,
+          "module": "argparse",
+          "names": [],
+          "alias": null
+        },
+        {
+          "line": 8,
+          "module": "collections",
+          "names": [
+            {
+              "name": "Counter",
+              "alias": null
+            },
+            {
+              "name": "defaultdict",
+              "alias": null
+            },
+            {
+              "name": "deque",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 9,
+          "module": "contextlib",
+          "names": [
+            {
+              "name": "contextmanager",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 10,
+          "module": "dataclasses",
+          "names": [
+            {
+              "name": "replace",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 11,
+          "module": "decimal",
+          "names": [
+            {
+              "name": "Decimal",
+              "alias": "D"
+            },
+            {
+              "name": "ROUND_FLOOR",
+              "alias": null
+            },
+            {
+              "name": "ROUND_CEILING",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 12,
+          "module": "fcntl",
+          "names": [],
+          "alias": null
+        },
+        {
+          "line": 13,
+          "module": "gzip",
+          "names": [],
+          "alias": null
+        },
+        {
+          "line": 14,
+          "module": "hashlib",
+          "names": [
+            {
+              "name": "sha256",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 15,
+          "module": "heapq",
+          "names": [],
+          "alias": null
+        },
+        {
+          "line": 16,
+          "module": "json",
+          "names": [],
+          "alias": null
+        },
+        {
+          "line": 17,
+          "module": "os",
+          "names": [],
+          "alias": null
+        },
+        {
+          "line": 18,
+          "module": "pathlib",
+          "names": [
+            {
+              "name": "Path",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 20,
+          "module": "htx_trend.research.store",
+          "names": [
+            {
+              "name": "digest",
+              "alias": null
+            },
+            {
+              "name": "primitive",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 21,
+          "module": "htx_trend.realtime.feed",
+          "names": [
+            {
+              "name": "MarketEvent",
+              "alias": null
+            },
+            {
+              "name": "EventOrder",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 22,
+          "module": "htx_trend.realtime.plans",
+          "names": [
+            {
+              "name": "Parameters",
+              "alias": null
+            },
+            {
+              "name": "create_engine",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 23,
+          "module": "htx_trend.realtime.regime",
+          "names": [
+            {
+              "name": "CANDIDATE",
+              "alias": null
+            },
+            {
+              "name": "regime_features",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 24,
+          "module": "htx_trend.realtime.regime_bayes",
+          "names": [
+            {
+              "name": "Snapshot",
+              "alias": null
+            },
+            {
+              "name": "fit",
+              "alias": null
+            },
+            {
+              "name": "code_seal",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 25,
+          "module": "htx_trend.realtime.indicator_union",
+          "names": [
+            {
+              "name": "EXITS",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 26,
+          "module": "htx_trend.realtime.replay",
+          "names": [
+            {
+              "name": "Actor",
+              "alias": null
+            },
+            {
+              "name": "decode_window",
+              "alias": null
+            },
+            {
+              "name": "validate",
+              "alias": null
+            },
+            {
+              "name": "metric",
+              "alias": null
+            }
+          ]
+        },
+        {
+          "line": 27,
+          "module": "htx_trend.market_data",
+          "names": [
+            {
+              "name": "ContractSpec",
+              "alias": null
+            }
+          ]
+        }
+      ],
+      "definitions": [
+        {
+          "name": "file_hash",
+          "line": 30,
+          "kind": "function"
+        },
+        {
+          "name": "implementation",
+          "line": 37,
+          "kind": "function"
+        },
+        {
+          "name": "read",
+          "line": 42,
+          "kind": "function"
+        },
+        {
+          "name": "atomic",
+          "line": 46,
+          "kind": "function"
+        },
+        {
+          "name": "lock",
+          "line": 55,
+          "kind": "function"
+        },
+        {
+          "name": "MemoryStore",
+          "line": 62,
+          "kind": "class",
+          "bases": []
+        },
+        {
+          "name": "MemoryStore.all",
+          "line": 63,
+          "kind": "function"
+        },
+        {
+          "name": "MemoryStore.save",
+          "line": 64,
+          "kind": "function"
+        },
+        {
+          "name": "frame_input",
+          "line": 67,
+          "kind": "function"
+        },
+        {
+          "name": "order_dump",
+          "line": 77,
+          "kind": "function"
+        },
+        {
+          "name": "order_load",
+          "line": 81,
+          "kind": "function"
+        },
+        {
+          "name": "Paths",
+          "line": 87,
+          "kind": "class",
+          "bases": []
+        },
+        {
+          "name": "Paths.__init__",
+          "line": 88,
+          "kind": "function"
+        },
+        {
+          "name": "Paths.gap",
+          "line": 96,
+          "kind": "function"
+        },
+        {
+          "name": "Paths.step",
+          "line": 102,
+          "kind": "function"
+        },
+        {
+          "name": "Paths.settle",
+          "line": 169,
+          "kind": "function"
+        },
+        {
+          "name": "Paths.mark",
+          "line": 179,
+          "kind": "function"
+        },
+        {
+          "name": "Paths.dump",
+          "line": 187,
+          "kind": "function"
+        },
+        {
+          "name": "Paths.restore",
+          "line": 192,
+          "kind": "function"
+        },
+        {
+          "name": "statistics",
+          "line": 207,
+          "kind": "function"
+        },
+        {
+          "name": "report",
+          "line": 224,
+          "kind": "function"
+        },
+        {
+          "name": "freeze",
+          "line": 256,
+          "kind": "function"
+        },
+        {
+          "name": "events",
+          "line": 276,
+          "kind": "function"
+        },
+        {
+          "name": "events.source",
+          "line": 277,
+          "kind": "function"
+        },
+        {
+          "name": "events.key",
+          "line": 283,
+          "kind": "function"
+        },
+        {
+          "name": "run",
+          "line": 288,
+          "kind": "function"
+        },
+        {
+          "name": "account_replay",
+          "line": 327,
+          "kind": "function"
+        },
+        {
+          "name": "account_matrix",
+          "line": 339,
+          "kind": "function"
+        },
+        {
+          "name": "extend",
+          "line": 369,
+          "kind": "function"
+        },
+        {
+          "name": "main",
+          "line": 395,
+          "kind": "function"
+        }
+      ],
+      "calls": [
+        {
+          "line": 31,
+          "scope": "file_hash",
+          "callee": "sha256"
+        },
+        {
+          "line": 32,
+          "scope": "file_hash",
+          "callee": "Path(path).open"
+        },
+        {
+          "line": 32,
+          "scope": "file_hash",
+          "callee": "Path"
+        },
+        {
+          "line": 33,
+          "scope": "file_hash",
+          "callee": "iter"
+        },
+        {
+          "line": 33,
+          "scope": "file_hash",
+          "callee": "f.read"
+        },
+        {
+          "line": 33,
+          "scope": "file_hash",
+          "callee": "h.update"
+        },
+        {
+          "line": 34,
+          "scope": "file_hash",
+          "callee": "h.hexdigest"
+        },
+        {
+          "line": 38,
+          "scope": "implementation",
+          "callee": "Path"
+        },
+        {
+          "line": 39,
+          "scope": "implementation",
+          "callee": "digest"
+        },
+        {
+          "line": 39,
+          "scope": "implementation",
+          "callee": "str"
+        },
+        {
+          "line": 39,
+          "scope": "implementation",
+          "callee": "p.relative_to"
+        },
+        {
+          "line": 39,
+          "scope": "implementation",
+          "callee": "file_hash"
+        },
+        {
+          "line": 39,
+          "scope": "implementation",
+          "callee": "sorted"
+        },
+        {
+          "line": 39,
+          "scope": "implementation",
+          "callee": "root.rglob"
+        },
+        {
+          "line": 43,
+          "scope": "read",
+          "callee": "str(path).endswith"
+        },
+        {
+          "line": 43,
+          "scope": "read",
+          "callee": "str"
+        },
+        {
+          "line": 43,
+          "scope": "read",
+          "callee": "gzip.open"
+        },
+        {
+          "line": 43,
+          "scope": "read",
+          "callee": "open"
+        },
+        {
+          "line": 43,
+          "scope": "read",
+          "callee": "json.load"
+        },
+        {
+          "line": 47,
+          "scope": "atomic",
+          "callee": "Path"
+        },
+        {
+          "line": 47,
+          "scope": "atomic",
+          "callee": "path.with_name"
+        },
+        {
+          "line": 48,
+          "scope": "atomic",
+          "callee": "gzip.open"
+        },
+        {
+          "line": 48,
+          "scope": "atomic",
+          "callee": "open"
+        },
+        {
+          "line": 49,
+          "scope": "atomic",
+          "callee": "json.dump"
+        },
+        {
+          "line": 49,
+          "scope": "atomic",
+          "callee": "primitive"
+        },
+        {
+          "line": 50,
+          "scope": "atomic",
+          "callee": "open"
+        },
+        {
+          "line": 50,
+          "scope": "atomic",
+          "callee": "os.fsync"
+        },
+        {
+          "line": 50,
+          "scope": "atomic",
+          "callee": "f.fileno"
+        },
+        {
+          "line": 51,
+          "scope": "atomic",
+          "callee": "os.replace"
+        },
+        {
+          "line": 56,
+          "scope": "lock",
+          "callee": "open"
+        },
+        {
+          "line": 57,
+          "scope": "lock",
+          "callee": "fcntl.flock"
+        },
+        {
+          "line": 59,
+          "scope": "lock",
+          "callee": "fcntl.flock"
+        },
+        {
+          "line": 69,
+          "scope": "frame_input",
+          "callee": "decode_window"
+        },
+        {
+          "line": 70,
+          "scope": "frame_input",
+          "callee": "replace"
+        },
+        {
+          "line": 70,
+          "scope": "frame_input",
+          "callee": "windows.items"
+        },
+        {
+          "line": 72,
+          "scope": "frame_input",
+          "callee": "ValueError"
+        },
+        {
+          "line": 73,
+          "scope": "frame_input",
+          "callee": "dict"
+        },
+        {
+          "line": 73,
+          "scope": "frame_input",
+          "callee": "ContractSpec"
+        },
+        {
+          "line": 73,
+          "scope": "frame_input",
+          "callee": "D"
+        },
+        {
+          "line": 73,
+          "scope": "frame_input",
+          "callee": "str"
+        },
+        {
+          "line": 73,
+          "scope": "frame_input",
+          "callee": "D"
+        },
+        {
+          "line": 73,
+          "scope": "frame_input",
+          "callee": "str"
+        },
+        {
+          "line": 78,
+          "scope": "order_dump",
+          "callee": "list"
+        },
+        {
+          "line": 78,
+          "scope": "order_dump",
+          "callee": "list"
+        },
+        {
+          "line": 78,
+          "scope": "order_dump",
+          "callee": "list"
+        },
+        {
+          "line": 78,
+          "scope": "order_dump",
+          "callee": "order.seen.items"
+        },
+        {
+          "line": 82,
+          "scope": "order_load",
+          "callee": "order.reset"
+        },
+        {
+          "line": 84,
+          "scope": "order_load",
+          "callee": "tuple"
+        },
+        {
+          "line": 84,
+          "scope": "order_load",
+          "callee": "tuple"
+        },
+        {
+          "line": 84,
+          "scope": "order_load",
+          "callee": "set"
+        },
+        {
+          "line": 84,
+          "scope": "order_load",
+          "callee": "deque"
+        },
+        {
+          "line": 91,
+          "scope": "Paths.__init__",
+          "callee": "create_engine"
+        },
+        {
+          "line": 91,
+          "scope": "Paths.__init__",
+          "callee": "MemoryStore"
+        },
+        {
+          "line": 91,
+          "scope": "Paths.__init__",
+          "callee": "Parameters"
+        },
+        {
+          "line": 91,
+          "scope": "Paths.__init__",
+          "callee": "D"
+        },
+        {
+          "line": 92,
+          "scope": "Paths.__init__",
+          "callee": "defaultdict"
+        },
+        {
+          "line": 92,
+          "scope": "Paths.__init__",
+          "callee": "defaultdict"
+        },
+        {
+          "line": 93,
+          "scope": "Paths.__init__",
+          "callee": "Counter"
+        },
+        {
+          "line": 93,
+          "scope": "Paths.__init__",
+          "callee": "EventOrder"
+        },
+        {
+          "line": 97,
+          "scope": "Paths.gap",
+          "callee": "self.engines.values"
+        },
+        {
+          "line": 97,
+          "scope": "Paths.gap",
+          "callee": "e.disconnect"
+        },
+        {
+          "line": 98,
+          "scope": "Paths.gap",
+          "callee": "self.active.values"
+        },
+        {
+          "line": 98,
+          "scope": "Paths.gap",
+          "callee": "self.pending.values"
+        },
+        {
+          "line": 99,
+          "scope": "Paths.gap",
+          "callee": "row.update"
+        },
+        {
+          "line": 100,
+          "scope": "Paths.gap",
+          "callee": "self.active.clear"
+        },
+        {
+          "line": 100,
+          "scope": "Paths.gap",
+          "callee": "self.pending.clear"
+        },
+        {
+          "line": 100,
+          "scope": "Paths.gap",
+          "callee": "self.previous.clear"
+        },
+        {
+          "line": 100,
+          "scope": "Paths.gap",
+          "callee": "self.order.reset"
+        },
+        {
+          "line": 103,
+          "scope": "Paths.step",
+          "callee": "event.get"
+        },
+        {
+          "line": 104,
+          "scope": "Paths.step",
+          "callee": "str"
+        },
+        {
+          "line": 107,
+          "scope": "Paths.step",
+          "callee": "frame_input"
+        },
+        {
+          "line": 108,
+          "scope": "Paths.step",
+          "callee": "self.engines.values"
+        },
+        {
+          "line": 108,
+          "scope": "Paths.step",
+          "callee": "engine.refresh_union_frame"
+        },
+        {
+          "line": 114,
+          "scope": "Paths.step",
+          "callee": "self.engines.values"
+        },
+        {
+          "line": 114,
+          "scope": "Paths.step",
+          "callee": "engine.frames.pop"
+        },
+        {
+          "line": 115,
+          "scope": "Paths.step",
+          "callee": "self.frames.pop"
+        },
+        {
+          "line": 118,
+          "scope": "Paths.step",
+          "callee": "self.gap"
+        },
+        {
+          "line": 120,
+          "scope": "Paths.step",
+          "callee": "MarketEvent.load"
+        },
+        {
+          "line": 122,
+          "scope": "Paths.step",
+          "callee": "self.gap"
+        },
+        {
+          "line": 123,
+          "scope": "Paths.step",
+          "callee": "ev.fresh"
+        },
+        {
+          "line": 123,
+          "scope": "Paths.step",
+          "callee": "self.order.accept"
+        },
+        {
+          "line": 125,
+          "scope": "Paths.step",
+          "callee": "self.previous.get"
+        },
+        {
+          "line": 127,
+          "scope": "Paths.step",
+          "callee": "self.active.pop"
+        },
+        {
+          "line": 127,
+          "scope": "Paths.step",
+          "callee": "self.pending.pop"
+        },
+        {
+          "line": 127,
+          "scope": "Paths.step",
+          "callee": "row.update"
+        },
+        {
+          "line": 129,
+          "scope": "Paths.step",
+          "callee": "list"
+        },
+        {
+          "line": 130,
+          "scope": "Paths.step",
+          "callee": "self.settle"
+        },
+        {
+          "line": 131,
+          "scope": "Paths.step",
+          "callee": "self.active[code].remove"
+        },
+        {
+          "line": 132,
+          "scope": "Paths.step",
+          "callee": "list"
+        },
+        {
+          "line": 134,
+          "scope": "Paths.step",
+          "callee": "row.update"
+        },
+        {
+          "line": 134,
+          "scope": "Paths.step",
+          "callee": "str"
+        },
+        {
+          "line": 135,
+          "scope": "Paths.step",
+          "callee": "self.settle"
+        },
+        {
+          "line": 135,
+          "scope": "Paths.step",
+          "callee": "self.active[code].append"
+        },
+        {
+          "line": 136,
+          "scope": "Paths.step",
+          "callee": "self.pending[code].remove"
+        },
+        {
+          "line": 137,
+          "scope": "Paths.step",
+          "callee": "self.engines.items"
+        },
+        {
+          "line": 138,
+          "scope": "Paths.step",
+          "callee": "engine.accept"
+        },
+        {
+          "line": 142,
+          "scope": "Paths.step",
+          "callee": "engine.terminal"
+        },
+        {
+          "line": 145,
+          "scope": "Paths.step",
+          "callee": "EXITS.items"
+        },
+        {
+          "line": 146,
+          "scope": "Paths.step",
+          "callee": "D"
+        },
+        {
+          "line": 146,
+          "scope": "Paths.step",
+          "callee": "D"
+        },
+        {
+          "line": 148,
+          "scope": "Paths.step",
+          "callee": "((trigger.reference - sign * loss * trigger.plan.atr) / tick).to_integral_value"
+        },
+        {
+          "line": 149,
+          "scope": "Paths.step",
+          "callee": "((trigger.reference + sign * profit * trigger.plan.atr) / tick).to_integral_value"
+        },
+        {
+          "line": 150,
+          "scope": "Paths.step",
+          "callee": "dict"
+        },
+        {
+          "line": 150,
+          "scope": "Paths.step",
+          "callee": "source.get"
+        },
+        {
+          "line": 153,
+          "scope": "Paths.step",
+          "callee": "str"
+        },
+        {
+          "line": 153,
+          "scope": "Paths.step",
+          "callee": "str"
+        },
+        {
+          "line": 153,
+          "scope": "Paths.step",
+          "callee": "str"
+        },
+        {
+          "line": 157,
+          "scope": "Paths.step",
+          "callee": "code_seal"
+        },
+        {
+          "line": 157,
+          "scope": "Paths.step",
+          "callee": "digest"
+        },
+        {
+          "line": 158,
+          "scope": "Paths.step",
+          "callee": "self.rows.append"
+        },
+        {
+          "line": 158,
+          "scope": "Paths.step",
+          "callee": "self.pending[code].append"
+        },
+        {
+          "line": 161,
+          "scope": "Paths.step",
+          "callee": "replace"
+        },
+        {
+          "line": 161,
+          "scope": "Paths.step",
+          "callee": "D"
+        },
+        {
+          "line": 163,
+          "scope": "Paths.step",
+          "callee": "self.snapshot.assess"
+        },
+        {
+          "line": 165,
+          "scope": "Paths.step",
+          "callee": "gated.update"
+        },
+        {
+          "line": 166,
+          "scope": "Paths.step",
+          "callee": "self.pending[code].append"
+        },
+        {
+          "line": 167,
+          "scope": "Paths.step",
+          "callee": "self.rows.append"
+        },
+        {
+          "line": 170,
+          "scope": "Paths.settle",
+          "callee": "self.mark"
+        },
+        {
+          "line": 172,
+          "scope": "Paths.settle",
+          "callee": "D"
+        },
+        {
+          "line": 172,
+          "scope": "Paths.settle",
+          "callee": "D"
+        },
+        {
+          "line": 175,
+          "scope": "Paths.settle",
+          "callee": "row.update"
+        },
+        {
+          "line": 176,
+          "scope": "Paths.settle",
+          "callee": "str"
+        },
+        {
+          "line": 180,
+          "scope": "Paths.mark",
+          "callee": "D"
+        },
+        {
+          "line": 181,
+          "scope": "Paths.mark",
+          "callee": "D"
+        },
+        {
+          "line": 181,
+          "scope": "Paths.mark",
+          "callee": "D"
+        },
+        {
+          "line": 181,
+          "scope": "Paths.mark",
+          "callee": "D"
+        },
+        {
+          "line": 183,
+          "scope": "Paths.mark",
+          "callee": "row.update"
+        },
+        {
+          "line": 183,
+          "scope": "Paths.mark",
+          "callee": "str"
+        },
+        {
+          "line": 183,
+          "scope": "Paths.mark",
+          "callee": "str"
+        },
+        {
+          "line": 184,
+          "scope": "Paths.mark",
+          "callee": "str"
+        },
+        {
+          "line": 184,
+          "scope": "Paths.mark",
+          "callee": "str"
+        },
+        {
+          "line": 184,
+          "scope": "Paths.mark",
+          "callee": "max"
+        },
+        {
+          "line": 184,
+          "scope": "Paths.mark",
+          "callee": "D"
+        },
+        {
+          "line": 185,
+          "scope": "Paths.mark",
+          "callee": "str"
+        },
+        {
+          "line": 185,
+          "scope": "Paths.mark",
+          "callee": "min"
+        },
+        {
+          "line": 185,
+          "scope": "Paths.mark",
+          "callee": "D"
+        },
+        {
+          "line": 188,
+          "scope": "Paths.dump",
+          "callee": "primitive"
+        },
+        {
+          "line": 188,
+          "scope": "Paths.dump",
+          "callee": "dict"
+        },
+        {
+          "line": 188,
+          "scope": "Paths.dump",
+          "callee": "dict"
+        },
+        {
+          "line": 189,
+          "scope": "Paths.dump",
+          "callee": "order_dump"
+        },
+        {
+          "line": 189,
+          "scope": "Paths.dump",
+          "callee": "dict"
+        },
+        {
+          "line": 189,
+          "scope": "Paths.dump",
+          "callee": "order_dump"
+        },
+        {
+          "line": 190,
+          "scope": "Paths.dump",
+          "callee": "event.dump"
+        },
+        {
+          "line": 190,
+          "scope": "Paths.dump",
+          "callee": "e.history.items"
+        },
+        {
+          "line": 190,
+          "scope": "Paths.dump",
+          "callee": "v.dump"
+        },
+        {
+          "line": 190,
+          "scope": "Paths.dump",
+          "callee": "e.books.items"
+        },
+        {
+          "line": 190,
+          "scope": "Paths.dump",
+          "callee": "self.engines.items"
+        },
+        {
+          "line": 193,
+          "scope": "Paths.restore",
+          "callee": "Counter"
+        },
+        {
+          "line": 194,
+          "scope": "Paths.restore",
+          "callee": "value.get"
+        },
+        {
+          "line": 195,
+          "scope": "Paths.restore",
+          "callee": "order_load"
+        },
+        {
+          "line": 196,
+          "scope": "Paths.restore",
+          "callee": "self.frames.items"
+        },
+        {
+          "line": 197,
+          "scope": "Paths.restore",
+          "callee": "self.engines.values"
+        },
+        {
+          "line": 197,
+          "scope": "Paths.restore",
+          "callee": "engine.refresh_union_frame"
+        },
+        {
+          "line": 197,
+          "scope": "Paths.restore",
+          "callee": "frame_input"
+        },
+        {
+          "line": 198,
+          "scope": "Paths.restore",
+          "callee": "value['engines'].items"
+        },
+        {
+          "line": 199,
+          "scope": "Paths.restore",
+          "callee": "order_load"
+        },
+        {
+          "line": 200,
+          "scope": "Paths.restore",
+          "callee": "MarketEvent.load"
+        },
+        {
+          "line": 200,
+          "scope": "Paths.restore",
+          "callee": "v['books'].items"
+        },
+        {
+          "line": 201,
+          "scope": "Paths.restore",
+          "callee": "MarketEvent.load"
+        },
+        {
+          "line": 201,
+          "scope": "Paths.restore",
+          "callee": "D"
+        },
+        {
+          "line": 201,
+          "scope": "Paths.restore",
+          "callee": "f.items"
+        },
+        {
+          "line": 201,
+          "scope": "Paths.restore",
+          "callee": "v['history'].items"
+        },
+        {
+          "line": 203,
+          "scope": "Paths.restore",
+          "callee": "self.active[row['contract']].append"
+        },
+        {
+          "line": 204,
+          "scope": "Paths.restore",
+          "callee": "self.pending[row['contract']].append"
+        },
+        {
+          "line": 208,
+          "scope": "statistics",
+          "callee": "r.get"
+        },
+        {
+          "line": 209,
+          "scope": "statistics",
+          "callee": "len"
+        },
+        {
+          "line": 209,
+          "scope": "statistics",
+          "callee": "sum"
+        },
+        {
+          "line": 209,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 210,
+          "scope": "statistics",
+          "callee": "str"
+        },
+        {
+          "line": 210,
+          "scope": "statistics",
+          "callee": "sum"
+        },
+        {
+          "line": 210,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 210,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 210,
+          "scope": "statistics",
+          "callee": "len"
+        },
+        {
+          "line": 211,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 211,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 212,
+          "scope": "statistics",
+          "callee": "sum"
+        },
+        {
+          "line": 212,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 212,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 212,
+          "scope": "statistics",
+          "callee": "sum"
+        },
+        {
+          "line": 212,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 212,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 213,
+          "scope": "statistics",
+          "callee": "dict"
+        },
+        {
+          "line": 213,
+          "scope": "statistics",
+          "callee": "len"
+        },
+        {
+          "line": 213,
+          "scope": "statistics",
+          "callee": "len"
+        },
+        {
+          "line": 213,
+          "scope": "statistics",
+          "callee": "len"
+        },
+        {
+          "line": 213,
+          "scope": "statistics",
+          "callee": "len"
+        },
+        {
+          "line": 214,
+          "scope": "statistics",
+          "callee": "mean"
+        },
+        {
+          "line": 214,
+          "scope": "statistics",
+          "callee": "mean"
+        },
+        {
+          "line": 215,
+          "scope": "statistics",
+          "callee": "str"
+        },
+        {
+          "line": 216,
+          "scope": "statistics",
+          "callee": "str"
+        },
+        {
+          "line": 216,
+          "scope": "statistics",
+          "callee": "len"
+        },
+        {
+          "line": 216,
+          "scope": "statistics",
+          "callee": "len"
+        },
+        {
+          "line": 217,
+          "scope": "statistics",
+          "callee": "str"
+        },
+        {
+          "line": 217,
+          "scope": "statistics",
+          "callee": "sum"
+        },
+        {
+          "line": 217,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 217,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 218,
+          "scope": "statistics",
+          "callee": "len"
+        },
+        {
+          "line": 219,
+          "scope": "statistics",
+          "callee": "dict"
+        },
+        {
+          "line": 219,
+          "scope": "statistics",
+          "callee": "Counter"
+        },
+        {
+          "line": 219,
+          "scope": "statistics",
+          "callee": "dict"
+        },
+        {
+          "line": 219,
+          "scope": "statistics",
+          "callee": "Counter"
+        },
+        {
+          "line": 220,
+          "scope": "statistics",
+          "callee": "str"
+        },
+        {
+          "line": 220,
+          "scope": "statistics",
+          "callee": "max"
+        },
+        {
+          "line": 220,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 220,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 220,
+          "scope": "statistics",
+          "callee": "D"
+        },
+        {
+          "line": 221,
+          "scope": "statistics",
+          "callee": "mean"
+        },
+        {
+          "line": 221,
+          "scope": "statistics",
+          "callee": "sorted"
+        },
+        {
+          "line": 225,
+          "scope": "report",
+          "callee": "sorted"
+        },
+        {
+          "line": 227,
+          "scope": "report",
+          "callee": "key.startswith"
+        },
+        {
+          "line": 229,
+          "scope": "report",
+          "callee": "key.split"
+        },
+        {
+          "line": 231,
+          "scope": "report",
+          "callee": "dict"
+        },
+        {
+          "line": 231,
+          "scope": "report",
+          "callee": "sum"
+        },
+        {
+          "line": 231,
+          "scope": "report",
+          "callee": "D"
+        },
+        {
+          "line": 232,
+          "scope": "report",
+          "callee": "sum"
+        },
+        {
+          "line": 232,
+          "scope": "report",
+          "callee": "D"
+        },
+        {
+          "line": 233,
+          "scope": "report",
+          "callee": "sum"
+        },
+        {
+          "line": 236,
+          "scope": "report",
+          "callee": "defaultdict"
+        },
+        {
+          "line": 236,
+          "scope": "report",
+          "callee": "D"
+        },
+        {
+          "line": 238,
+          "scope": "report",
+          "callee": "D"
+        },
+        {
+          "line": 239,
+          "scope": "report",
+          "callee": "max"
+        },
+        {
+          "line": 241,
+          "scope": "report",
+          "callee": "statistics"
+        },
+        {
+          "line": 242,
+          "scope": "report",
+          "callee": "Counter"
+        },
+        {
+          "line": 242,
+          "scope": "report",
+          "callee": "paths.frame_audit.values"
+        },
+        {
+          "line": 243,
+          "scope": "report",
+          "callee": "dict"
+        },
+        {
+          "line": 243,
+          "scope": "report",
+          "callee": "dict"
+        },
+        {
+          "line": 243,
+          "scope": "report",
+          "callee": "statistics"
+        },
+        {
+          "line": 244,
+          "scope": "report",
+          "callee": "statistics"
+        },
+        {
+          "line": 246,
+          "scope": "report",
+          "callee": "sum"
+        },
+        {
+          "line": 246,
+          "scope": "report",
+          "callee": "frame_counts.values"
+        },
+        {
+          "line": 246,
+          "scope": "report",
+          "callee": "dict"
+        },
+        {
+          "line": 247,
+          "scope": "report",
+          "callee": "sum"
+        },
+        {
+          "line": 247,
+          "scope": "report",
+          "callee": "frame_counts.values"
+        },
+        {
+          "line": 247,
+          "scope": "report",
+          "callee": "frame_counts.items"
+        },
+        {
+          "line": 248,
+          "scope": "report",
+          "callee": "str"
+        },
+        {
+          "line": 248,
+          "scope": "report",
+          "callee": "statistics"
+        },
+        {
+          "line": 249,
+          "scope": "report",
+          "callee": "sorted"
+        },
+        {
+          "line": 257,
+          "scope": "freeze",
+          "callee": "Path(source).resolve"
+        },
+        {
+          "line": 257,
+          "scope": "freeze",
+          "callee": "Path"
+        },
+        {
+          "line": 257,
+          "scope": "freeze",
+          "callee": "read"
+        },
+        {
+          "line": 258,
+          "scope": "freeze",
+          "callee": "m.get"
+        },
+        {
+          "line": 258,
+          "scope": "freeze",
+          "callee": "cost_id.startswith"
+        },
+        {
+          "line": 259,
+          "scope": "freeze",
+          "callee": "ValueError"
+        },
+        {
+          "line": 260,
+          "scope": "freeze",
+          "callee": "D"
+        },
+        {
+          "line": 260,
+          "scope": "freeze",
+          "callee": "ValueError"
+        },
+        {
+          "line": 263,
+          "scope": "freeze",
+          "callee": "(source.parent / row['path']).resolve"
+        },
+        {
+          "line": 264,
+          "scope": "freeze",
+          "callee": "p.is_relative_to"
+        },
+        {
+          "line": 264,
+          "scope": "freeze",
+          "callee": "file_hash"
+        },
+        {
+          "line": 264,
+          "scope": "freeze",
+          "callee": "ValueError"
+        },
+        {
+          "line": 265,
+          "scope": "freeze",
+          "callee": "files.append"
+        },
+        {
+          "line": 265,
+          "scope": "freeze",
+          "callee": "str"
+        },
+        {
+          "line": 266,
+          "scope": "freeze",
+          "callee": "Path"
+        },
+        {
+          "line": 266,
+          "scope": "freeze",
+          "callee": "root.mkdir"
+        },
+        {
+          "line": 267,
+          "scope": "freeze",
+          "callee": "read"
+        },
+        {
+          "line": 268,
+          "scope": "freeze",
+          "callee": "Snapshot"
+        },
+        {
+          "line": 269,
+          "scope": "freeze",
+          "callee": "dict"
+        },
+        {
+          "line": 269,
+          "scope": "freeze",
+          "callee": "str"
+        },
+        {
+          "line": 269,
+          "scope": "freeze",
+          "callee": "file_hash"
+        },
+        {
+          "line": 270,
+          "scope": "freeze",
+          "callee": "implementation"
+        },
+        {
+          "line": 270,
+          "scope": "freeze",
+          "callee": "str"
+        },
+        {
+          "line": 272,
+          "scope": "freeze",
+          "callee": "atomic"
+        },
+        {
+          "line": 273,
+          "scope": "freeze",
+          "callee": "atomic"
+        },
+        {
+          "line": 273,
+          "scope": "freeze",
+          "callee": "digest"
+        },
+        {
+          "line": 279,
+          "scope": "events.source",
+          "callee": "gzip.open"
+        },
+        {
+          "line": 280,
+          "scope": "events.source",
+          "callee": "enumerate"
+        },
+        {
+          "line": 281,
+          "scope": "events.source",
+          "callee": "offsets.get"
+        },
+        {
+          "line": 282,
+          "scope": "events.source",
+          "callee": "json.loads"
+        },
+        {
+          "line": 285,
+          "scope": "events",
+          "callee": "heapq.merge"
+        },
+        {
+          "line": 285,
+          "scope": "events",
+          "callee": "source"
+        },
+        {
+          "line": 289,
+          "scope": "run",
+          "callee": "Path"
+        },
+        {
+          "line": 290,
+          "scope": "run",
+          "callee": "lock"
+        },
+        {
+          "line": 291,
+          "scope": "run",
+          "callee": "read"
+        },
+        {
+          "line": 292,
+          "scope": "run",
+          "callee": "digest"
+        },
+        {
+          "line": 292,
+          "scope": "run",
+          "callee": "read"
+        },
+        {
+          "line": 292,
+          "scope": "run",
+          "callee": "implementation"
+        },
+        {
+          "line": 293,
+          "scope": "run",
+          "callee": "ValueError"
+        },
+        {
+          "line": 295,
+          "scope": "run",
+          "callee": "file_hash"
+        },
+        {
+          "line": 295,
+          "scope": "run",
+          "callee": "ValueError"
+        },
+        {
+          "line": 296,
+          "scope": "run",
+          "callee": "Paths"
+        },
+        {
+          "line": 296,
+          "scope": "run",
+          "callee": "Snapshot"
+        },
+        {
+          "line": 299,
+          "scope": "run",
+          "callee": "state_path.exists"
+        },
+        {
+          "line": 300,
+          "scope": "run",
+          "callee": "read"
+        },
+        {
+          "line": 301,
+          "scope": "run",
+          "callee": "digest"
+        },
+        {
+          "line": 301,
+          "scope": "run",
+          "callee": "ValueError"
+        },
+        {
+          "line": 302,
+          "scope": "run",
+          "callee": "paths.restore"
+        },
+        {
+          "line": 303,
+          "scope": "run",
+          "callee": "read"
+        },
+        {
+          "line": 306,
+          "scope": "run",
+          "callee": "events"
+        },
+        {
+          "line": 308,
+          "scope": "run",
+          "callee": "ValueError"
+        },
+        {
+          "line": 310,
+          "scope": "run",
+          "callee": "paths.step"
+        },
+        {
+          "line": 312,
+          "scope": "run",
+          "callee": "implementation"
+        },
+        {
+          "line": 312,
+          "scope": "run",
+          "callee": "ValueError"
+        },
+        {
+          "line": 313,
+          "scope": "run",
+          "callee": "atomic"
+        },
+        {
+          "line": 313,
+          "scope": "run",
+          "callee": "dict"
+        },
+        {
+          "line": 313,
+          "scope": "run",
+          "callee": "digest"
+        },
+        {
+          "line": 313,
+          "scope": "run",
+          "callee": "paths.dump"
+        },
+        {
+          "line": 314,
+          "scope": "run",
+          "callee": "print"
+        },
+        {
+          "line": 314,
+          "scope": "run",
+          "callee": "json.dumps"
+        },
+        {
+          "line": 314,
+          "scope": "run",
+          "callee": "sum"
+        },
+        {
+          "line": 314,
+          "scope": "run",
+          "callee": "offsets.values"
+        },
+        {
+          "line": 314,
+          "scope": "run",
+          "callee": "len"
+        },
+        {
+          "line": 317,
+          "scope": "run",
+          "callee": "atomic"
+        },
+        {
+          "line": 317,
+          "scope": "run",
+          "callee": "type"
+        },
+        {
+          "line": 317,
+          "scope": "run",
+          "callee": "str"
+        },
+        {
+          "line": 317,
+          "scope": "run",
+          "callee": "str"
+        },
+        {
+          "line": 319,
+          "scope": "run",
+          "callee": "implementation"
+        },
+        {
+          "line": 319,
+          "scope": "run",
+          "callee": "ValueError"
+        },
+        {
+          "line": 320,
+          "scope": "run",
+          "callee": "report"
+        },
+        {
+          "line": 320,
+          "scope": "run",
+          "callee": "result.update"
+        },
+        {
+          "line": 320,
+          "scope": "run",
+          "callee": "sum"
+        },
+        {
+          "line": 320,
+          "scope": "run",
+          "callee": "offsets.values"
+        },
+        {
+          "line": 320,
+          "scope": "run",
+          "callee": "digest"
+        },
+        {
+          "line": 321,
+          "scope": "run",
+          "callee": "atomic"
+        },
+        {
+          "line": 321,
+          "scope": "run",
+          "callee": "atomic"
+        },
+        {
+          "line": 322,
+          "scope": "run",
+          "callee": "atomic"
+        },
+        {
+          "line": 323,
+          "scope": "run",
+          "callee": "atomic"
+        },
+        {
+          "line": 323,
+          "scope": "run",
+          "callee": "dict"
+        },
+        {
+          "line": 323,
+          "scope": "run",
+          "callee": "digest"
+        },
+        {
+          "line": 323,
+          "scope": "run",
+          "callee": "paths.dump"
+        },
+        {
+          "line": 328,
+          "scope": "account_replay",
+          "callee": "any"
+        },
+        {
+          "line": 328,
+          "scope": "account_replay",
+          "callee": "tape.get('configuration', {}).get"
+        },
+        {
+          "line": 328,
+          "scope": "account_replay",
+          "callee": "tape.get"
+        },
+        {
+          "line": 329,
+          "scope": "account_replay",
+          "callee": "ValueError"
+        },
+        {
+          "line": 330,
+          "scope": "account_replay",
+          "callee": "validate"
+        },
+        {
+          "line": 331,
+          "scope": "account_replay",
+          "callee": "Actor"
+        },
+        {
+          "line": 332,
+          "scope": "account_replay",
+          "callee": "Snapshot"
+        },
+        {
+          "line": 334,
+          "scope": "account_replay",
+          "callee": "actor.step"
+        },
+        {
+          "line": 335,
+          "scope": "account_replay",
+          "callee": "actor.result"
+        },
+        {
+          "line": 336,
+          "scope": "account_replay",
+          "callee": "actor.close"
+        },
+        {
+          "line": 341,
+          "scope": "account_matrix",
+          "callee": "implementation"
+        },
+        {
+          "line": 345,
+          "scope": "account_matrix",
+          "callee": "variants.extend"
+        },
+        {
+          "line": 345,
+          "scope": "account_matrix",
+          "callee": "D"
+        },
+        {
+          "line": 347,
+          "scope": "account_matrix",
+          "callee": "replace"
+        },
+        {
+          "line": 350,
+          "scope": "account_matrix",
+          "callee": "account_replay"
+        },
+        {
+          "line": 351,
+          "scope": "account_matrix",
+          "callee": "metric"
+        },
+        {
+          "line": 353,
+          "scope": "account_matrix",
+          "callee": "implementation"
+        },
+        {
+          "line": 353,
+          "scope": "account_matrix",
+          "callee": "ValueError"
+        },
+        {
+          "line": 355,
+          "scope": "account_matrix",
+          "callee": "results.items"
+        },
+        {
+          "line": 356,
+          "scope": "account_matrix",
+          "callee": "key.startswith"
+        },
+        {
+          "line": 357,
+          "scope": "account_matrix",
+          "callee": "key.split"
+        },
+        {
+          "line": 360,
+          "scope": "account_matrix",
+          "callee": "r['plans'].values"
+        },
+        {
+          "line": 361,
+          "scope": "account_matrix",
+          "callee": "p.get"
+        },
+        {
+          "line": 362,
+          "scope": "account_matrix",
+          "callee": "sorted"
+        },
+        {
+          "line": 362,
+          "scope": "account_matrix",
+          "callee": "opened"
+        },
+        {
+          "line": 362,
+          "scope": "account_matrix",
+          "callee": "opened"
+        },
+        {
+          "line": 363,
+          "scope": "account_matrix",
+          "callee": "sorted"
+        },
+        {
+          "line": 363,
+          "scope": "account_matrix",
+          "callee": "opened"
+        },
+        {
+          "line": 363,
+          "scope": "account_matrix",
+          "callee": "opened"
+        },
+        {
+          "line": 365,
+          "scope": "account_matrix",
+          "callee": "digest"
+        },
+        {
+          "line": 371,
+          "scope": "extend",
+          "callee": "Path"
+        },
+        {
+          "line": 371,
+          "scope": "extend",
+          "callee": "Path(source).resolve"
+        },
+        {
+          "line": 371,
+          "scope": "extend",
+          "callee": "Path"
+        },
+        {
+          "line": 371,
+          "scope": "extend",
+          "callee": "Path"
+        },
+        {
+          "line": 372,
+          "scope": "extend",
+          "callee": "lock"
+        },
+        {
+          "line": 373,
+          "scope": "extend",
+          "callee": "read"
+        },
+        {
+          "line": 373,
+          "scope": "extend",
+          "callee": "read"
+        },
+        {
+          "line": 374,
+          "scope": "extend",
+          "callee": "digest"
+        },
+        {
+          "line": 374,
+          "scope": "extend",
+          "callee": "implementation"
+        },
+        {
+          "line": 375,
+          "scope": "extend",
+          "callee": "ValueError"
+        },
+        {
+          "line": 377,
+          "scope": "extend",
+          "callee": "ValueError"
+        },
+        {
+          "line": 378,
+          "scope": "extend",
+          "callee": "read"
+        },
+        {
+          "line": 379,
+          "scope": "extend",
+          "callee": "manifest.get"
+        },
+        {
+          "line": 379,
+          "scope": "extend",
+          "callee": "ValueError"
+        },
+        {
+          "line": 382,
+          "scope": "extend",
+          "callee": "(source.parent / row['path']).resolve"
+        },
+        {
+          "line": 383,
+          "scope": "extend",
+          "callee": "path.is_relative_to"
+        },
+        {
+          "line": 383,
+          "scope": "extend",
+          "callee": "file_hash"
+        },
+        {
+          "line": 384,
+          "scope": "extend",
+          "callee": "ValueError"
+        },
+        {
+          "line": 385,
+          "scope": "extend",
+          "callee": "files.append"
+        },
+        {
+          "line": 385,
+          "scope": "extend",
+          "callee": "str"
+        },
+        {
+          "line": 386,
+          "scope": "extend",
+          "callee": "len"
+        },
+        {
+          "line": 386,
+          "scope": "extend",
+          "callee": "len"
+        },
+        {
+          "line": 386,
+          "scope": "extend",
+          "callee": "len"
+        },
+        {
+          "line": 387,
+          "scope": "extend",
+          "callee": "ValueError"
+        },
+        {
+          "line": 388,
+          "scope": "extend",
+          "callee": "root.mkdir"
+        },
+        {
+          "line": 389,
+          "scope": "extend",
+          "callee": "str"
+        },
+        {
+          "line": 389,
+          "scope": "extend",
+          "callee": "file_hash"
+        },
+        {
+          "line": 390,
+          "scope": "extend",
+          "callee": "digest"
+        },
+        {
+          "line": 391,
+          "scope": "extend",
+          "callee": "atomic"
+        },
+        {
+          "line": 391,
+          "scope": "extend",
+          "callee": "atomic"
+        },
+        {
+          "line": 391,
+          "scope": "extend",
+          "callee": "digest"
+        },
+        {
+          "line": 392,
+          "scope": "extend",
+          "callee": "atomic"
+        },
+        {
+          "line": 392,
+          "scope": "extend",
+          "callee": "digest"
+        },
+        {
+          "line": 396,
+          "scope": "main",
+          "callee": "argparse.ArgumentParser"
+        },
+        {
+          "line": 396,
+          "scope": "main",
+          "callee": "ap.add_subparsers"
+        },
+        {
+          "line": 397,
+          "scope": "main",
+          "callee": "sub.add_parser"
+        },
+        {
+          "line": 397,
+          "scope": "main",
+          "callee": "f.add_argument"
+        },
+        {
+          "line": 397,
+          "scope": "main",
+          "callee": "f.add_argument"
+        },
+        {
+          "line": 398,
+          "scope": "main",
+          "callee": "f.add_argument"
+        },
+        {
+          "line": 399,
+          "scope": "main",
+          "callee": "f.add_argument"
+        },
+        {
+          "line": 400,
+          "scope": "main",
+          "callee": "f.add_argument"
+        },
+        {
+          "line": 400,
+          "scope": "main",
+          "callee": "f.add_argument"
+        },
+        {
+          "line": 401,
+          "scope": "main",
+          "callee": "sub.add_parser"
+        },
+        {
+          "line": 401,
+          "scope": "main",
+          "callee": "r.add_argument"
+        },
+        {
+          "line": 401,
+          "scope": "main",
+          "callee": "r.add_argument"
+        },
+        {
+          "line": 402,
+          "scope": "main",
+          "callee": "sub.add_parser"
+        },
+        {
+          "line": 402,
+          "scope": "main",
+          "callee": "b.add_argument"
+        },
+        {
+          "line": 402,
+          "scope": "main",
+          "callee": "b.add_argument"
+        },
+        {
+          "line": 403,
+          "scope": "main",
+          "callee": "b.add_argument"
+        },
+        {
+          "line": 403,
+          "scope": "main",
+          "callee": "b.add_argument"
+        },
+        {
+          "line": 404,
+          "scope": "main",
+          "callee": "sub.add_parser"
+        },
+        {
+          "line": 404,
+          "scope": "main",
+          "callee": "x.add_argument"
+        },
+        {
+          "line": 404,
+          "scope": "main",
+          "callee": "x.add_argument"
+        },
+        {
+          "line": 405,
+          "scope": "main",
+          "callee": "x.add_argument"
+        },
+        {
+          "line": 405,
+          "scope": "main",
+          "callee": "x.add_argument"
+        },
+        {
+          "line": 406,
+          "scope": "main",
+          "callee": "sub.add_parser"
+        },
+        {
+          "line": 406,
+          "scope": "main",
+          "callee": "a.add_argument"
+        },
+        {
+          "line": 406,
+          "scope": "main",
+          "callee": "a.add_argument"
+        },
+        {
+          "line": 406,
+          "scope": "main",
+          "callee": "a.add_argument"
+        },
+        {
+          "line": 407,
+          "scope": "main",
+          "callee": "a.add_argument"
+        },
+        {
+          "line": 407,
+          "scope": "main",
+          "callee": "a.add_argument"
+        },
+        {
+          "line": 408,
+          "scope": "main",
+          "callee": "ap.parse_args"
+        },
+        {
+          "line": 409,
+          "scope": "main",
+          "callee": "freeze"
+        },
+        {
+          "line": 410,
+          "scope": "main",
+          "callee": "print"
+        },
+        {
+          "line": 410,
+          "scope": "main",
+          "callee": "json.dumps"
+        },
+        {
+          "line": 410,
+          "scope": "main",
+          "callee": "run"
+        },
+        {
+          "line": 411,
+          "scope": "main",
+          "callee": "extend"
+        },
+        {
+          "line": 413,
+          "scope": "main",
+          "callee": "args.out.exists"
+        },
+        {
+          "line": 413,
+          "scope": "main",
+          "callee": "ValueError"
+        },
+        {
+          "line": 414,
+          "scope": "main",
+          "callee": "read"
+        },
+        {
+          "line": 414,
+          "scope": "main",
+          "callee": "r['policy'].startswith"
+        },
+        {
+          "line": 415,
+          "scope": "main",
+          "callee": "atomic"
+        },
+        {
+          "line": 415,
+          "scope": "main",
+          "callee": "fit"
+        },
+        {
+          "line": 417,
+          "scope": "main",
+          "callee": "args.out.exists"
+        },
+        {
+          "line": 417,
+          "scope": "main",
+          "callee": "ValueError"
+        },
+        {
+          "line": 418,
+          "scope": "main",
+          "callee": "read"
+        },
+        {
+          "line": 420,
+          "scope": "main",
+          "callee": "value.get"
+        },
+        {
+          "line": 420,
+          "scope": "main",
+          "callee": "D"
+        },
+        {
+          "line": 420,
+          "scope": "main",
+          "callee": "str"
+        },
+        {
+          "line": 422,
+          "scope": "main",
+          "callee": "atomic"
+        },
+        {
+          "line": 422,
+          "scope": "main",
+          "callee": "runner"
+        },
+        {
+          "line": 422,
+          "scope": "main",
+          "callee": "read"
+        },
+        {
+          "line": 422,
+          "scope": "main",
+          "callee": "Parameters"
+        },
+        {
+          "line": 422,
+          "scope": "main",
+          "callee": "read"
+        },
+        {
+          "line": 425,
+          "scope": "<module>",
+          "callee": "main"
+        }
+      ]
+    }
+  ],
+  "incoming_imports": [
+    {
+      "file": "htx-trend-python/src/htx_trend/holding_policy.py",
+      "line": 41,
+      "module": "htx_trend.realtime.regime_compatibility",
+      "names": [
+        "REGIME_PREDECESSOR"
+      ],
+      "kind": "import_from"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/holding_policy.py",
+      "line": 147,
+      "module": "htx_trend.realtime.regime_compatibility",
+      "names": [
+        "REGIME_PREDECESSOR"
+      ],
+      "kind": "import_from"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "line": 113,
+      "module": "htx_trend.realtime.regime_bayes",
+      "names": [
+        "bind_snapshot"
+      ],
+      "kind": "import_from"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "line": 318,
+      "module": "htx_trend.realtime.regime",
+      "names": [
+        "RegimeEngine"
+      ],
+      "kind": "import_from"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_replay.py",
+      "line": 23,
+      "module": "htx_trend.realtime.regime",
+      "names": [
+        "CANDIDATE",
+        "regime_features"
+      ],
+      "kind": "import_from"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_replay.py",
+      "line": 24,
+      "module": "htx_trend.realtime.regime_bayes",
+      "names": [
+        "Snapshot",
+        "fit",
+        "code_seal"
+      ],
+      "kind": "import_from"
+    },
+    {
+      "file": "htx-trend-python/tests/test_regime.py",
+      "line": 6,
+      "module": "htx_trend.realtime.regime",
+      "names": [
+        "CANDIDATE",
+        "MODEL",
+        "regime_features",
+        "classify",
+        "confirms"
+      ],
+      "kind": "import_from"
+    },
+    {
+      "file": "htx-trend-python/tests/test_regime.py",
+      "line": 144,
+      "module": "htx_trend.realtime.regime_compatibility",
+      "names": [
+        "REGIME_PREDECESSOR"
+      ],
+      "kind": "import_from"
+    },
+    {
+      "file": "htx-trend-python/tests/test_regime_bayes.py",
+      "line": 6,
+      "module": "htx_trend.realtime.regime_bayes",
+      "names": [
+        "fit",
+        "Snapshot",
+        "group_key",
+        "bind_snapshot",
+        "code_seal"
+      ],
+      "kind": "import_from"
+    },
+    {
+      "file": "htx-trend-python/tests/test_regime_release.py",
+      "line": 7,
+      "module": "htx_trend.realtime.regime_bayes",
+      "names": [
+        "fit"
+      ],
+      "kind": "import_from"
+    },
+    {
+      "file": "htx-trend-python/tests/test_regime_replay.py",
+      "line": 8,
+      "module": "htx_trend.realtime.regime_replay",
+      "names": [
+        "Paths",
+        "freeze",
+        "run",
+        "read",
+        "file_hash",
+        "account_replay",
+        "account_matrix",
+        "extend",
+        "lock"
+      ],
+      "kind": "import_from"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 85,
+      "module": "htx_trend.realtime.regime_bayes",
+      "names": [
+        "Snapshot"
+      ],
+      "kind": "import_from"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 144,
+      "module": "htx_trend.realtime.regime_bayes",
+      "names": [
+        "Snapshot"
+      ],
+      "kind": "import_from"
+    }
+  ],
+  "identity_references": [
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "line": 70,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/brokers.py",
+      "line": 72,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "line": 77,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "line": 79,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "line": 112,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "line": 129,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/management.py",
+      "line": 142,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/management.py",
+      "line": 485,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/ownership.py",
+      "line": 9,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "line": 37,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "line": 85,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "line": 133,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/plans.py",
+      "line": 317,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime.py",
+      "line": 13,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime.py",
+      "line": 14,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_bayes.py",
+      "line": 49,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/replay.py",
+      "line": 311,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/risk.py",
+      "line": 134,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/strategy_profiles.py",
+      "line": 49,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/strategy_profiles.py",
+      "line": 147,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/strategy_profiles.py",
+      "line": 148,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/strategy_profiles.py",
+      "line": 182,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/strategy_profiles.py",
+      "line": 188,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/tests/integration/test_mysql_regime.py",
+      "line": 20,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/tests/integration/test_mysql_regime.py",
+      "line": 33,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/tests/test_regime_bayes.py",
+      "line": 15,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/tests/test_regime_release.py",
+      "line": 24,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/tests/test_regime_release.py",
+      "line": 24,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/tests/test_regime_replay.py",
+      "line": 87,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/tests/test_regime_replay.py",
+      "line": 90,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/tests/test_regime_replay.py",
+      "line": 92,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 89,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 97,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 111,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 113,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 130,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 138,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 234,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 470,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 471,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 471,
+      "value": "RT_REGIME_AB",
+      "kind": "literal_reference"
+    },
+    {
+      "file": "htx-trend-python/release/package.py",
+      "line": 563,
+      "value": "REGIME_AB_V1",
+      "kind": "literal_reference"
+    }
+  ],
+  "reviewed_symbols": [
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime.py",
+      "line": 68,
+      "symbol": "RegimeEngine.assessment",
+      "sha256": "1ea212e36ebd81610b17bff87dbb9d16c04936ec8578bd390c04a26ec561de26"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime.py",
+      "line": 75,
+      "symbol": "RegimeEngine.confirm",
+      "sha256": "1ea212e36ebd81610b17bff87dbb9d16c04936ec8578bd390c04a26ec561de26"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime.py",
+      "line": 82,
+      "symbol": "RegimeEngine.accept",
+      "sha256": "1ea212e36ebd81610b17bff87dbb9d16c04936ec8578bd390c04a26ec561de26"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_bayes.py",
+      "line": 22,
+      "symbol": "code_seal",
+      "sha256": "7e8370c20ddc1532008db9790533d8d8286da2c97ae0e475aab520b304945368"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_bayes.py",
+      "line": 33,
+      "symbol": "fit",
+      "sha256": "7e8370c20ddc1532008db9790533d8d8286da2c97ae0e475aab520b304945368"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_bayes.py",
+      "line": 169,
+      "symbol": "Snapshot.assess",
+      "sha256": "7e8370c20ddc1532008db9790533d8d8286da2c97ae0e475aab520b304945368"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_bayes.py",
+      "line": 189,
+      "symbol": "bind_snapshot",
+      "sha256": "7e8370c20ddc1532008db9790533d8d8286da2c97ae0e475aab520b304945368"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_replay.py",
+      "line": 169,
+      "symbol": "Paths.settle",
+      "sha256": "40ac2dea44e56561adb9fd6c876c97374b2053d231b64ba71390bd9d85974b80"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_replay.py",
+      "line": 327,
+      "symbol": "account_replay",
+      "sha256": "40ac2dea44e56561adb9fd6c876c97374b2053d231b64ba71390bd9d85974b80"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/regime_replay.py",
+      "line": 369,
+      "symbol": "extend",
+      "sha256": "40ac2dea44e56561adb9fd6c876c97374b2053d231b64ba71390bd9d85974b80"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/worker.py",
+      "line": 24,
+      "symbol": "FrameLoader.__init__",
+      "sha256": "59f96cb34f4f9af97c75900ca031b776d0eeb94712e0a873f76f668f3a35ba80"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/worker.py",
+      "line": 45,
+      "symbol": "FrameLoader.fetch",
+      "sha256": "59f96cb34f4f9af97c75900ca031b776d0eeb94712e0a873f76f668f3a35ba80"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/worker.py",
+      "line": 264,
+      "symbol": "RealtimeWorker._preflight",
+      "sha256": "59f96cb34f4f9af97c75900ca031b776d0eeb94712e0a873f76f668f3a35ba80"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/factory.py",
+      "line": 95,
+      "symbol": "_common",
+      "sha256": "4ba1e96d3e8404a0deaf5d86c55d933cd0af6bb10c80526e9060d5e69d3f9c3c"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/management.py",
+      "line": 103,
+      "symbol": "PaperManagement.tick",
+      "sha256": "be2d46ee40669d32de4fbffe6c68a63c21ac5dfeb1018deac8c7278b44d25c90"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/management.py",
+      "line": 450,
+      "symbol": "LiveManagement.tick",
+      "sha256": "be2d46ee40669d32de4fbffe6c68a63c21ac5dfeb1018deac8c7278b44d25c90"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/replay.py",
+      "line": 308,
+      "symbol": "Actor.__init__",
+      "sha256": "635cfb996aa9f18404efa45c8df2523e7461ee1d40b17d834f438e7b70d37645"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/realtime/replay.py",
+      "line": 475,
+      "symbol": "Actor.step",
+      "sha256": "635cfb996aa9f18404efa45c8df2523e7461ee1d40b17d834f438e7b70d37645"
+    },
+    {
+      "file": "htx-trend-python/src/htx_trend/holding_policy.py",
+      "line": 37,
+      "symbol": "supports_observed_implementation",
+      "sha256": "af68404f14ae2be5605a39064cbb326a3b8b812a6ade7a79a0656aa61fcbd462"
+    }
+  ],
+  "account_cases": {
+    "executed_now": true,
+    "interpreter": "/tmp/coinstrategy-public-capture-py314/bin/python",
+    "fixture_sources": [
+      "htx-trend-python/tests/test_regime_replay.py:observations",
+      "htx-trend-python/tests/test_regime_bayes.py:labels",
+      "htx-trend-python/tests/test_realtime_replay.py:tape"
+    ],
+    "fixture_source_hashes": {
+      "htx-trend-python/tests/test_regime_replay.py": "9ca8a6cfebedc8c5b7f240d9a7a26d4d5657d399a81e76d330e4e0841705772d",
+      "htx-trend-python/tests/test_regime_bayes.py": "5bca4a708705dc2038c0ab8187f857dd457758fc24756e0fe6ff8347ff0fb084",
+      "htx-trend-python/tests/test_realtime_replay.py": "23af59fc4872991bace4ae62bcd5a8c3394a4399a8acdc73ffcb5bf90b2ee852",
+      "htx-trend-python/tests/test_regime.py": "9e81d71579a01d0936efb476d9d694f3134c35b208c64f048364b43ba48a3d6f"
+    },
+    "configuration_note": "Explicit synthetic 777U fixture, not a research account restriction. Min turnover zero is fixture-only. Synthetic fresh depth and zero funding quote are not observed market evidence.",
+    "configuration_hash": "ba524069b30ec78e6cf5acf81ef0f95f95505b25ecaf94c8db56d9d3e261b635",
+    "tape_digest": "29bb83edf92d36f30a531eed8dbd765afa8e1a74261fb9cde19b00f8e8660b17",
+    "posterior_hash": "202d4ec73911e5d481979de862c0f7be087c9d559865209a9c9b414e64553929",
+    "cases": [
+      {
+        "name": "missing",
+        "passed": true,
+        "fills": 0,
+        "positions": [],
+        "reasons": [
+          "BAYES:SNAPSHOT_MISSING"
+        ],
+        "errors": [],
+        "result_digest": "051349d7847c551ba58a8c8017ad7595fa4e9c54b9a03b6db984f86c6c7d5de9"
+      },
+      {
+        "name": "valid",
+        "passed": true,
+        "fills": 2,
+        "positions": [
+          {
+            "model": "RT_REGIME_AB",
+            "status": "CLOSED"
+          }
+        ],
+        "reasons": [
+          null
+        ],
+        "errors": [],
+        "result_digest": "8c941ab224649209a6f1a76bb758f369bf1bdb26401f1e01ff0133c89e91b1e8"
+      },
+      {
+        "name": "wrong_cost",
+        "passed": true,
+        "fills": 0,
+        "positions": [],
+        "reasons": [
+          "BAYES:SNAPSHOT_BINDING_MISMATCH"
+        ],
+        "errors": [],
+        "result_digest": "44b529716b53812aa1de0458ccec1c17336244003fccad24ef069cf395a729d8"
+      },
+      {
+        "name": "wrong_group",
+        "passed": true,
+        "fills": 0,
+        "positions": [],
+        "reasons": [
+          "BAYES:INSUFFICIENT_EVIDENCE"
+        ],
+        "errors": [],
+        "result_digest": "92129cae32f7b26ce83cdc77dbdd99db60b0730e0638a1cec659c4467df33d0c"
+      }
+    ]
+  },
+  "review_conclusion": "No additional blocker in reviewed A/B wiring. Same-quote stop, full source seal, candidate timeframes and first-quote continuity fixes verified; v2 original first-quote zero remains an invalid opportunity conclusion until corrected rerun.",
+  "production_actions": false,
+  "parent_evidence": {
+    "path": "/Users/lichangzheng.ray/Ray/CoinStrategy-regime-bayesian-entry/docs/htx-trend-python/evidence/regime-bayesian-20261105/code-relations.json",
+    "sha256": "f1fb9b323c0c9e7c2ed44e248ee5f21252faa5d40b02b47a297598bf80bd83a6"
+  },
+  "real_source_first_quote_retest": {
+    "contract": "ADA-USDT",
+    "interval_ms": [
+      1793787290000,
+      1793787314000
+    ],
+    "source_events": 258,
+    "first_quote_triggers": 1,
+    "trigger_ms": 1793787313260,
+    "stale_frame_rejections": 223,
+    "passed": true,
+    "financial_result_computed": false
+  }
+}
