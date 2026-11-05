@@ -30,6 +30,18 @@ def test_legacy_requires_complete_current_adoption():
     assert not check(value,adoption=manifest)['ready']
 
 
+def test_empty_handoff_does_not_require_an_unused_legacy_adapter():
+    value=observation()
+    value['holdings']=[]
+    value['implementation_hashes']={'exits.py':'unknown'}
+    manifest=from_observation(value)
+    assert manifest.to_dict()['holdings'] == []
+    assert check(value,adoption=manifest)['ready']
+    value['pending_orders']=[dict(position_id=99,strategy_name='OTHER',timeframe_profile='SWING_4H')]
+    with __import__('pytest').raises(Exception,match='not supported'):
+        from_observation(value)
+
+
 def test_previous_parameter_mismatch_and_unknown_pending_are_blocked():
     value=observation();manifest=from_observation(value)
     value['profiles']['INTRADAY_15M']['exit']['flat_bars']=99
