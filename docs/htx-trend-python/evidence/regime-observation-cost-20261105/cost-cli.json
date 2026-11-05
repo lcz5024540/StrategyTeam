@@ -1,0 +1,49 @@
+{
+  "account_id": "offline",
+  "actual": {
+    "allocated_entry_fee_usdt": "0.075885468",
+    "close_fee_usdt": "0.07720744",
+    "close_vwap": "115.58",
+    "closed_contracts": "167",
+    "entry_contracts": "167",
+    "entry_fee_usdt": "0.075885468",
+    "entry_slippage_usdt": "0",
+    "entry_vwap": "113.601",
+    "exit_slippage_usdt": null,
+    "funding_cash_usdt": null,
+    "realized_gross_usdt": "3.30493",
+    "realized_net_before_funding_usdt": "3.151837092",
+    "realized_net_including_funding_usdt": null,
+    "remaining_contracts": "0"
+  },
+  "affects_entry": false,
+  "contract": "ETH-USDT",
+  "difference": {
+    "close_fee_vs_stop_usdt": "0.001953232",
+    "close_fee_vs_target_usdt": "0.000750832",
+    "entry_fee_usdt": "-0.00003006",
+    "entry_slippage_usdt": "-0.07515",
+    "exit_slippage_usdt": null,
+    "funding_usdt": null
+  },
+  "input_hash": "662849fd72337c27355f0b948af8d11691b2d1487b285adba64578ff0787fd32",
+  "mode": "PAPER_SIMULATED",
+  "observation_only": true,
+  "planned": {
+    "entry_fee_usdt": "0.075915528",
+    "entry_slippage_usdt": "0.07515",
+    "exit_slippage_usdt": "0.07515",
+    "funding_usdt": null,
+    "stop_close_fee_usdt": "0.075254208",
+    "target_close_fee_usdt": "0.076456608",
+    "target_net_reward_for_filled_quantity_usdt": "1.200327864"
+  },
+  "position_id": "rt-paper:33769358966492796",
+  "schema": "regime-cost-observation-v1",
+  "status": "PARTIAL",
+  "warnings": [
+    "CLOSE_FEE_ABOVE_BOTH_BRACKET_BUDGETS",
+    "EXIT_SLIPPAGE_UNKNOWN",
+    "FUNDING_UNKNOWN"
+  ]
+}

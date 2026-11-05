@@ -1,5 +1,7 @@
 # HTX Python交付索引
 
+- [A/B观察、实际成本对账与开启入口](regime-observation-cost-20261105.md)：只观察不阻断、显式开启包、PAPER开平仓与隔离MySQL验证；未部署真实账户。
+- [A/B观察与成本技术方案](regime-observation-cost-design.md)：数据口径、旁路行为及证据边界。
 - [A/B场景交易与贝叶斯验证](regime-bayesian-20261105.md)：独立候选、冻结概率门、三档退出和同源回放，入口关闭。
 - [A/B夜间冻结数据逐笔结果](regime-bayesian-night-20261105.md)：报价路径、标签完整性及后验评估，非账户收益。
 

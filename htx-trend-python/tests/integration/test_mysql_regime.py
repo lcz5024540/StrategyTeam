@@ -63,3 +63,36 @@ def test_selected_exit_and_evidence_survive_mysql_restart(database):
     assert row['bayes_assessment']==expected
     assert row['bayes_assessment']['selected_exit']=='ATR_2_2'
     db.close()
+
+
+def test_cost_reader_sql_closed_scope_and_decimal_context_restart(database):
+    import json
+    from htx_trend.mysql_store import HtxTrendMySqlRepository
+    from htx_trend.realtime.cost_sources import LiveCostReader
+    from htx_trend.realtime.cost_observation import reconcile
+    from htx_trend.research.store import digest
+    from test_cost_observation import LiveClient, bundle
+
+    db = connect(database)
+    sql = (Path(__file__).parents[3]/'sql/htx/2026-11-02__htx_realtime_structure_plan.sql').read_text()
+    plan = bundle(closed=10)['plan']
+    with db.cursor() as c:
+        c.execute(sql)
+        c.execute("UPDATE htx_trend_position SET contract_code='ETH-USDT', contract_size=1, "
+                  "primary_model='RT_REGIME_AB', status='DONE', entry_filled_contracts=10, remaining_contract_volume=0 WHERE id=1")
+        c.execute("UPDATE htx_trend_order SET contract_code='ETH-USDT', client_order_id='1', exchange_order_id='11', status='FILLED' WHERE id=1")
+        c.execute("INSERT INTO htx_trend_order(id,position_id,position_key,contract_code,leg,trend_side,order_side,position_side,"
+                  "client_order_id,exchange_order_id,request_volume,status,account_id) "
+                  "VALUES(2,1,'p','ETH-USDT','CLOSE','LONG','SELL','LONG','2','12',10,'FILLED',7)")
+        c.execute("INSERT INTO python_trend_exit_state(position_id,state_json) VALUES(1,%s)",
+                  (json.dumps({'cost_plan': plan}),))
+    db.commit()
+    MySqlPlanStore(db).save('observation-test', 'a'*64, {'phase': 'FILLED', 'position_id': 1})
+    db.close()
+    reader = LiveCostReader(lambda: HtxTrendMySqlRepository(connect(database)), lambda _: LiveClient(),
+                            7, 'observation-test')
+    value, = reader(5000)
+    assert digest(value['plan']) == digest(plan)
+    assert D(reconcile(value)['actual']['realized_net_before_funding_usdt']) == 7
+    assert LiveCostReader(lambda: HtxTrendMySqlRepository(connect(database)), lambda _: LiveClient(),
+                          8, 'observation-test')(5000) == []

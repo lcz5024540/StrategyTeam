@@ -17,6 +17,26 @@ def when(ms):
     return '—' if ms is None else datetime.fromtimestamp(ms/1000,timezone(timedelta(hours=8))).strftime('%m-%d %H:%M:%S.%f')[:-3]
 
 
+def sample_lines(posterior):
+    lines = ['', '## 样本完整性与三档共同机会（只观察，不阻止新开仓）', '',
+             '| 场景/时序/档位 | 唯一机会 | 成熟完整数 | 完整率 | 缺档记录 | 排除/未完成 |',
+             '|---|---:|---:|---:|---:|---:|']
+    families = posterior.get('sample_observation', {}).get('families', {})
+    if not families:
+        return lines + ['', '此快照没有样本观察元数据；不改变原准入或选档结果。']
+    for key, family in families.items():
+        scenario, timing, cost = json.loads(key)
+        for mode, value in family['exits'].items():
+            lines.append(f"| {scenario}/{timing}/{mode} | {value['unique_opportunities']} | {value['mature_results']} | {pct(value['complete_fraction'])} | {value['missing_exit_records']} | {value['excluded_or_incomplete']} |")
+        paired = family['paired']
+        lines += ['', f"{scenario}/{timing}（{cost}）共同成熟机会：{paired['n']}；小时块：{paired['hour_blocks']}；占全部机会：{pct(paired['fraction_of_all_opportunities'])}。",
+                  '共同集合均值：' + '，'.join(mode + '=' + pct(mean) for mode, mean in paired['mean_net_returns'].items()) + '。',
+                  '两两平均净收益差：' + '，'.join(pair + '=' + pct(value['mean_net_return_difference']) for pair, value in paired['comparisons'].items()) + '。',
+                  '观察提示：' + ('；'.join(family['warnings']) or '无') + '。',
+                  '逐档状态/排除原因：`' + json.dumps({mode: value['status_and_exclusion_counts'] for mode, value in family['exits'].items()}, ensure_ascii=False) + '`。']
+    return lines + ['', '共同完成子集仍有删失偏差；此结果不替换原后验、不重排ATR、不构成收益准入。未知结果不填零。']
+
+
 def render(root, out):
     p=read(root/'protocol.json');report=read(root/'report.json');posterior=read(root/'posterior.json')
     rows=read(root/'records.json.gz')
@@ -45,6 +65,7 @@ def render(root, out):
         s=report['by_scenario'][scenario]['AB_WINDOW/'+mode]
         ci=g['posterior_ci95'];ci_text='—' if ci is None else f"{pct(g['posterior_mean'])} [{pct(ci[0])}, {pct(ci[1])}]"
         lines.append(f"| {scenario}/{mode} | {s['opportunities']}/{s['closed']} | {s['wins']}/{s['losses']} | {pct(s['closed_mean_net_return'])} | {g['posterior']} | {ci_text} | {pct(g['blocks']['60'].get('positive_mean_mass'))} | {g['n']}/{g['blocks']['60']['count']} | {g['status']} |")
+    lines += sample_lines(posterior)
     lines+=['','确实进行了贝叶斯推断：完整净收益>0为盈利，Beta(1,1)用唯一成熟胜负更新；50,000次直接抽样计算胜率区间。60分钟同步市场块使用10,000组Dirichlet权重估计正平均净收益支持度；30/120分钟结果见posterior.json。抽样次数不是交易笔数。',
         f"后验截止 `{when(posterior['cutoff_ms'])}`，根种子 {posterior['seed']}，逐组种子及训练机会ID均保存。后验hash `{posterior['hash']}`。",
         '每组至少20笔同合约非重叠完整结果、10小时块才达到样本门。本次后验在回放后计算，不倒灌到本段概率门；初始冻结没有合法旧快照时，概率组按SNAPSHOT_MISSING拒绝。',

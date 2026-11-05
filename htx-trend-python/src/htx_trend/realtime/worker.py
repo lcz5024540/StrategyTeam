@@ -201,6 +201,7 @@ class RealtimeWorker:
         self.recovery_error = None
         self.trial = None
         self.trial_monitor = None
+        self.cost_observer = None
         self.trial_connection = None
         self.management_only = False
 
@@ -410,6 +411,12 @@ class RealtimeWorker:
             failures.append(self.recovery_error)
         # Initial stop checks do not depend on structure refresh or evidence writes.
         failures.extend(self.management.tick(now))
+        if self.cost_observer is not None:
+            try:
+                self.cost_observer.tick(now)
+            except Exception as error:
+                import logging
+                logging.getLogger(__name__).warning('REGIME_COST_OBSERVATION_UNAVAILABLE type=%s affects_entry=false', type(error).__name__)
         if self.trial_monitor is not None:
             try:
                 self.trial_monitor.tick(now)
@@ -664,6 +671,8 @@ class RealtimeWorker:
             return
         self.stopped = True
         self.entry_enabled = False
+        if self.cost_observer is not None:
+            self.cost_observer.close()
         self.stream.close()
         self.loader.close()
         self.recorder.flush()

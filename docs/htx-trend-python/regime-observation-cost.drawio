@@ -1,0 +1,16 @@
+<mxfile host="app.diagrams.net"><diagram id="observation" name="只观察不阻断"><mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" page="1" pageWidth="1169" pageHeight="827"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+<mxCell id="labels" value="冻结标签：三档全机会与状态" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;" vertex="1" parent="1"><mxGeometry x="40" y="60" width="240" height="60" as="geometry"/></mxCell>
+<mxCell id="fit" value="原成熟过滤 / 后验 / 选档" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="1"><mxGeometry x="380" y="60" width="240" height="60" as="geometry"/></mxCell>
+<mxCell id="quality" value="完整率 / 排除原因 / 三档共同机会比较" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;" vertex="1" parent="1"><mxGeometry x="40" y="220" width="240" height="70" as="geometry"/></mxCell>
+<mxCell id="entry" value="显式开启入口 + 原安全门\n订单与冻结ATR持仓" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="1"><mxGeometry x="790" y="60" width="240" height="70" as="geometry"/></mxCell>
+<mxCell id="facts" value="计划成本 + 实际成交 + 资金流水\n缺失保持未知" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;" vertex="1" parent="1"><mxGeometry x="790" y="220" width="240" height="70" as="geometry"/></mxCell>
+<mxCell id="recon" value="按仓重算成本差额\n后台只读 / 不重复累计" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;" vertex="1" parent="1"><mxGeometry x="790" y="380" width="240" height="70" as="geometry"/></mxCell>
+<mxCell id="report" value="独立观察证据 / 报告 / 告警\n不拒单、不改持仓、不重选ATR" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="1"><mxGeometry x="360" y="380" width="280" height="80" as="geometry"/></mxCell>
+<mxCell id="e1" source="labels" target="fit" edge="1" parent="1" style="endArrow=block;"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e2" source="labels" target="quality" edge="1" parent="1" style="endArrow=block;dashed=1;"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e3" source="fit" target="entry" edge="1" parent="1" style="endArrow=block;"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e4" source="entry" target="facts" edge="1" parent="1" style="endArrow=block;dashed=1;"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e5" source="facts" target="recon" edge="1" parent="1" style="endArrow=block;dashed=1;"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e6" source="recon" target="report" edge="1" parent="1" style="endArrow=block;dashed=1;"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e7" source="quality" target="report" edge="1" parent="1" style="endArrow=block;dashed=1;"><mxGeometry relative="1" as="geometry"/></mxCell>
+</root></mxGraphModel></diagram></mxfile>

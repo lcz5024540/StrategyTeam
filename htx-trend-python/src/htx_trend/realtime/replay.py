@@ -466,6 +466,11 @@ class Actor:
             )
             self.worker.started = True
             self.worker.last_epoch = "replay"
+            if parameters.candidate == 'REGIME_AB_V1':
+                from .cost_observation import CostObserver
+                from .cost_sources import PaperCostReader
+                self.worker.cost_observer = CostObserver(
+                    PaperCostReader(self.ledger, self.account), self.evidence, asynchronous=False)
 
     def _context(self):
         if self.market.context is None:
@@ -641,6 +646,12 @@ class Actor:
 
     def result(self):
         fills = fill_events(self.ledger.data)
+        observer = getattr(self.worker, 'cost_observer', None)
+        if observer is not None:
+            # Include the last event's close even when the periodic interval is
+            # not due. This reader has no network or account-ledger writes.
+            observer.last = None
+            observer.tick(self.market.now_ms)
         return primitive(
             {
                 "curve": self.curve,
@@ -655,10 +666,14 @@ class Actor:
                 else None,
                 "modeled_funding": self.funding,
                 "parameters": asdict(self.parameters) if self.parameters else None,
+                "cost_observations": observer.latest if observer is not None else {},
             }
         )
 
     def close(self):
+        observer = getattr(self.worker, 'cost_observer', None)
+        if observer is not None:
+            observer.close()
         if hasattr(self, "store"):
             self.store.close()
 

@@ -89,6 +89,7 @@ def fit(records, *, cutoff_ms, cost_id, seed=20261105):
             raise ValueError('nonfinite label')
         groups[key].append(r)
     result = {}
+    accepted = {}
     for scenario in ('A','B'):
         for timing in ('FIRST_QUOTE','WINDOW'):
             for exit_profile in EXITS:
@@ -102,6 +103,7 @@ def fit(records, *, cutoff_ms, cost_id, seed=20261105):
                         continue
                     rows.append(r)
                     end_by_contract[r['contract']] = r['exit_ms']
+                accepted[key] = rows
                 n = len(rows)
                 w = sum(D(str(r['net_return'])) > 0 for r in rows)
                 local_seed = seed + int(sha256(key.encode()).hexdigest()[:8],16)
@@ -142,12 +144,15 @@ def fit(records, *, cutoff_ms, cost_id, seed=20261105):
                     'limitations':['selected completed subset','iid approximation for Beta',
                         'time-block dependence remains','not calibrated future probabilities',
                         *(['observed support contains no loss'] if n and w==n else [])]}
+    from .regime_observation import sample_observation
+    observation = sample_observation(unique.values(), accepted, result)
     payload = {'schema':SCHEMA,'method':METHOD,'code_seal':code_seal(),'cost_id':cost_id,
         'cost_mode':'ASSUMPTION' if cost_id.startswith('ASSUMPTION:') else 'KNOWN',
         'cutoff_ms':cutoff_ms,'seed':seed,'groups':result,'excluded':dict(excluded),
         'input_digest':digest(sorted(all_ids)),
         'label_protocol_hashes':sorted({r['label_protocol_hash'] for r in unique.values()}),
-        'numpy_version':np.__version__, 'financial_admission':'NOT_ELIGIBLE'}
+        'numpy_version':np.__version__, 'financial_admission':'NOT_ELIGIBLE',
+        'sample_observation': observation}
     return {**payload,'hash':digest(payload)}
 
 
@@ -190,6 +195,7 @@ class Snapshot:
     def select_exit(self, scenario, parameters, now_ms):
         """Rank prior mature evidence, never the outcomes of this opportunity."""
         from .plans import BAYES_EXIT
+        from .regime_observation import snapshot_observation
         from .indicator_union import EXITS
         if parameters.target_mode != BAYES_EXIT:
             raise ValueError('exit selector requires its explicit policy')
@@ -211,7 +217,8 @@ class Snapshot:
         return {'allowed':bool(ranked), 'reason':'PASS' if ranked else 'NO_ELIGIBLE_EXIT',
                 'policy':BAYES_EXIT, 'selected_exit':ranked[0][0] if ranked else None,
                 'snapshot_hash':self.hash, 'selected_ms':now_ms, 'cutoff_ms':self.value['cutoff_ms'],
-                'ranked_exits':[x[0] for x in ranked], 'assessments':assessments}
+                'ranked_exits':[x[0] for x in ranked], 'assessments':assessments,
+                'sample_observation': snapshot_observation(self.value, scenario, parameters.regime_timing, parameters.bayes_cost_id)}
 
 
 def bind_snapshot(engine, path, *, live=False):

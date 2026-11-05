@@ -70,6 +70,20 @@ def initial_context(intent, trigger, contract, holding_parameters):
     if intent.model in ("RT_INDICATOR_UNION", "RT_REGIME_AB"):
         result["matched_modes"] = [s.removeprefix("MATCH:") for s in trigger.plan.sources if s.startswith("MATCH:")]
     if intent.model == "RT_REGIME_AB":
+        result['cost_plan'] = primitive({
+            'schema': 'regime-cost-plan-v1', 'plan_id': intent.plan_id,
+            'contract': intent.contract_code, 'side': intent.side.value,
+            'contract_size': contract.contract_size, 'contracts': intent.size.contracts,
+            'entry_reference': trigger.reference, 'entry_limit': intent.price.worst_acceptable_entry,
+            'target': intent.price.structure_target, 'stop': intent.price.invalidation,
+            'entry_fee_per_unit': intent.price.entry_fee,
+            'target_fee_per_unit': intent.price.target_exit_fee,
+            'stop_fee_per_unit': intent.price.stop_exit_fee,
+            'entry_slippage_per_unit': abs(intent.price.worst_acceptable_entry - trigger.reference),
+            'exit_slippage_per_unit': intent.price.exit_slippage,
+            'target_net_reward_per_unit': intent.price.expected_net_reward,
+            'funding_budget': None, 'evidence_ref': intent.evidence_ref,
+        })
         if intent.exit_policy_ref != "INDICATOR_BRACKET_V1/" + trigger.plan.target_kind:
             raise ValueError("intent and scenario plan exits differ")
         for prefix, key in (("EXIT_SELECTION:", "exit_selection_policy"),

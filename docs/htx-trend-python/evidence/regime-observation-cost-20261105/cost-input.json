@@ -1,0 +1,96 @@
+{
+  "asof_ms": 900000400,
+  "funding": {
+    "complete": false,
+    "reason": "NO_VERIFIED_SIMULATED_FUNDING_SETTLEMENT"
+  },
+  "mode": "PAPER_SIMULATED",
+  "orders": [
+    {
+      "account_id": "offline",
+      "contract_code": "ETH-USDT",
+      "fee": "0.075885468",
+      "fee_currency": "USDT",
+      "fee_verified": true,
+      "first_fill_ms": 900000300,
+      "last_fill_ms": 900000300,
+      "leg": "ENTRY",
+      "order_id": "33769358966492796",
+      "position_id": "rt-paper:33769358966492796",
+      "quantity": "167",
+      "reference_price": "113.601",
+      "side": "LONG",
+      "terminal": true,
+      "vwap": "113.601"
+    },
+    {
+      "account_id": "offline",
+      "contract_code": "ETH-USDT",
+      "fee": "0.07720744",
+      "fee_currency": "USDT",
+      "fee_verified": true,
+      "first_fill_ms": 900000400,
+      "last_fill_ms": 900000400,
+      "leg": "CLOSE",
+      "order_id": "c14fcf67-7772-4b42-8f80-e0147eee79e9",
+      "position_id": "rt-paper:33769358966492796",
+      "quantity": "167",
+      "reference_price": null,
+      "side": "LONG",
+      "terminal": true,
+      "vwap": "115.58"
+    }
+  ],
+  "plan": {
+    "contract": "ETH-USDT",
+    "contract_size": "0.01",
+    "contracts": 167,
+    "entry_fee_per_unit": "0.0454584",
+    "entry_limit": "113.646",
+    "entry_reference": "113.601",
+    "entry_slippage_per_unit": "0.045",
+    "evidence_ref": "1732f15dbbd3b04e160b830620cce4ee74581cf4cce0955b3d648f2f32de5408",
+    "exit_slippage_per_unit": "0.045",
+    "funding_budget": null,
+    "plan_id": "746d53a4f7b404897283e755394e562d1450e95b8288c6cd9bdc9e47cce143a6",
+    "schema": "regime-cost-plan-v1",
+    "side": "LONG",
+    "stop": "112.701",
+    "stop_fee_per_unit": "0.0450624",
+    "target": "114.501",
+    "target_fee_per_unit": "0.0457824",
+    "target_net_reward_per_unit": "0.7187592"
+  },
+  "position": {
+    "account_id": "offline",
+    "contract_code": "ETH-USDT",
+    "contract_size": "0.01",
+    "entry_quantity": "167",
+    "position_id": "rt-paper:33769358966492796",
+    "remaining_quantity": 0,
+    "side": "LONG"
+  },
+  "provenance": {
+    "fee_source": "PAPER_LEDGER_NOT_EXCHANGE",
+    "fills": [
+      {
+        "account_id": "offline",
+        "fee": "0.075885468",
+        "fill_id": "rt-fill:33769358966492796",
+        "filled_at": "1970-01-11T10:00:00.300000+00:00",
+        "order_id": "33769358966492796",
+        "price": "113.601",
+        "quantity": 167
+      },
+      {
+        "account_id": "offline",
+        "fee": "0.07720744",
+        "fill_id": "760e68c1-4701-431e-b463-f9e6b11dfaaf",
+        "filled_at": "1970-01-11T10:00:00.400000+00:00",
+        "order_id": "c14fcf67-7772-4b42-8f80-e0147eee79e9",
+        "price": "115.58",
+        "quantity": 167
+      }
+    ]
+  }
+}

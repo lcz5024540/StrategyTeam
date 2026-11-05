@@ -1,0 +1,533 @@
+{
+  "method": "Python AST/source inspection, not codegraph",
+  "modules": {
+    "regime_bayes.py": {
+      "sha256": "933818254fc6d203fa8d33f9379858300f01f5ce196c5e66d9ca19223cd575f1",
+      "definitions": [
+        {
+          "name": "code_seal",
+          "line": 22
+        },
+        {
+          "name": "group_key",
+          "line": 29
+        },
+        {
+          "name": "fit",
+          "line": 33
+        },
+        {
+          "name": "Snapshot",
+          "line": 159
+        },
+        {
+          "name": "bind_snapshot",
+          "line": 224
+        },
+        {
+          "name": "__init__",
+          "line": 160
+        },
+        {
+          "name": "load",
+          "line": 171
+        },
+        {
+          "name": "assess",
+          "line": 174
+        },
+        {
+          "name": "select_exit",
+          "line": 195
+        }
+      ]
+    },
+    "regime_observation.py": {
+      "sha256": "321031fc2f2b71b0af52b05fb73411a401887f99d2f3acb4a8f92c7ec7b8923c",
+      "definitions": [
+        {
+          "name": "family_key",
+          "line": 10
+        },
+        {
+          "name": "sample_observation",
+          "line": 14
+        },
+        {
+          "name": "snapshot_observation",
+          "line": 90
+        }
+      ]
+    },
+    "cost_observation.py": {
+      "sha256": "5299d29f824f878b81ddde0a297011746d34ecaf110c57214084c5350f3ebd60",
+      "definitions": [
+        {
+          "name": "number",
+          "line": 11
+        },
+        {
+          "name": "funding_amount",
+          "line": 20
+        },
+        {
+          "name": "reconcile",
+          "line": 44
+        },
+        {
+          "name": "CostObserver",
+          "line": 173
+        },
+        {
+          "name": "main",
+          "line": 223
+        },
+        {
+          "name": "__init__",
+          "line": 175
+        },
+        {
+          "name": "_publish",
+          "line": 183
+        },
+        {
+          "name": "tick",
+          "line": 202
+        },
+        {
+          "name": "close",
+          "line": 218
+        }
+      ]
+    },
+    "cost_sources.py": {
+      "sha256": "4adfb27e66dab3252f9f2968471ff7a3442435ad89ca0075fefb2e654ad66e14",
+      "definitions": [
+        {
+          "name": "timestamp",
+          "line": 9
+        },
+        {
+          "name": "PaperCostReader",
+          "line": 19
+        },
+        {
+          "name": "LiveCostReader",
+          "line": 59
+        },
+        {
+          "name": "__init__",
+          "line": 20
+        },
+        {
+          "name": "__call__",
+          "line": 23
+        },
+        {
+          "name": "__init__",
+          "line": 61
+        },
+        {
+          "name": "__call__",
+          "line": 66
+        },
+        {
+          "name": "read_position",
+          "line": 100
+        },
+        {
+          "name": "read_funding",
+          "line": 140
+        }
+      ]
+    },
+    "brokers.py": {
+      "sha256": "24a4acb95a6eaf83c50f0aee96226c78381f2503470aff95039f08cd786b2d8e",
+      "definitions": [
+        {
+          "name": "utc",
+          "line": 22
+        },
+        {
+          "name": "initial_context",
+          "line": 26
+        },
+        {
+          "name": "PaperBroker",
+          "line": 100
+        },
+        {
+          "name": "LiveBroker",
+          "line": 339
+        },
+        {
+          "name": "RealtimePaperExchange",
+          "line": 636
+        },
+        {
+          "name": "__init__",
+          "line": 101
+        },
+        {
+          "name": "facts",
+          "line": 105
+        },
+        {
+          "name": "submit",
+          "line": 189
+        },
+        {
+          "name": "on_book",
+          "line": 244
+        },
+        {
+          "name": "_finish_no_fill",
+          "line": 326
+        },
+        {
+          "name": "recover",
+          "line": 331
+        },
+        {
+          "name": "__init__",
+          "line": 340
+        },
+        {
+          "name": "facts",
+          "line": 358
+        },
+        {
+          "name": "submit",
+          "line": 387
+        },
+        {
+          "name": "recover",
+          "line": 581
+        },
+        {
+          "name": "close",
+          "line": 588
+        },
+        {
+          "name": "_recover",
+          "line": 592
+        },
+        {
+          "name": "fee_rate",
+          "line": 643
+        },
+        {
+          "name": "submit",
+          "line": 646
+        },
+        {
+          "name": "owned_leverage",
+          "line": 132
+        }
+      ]
+    },
+    "factory.py": {
+      "sha256": "18043151f93eef1b4b6b81cc7552b74959fd02705ab81443583944f79bd61983",
+      "definitions": [
+        {
+          "name": "IdleManagementStream",
+          "line": 27
+        },
+        {
+          "name": "BreadthContext",
+          "line": 42
+        },
+        {
+          "name": "parameters",
+          "line": 76
+        },
+        {
+          "name": "_common",
+          "line": 95
+        },
+        {
+          "name": "paper",
+          "line": 161
+        },
+        {
+          "name": "live",
+          "line": 270
+        },
+        {
+          "name": "start",
+          "line": 32
+        },
+        {
+          "name": "drain",
+          "line": 35
+        },
+        {
+          "name": "close",
+          "line": 38
+        },
+        {
+          "name": "__init__",
+          "line": 45
+        },
+        {
+          "name": "__call__",
+          "line": 50
+        }
+      ]
+    },
+    "worker.py": {
+      "sha256": "7338db75da1f57cdeccfa307b28410a08b3829c24a6980cb5635a6a8269ca582",
+      "definitions": [
+        {
+          "name": "FrameLoader",
+          "line": 23
+        },
+        {
+          "name": "MarketView",
+          "line": 100
+        },
+        {
+          "name": "RealtimeWorker",
+          "line": 141
+        },
+        {
+          "name": "__init__",
+          "line": 24
+        },
+        {
+          "name": "start",
+          "line": 39
+        },
+        {
+          "name": "fetch",
+          "line": 45
+        },
+        {
+          "name": "run",
+          "line": 64
+        },
+        {
+          "name": "close",
+          "line": 94
+        },
+        {
+          "name": "__init__",
+          "line": 101
+        },
+        {
+          "name": "order_book",
+          "line": 106
+        },
+        {
+          "name": "kline_window",
+          "line": 128
+        },
+        {
+          "name": "__getattr__",
+          "line": 137
+        },
+        {
+          "name": "__init__",
+          "line": 146
+        },
+        {
+          "name": "runtime_key",
+          "line": 208
+        },
+        {
+          "name": "export_runtime",
+          "line": 211
+        },
+        {
+          "name": "validate_runtime_state",
+          "line": 223
+        },
+        {
+          "name": "restore_runtime",
+          "line": 245
+        },
+        {
+          "name": "prepare_management",
+          "line": 262
+        },
+        {
+          "name": "_preflight",
+          "line": 265
+        },
+        {
+          "name": "tick",
+          "line": 386
+        },
+        {
+          "name": "_reject",
+          "line": 656
+        },
+        {
+          "name": "stop",
+          "line": 669
+        }
+      ]
+    },
+    "replay.py": {
+      "sha256": "71152e33936561cb9178e9de50f0755e12391d753e8deb6a3ce138bcd16d42e6",
+      "definitions": [
+        {
+          "name": "iso",
+          "line": 66
+        },
+        {
+          "name": "decode_window",
+          "line": 70
+        },
+        {
+          "name": "validate",
+          "line": 97
+        },
+        {
+          "name": "FrozenMarket",
+          "line": 192
+        },
+        {
+          "name": "ReplayEvidence",
+          "line": 282
+        },
+        {
+          "name": "TapeReference",
+          "line": 292
+        },
+        {
+          "name": "Actor",
+          "line": 307
+        },
+        {
+          "name": "metric",
+          "line": 681
+        },
+        {
+          "name": "comparison",
+          "line": 733
+        },
+        {
+          "name": "evidence_blockers",
+          "line": 744
+        },
+        {
+          "name": "replay",
+          "line": 835
+        },
+        {
+          "name": "model_statistics",
+          "line": 965
+        },
+        {
+          "name": "audit_capture",
+          "line": 1025
+        },
+        {
+          "name": "write_report",
+          "line": 1076
+        },
+        {
+          "name": "load",
+          "line": 1117
+        },
+        {
+          "name": "__init__",
+          "line": 193
+        },
+        {
+          "name": "observe",
+          "line": 202
+        },
+        {
+          "name": "kline_window",
+          "line": 247
+        },
+        {
+          "name": "contract_spec",
+          "line": 250
+        },
+        {
+          "name": "order_book",
+          "line": 253
+        },
+        {
+          "name": "top_of_book",
+          "line": 267
+        },
+        {
+          "name": "funding_rate",
+          "line": 275
+        },
+        {
+          "name": "__init__",
+          "line": 283
+        },
+        {
+          "name": "put",
+          "line": 286
+        },
+        {
+          "name": "__init__",
+          "line": 297
+        },
+        {
+          "name": "append",
+          "line": 300
+        },
+        {
+          "name": "flush",
+          "line": 303
+        },
+        {
+          "name": "__init__",
+          "line": 308
+        },
+        {
+          "name": "_context",
+          "line": 475
+        },
+        {
+          "name": "step",
+          "line": 480
+        },
+        {
+          "name": "mark",
+          "line": 544
+        },
+        {
+          "name": "result",
+          "line": 647
+        },
+        {
+          "name": "close",
+          "line": 673
+        },
+        {
+          "name": "ObservedRuntime",
+          "line": 352
+        },
+        {
+          "name": "drain",
+          "line": 431
+        },
+        {
+          "name": "scan",
+          "line": 353
+        },
+        {
+          "name": "Clock",
+          "line": 516
+        },
+        {
+          "name": "now",
+          "line": 518
+        }
+      ]
+    }
+  },
+  "holding_implementation_unchanged_from": "199e8742",
+  "holding_vector_hash": "effa7430c6c28f7fc4a182ffc1ba82117a483ebdc6cf2cf6b7953bab3c6beafe",
+  "drawio_xml_valid": true,
+  "cli_equals_runtime_projection": true
+}

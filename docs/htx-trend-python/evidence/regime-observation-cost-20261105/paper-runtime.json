@@ -1,0 +1,201 @@
+{
+  "cost_input": {
+    "asof_ms": 900000400,
+    "funding": {
+      "complete": false,
+      "reason": "NO_VERIFIED_SIMULATED_FUNDING_SETTLEMENT"
+    },
+    "mode": "PAPER_SIMULATED",
+    "orders": [
+      {
+        "account_id": "offline",
+        "contract_code": "ETH-USDT",
+        "fee": "0.075885468",
+        "fee_currency": "USDT",
+        "fee_verified": true,
+        "first_fill_ms": 900000300,
+        "last_fill_ms": 900000300,
+        "leg": "ENTRY",
+        "order_id": "33769358966492796",
+        "position_id": "rt-paper:33769358966492796",
+        "quantity": "167",
+        "reference_price": "113.601",
+        "side": "LONG",
+        "terminal": true,
+        "vwap": "113.601"
+      },
+      {
+        "account_id": "offline",
+        "contract_code": "ETH-USDT",
+        "fee": "0.07720744",
+        "fee_currency": "USDT",
+        "fee_verified": true,
+        "first_fill_ms": 900000400,
+        "last_fill_ms": 900000400,
+        "leg": "CLOSE",
+        "order_id": "c14fcf67-7772-4b42-8f80-e0147eee79e9",
+        "position_id": "rt-paper:33769358966492796",
+        "quantity": "167",
+        "reference_price": null,
+        "side": "LONG",
+        "terminal": true,
+        "vwap": "115.58"
+      }
+    ],
+    "plan": {
+      "contract": "ETH-USDT",
+      "contract_size": "0.01",
+      "contracts": 167,
+      "entry_fee_per_unit": "0.0454584",
+      "entry_limit": "113.646",
+      "entry_reference": "113.601",
+      "entry_slippage_per_unit": "0.045",
+      "evidence_ref": "1732f15dbbd3b04e160b830620cce4ee74581cf4cce0955b3d648f2f32de5408",
+      "exit_slippage_per_unit": "0.045",
+      "funding_budget": null,
+      "plan_id": "746d53a4f7b404897283e755394e562d1450e95b8288c6cd9bdc9e47cce143a6",
+      "schema": "regime-cost-plan-v1",
+      "side": "LONG",
+      "stop": "112.701",
+      "stop_fee_per_unit": "0.0450624",
+      "target": "114.501",
+      "target_fee_per_unit": "0.0457824",
+      "target_net_reward_per_unit": "0.7187592"
+    },
+    "position": {
+      "account_id": "offline",
+      "contract_code": "ETH-USDT",
+      "contract_size": "0.01",
+      "entry_quantity": "167",
+      "position_id": "rt-paper:33769358966492796",
+      "remaining_quantity": 0,
+      "side": "LONG"
+    },
+    "provenance": {
+      "fee_source": "PAPER_LEDGER_NOT_EXCHANGE",
+      "fills": [
+        {
+          "account_id": "offline",
+          "fee": "0.075885468",
+          "fill_id": "rt-fill:33769358966492796",
+          "filled_at": "1970-01-11T10:00:00.300000+00:00",
+          "order_id": "33769358966492796",
+          "price": "113.601",
+          "quantity": 167
+        },
+        {
+          "account_id": "offline",
+          "fee": "0.07720744",
+          "fill_id": "760e68c1-4701-431e-b463-f9e6b11dfaaf",
+          "filled_at": "1970-01-11T10:00:00.400000+00:00",
+          "order_id": "c14fcf67-7772-4b42-8f80-e0147eee79e9",
+          "price": "115.58",
+          "quantity": 167
+        }
+      ]
+    }
+  },
+  "cost_observations": {
+    "rt-paper:33769358966492796": {
+      "account_id": "offline",
+      "actual": {
+        "allocated_entry_fee_usdt": "0.075885468",
+        "close_fee_usdt": "0.07720744",
+        "close_vwap": "115.58",
+        "closed_contracts": "167",
+        "entry_contracts": "167",
+        "entry_fee_usdt": "0.075885468",
+        "entry_slippage_usdt": "0",
+        "entry_vwap": "113.601",
+        "exit_slippage_usdt": null,
+        "funding_cash_usdt": null,
+        "realized_gross_usdt": "3.30493",
+        "realized_net_before_funding_usdt": "3.151837092",
+        "realized_net_including_funding_usdt": null,
+        "remaining_contracts": "0"
+      },
+      "affects_entry": false,
+      "contract": "ETH-USDT",
+      "difference": {
+        "close_fee_vs_stop_usdt": "0.001953232",
+        "close_fee_vs_target_usdt": "0.000750832",
+        "entry_fee_usdt": "-0.00003006",
+        "entry_slippage_usdt": "-0.07515",
+        "exit_slippage_usdt": null,
+        "funding_usdt": null
+      },
+      "evidence_ref": "dfe5e5a8f4a18d6db8e1ce9ca0a869b2573016d4f10cefa355c435b4f494314d",
+      "input_hash": "662849fd72337c27355f0b948af8d11691b2d1487b285adba64578ff0787fd32",
+      "mode": "PAPER_SIMULATED",
+      "observation_only": true,
+      "planned": {
+        "entry_fee_usdt": "0.075915528",
+        "entry_slippage_usdt": "0.07515",
+        "exit_slippage_usdt": "0.07515",
+        "funding_usdt": null,
+        "stop_close_fee_usdt": "0.075254208",
+        "target_close_fee_usdt": "0.076456608",
+        "target_net_reward_for_filled_quantity_usdt": "1.200327864"
+      },
+      "position_id": "rt-paper:33769358966492796",
+      "schema": "regime-cost-observation-v1",
+      "status": "PARTIAL",
+      "warnings": [
+        "CLOSE_FEE_ABOVE_BOTH_BRACKET_BUDGETS",
+        "EXIT_SLIPPAGE_UNKNOWN",
+        "FUNDING_UNKNOWN"
+      ]
+    }
+  },
+  "entry_enabled": true,
+  "errors": [],
+  "fills": [
+    {
+      "action": "OPEN",
+      "at": "1970-01-11T10:00:00.300000+00:00",
+      "contract": "ETH-USDT",
+      "fee": "0.075885468",
+      "model": "RT_REGIME_AB",
+      "opened_at": "1970-01-11T10:00:00.300000+00:00",
+      "price": "113.601",
+      "quantity": 167,
+      "reason": null,
+      "side": "LONG"
+    },
+    {
+      "action": "FULL_CLOSE",
+      "at": "1970-01-11T10:00:00.400000+00:00",
+      "contract": "ETH-USDT",
+      "fee": "0.07720744",
+      "model": "RT_REGIME_AB",
+      "opened_at": "1970-01-11T10:00:00.300000+00:00",
+      "price": "115.58",
+      "quantity": 167,
+      "reason": "indicator-union-target",
+      "side": "LONG"
+    }
+  ],
+  "not_real_market_performance": true,
+  "positions": [
+    {
+      "closed_at": "1970-01-11T10:00:00.400000+00:00",
+      "contract": "ETH-USDT",
+      "entry_offset_atr": "0.04666666666666666666666666667",
+      "entry_price": "113.601",
+      "holding_seconds": 0.1,
+      "max_giveback": "0.153440268",
+      "model": "RT_REGIME_AB",
+      "net": "3.151837092",
+      "net_basis": "FUNDING_UNKNOWN",
+      "opened_at": "1970-01-11T10:00:00.300000+00:00",
+      "peak_net": "3.151837092",
+      "planned_net_r": "0.6651970049998112021536281393",
+      "position_id": "rt-paper:33769358966492796",
+      "realized_net_r": "1.746683266069473165162577157",
+      "remaining": 0,
+      "side": "LONG",
+      "status": "CLOSED"
+    }
+  ],
+  "synthetic_test": true
+}

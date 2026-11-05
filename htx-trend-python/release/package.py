@@ -91,10 +91,12 @@ def regime_parameters(exit_profile, timing="WINDOW", snapshot=None, threshold=No
         bayes_snapshot_hash=frozen.hash if frozen else "", bayes_cost_id=frozen.value["cost_id"] if frozen else "")
 
 
-def bracket_env(selected):
+def bracket_env(selected, *, entry_enabled=False):
+    if type(entry_enabled) is not bool or (entry_enabled and selected.candidate != 'REGIME_AB_V1'):
+        raise ValueError('enabled entry packaging is explicit REGIME_AB_V1 only')
     if selected.candidate == UNION:
         return {"HTX_RT_ENTRY_ENABLED":"false", "HTX_RT_CANDIDATE":UNION, "HTX_UNION_EXIT":selected.target_mode}
-    value = {"HTX_RT_ENTRY_ENABLED":"false", "HTX_RT_CANDIDATE":"REGIME_AB_V1",
+    value = {"HTX_RT_ENTRY_ENABLED":str(entry_enabled).lower(), "HTX_RT_CANDIDATE":"REGIME_AB_V1",
              "HTX_REGIME_EXIT":selected.target_mode,"HTX_REGIME_TIMING":selected.regime_timing}
     if selected.bayes_threshold is not None:
         value.update(HTX_REGIME_BAYES_THRESHOLD=str(selected.bayes_threshold.normalize()),
@@ -107,15 +109,17 @@ def union_parameters(exit_profile):
     return Parameters(min_net_r=Decimal(0), candidate=UNION, target_mode=exit_profile)
 
 
-def bind_union(config, payload, selected, *, live):
+def bind_union(config, payload, selected, *, live, entry_enabled=False):
     regime = selected.candidate == 'REGIME_AB_V1'
-    required = bracket_env(selected)
+    required = bracket_env(selected, entry_enabled=entry_enabled)
     model = 'RT_REGIME_AB' if regime else UNION_MODEL
-    config.update(models=[model], selection_id=selected.candidate,
+    config.update(models=[model], selection_id=selected.candidate, entry_enabled=entry_enabled,
                   parameters=primitive(selected.payload), parameter_fingerprint=selected.fingerprint,
                   exit_policy=('BAYES_NET_V1' if selected.target_mode == 'BAYES_NET_V1' else 'INDICATOR_BRACKET_V1/'+selected.target_mode),
                   runtime_env_required=required, structural_candidate_selected=False,
-                  note='Explicit indicator/scenario bracket binding, entry disabled. No financial or trial authority.')
+                  note='Explicit indicator/scenario bracket binding; entry '+('enabled' if entry_enabled else 'disabled')+'. No financial or trial authority.')
+    if live:
+        config['release_status'] = 'ENCODE_ONLY_ENTRY_CONFIGURED' if entry_enabled else 'ENCODE_ONLY_ENTRY_DISABLED'
     for key in ('contracts','account_equity_usdt','max_active_positions','max_total_margin_rate'):
         config.pop(key,None)
     env_path='deployment/realtime-live.env.example' if live else 'release/realtime.env.example'
@@ -139,7 +143,7 @@ def verify_union(cfg, binding, data):
     doc='REGIME-BAYESIAN.md' if regime else 'INDICATOR-UNION.md'
     spec=profile_strategy(TimeframeProfile.INTRADAY_15M, read_env=False,
                           strategy_version=REALTIME_VERSION,realtime_parameters=selected)
-    expected=bracket_env(selected)
+    expected=bracket_env(selected, entry_enabled=cfg.get('entry_enabled'))
     if regime and selected.bayes_threshold is not None:
         from htx_trend.realtime.regime_bayes import Snapshot
         snap=Snapshot(json.loads(data['release/regime-posterior.json']))
@@ -158,8 +162,10 @@ def verify_union(cfg, binding, data):
     return expected
 
 
-def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False, compact_evidence=False, realtime=False, union_exit=None, regime_exit=None, regime_timing="WINDOW", regime_snapshot=None, regime_threshold=None):
+def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False, compact_evidence=False, realtime=False, union_exit=None, regime_exit=None, regime_timing="WINDOW", regime_snapshot=None, regime_threshold=None, enable_regime_entry=False):
     if union_exit and regime_exit: raise ValueError("choose one candidate")
+    if type(enable_regime_entry) is not bool or (enable_regime_entry and not regime_exit):
+        raise ValueError('--enable-regime-entry requires --regime-exit')
     selected = regime_parameters(regime_exit,regime_timing,regime_snapshot,regime_threshold) if regime_exit else union_parameters(union_exit) if union_exit else None
     if selected: realtime = True
     # paper_4h 仍是 PAPER 候选包，只切换 card / instance，不改 15m paper=True 默认。
@@ -232,7 +238,7 @@ def build(out_root=Path('/tmp/g3-codex/frozen'), *, paper=False, paper_4h=False,
         payload['release/migrations/2026-11-03__htx_realtime_live_trial.sql'] = (
             ROOT.parent / 'sql/htx/2026-11-03__htx_realtime_live_trial.sql').read_bytes()
     if selected and selected.candidate in (UNION,"REGIME_AB_V1"):
-        bind_union(config,payload,selected,live=False)
+        bind_union(config,payload,selected,live=False,entry_enabled=enable_regime_entry)
         if regime_snapshot: payload["release/regime-posterior.json"]=Path(regime_snapshot).read_bytes()
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
@@ -293,8 +299,10 @@ def _live_payload_paths():
     return paths
 
 
-def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False, sbox=False, union_exit=None, regime_exit=None, regime_timing="WINDOW", regime_snapshot=None, regime_threshold=None):
-    """Encode-only 15m LIVE tarball; realtime is explicitly entry-disabled."""
+def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False, sbox=False, union_exit=None, regime_exit=None, regime_timing="WINDOW", regime_snapshot=None, regime_threshold=None, enable_regime_entry=False):
+    """Encode-only LIVE tarball; explicit A/B entry config never issues authority."""
+    if type(enable_regime_entry) is not bool or (enable_regime_entry and not regime_exit):
+        raise ValueError('--enable-regime-entry requires --regime-exit')
     if sum(bool(x) for x in (sbox, union_exit, regime_exit)) > 1:
         raise ValueError("SBOX and indicator union are mutually exclusive")
     if sbox or union_exit or regime_exit:
@@ -366,7 +374,7 @@ def build_live(out_root=Path('/tmp/htx-live/frozen'), *, realtime=False, sbox=Fa
             payload[env_path]=('\n'.join(lines)+'\n').encode()
             payload['release/SBOX-LIVE.md']=(ROOT/'release/SBOX-LIVE.md').read_bytes()
     if union_exit or regime_exit:
-        bind_union(config,payload,selected,live=True)
+        bind_union(config,payload,selected,live=True,entry_enabled=enable_regime_entry)
         if regime_snapshot: payload["release/regime-posterior.json"]=Path(regime_snapshot).read_bytes()
     payload['release/config.example.json'] = encoded(config)
     bindings = {'source_commit': source, 'config_fingerprint': digest(encoded(config)),
@@ -487,11 +495,12 @@ def verify_live(archive: Path):
                     'deployment/realtime-live.env.example',
                     'release/migrations/2026-11-02__htx_realtime_structure_plan.sql',
                     'release/migrations/2026-11-03__htx_realtime_live_trial.sql'}
-        if (not required <= data.keys() or cfg.get('entry_enabled') is not False
+        enabled = required_env['HTX_RT_ENTRY_ENABLED'] == 'true'
+        if (not required <= data.keys() or cfg.get('entry_enabled') is not enabled
                 or cfg.get('financial_admission') != 'NOT_ELIGIBLE'
                 or cfg.get('structural_candidate_selected') is not sbox
                 or cfg.get('trial_controls_implemented') is not True
-                or cfg.get('release_status') != 'ENCODE_ONLY_ENTRY_DISABLED'
+                or cfg.get('release_status') != ('ENCODE_ONLY_ENTRY_CONFIGURED' if enabled else 'ENCODE_ONLY_ENTRY_DISABLED')
                 or cfg.get('runtime_env_required') != required_env
                 or cfg.get('entry_period') != '15min' or cfg.get('trend_period') != '60min'
                 or cfg.get('models') != ([bracket_model] if union else ['RT_RANGE_REJECTION', 'RT_BREAKOUT_RETEST'])):
@@ -499,8 +508,8 @@ def verify_live(archive: Path):
         env = data['deployment/realtime-live.env.example'].decode().splitlines()
         switches = [line.strip() for line in env
                     if line.strip().startswith('HTX_RT_ENTRY_ENABLED=')]
-        if switches != ['HTX_RT_ENTRY_ENABLED=false']:
-            raise ValueError('realtime LIVE sample must disable entry')
+        if switches != ['HTX_RT_ENTRY_ENABLED='+str(enabled).lower()]:
+            raise ValueError('realtime LIVE entry switch binding mismatch' if enabled else 'realtime LIVE sample must disable entry')
         if sbox:
             for key,value in required_env.items():
                 if [line.strip() for line in env if line.strip().startswith(key+'=')] != [key+'='+value]:
@@ -555,7 +564,10 @@ def verify(archive: Path):
     if '-realtime-candidate-' in manifest['version']:
         cfg = json.loads(data[binding['config_path']])
         card = json.loads(data[manifest['artifacts']['strategy_card']['path']])
-        if (binding['strategy_version'] != REALTIME_VERSION or cfg.get('entry_enabled') is not False
+        regime = cfg.get('selection_id') == 'REGIME_AB_V1'
+        if (binding['strategy_version'] != REALTIME_VERSION
+                or type(cfg.get('entry_enabled')) is not bool
+                or (cfg['entry_enabled'] and not regime)
                 or cfg.get('financial_admission') != 'NOT_ELIGIBLE'
                 or cfg['strategy_version'] != REALTIME_VERSION or card['strategy_version'] != REALTIME_VERSION
                 or binding['timeframe_profile'] != 'INTRADAY_15M'):
@@ -600,6 +612,8 @@ def main():
     builder.add_argument('--union-exit', choices=tuple(UNION_EXITS), help='explicit five-pattern union exit; does not activate entry')
     live_builder.add_argument('--union-exit', choices=tuple(UNION_EXITS), help='explicit union code package; entry disabled')
     for target in (builder, live_builder):
+        target.add_argument('--enable-regime-entry', action='store_true',
+                            help='explicitly enable A/B entry config; does not deploy or issue LIVE authority')
         target.add_argument('--regime-exit', choices=(*UNION_EXITS, 'BAYES_NET_V1'))
         target.add_argument('--regime-timing', choices=('WINDOW','FIRST_QUOTE'), default='WINDOW')
         target.add_argument('--regime-snapshot', type=Path)
@@ -610,9 +624,9 @@ def main():
     template.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.command == 'build':
-        print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h, compact_evidence=args.compact_evidence, realtime=args.realtime, union_exit=args.union_exit, regime_exit=args.regime_exit, regime_timing=args.regime_timing, regime_snapshot=args.regime_snapshot, regime_threshold=args.regime_threshold))
+        print(build(args.out_root, paper=args.paper, paper_4h=args.paper_4h, compact_evidence=args.compact_evidence, realtime=args.realtime, union_exit=args.union_exit, regime_exit=args.regime_exit, regime_timing=args.regime_timing, regime_snapshot=args.regime_snapshot, regime_threshold=args.regime_threshold, enable_regime_entry=args.enable_regime_entry))
     elif args.command == 'build-live':
-        print(build_live(args.out_root, realtime=args.realtime, sbox=args.sbox, union_exit=args.union_exit, regime_exit=args.regime_exit, regime_timing=args.regime_timing, regime_snapshot=args.regime_snapshot, regime_threshold=args.regime_threshold))
+        print(build_live(args.out_root, realtime=args.realtime, sbox=args.sbox, union_exit=args.union_exit, regime_exit=args.regime_exit, regime_timing=args.regime_timing, regime_snapshot=args.regime_snapshot, regime_threshold=args.regime_threshold, enable_regime_entry=args.enable_regime_entry))
     elif args.command == 'verify':
         print(json.dumps({'status': 'PASS', **verify(args.archive)}, ensure_ascii=False))
     else:

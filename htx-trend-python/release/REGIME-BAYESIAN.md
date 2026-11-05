@@ -1,4 +1,4 @@
-# A/B场景与贝叶斯门：默认关闭的Python候选
+# A/B场景与贝叶斯门：支持显式开启入口的Python候选
 
 2026-11-05。代码可独立选择A/B、实时价格确认及三档固定ATR退出；后验门是可选独立实验。安装不启用交易，收益准入不随测试或打包自动获得。
 
@@ -28,7 +28,34 @@ python htx-trend-python/release/package.py build --regime-exit ATR_1_1 --out-roo
 python htx-trend-python/release/package.py build-live --regime-exit ATR_2_1 --out-root /absolute/output/live-2-1
 ```
 
-另两档使用独立输出目录；概率包另传--regime-snapshot和--regime-threshold。包中快照示例路径相对于包根，人工部署时应设置绝对持久路径。所有包入口关闭。不执行生产SQL；复用已有计划表，启动只验表。
+另两档使用独立输出目录；概率包另传--regime-snapshot和--regime-threshold。包中快照示例路径相对于包根，人工部署时应设置绝对持久路径。未显式开启时入口关闭。不执行生产SQL；复用已有计划表，启动只验表。
+
+### 开启本分支的贝叶斯选档入口
+
+用户已确认新观察不阻止开仓。构建时加 `--enable-regime-entry`，包内config的`entry_enabled`与env的`HTX_RT_ENTRY_ENABLED`一起设为true，并纳入manifest校验；只允许显式指定A/B候选，不修改其他策略默认值：
+
+```bash
+python htx-trend-python/release/package.py build --regime-exit BAYES_NET_V1 --regime-snapshot /absolute/current-posterior.json --regime-threshold .90 --enable-regime-entry --out-root /absolute/new-enabled-paper
+python htx-trend-python/release/package.py verify /absolute/new-enabled-paper/VERSION/htx-trend-python-VERSION.tar.gz
+```
+
+`.90`仅为命令示例，须与选定配置一致；开启开关不替换原阈值或快照。启用时应使用包中`release/realtime.env.example`的整组A/B参数，设置独立持久目录、绝对快照路径及已审账户配置，再由既有平台PAPER入口启动。不要将`config.example.json`直接当成真实账户配置。`build-live`支持同一显式选项，但只生成代码和配置，不部署、不签发LIVE授权，也不扩大旧trial候选白名单。已有授权、账户、行情、净收益、贝叶斯成熟样本条件仍须满足。
+
+### 样本和实际成本观察
+
+样本完整率、缺档数、排除原因和三档共同机会比较进入`sample_observation`，`tools/regime_report.py`显示摘要。字段`affects_entry=false`；它们不参与原`allowed`或ATR排序。旧快照没有这些字段时只提示不可用；本次代码升级仍遵循原有源码封印校验，不能手改hash冒充兼容快照。
+
+每个新A/B持仓冻结`cost_plan`。PAPER从模拟台账、LIVE从独立连接和交易所只读收据重算数量、手续费、滑点及净损益，输出`regime_cost_observation`证据和`REGIME_COST_OBSERVATION`日志；观察错误不加入交易worker的失败列表。部分成交按实际量缩放预算，重复读取不累计金额，旧仓缺预算显示`PLAN_UNAVAILABLE`。
+
+资金费前净损益单独显示；资金费不确定时，含资金费净损益保持null。LIVE资金流水按精确成交区间查询完整分页；空覆盖可证明0，非空合约流水不能仅因本地没有其他仓位就自动归属本仓（无法排除手工交易），保留原始流水并标未知。缺平仓参考价时退出滑点也为未知。LIVE每60秒调度一批、最多10仓，轮转包含已平仓；不是逐tick实时告警。
+
+本地重算只读证据中的`input`对象（无网络、无下单）：
+
+```bash
+PYTHONPATH=htx-trend-python/src python -m htx_trend.realtime.cost_observation --input /absolute/cost-input.json --out /absolute/new-cost-report.json
+```
+
+`account`回放结果新增逐仓`cost_observations`及对应输入证据，模拟手续费明确标为`PAPER_SIMULATED`，不冒充交易所成交。观察告警、无法读取成本或样本不完整都不新增拒单条件。没有足够成熟后验时，原`BAYES_NET_V1`规则仍可能无订单；不会静默回退固定ATR或以测试样本授权真实交易。
 
 ## 贝叶斯定义
 每场景/时序/退出/成本独立建模。完整净收益>0为1，其余完整结果为0；Beta(1,1)更新成Beta(1+盈,1+非盈)，直接抽50,000组概率。60分钟同步时间块Dirichlet权重抽10,000组平均净收益，开仓门检查正均值质量>=阈值；30/120分钟作敏感性。至少20个同合约非重叠完整结果、10小时块；不足拒绝该概率门，不隐藏原A/B结果。

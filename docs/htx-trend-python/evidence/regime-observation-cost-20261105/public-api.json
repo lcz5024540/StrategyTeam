@@ -1,0 +1,11 @@
+{
+  "checked_at": "2026-11-05T10:43:38.435408+00:00",
+  "read_only": true,
+  "credentials_used": false,
+  "contract": {"contract_code": "ETH-USDT", "contract_size": "0.01", "price_tick": "0.01", "contract_status": 1},
+  "funding_quote": {"contract_code": "ETH-USDT", "rate": "0.0001", "funding_time": 1793894400000},
+  "best_bid": ["2418.95", "9373"],
+  "best_ask": ["2418.96", "6882"],
+  "funding_settlement_verified": false,
+  "orders_submitted": 0
+}

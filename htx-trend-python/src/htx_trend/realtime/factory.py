@@ -151,6 +151,10 @@ def _common(
         holding_parameters=policy.to_dict(),
         entry_config=entry_config,
     )
+    if engine.parameters.candidate == "REGIME_AB_V1" and hasattr(broker, 'ledger'):
+        from .cost_observation import CostObserver
+        from .cost_sources import PaperCostReader
+        worker.cost_observer = CostObserver(PaperCostReader(broker.ledger, broker.account), evidence, asynchronous=False)
     return worker
 
 
@@ -377,4 +381,13 @@ def live(
             worker.stream = PublicStream(current) if current else IdleManagementStream()
             management.coverage_stream = worker.stream
         worker.trial_connection = trial_db
+    if engine.parameters.candidate == 'REGIME_AB_V1':
+        from ..mysql_store import HtxTrendMySqlRepository, MySqlSettings, connect
+        from ..worker import _account_client
+        from .cost_observation import CostObserver
+        from .cost_sources import LiveCostReader
+        worker.cost_observer = CostObserver(LiveCostReader(
+            lambda: HtxTrendMySqlRepository(connect(MySqlSettings.from_env())),
+            lambda repo: _account_client(repo, entry._account.account_id, live=False),
+            entry._account.account_id, instance.instance_key), evidence)
     return worker
