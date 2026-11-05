@@ -15,7 +15,7 @@ from ..execution import (
 )
 from ..models import TrendSide
 from ..research.store import digest
-from .plans import Parameters, RealtimeTrigger
+from .plans import Parameters, RealtimeTrigger, BAYES_EXIT
 
 
 @dataclass(frozen=True)
@@ -132,6 +132,12 @@ def evaluate(
         ), None
     long = p.side is TrendSide.LONG
     union = p.model in ("RT_INDICATOR_UNION", "RT_REGIME_AB")
+    if union:
+        from .indicator_union import EXITS
+        dynamic = p.model == "RT_REGIME_AB" and parameters.target_mode == BAYES_EXIT
+        if (p.target_kind not in EXITS or (not dynamic and p.target_kind != parameters.target_mode)
+                or (dynamic and "EXIT_SELECTION:" + BAYES_EXIT not in p.sources)):
+            return GateResult(False, "EXIT_POLICY", "plan exit differs from bound policy"), None
     if not union and not (top.bid > p.line + p.band if long else top.ask < p.line - p.band):
         return GateResult(False, "RECOVERED", "price no longer confirms trigger"), None
     quote = top.ask if long else top.bid
@@ -175,6 +181,13 @@ def evaluate(
     except (ValueError, ArithmeticError):
         return GateResult(
             False, "PRICE_PLAN", "invalid structural reward or risk"
+        ), None
+    # A/B's optional minimum-R policy must never disable the basic cost floor.
+    # Keep the existing five-pattern comparator unchanged; this correction is
+    # scoped to the newly introduced regime candidate (DL-081).
+    if p.model == "RT_REGIME_AB" and price.expected_net_reward <= 0:
+        return GateResult(
+            False, "NET_REWARD", "planned target does not cover execution costs", price
         ), None
     if not union and (price.expected_net_reward <= 0 or price.expected_net_r < parameters.min_net_r):
         return GateResult(
@@ -234,7 +247,7 @@ def evaluate(
         size,
         evidence_ref,
         leverage=facts.leverage,
-        exit_policy_ref=("INDICATOR_BRACKET_V1/" + parameters.target_mode) if union else "TREND_V4/linked-v1",
+        exit_policy_ref=("INDICATOR_BRACKET_V1/" + p.target_kind) if union else "TREND_V4/linked-v1",
     )
     return GateResult(
         True, "READY", "realtime structure/cost/account gates passed", price, size
