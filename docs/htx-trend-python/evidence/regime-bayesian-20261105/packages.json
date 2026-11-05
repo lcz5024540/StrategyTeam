@@ -1,0 +1,62 @@
+{
+  "git_commit": "f25b310d20996fecd57ad093aa74643a38d67e71",
+  "status": "PASS",
+  "packages": [
+    {
+      "mode": "PAPER",
+      "exit": "ATR_1_1",
+      "path": "/Users/lichangzheng.ray/Ray/research-results/regime-bayesian-packages-20261105-f25b310d/PAPER/ATR_1_1/0.1.7-realtime-candidate-f25b310d/htx-trend-python-0.1.7-realtime-candidate-f25b310d.tar.gz",
+      "sha256": "9c0c59c28d884f4c510b6c979e3d5ab0b24525a42baabd2651e8c9021c68d45f",
+      "bytes": 499169,
+      "verified": true,
+      "entry_enabled": false
+    },
+    {
+      "mode": "LIVE",
+      "exit": "ATR_1_1",
+      "path": "/Users/lichangzheng.ray/Ray/research-results/regime-bayesian-packages-20261105-f25b310d/LIVE/ATR_1_1/0.1.7-realtime-live-f25b310d/htx-trend-python-0.1.7-realtime-live-f25b310d.tar.gz",
+      "sha256": "2c5b610e09ef637023035c161124d8e803ad40d9f00d87567d0124b3b9328074",
+      "bytes": 502550,
+      "verified": true,
+      "entry_enabled": false
+    },
+    {
+      "mode": "PAPER",
+      "exit": "ATR_2_1",
+      "path": "/Users/lichangzheng.ray/Ray/research-results/regime-bayesian-packages-20261105-f25b310d/PAPER/ATR_2_1/0.1.7-realtime-candidate-f25b310d/htx-trend-python-0.1.7-realtime-candidate-f25b310d.tar.gz",
+      "sha256": "a8bfcddb926a96f59d3f3b274969829e83ba17d2a71bfdfcd9beaee639e01922",
+      "bytes": 499170,
+      "verified": true,
+      "entry_enabled": false
+    },
+    {
+      "mode": "LIVE",
+      "exit": "ATR_2_1",
+      "path": "/Users/lichangzheng.ray/Ray/research-results/regime-bayesian-packages-20261105-f25b310d/LIVE/ATR_2_1/0.1.7-realtime-live-f25b310d/htx-trend-python-0.1.7-realtime-live-f25b310d.tar.gz",
+      "sha256": "9ddf9a070e802915794ee7867ead2d7bf9401d3ce3d91a2a805a0f4bc90d59ce",
+      "bytes": 502541,
+      "verified": true,
+      "entry_enabled": false
+    },
+    {
+      "mode": "PAPER",
+      "exit": "ATR_2_2",
+      "path": "/Users/lichangzheng.ray/Ray/research-results/regime-bayesian-packages-20261105-f25b310d/PAPER/ATR_2_2/0.1.7-realtime-candidate-f25b310d/htx-trend-python-0.1.7-realtime-candidate-f25b310d.tar.gz",
+      "sha256": "db42952d35bf4186678230d4395bf742e53d8ec4ad3e16b7c3bbddc735fe4273",
+      "bytes": 499168,
+      "verified": true,
+      "entry_enabled": false
+    },
+    {
+      "mode": "LIVE",
+      "exit": "ATR_2_2",
+      "path": "/Users/lichangzheng.ray/Ray/research-results/regime-bayesian-packages-20261105-f25b310d/LIVE/ATR_2_2/0.1.7-realtime-live-f25b310d/htx-trend-python-0.1.7-realtime-live-f25b310d.tar.gz",
+      "sha256": "e593e6dedf26099efac15f4e9a3dc90a57046d9f72d5bfdc3e7dccea06a646ea",
+      "bytes": 502549,
+      "verified": true,
+      "entry_enabled": false
+    }
+  ],
+  "deployment_performed": false,
+  "financial_admission": "NOT_ELIGIBLE"
+}
