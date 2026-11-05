@@ -1,0 +1,89 @@
+{
+  "method": "Python AST / not codegraph",
+  "file": "htx-trend-python/src/htx_trend/realtime/public_capture.py",
+  "sha256": "77fe3ee22d150c2d464ae9c665493558a2d253625d40ff5f56d8ba370cbf8599",
+  "functions": [
+    {
+      "name": "normalize_window",
+      "line": 145,
+      "calls": [
+        "Candle.from_htx",
+        "KlineWindow",
+        "ValueError",
+        "dict",
+        "len",
+        "period_seconds",
+        "primitive",
+        "sorted",
+        "tuple"
+      ]
+    },
+    {
+      "name": "stream_loop",
+      "line": 923,
+      "calls": [
+        "connect",
+        "dict",
+        "logger.warning",
+        "self._monotonic",
+        "self._pump_socket",
+        "self._ws_connect",
+        "self.close_catchup",
+        "self.emit",
+        "self.now",
+        "self.reconnect.begin_attempt",
+        "self.reconnect.note_failure",
+        "self.reconnect.seconds_until_attempt",
+        "self.stop.is_set",
+        "self.stop.wait",
+        "type",
+        "uuid.uuid4"
+      ]
+    },
+    {
+      "name": "_pump_socket",
+      "line": 993,
+      "calls": [
+        "dict",
+        "gzip.decompress",
+        "isinstance",
+        "json.dumps",
+        "json.loads",
+        "len",
+        "max",
+        "min",
+        "normalize_ws",
+        "pending_at.append",
+        "resubscribe_schedule",
+        "self._monotonic",
+        "self._send_subscription",
+        "self.emit",
+        "self.now",
+        "self.open_catchup",
+        "self.poll_catchup",
+        "self.reconnect.note_observation",
+        "self.reconnect.poll_health",
+        "self.stop.is_set",
+        "sock.recv",
+        "sock.send",
+        "value.get"
+      ]
+    },
+    {
+      "name": "status",
+      "line": 1224,
+      "calls": [
+        "body.update",
+        "dict",
+        "len",
+        "os.environ.get",
+        "os.getpid",
+        "self.events.qsize",
+        "self.last_seen.get",
+        "self.now",
+        "self.reconnect.snapshot",
+        "shutil.disk_usage"
+      ]
+    }
+  ]
+}

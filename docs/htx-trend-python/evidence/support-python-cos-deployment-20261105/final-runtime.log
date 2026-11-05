@@ -1,0 +1,28 @@
+{"status": "PASS", "observed_ms": 1793878543547, "after": true, "current": "/opt/coinstrategy/15m-market-data/releases/0.1.7-realtime-candidate-4fa6ccee", "pinned_api_files": {"archive": 8, "sealing": 5}, "protected_pids": {"htx-trend-paper-4h.service": "705510", "htx-trend-worker@htx-trend-live-primary.service": "2624006"}, "data_service": {"MainPID": "3083613", "NRestarts": "0", "ActiveState": "active", "UnitFileState": "enabled"}}
+{"age_seconds": 2.235, "started_ms": 1793878330991, "observed_ms": 1793878541516, "release": "0.1.7-realtime-candidate-4fa6ccee", "continuity": "DEGRADED", "stop_reason": null, "stale_kline_channels": [], "stale_price_channels": ["TRX-USDT:BBO", "AVAX-USDT:BBO", "HYPE-USDT:BBO", "PONS-USDT:BBO", "BCH-USDT:BBO", "AAVE-USDT:BBO", "ETC-USDT:BBO", "ETC-USDT:DEPTH", "ICP-USDT:BBO", "ICP-USDT:DEPTH", "PEPE-USDT:BBO", "SHIB-USDT:BBO", "WIF-USDT:BBO", "WIF-USDT:DEPTH", "BONK-USDT:BBO", "JUP-USDT:BBO", "OKB-USDT:BBO", "OKB-USDT:DEPTH", "PAXG-USDT:BBO", "PEOPLE-USDT:BBO", "PEOPLE-USDT:DEPTH", "ORDI-USDT:BBO", "BOME-USDT:BBO", "BOME-USDT:DEPTH", "RAY-USDT:BBO", "CHZ-USDT:BBO", "CHZ-USDT:DEPTH", "ETHFI-USDT:BBO"], "counts": {"BBO": 62813, "COLLECTION_SESSION": 1, "CONTRACT_METADATA": 1, "DEPTH": 32733, "FRAME": 52, "FUNDING": 184, "GAP": 3, "GAP_RECOVERED": 1, "TRADE": 584}, "queue_depth": 0, "queue_depth_high_water": 493, "catchup_active": false, "reconnect_circuit": "closed", "disk_free_bytes": 12857520128}
+MainPID=3083613
+Result=success
+NRestarts=0
+ExecMainStartTimestamp=Thu 2026-11-05 19:32:10 CST
+ExecMainExitTimestamp=
+ExecMainStatus=0
+Id=coinstrategy-15m-market-data.service
+ActiveState=active
+
+MainPID=0
+Result=success
+NRestarts=0
+ExecMainStartTimestamp=Thu 2026-11-05 19:34:14 CST
+ExecMainExitTimestamp=Thu 2026-11-05 19:34:56 CST
+ExecMainStatus=0
+Id=coinstrategy-15m-cos-archive.service
+ActiveState=inactive
+
+MainPID=0
+Result=success
+NRestarts=0
+ExecMainStartTimestamp=Thu 2026-11-05 19:35:07 CST
+ExecMainExitTimestamp=Thu 2026-11-05 19:35:36 CST
+ExecMainStatus=0
+Id=coinstrategy-15m-cos-release.service
+ActiveState=inactive

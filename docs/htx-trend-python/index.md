@@ -1,5 +1,7 @@
 # HTX Python交付索引
 
+- [support_htx_python合并与COS部署](support-python-cos-deployment-20261105.md)：4fa6ccee已推送，19:32切独立数据服务，新数据COS下载验哈通过；旧LIVE/4H不变，行情新鲜度告警保留。
+
 - [A/B观察、实际成本对账与开启入口](regime-observation-cost-20261105.md)：只观察不阻断、显式开启包、PAPER开平仓与隔离MySQL验证；未部署真实账户。
 - [A/B观察与成本技术方案](regime-observation-cost-design.md)：数据口径、旁路行为及证据边界。
 - [A/B场景交易与贝叶斯验证](regime-bayesian-20261105.md)：独立候选、冻结概率门、三档退出和同源回放，入口关闭。

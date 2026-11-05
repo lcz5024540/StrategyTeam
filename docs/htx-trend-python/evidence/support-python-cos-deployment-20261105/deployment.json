@@ -1,0 +1,101 @@
+{
+  "package": {
+    "status": "PASS",
+    "archive": "htx-trend-python-0.1.7-realtime-candidate-4fa6ccee.tar.gz",
+    "archive_path": "/private/tmp/coinstrategy-cos-deploy.YB1ApI/0.1.7-realtime-candidate-4fa6ccee/htx-trend-python-0.1.7-realtime-candidate-4fa6ccee.tar.gz",
+    "bindings": {
+      "config_fingerprint": "2b279230d1559175bb88071dda0fb00437f3e91d78bc37c56fcb0c00321b2d77",
+      "config_hash": "2b279230d1559175bb88071dda0fb00437f3e91d78bc37c56fcb0c00321b2d77",
+      "config_path": "release/config.example.json",
+      "instance_key": "htx-realtime-paper-15m",
+      "package_sha256": "18c4c3d0e3ad68e569d645c87445b48ebb7f2eed40c18e5bc90f43826b6f66c1",
+      "source_commit": "4fa6ccee67aae7635aa2e3393f314977912ddc14",
+      "strategy_spec_hash": "2bbf8ee4c19a9d0b7059b60f540e154161edee8c9b11266756e75a7e889dab63",
+      "strategy_version": "HTX_REALTIME_STRUCTURE_15M_V1",
+      "timeframe_profile": "INTRADAY_15M"
+    },
+    "build": {
+      "created_at": "2026-11-05T11:28:48.510617+00:00",
+      "source_note": "HEAD plus working-tree payload; per-file hashes bind actual bytes",
+      "version_note": "tip8 is based on HEAD; for an uncommitted working tree, the executor may rebuild after commit to align tip8",
+      "working_tree_dirty": false
+    },
+    "candidate": true,
+    "disclaimer": "候选包 ≠ 可以热更 ≠ 可装现网",
+    "frozen_path": "/private/tmp/coinstrategy-cos-deploy.YB1ApI/0.1.7-realtime-candidate-4fa6ccee",
+    "manifest_sha256": "f25190d770869b33d6ef2e2442b09f26d56c235948a8e7bdcbc1dba9572a4945",
+    "package_sha256": "18c4c3d0e3ad68e569d645c87445b48ebb7f2eed40c18e5bc90f43826b6f66c1",
+    "schema": "htx-candidate-build-g3",
+    "synthetic": true,
+    "version": "0.1.7-realtime-candidate-4fa6ccee"
+  },
+  "predeploy": {
+    "cos_units": {
+      "coinstrategy-15m-cos-archive.service": {
+        "state": {
+          "ActiveState": "inactive",
+          "MainPID": "0",
+          "NRestarts": "0",
+          "UnitFileState": "static"
+        },
+        "unit_sha256": "a19599101ad1b6f1cbbb0d5196d224cd5fb2f91428c72861404998a807015de7"
+      },
+      "coinstrategy-15m-cos-archive.timer": {
+        "state": {
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "unit_sha256": "8dadda419680326d3be4a3d4cd337a1b64a2e79c3ec20ed5784967d51723ed23"
+      },
+      "coinstrategy-15m-cos-release.service": {
+        "state": {
+          "ActiveState": "activating",
+          "MainPID": "3082137",
+          "NRestarts": "0",
+          "UnitFileState": "static"
+        },
+        "unit_sha256": "49e828f9d16fce36c804bdc6d4d67c46dcc9ff90eb2849f1a51eac4bafc66535"
+      },
+      "coinstrategy-15m-cos-release.timer": {
+        "state": {
+          "ActiveState": "active",
+          "UnitFileState": "enabled"
+        },
+        "unit_sha256": "0581c252eefe99c636be33ce4878fc9dfea7cc3b529e8d06dc24f09c3e1e2aa3"
+      }
+    },
+    "free_bytes": 12721659904,
+    "live_current": "/opt/coinstrategy/htx-trend-py/releases/0.1.7-realtime-live-f57c409f",
+    "observed_ms": 1793878153759,
+    "old_current": "/opt/coinstrategy/15m-market-data/releases/0.1.7-realtime-candidate-00765365",
+    "old_data_unit_sha256": "1e988fbf9389e222fd1bfea698098bb84cd8b01d232ffa80f2235c53f8c3bfb2",
+    "old_env_sha256": "71315c605a07ef89ec226fd05a365226c4bcb7ed1922f2c7fafc292a34102fc0",
+    "pool_count": 52,
+    "protected": {
+      "htx-trend-paper-4h.service": {
+        "ActiveState": "active",
+        "MainPID": "705510",
+        "NRestarts": "0",
+        "UnitFileState": "enabled",
+        "process_env_sha256": "fc5ac038d07215681b9de05996d518cdcad1459c88dde1100f5da7132648f26e",
+        "unit_sha256": "2159b75ae773856885274e6ac75839803d345dd1c6c2ffd19d4d3f330138feff"
+      },
+      "htx-trend-worker@htx-trend-live-primary.service": {
+        "ActiveState": "active",
+        "MainPID": "2624006",
+        "NRestarts": "0",
+        "UnitFileState": "disabled",
+        "process_env_sha256": "056138982c11a9525aa1c306821de60b1be72744d89174f3286268f309dd60b0",
+        "unit_sha256": "07874db801c910c4f62e49500dee9fef3500095d74d3b74fcc343b3df1eca52a"
+      }
+    },
+    "unchanged_files": {
+      "/etc/coinstrategy/15m-cos-archive.json": "48d10df42ce91826a723ca5ea657880f23df11d029e57883e5d85a0dced304da",
+      "/etc/coinstrategy/15m-cos-pool.json": "6e5d87e4d884b4ea8e2be9180a15e6227b41855cc01bf01a8c888c492d1b75d9",
+      "/etc/coinstrategy/15m-cos-release.json": "f5d1bd851d95a7e0b79ce88d00cb7081ce732e3abc65e8899e421d997430c9f4",
+      "/home/ubuntu/coinstrategy-data/15m-cos/capture/capture.json": "51f1d93a706eb61bee5ae0ebc85190100678e544cfe897aedf2ab7b41a6ba236"
+    }
+  },
+  "switch_transcript": "{\"status\": \"PASS\", \"observed_ms\": 1793878311390, \"after\": false, \"current\": \"/opt/coinstrategy/15m-market-data/releases/0.1.7-realtime-candidate-00765365\", \"pinned_api_files\": {\"archive\": 8, \"sealing\": 5}, \"protected_pids\": {\"htx-trend-paper-4h.service\": \"705510\", \"htx-trend-worker@htx-trend-live-primary.service\": \"2624006\"}, \"data_service\": {\"MainPID\": \"2988644\", \"NRestarts\": \"0\", \"ActiveState\": \"active\", \"UnitFileState\": \"enabled\"}}\n{\"status\": \"PASS\", \"observed_ms\": 1793878327799, \"after\": false, \"current\": \"/opt/coinstrategy/15m-market-data/releases/0.1.7-realtime-candidate-00765365\", \"pinned_api_files\": {\"archive\": 8, \"sealing\": 5}, \"protected_pids\": {\"htx-trend-paper-4h.service\": \"705510\", \"htx-trend-worker@htx-trend-live-primary.service\": \"2624006\"}, \"data_service\": {\"MainPID\": \"2988644\", \"NRestarts\": \"0\", \"ActiveState\": \"active\", \"UnitFileState\": \"enabled\"}}\n2026-11-05T19:32:07+08:00\n{\"status\": \"PASS\", \"observed_ms\": 1793878330793, \"after\": true, \"current\": \"/opt/coinstrategy/15m-market-data/releases/0.1.7-realtime-candidate-4fa6ccee\", \"pinned_api_files\": {\"archive\": 8, \"sealing\": 5}, \"protected_pids\": {\"htx-trend-paper-4h.service\": \"705510\", \"htx-trend-worker@htx-trend-live-primary.service\": \"2624006\"}, \"data_service\": {\"MainPID\": \"3083613\", \"NRestarts\": \"0\", \"ActiveState\": \"active\", \"UnitFileState\": \"enabled\"}}\n2026-11-05T19:32:10+08:00\n",
+  "post_start_snapshot": "{\"status\": \"PASS\", \"observed_ms\": 1793878366423, \"after\": true, \"current\": \"/opt/coinstrategy/15m-market-data/releases/0.1.7-realtime-candidate-4fa6ccee\", \"pinned_api_files\": {\"archive\": 8, \"sealing\": 5}, \"protected_pids\": {\"htx-trend-paper-4h.service\": \"705510\", \"htx-trend-worker@htx-trend-live-primary.service\": \"2624006\"}, \"data_service\": {\"MainPID\": \"3083613\", \"NRestarts\": \"0\", \"ActiveState\": \"active\", \"UnitFileState\": \"enabled\"}}\n{\"status\": {\"started_ms\": 1793878330991, \"observed_ms\": 1793878361520, \"release\": \"0.1.7-realtime-candidate-4fa6ccee\", \"final\": false, \"stop_reason\": null, \"continuity\": \"DEGRADED\", \"stale_kline_channels\": [\"PEPE-USDT:FRAME\", \"SHIB-USDT:FRAME\", \"WIF-USDT:FRAME\", \"BONK-USDT:FRAME\", \"FLOKI-USDT:FRAME\", \"TAO-USDT:FRAME\", \"WLD-USDT:FRAME\", \"TIA-USDT:FRAME\", \"JUP-USDT:FRAME\", \"ENA-USDT:FRAME\", \"ONDO-USDT:FRAME\", \"ALGO-USDT:FRAME\", \"OKB-USDT:FRAME\", \"DASH-USDT:FRAME\", \"ZEC-USDT:FRAME\", \"XAUT-USDT:FRAME\", \"PAXG-USDT:FRAME\", \"PEOPLE-USDT:FRAME\", \"ORDI-USDT:FRAME\", \"BOME-USDT:FRAME\", \"RAY-USDT:FRAME\", \"CHZ-USDT:FRAME\", \"ETHFI-USDT:FRAME\", \"ACE-USDT:FRAME\"], \"stale_price_channels\": [\"BNB-USDT:BBO\", \"TRX-USDT:BBO\", \"PONS-USDT:BBO\", \"BCH-USDT:BBO\", \"AAVE-USDT:BBO\", \"ETC-USDT:BBO\", \"OP-USDT:BBO\", \"ICP-USDT:BBO\", \"PEPE-USDT:BBO\", \"SHIB-USDT:BBO\", \"SHIB-USDT:DEPTH\", \"WIF-USDT:BBO\", \"BONK-USDT:BBO\", \"BONK-USDT:DEPTH\", \"FLOKI-USDT:BBO\", \"FLOKI-USDT:DEPTH\", \"TAO-USDT:BBO\", \"WLD-USDT:BBO\", \"JUP-USDT:BBO\", \"ONDO-USDT:BBO\", \"DASH-USDT:BBO\", \"PAXG-USDT:BBO\", \"PEOPLE-USDT:BBO\", \"ORDI-USDT:BBO\", \"BOME-USDT:BBO\", \"CHZ-USDT:BBO\", \"CHZ-USDT:DEPTH\", \"ETHFI-USDT:BBO\", \"ETHFI-USDT:DEPTH\", \"ACE-USDT:BBO\", \"ACE-USDT:DEPTH\"], \"counts\": {\"BBO\": 3610, \"COLLECTION_SESSION\": 1, \"CONTRACT_METADATA\": 1, \"DEPTH\": 199, \"FRAME\": 28, \"FUNDING\": 28, \"GAP\": 2, \"GAP_RECOVERED\": 1, \"TRADE\": 133}, \"queue_depth\": 4, \"queue_depth_high_water\": 147, \"bytes\": 260519286, \"disk_free_bytes\": 12735864832, \"catchup_active\": true, \"depth_coalesced\": 43, \"depth_downsampled\": 788, \"status_detail\": \"heartbeat\", \"reconnect_circuit\": \"closed\"}, \"age_seconds\": 4.97435498046875}\n{\"generations\": [[438, \"OPEN\", 1793878329.8956828, null], [437, \"SEALED\", 1793878329.895637, null], [436, \"COS_VERIFIED\", 1793878140.2470808, \"manifests/c37730fd3030ba3ecc14149a6520e5bce58fbd762535656dc643412e0b8e3964.json\"], [435, \"COS_VERIFIED\", 1793877960.2411287, \"manifests/c2a1332bc6e74ca5385c79b3c55a5ce89208b710cdea67cee2ded743ff3ca947.json\"]]}\nResult=success\nExecMainStartTimestamp=Thu 2026-11-05 19:31:10 CST\nExecMainExitTimestamp=Thu 2026-11-05 19:32:05 CST\nExecMainStatus=0\nId=coinstrategy-15m-cos-archive.service\nActiveState=inactive\n\nResult=success\nExecMainStartTimestamp=Thu 2026-11-05 19:32:33 CST\nExecMainExitTimestamp=\nExecMainStatus=0\nId=coinstrategy-15m-cos-release.service\nActiveState=activating\n\n"
+}
