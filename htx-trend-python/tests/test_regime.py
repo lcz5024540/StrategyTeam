@@ -134,3 +134,23 @@ def test_live_pending_close_contract(monkeypatch):
     import test_indicator_union as old
     monkeypatch.setattr(old,'MODEL',MODEL)
     old.test_live_bracket_actual_manager_cancel_unknown_partial_and_complete()
+
+
+def test_factory_loader_requires_only_the_scenario_timeframes(tmp_path,monkeypatch):
+    from htx_trend.mysql_store import RuntimeInstance
+    from htx_trend.realtime.factory import paper
+    from htx_trend.research.store import FileEvidenceStore
+    f=ab_frame();seen=[]
+    def window(code,period,size,**kw):
+        seen.append(period)
+        return f['windows'][period]
+    market=SimpleNamespace(kline_window=window,contract_spec=lambda _:f['contract'])
+    monkeypatch.setenv('HTX_RT_CANDIDATE',CANDIDATE)
+    monkeypatch.setenv('HTX_REGIME_EXIT','ATR_1_1')
+    monkeypatch.setenv('HTX_RT_CAPTURE_DIR',str(tmp_path/'capture'))
+    with FileEvidenceStore(tmp_path/'evidence') as evidence:
+        w=paper(RuntimeInstance('p','TREND',VERSION,None,'paper','PAPER',True,'test',None),market,tmp_path/'state',evidence)
+        w.loader.clock=lambda:NOW/1000
+        loaded=w.loader.fetch('ETH-USDT')
+        assert seen==['15min','60min'] and loaded['entry'].is_complete
+        w.stop()

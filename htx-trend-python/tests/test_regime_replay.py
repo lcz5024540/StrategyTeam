@@ -5,7 +5,7 @@ import json
 import socket
 import pytest
 
-from htx_trend.realtime.regime_replay import Paths, freeze, run, read, file_hash, account_replay
+from htx_trend.realtime.regime_replay import Paths, freeze, run, read, file_hash, account_replay, account_matrix, extend, lock
 from htx_trend.research.store import primitive, digest
 from htx_trend.realtime.plans import Parameters
 from test_regime import ab_frame, NOW
@@ -63,6 +63,17 @@ def test_gap_censors_open_not_fake_profit():
     assert rows[0]['status']=='CENSORED' and rows[0]['exit_ms'] is None
 
 
+def test_initial_stop_applies_to_the_entry_quote_before_recovery():
+    p=Paths(protocol());seq=observations()
+    for z in seq[:3]:p.step(z)
+    row=next(r for r in p.rows if r['policy']=='AB_WINDOW/ATR_1_1')
+    below=D(row['stop'])-D('.02')
+    p.step(dict(event=book(NOW+300,str(below),str(below+D('.001'))).dump(),segment='below-stop',index=0))
+    p.step(seq[4])
+    assert row['reason']=='STOP' and row['exit_ms']==NOW+300
+    assert D(row['net_return'])<0
+
+
 def test_account_uses_real_worker_with_explicit_non300_config(monkeypatch):
     t=tape();values=[z['event'] for z in observations()]
     obs=[values[0],dict(kind='FUNDING',received_ms=NOW,contract='ETH-USDT',rate='0'),dict(kind='CONTEXT',received_ms=NOW,value={})]
@@ -78,3 +89,34 @@ def test_account_uses_real_worker_with_explicit_non300_config(monkeypatch):
     assert result['positions'][0]['status']=='CLOSED'
     assert result['positions'][0]['model']=='RT_REGIME_AB'
     assert len(result['fills'])==2
+    matrix=account_matrix(t,Parameters(candidate='REGIME_AB_V1',min_net_r=D(0),target_mode='ATR_1_1'))
+    assert len(matrix['results'])==18
+    assert matrix['configuration']['worker']['equity']=='777'
+    for name,r in matrix['results'].items():
+        assert not r['errors']
+        if name.startswith('AB_GATE_'):assert not r['fills']
+    assert len(matrix['results']['AB_WINDOW/ATR_1_1']['fills'])==2
+
+
+def test_append_only_extension_matches_full_and_preserves_old_results(tmp_path):
+    values=observations();source=tmp_path/'source';source.mkdir()
+    files=[]
+    for i,seq in enumerate((values[:3],values[3:])):
+        path=source/f'part{i}.gz'
+        with gzip.open(path,'wt') as f:
+            for z in seq:f.write(json.dumps(z)+'\n')
+        files.append(dict(path=path.name,sha256=file_hash(path)))
+    prefix=source/'prefix.json';prefix.write_text(json.dumps({'complete':True,'files':files[:1]}))
+    manifest=source/'manifest.json';manifest.write_text(json.dumps({'complete':True,'files':files}))
+    freeze(prefix,tmp_path/'old',**{**protocol(),'end_ms':NOW+1})
+    run(tmp_path/'old');old=(tmp_path/'old'/'report.json').read_bytes()
+    extend(tmp_path/'old',manifest,tmp_path/'child',end_ms=NOW+400)
+    result=run(tmp_path/'child')
+    freeze(manifest,tmp_path/'full',**protocol());full=run(tmp_path/'full')
+    assert result['policies']==full['policies']
+    assert (tmp_path/'old'/'report.json').read_bytes()==old
+    with lock(tmp_path/'child'):
+        with pytest.raises(BlockingIOError):run(tmp_path/'child')
+    manifest.write_text(json.dumps({'complete':True,'files':files[::-1]}))
+    with pytest.raises(ValueError,match='exact source prefix'):
+        extend(tmp_path/'old',manifest,tmp_path/'bad',end_ms=NOW+400)

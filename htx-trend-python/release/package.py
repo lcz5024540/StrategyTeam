@@ -97,7 +97,7 @@ def bracket_env(selected):
     value = {"HTX_RT_ENTRY_ENABLED":"false", "HTX_RT_CANDIDATE":"REGIME_AB_V1",
              "HTX_REGIME_EXIT":selected.target_mode,"HTX_REGIME_TIMING":selected.regime_timing}
     if selected.bayes_threshold is not None:
-        value.update(HTX_REGIME_BAYES_THRESHOLD=str(selected.bayes_threshold),
+        value.update(HTX_REGIME_BAYES_THRESHOLD=str(selected.bayes_threshold.normalize()),
                      HTX_REGIME_SNAPSHOT_SHA256=selected.bayes_snapshot_hash,HTX_REGIME_COST_ID=selected.bayes_cost_id,
                      HTX_REGIME_SNAPSHOT="release/regime-posterior.json")
     return value

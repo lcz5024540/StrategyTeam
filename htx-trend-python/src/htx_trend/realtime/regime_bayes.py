@@ -20,9 +20,10 @@ METHOD = "beta11-block-dirichlet-v1"
 
 @lru_cache(maxsize=1)
 def code_seal():
-    root = Path(__file__).parent
-    return digest({n:sha256((root/n).read_bytes()).hexdigest()
-                   for n in ("regime.py", "indicator_union.py", "regime_bayes.py")})
+    root = Path(__file__).parents[1]
+    # Include label generation, execution and management, not only indicators.
+    return digest({str(p.relative_to(root)):sha256(p.read_bytes()).hexdigest()
+                   for p in sorted(root.rglob('*.py'))})
 
 
 def group_key(scenario, timing, exit_profile, cost_id):
@@ -49,6 +50,8 @@ def fit(records, *, cutoff_ms, cost_id, seed=20261105):
             raise ValueError("label rule identity mismatch")
         if not r.get("opportunity_id") or not r.get("contract") or not r.get("source_refs"):
             raise ValueError("label identity/provenance missing")
+        if r.get('label_code_seal') != code_seal() or not r.get('label_protocol_hash'):
+            raise ValueError('label implementation/protocol not verified')
         if r.get("cost_id") != cost_id:
             raise ValueError("mixed cost experiments")
         key = (group_key(r['scenario'],r['timing'],r['exit_profile'],cost_id), r['opportunity_id'])
@@ -59,13 +62,17 @@ def fit(records, *, cutoff_ms, cost_id, seed=20261105):
             continue
         unique[key] = r
     groups = defaultdict(list)
+    group_audit = defaultdict(Counter)
     for (key, ident), r in sorted(unique.items(), key=lambda item:(item[1].get('entry_ms') if item[1].get('entry_ms') is not None else item[1].get('trigger_ms',0),item[0])):
         all_ids.append(digest(r))
+        group_audit[key]['UNIQUE_OPPORTUNITIES'] += 1
+        group_audit[key][r.get('status','UNKNOWN')] += 1
         if r.get('status') != 'CLOSED':
             excluded[r.get('status','UNKNOWN')] += 1
             continue
         if r.get('cost_status') not in ('KNOWN','ASSUMPTION'):
             excluded['UNKNOWN_COST'] += 1
+            group_audit[key]['UNKNOWN_COST'] += 1
             continue
         if r['cost_status']=='ASSUMPTION' and not cost_id.startswith('ASSUMPTION:'):
             raise ValueError('assumed costs require a named assumption experiment')
@@ -75,6 +82,7 @@ def fit(records, *, cutoff_ms, cost_id, seed=20261105):
             raise ValueError('outcome precedes entry or observation')
         if r['observed_ms'] >= cutoff_ms:
             excluded['IMMATURE_AT_CUTOFF'] += 1
+            group_audit[key]['IMMATURE_AT_CUTOFF'] += 1
             continue
         value = D(str(r['net_return']))
         if not value.is_finite():
@@ -90,6 +98,7 @@ def fit(records, *, cutoff_ms, cost_id, seed=20261105):
                 for r in groups[key]:
                     if r['entry_ms'] < end_by_contract.get(r['contract'], -1):
                         excluded['OVERLAPPING_SAME_CONTRACT'] += 1
+                        group_audit[key]['OVERLAPPING_SAME_CONTRACT'] += 1
                         continue
                     rows.append(r)
                     end_by_contract[r['contract']] = r['exit_ms']
@@ -118,6 +127,8 @@ def fit(records, *, cutoff_ms, cost_id, seed=20261105):
                                  positive_mean_mass=float(np.mean(a>0)))
                     blocks[str(minutes)] = b
                 result[key] = {'n':n, 'wins':w, 'nonpositive':n-w,
+                    'opportunity_audit':dict(group_audit[key]),
+                    'complete_label_fraction':n/group_audit[key]['UNIQUE_OPPORTUNITIES'] if group_audit[key]['UNIQUE_OPPORTUNITIES'] else None,
                     'zero':sum(D(str(r['net_return']))==0 for r in rows),
                     'prior':[1,1], 'posterior':[1+w,1+n-w],
                     'posterior_mean':(w+1)/(n+2) if n else None,
@@ -134,7 +145,9 @@ def fit(records, *, cutoff_ms, cost_id, seed=20261105):
     payload = {'schema':SCHEMA,'method':METHOD,'code_seal':code_seal(),'cost_id':cost_id,
         'cost_mode':'ASSUMPTION' if cost_id.startswith('ASSUMPTION:') else 'KNOWN',
         'cutoff_ms':cutoff_ms,'seed':seed,'groups':result,'excluded':dict(excluded),
-        'input_digest':digest(sorted(all_ids)), 'financial_admission':'NOT_ELIGIBLE'}
+        'input_digest':digest(sorted(all_ids)),
+        'label_protocol_hashes':sorted({r['label_protocol_hash'] for r in unique.values()}),
+        'numpy_version':np.__version__, 'financial_admission':'NOT_ELIGIBLE'}
     return {**payload,'hash':digest(payload)}
 
 

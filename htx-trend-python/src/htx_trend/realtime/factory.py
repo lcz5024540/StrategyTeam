@@ -126,7 +126,8 @@ def _common(
     if isinstance(management, LiveManagement):
         management.coverage_recorder = recorder
         management.coverage_evidence = evidence
-    loader = FrameLoader(public, contracts, frames)
+    periods = ("15min", "60min") if engine.parameters.candidate == "REGIME_AB_V1" else ("15min", "60min", "4hour")
+    loader = FrameLoader(public, contracts, frames, periods=periods)
     stream = PublicStream(contracts)
     if isinstance(management, LiveManagement):
         management.coverage_stream = stream

@@ -21,7 +21,7 @@ from .storage import TERMINAL
 
 
 class FrameLoader:
-    def __init__(self, market, contracts, frames, *, clock=time.time):
+    def __init__(self, market, contracts, frames, *, clock=time.time, periods=("15min", "60min", "4hour")):
         self.market, self.contracts, self.frames, self.clock = (
             market,
             tuple(contracts),
@@ -32,6 +32,9 @@ class FrameLoader:
         self.thread = None
         self.errors = {}
         self.requests = {}
+        self.periods = tuple(periods)
+        if self.periods not in (("15min", "60min"), ("15min", "60min", "4hour")):
+            raise ValueError("unsupported structure periods")
 
     def start(self):
         self.thread = threading.Thread(
@@ -43,7 +46,7 @@ class FrameLoader:
         now = int(self.clock())
         windows = {
             p: self.market.kline_window(code, p, 160, now_epoch=now)
-            for p in ("15min", "60min", "4hour")
+            for p in self.periods
         }
         if any(not w.is_complete for w in windows.values()):
             raise ValueError("incomplete structure evidence")

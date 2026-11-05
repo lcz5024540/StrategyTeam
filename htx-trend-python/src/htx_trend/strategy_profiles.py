@@ -181,7 +181,7 @@ def profile_strategy(profile: TimeframeProfile, *, read_env: bool = True, strate
             result = replace(result, strategy=rt, primary_models=("RT_INDICATOR_UNION",), confirmation_models=(), exit_version="INDICATOR_BRACKET_V1")
         if parameters.candidate == "REGIME_AB_V1":
             rt = replace(rt, feature_versions={"closed_h1_ema20_60_macd_m15_macd_wick_atr14":"v1"},
-                condition_versions={"regime.A_B":"v1", "regime.window_bbo":"v1", "regime.bayesian_snapshot":"v1"},
+                condition_versions={"entry.profile_contract":"v1", "regime.A_B":"v1", "regime.window_bbo":"v1", "regime.bayesian_snapshot":"v1"},
                 parameters={"parameters":parameters.payload,"exit_profiles":["ATR_1_1","ATR_2_1","ATR_2_2"]},
                 transitions=({"from":"SCENARIO","to":"ORDER_INTENT","when":"fresh BBO, optional posterior and execution gates"},
                              {"from":"OPEN","to":"EXIT_INTENT","when":"frozen bracket stop or target"}))

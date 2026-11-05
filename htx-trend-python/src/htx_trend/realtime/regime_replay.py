@@ -21,9 +21,9 @@ from ..research.store import digest, primitive
 from .feed import MarketEvent, EventOrder
 from .plans import Parameters, create_engine
 from .regime import CANDIDATE, regime_features
-from .regime_bayes import Snapshot, fit
+from .regime_bayes import Snapshot, fit, code_seal
 from .indicator_union import EXITS
-from .replay import Actor, decode_window, validate
+from .replay import Actor, decode_window, validate, metric
 from ..market_data import ContractSpec
 
 
@@ -91,6 +91,7 @@ class Paths:
             self.engines[name]=create_engine(MemoryStore(),name,parameters=Parameters(min_net_r=D(0),candidate=candidate,target_mode='ATR_1_1',regime_timing=timing))
         self.frames={};self.rows=[];self.active=defaultdict(list);self.pending=defaultdict(list)
         self.quality=Counter();self.order=EventOrder();self.previous={};self.epoch=None
+        self.frame_audit={}
 
     def gap(self,reason):
         for e in self.engines.values():e.disconnect()
@@ -106,6 +107,8 @@ class Paths:
                 f=frame_input(event,ref)
                 for engine in self.engines.values():engine.refresh_union_frame(f,now_ms=at)
                 self.frames[code]=(event,ref)
+                audit=self.engines['AB_WINDOW'].generation_audit[0]
+                self.frame_audit[ref]={**audit,'received_ms':at,'source_ref':ref}
             except (ValueError,KeyError,TypeError):
                 self.quality['INVALID_FRAME']+=1
                 for engine in self.engines.values():engine.frames.pop(code,None)
@@ -124,17 +127,13 @@ class Paths:
             for row in self.active.pop(code,[])+self.pending.pop(code,[]):row.update(status='CENSORED',reason='QUOTE_COVERAGE_GAP')
         self.previous[code]=at
         for row in list(self.active[code]):
-            self.mark(row,ev,ref)
-            long=row['side']=='LONG';px=ev.bid if long else ev.ask
-            stop=D(row['stop']);target=D(row['target'])
-            reason='STOP' if (px<=stop if long else px>=stop) else 'TARGET' if (px>=target if long else px<=target) else None
-            if reason:
-                row.update(status='CLOSED',reason=reason,exit_ms=at,observed_ms=at,exit_price=str(px),exit_ref=ref)
+            if self.settle(row,ev,ref):
                 self.active[code].remove(row)
         for row in list(self.pending[code]):
             if at>=row['trigger_ms']+self.protocol['latency_ms'] and at>row['trigger_ms']:
                 row.update(entry_ms=at,entry_price=str(ev.ask if row['side']=='LONG' else ev.bid),entry_ref=ref,status='OPEN')
-                self.mark(row,ev,ref);self.active[code].append(row);self.pending[code].remove(row)
+                if not self.settle(row,ev,ref):self.active[code].append(row)
+                self.pending[code].remove(row)
         for name,engine in self.engines.items():
             try:triggers=engine.accept(ev,now_ms=at)
             except (ValueError,KeyError,TypeError):
@@ -154,7 +153,8 @@ class Paths:
                         entry_price=None,stop=str(stop),target=str(target),atr=str(trigger.plan.atr),
                         status='PENDING',reason=None,source_refs=[ref,*trigger.plan.evidence_refs],features=source['features'],
                         net_return=None,mfe=None,mae=None,cost_id=self.protocol['cost_id'],cost_status='ASSUMPTION',
-                        exposure=self.protocol['exposure'],fee_rate=self.protocol['fee_rate'],funding_cost=None,ioc_fill_verified=False)
+                        exposure=self.protocol['exposure'],fee_rate=self.protocol['fee_rate'],funding_cost=None,ioc_fill_verified=False,
+                        label_code_seal=code_seal(),label_protocol_hash=digest(self.protocol))
                     row={**base,'policy':name+'/'+mode};self.rows.append(row);self.pending[code].append(row)
                     if name=='AB_WINDOW':
                         for threshold in ('.80','.90','.95'):
@@ -166,6 +166,16 @@ class Paths:
                             else:self.pending[code].append(gated)
                             self.rows.append(gated)
 
+    def settle(self,row,event,ref):
+        self.mark(row,event,ref)
+        long=row['side']=='LONG';px=event.bid if long else event.ask
+        stop=D(row['stop']);target=D(row['target'])
+        reason='STOP' if (px<=stop if long else px>=stop) else 'TARGET' if (px>=target if long else px<=target) else None
+        if reason:
+            row.update(status='CLOSED',reason=reason,exit_ms=event.received_ms,
+                       observed_ms=event.received_ms,exit_price=str(px),exit_ref=ref)
+        return reason is not None
+
     def mark(self,row,event,ref):
         a=D(row['entry_price']);z=event.bid if row['side']=='LONG' else event.ask
         sign=D(1) if row['side']=='LONG' else D(-1);fee=D(self.protocol['fee_rate'])
@@ -175,12 +185,13 @@ class Paths:
                    mae=str(min(D(row['mae']) if row['mae'] is not None else value,value)))
 
     def dump(self):
-        return primitive(dict(rows=self.rows,quality=dict(self.quality),frames=self.frames,previous=self.previous,epoch=self.epoch,
+        return primitive(dict(rows=self.rows,quality=dict(self.quality),frames=self.frames,previous=self.previous,epoch=self.epoch,frame_audit=self.frame_audit,
             order=order_dump(self.order),engines={k:dict(rows=e.rows,epoch=e.epoch,order=order_dump(e.order),
                 history={c:[event.dump(),f] for c,(event,f) in e.history.items()},books={c:v.dump() for c,v in e.books.items()}) for k,e in self.engines.items()}))
 
     def restore(self,value):
         self.rows=value['rows'];self.quality=Counter(value['quality']);self.frames=value['frames'];self.previous=value['previous'];self.epoch=value['epoch']
+        self.frame_audit=value.get('frame_audit',{})
         order_load(self.order,value['order'])
         for code,(event,ref) in self.frames.items():
             for engine in self.engines.values():engine.refresh_union_frame(frame_input(event,ref),now_ms=event['received_ms'])
@@ -197,8 +208,14 @@ def statistics(rows):
     closed=[r for r in rows if r['status']=='CLOSED'];valued=[r for r in rows if r.get('net_return') is not None]
     n=len(closed);wins=sum(D(r['net_return'])>0 for r in closed)
     mean=lambda rr: str(sum((D(r['net_return']) for r in rr),D(0))/len(rr)) if rr else None
-    return dict(opportunities=len(rows),entries=len(valued),closed=n,wins=wins,losses=sum(D(r['net_return'])<0 for r in closed),
+    winners=[r for r in closed if D(r['net_return'])>0];losers=[r for r in closed if D(r['net_return'])<0]
+    gains=sum((D(r['net_return']) for r in winners),D(0));losses=-sum((D(r['net_return']) for r in losers),D(0))
+    return dict(opportunities=len(rows),entries=len(valued),closed=n,wins=wins,losses=len(losers),zeros=n-wins-len(losers),
         historical_win_rate=wins/n if n else None,closed_mean_net_return=mean(closed),last_mark_mean_net_return=mean(valued),
+        profit_factor=str(gains/losses) if losses else None,
+        payoff_ratio=str((gains/len(winners))/(losses/len(losers))) if winners and losers else None,
+        closed_mean_fee_return=str(sum((D(r['fee_return']) for r in closed),D(0))/n) if n else None,
+        complete_label_fraction=n/len(rows) if rows else None,
         statuses=dict(Counter(r['status'] for r in rows)),reasons=dict(Counter(r['reason'] for r in rows if r['reason'])),
         max_observed_giveback=str(max((D(r['mfe'])-D(r['net_return']) for r in valued),default=D(0))),
         per_asset={c:mean([r for r in closed if r['contract']==c]) for c in sorted({r['contract'] for r in rows})})
@@ -214,8 +231,23 @@ def report(paths):
         comparison[key]=dict(blocked_wins=sum(r['status']=='CLOSED' and D(r['net_return'])>0 for r in rejected),
             blocked_losses=sum(r['status']=='CLOSED' and D(r['net_return'])<0 for r in rejected),
             blocked_unknown=sum(r['status']!='CLOSED' for r in rejected))
+    without_leader={}
+    for key in policies:
+        selected=[r for r in rows if r['policy']==key];totals=defaultdict(lambda:D(0))
+        for r in selected:
+            if r['status']=='CLOSED':totals[r['contract']]+=D(r['net_return'])
+        leader=max(totals,key=lambda c:(totals[c],c)) if totals else None
+        without_leader[key]={'removed_asset':leader,'selection_basis':'largest sum of completed unlevered returns; descriptive only',
+                            'remaining':statistics([r for r in selected if r['contract']!=leader])}
+    frame_counts=Counter(v['scenario'] for v in paths.frame_audit.values())
     return dict(schema='regime-replay-report-v1',quality=dict(paths.quality),policies={k:statistics([r for r in rows if r['policy']==k]) for k in policies},
         by_scenario={s:{k:statistics([r for r in rows if r['policy']==k and r['scenario']==s]) for k in policies} for s in ('A','B')},
+        frame_conditions={'denominator':'valid observed FRAME evaluations, including visible revisions; not trades',
+                          'evaluations':sum(frame_counts.values()),'counts':dict(frame_counts),
+                          'match_rates':{k:v/sum(frame_counts.values()) for k,v in frame_counts.items()}},
+        by_entry_hour={str(h):{k:statistics([r for r in rows if r['policy']==k and r['trigger_ms']//3600000==h]) for k in policies}
+                       for h in sorted({r['trigger_ms']//3600000 for r in rows})},
+        excluding_leading_asset=without_leader,
         filtering=comparison,account_result=None,account_status='EXPLICIT_ACCOUNT_CONFIGURATION_NOT_SUPPLIED',
         provenance='FULL_BBO_QUOTE_PATH_ASSUMPTION',financial_admission='NOT_ELIGIBLE',
         limitations=['not IOC fills or account profit','funding and additional slippage unknown','censored paths remain unknown','previously studied data are not independent validation'])
@@ -277,14 +309,17 @@ def run(root, *, max_events=None):
                 if key[0]>p['end_ms']:break
                 paths.step(z);offsets[path]=offset;last=key;count+=1
                 if count%100000==0:
+                    if implementation()!=p['code_seal']:raise ValueError('code changed during replay')
                     atomic(state_path,dict(protocol_hash=digest(p),paths=paths.dump(),offsets=offsets,last=last,complete=False))
                     print(json.dumps({'processed':sum(offsets.values()),'received_ms':key[0],'opportunities':len(paths.rows)}),flush=True)
                 if max_events and count>=max_events:complete=False;break
         except BaseException as error:
             atomic(root/'failure.json',{'error':type(error).__name__,'message':str(error),'last_committed_checkpoint':str(state_path)})
             raise
+        if implementation()!=p['code_seal']:raise ValueError('code changed during replay')
         result=report(paths);result.update(complete=complete,processed=sum(offsets.values()),protocol_hash=digest(p))
         atomic(root/'records.json.gz',paths.rows);atomic(root/'report.json',result)
+        atomic(root/'frame-audit.json.gz',paths.frame_audit)
         atomic(state_path,dict(protocol_hash=digest(p),paths=paths.dump(),offsets=offsets,last=last,complete=complete))
         return result
 
@@ -299,6 +334,36 @@ def account_replay(tape, parameters, snapshot=None):
         for event in tape['observations']:actor.step(event)
         return actor.result()
     finally:actor.close()
+
+
+def account_matrix(tape, parameters, snapshot=None):
+    """Same account and full opportunity stream, independently scheduled 18 ways."""
+    seal=implementation();results={}
+    for mode in EXITS:
+        variants=[('UNION','INDICATOR_UNION_V1','WINDOW',None),
+                  ('AB_FIRST',CANDIDATE,'FIRST_QUOTE',None),('AB_WINDOW',CANDIDATE,'WINDOW',None)]
+        variants.extend(('AB_GATE_'+threshold,CANDIDATE,'WINDOW',D(threshold)) for threshold in ('.80','.90','.95'))
+        for name,candidate,timing,threshold in variants:
+            p=replace(parameters,candidate=candidate,target_mode=mode,regime_timing=timing,
+                      bayes_threshold=threshold,bayes_snapshot_hash=snapshot['hash'] if threshold and snapshot else '',
+                      bayes_cost_id=snapshot['cost_id'] if threshold and snapshot else '')
+            result=account_replay(tape,p,snapshot if threshold else None)
+            result['metrics']=metric(result,tape['start_ms'],tape['end_ms'])
+            results[name+'/'+mode]=result
+    if implementation()!=seal:raise ValueError('code changed during account replay')
+    comparison={}
+    for key,gated in results.items():
+        if not key.startswith('AB_GATE_'):continue
+        base=results['AB_WINDOW/'+key.split('/')[1]]
+        # Plan identities are stable across probability thresholds. Compare actual
+        # submitted/opened plans, not a post-hoc filter of baseline PnL.
+        opened=lambda r:{p['plan']['plan_id'] for p in r['plans'].values()
+                         if p.get('phase') in ('PARTIAL','FILLED')}
+        comparison[key]={'newly_opened_plan_ids':sorted(opened(gated)-opened(base)),
+                         'base_only_plan_ids':sorted(opened(base)-opened(gated))}
+    return {'schema':'regime-account-matrix-v1','code_seal':seal,'configuration':tape['configuration'],
+            'configuration_hash':tape['configuration_hash'],'tape_hash':digest(tape),'results':results,
+            'rescheduling':comparison,'financial_admission':'NOT_ELIGIBLE'}
 
 
 def extend(previous, source, root, *, end_ms):
@@ -339,7 +404,7 @@ def main():
     x=sub.add_parser('extend');x.add_argument('--previous',type=Path,required=True);x.add_argument('--source',type=Path,required=True)
     x.add_argument('--root',type=Path,required=True);x.add_argument('--end-ms',type=int,required=True)
     a=sub.add_parser('account');a.add_argument('--tape',type=Path,required=True);a.add_argument('--parameters',type=Path,required=True);a.add_argument('--out',type=Path,required=True)
-    a.add_argument('--snapshot',type=Path)
+    a.add_argument('--snapshot',type=Path);a.add_argument('--matrix',action='store_true')
     args=ap.parse_args()
     if args.command=='freeze':freeze(args.source,args.root,start_ms=args.start_ms,end_ms=args.end_ms,fee_rate=args.fee_rate,latency_ms=args.latency_ms,cost_id=args.cost_id,exposure=args.exposure,snapshot=args.snapshot)
     elif args.command=='run':print(json.dumps(run(args.root,max_events=args.max_events),ensure_ascii=False))
@@ -353,7 +418,8 @@ def main():
         value=read(args.parameters)
         for k in ('min_net_r','band_atr','bayes_threshold'):
             if value.get(k) is not None:value[k]=D(str(value[k]))
-        atomic(args.out,account_replay(read(args.tape),Parameters(**value),read(args.snapshot) if args.snapshot else None))
+        runner=account_matrix if args.matrix else account_replay
+        atomic(args.out,runner(read(args.tape),Parameters(**value),read(args.snapshot) if args.snapshot else None))
 
 
 if __name__=='__main__':main()
