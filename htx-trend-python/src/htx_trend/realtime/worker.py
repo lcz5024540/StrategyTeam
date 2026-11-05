@@ -559,6 +559,18 @@ class RealtimeWorker:
                 failures.extend(self.management.tick(now, contract=event.contract))
         from itertools import groupby
 
+        # A cycle can spend several seconds refreshing structure and processing
+        # a BBO batch.  Trial PnL/settlement coverage is intentionally valid
+        # for only two seconds, so refresh it again immediately before a new
+        # intent is preflighted.  This preserves the strict deadline instead
+        # of making an otherwise fresh account observation stale in-process.
+        if triggers and self.trial_monitor is not None:
+            try:
+                self.trial_monitor.tick(int(self.clock() * 1000))
+            except Exception as error:
+                failures.append("TRIAL_STATE:" + type(error).__name__)
+                self._entry_recovery_blocked = True
+
         for _, batch in groupby(
             sorted(triggers, key=lambda t: (t.trigger_ms, t.plan.plan_id)),
             key=lambda t: t.trigger_ms,
