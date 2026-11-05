@@ -86,6 +86,10 @@ class RegimeEngine(IndicatorUnionEngine):
         if (event.kind != "BBO" or not event.fresh(now_ms, self.parameters.max_age_ms)
                 or not self.order.accept(event)):
             return ()
+        # Feed continuity is independent of whether a newly closed bar has
+        # already been published. Stale FRAMEs must not turn a live feed into
+        # an artificial disconnect and consume FIRST_QUOTE's only opportunity.
+        previous_book = self.books.get(event.contract)
         self.books[event.contract] = event
         if event.contract not in self.frames:
             return ()
@@ -94,7 +98,8 @@ class RegimeEngine(IndicatorUnionEngine):
             return ()
         old = self.history.get(event.contract)
         self.history[event.contract] = (event, dict(f))
-        if old is None or event.received_ms - old[0].received_ms > self.parameters.max_age_ms:
+        if (old is None or previous_book is None
+                or event.received_ms - previous_book.received_ms > self.parameters.max_age_ms):
             return ()
         if self.parameters.regime_timing == "FIRST_QUOTE" and f["bar"] <= old[1]["bar"]:
             return ()

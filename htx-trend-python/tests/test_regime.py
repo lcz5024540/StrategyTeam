@@ -122,6 +122,24 @@ def test_expiry_revision_and_restart(tmp_path):
     l.close()
 
 
+def test_first_quote_after_bar_publication_delay_keeps_feed_continuity(tmp_path):
+    p,l,e,f,ev=setup(tmp_path,timing='FIRST_QUOTE')
+    boundary=NOW+900000
+    e.accept(replace(ev,event_id='last-old',received_ms=boundary-1,exchange_ms=boundary-1),now_ms=boundary-1)
+    # Quotes keep arriving while the just-completed frame is still unpublished.
+    for offset in range(0,10000,1000):
+        at=boundary+offset
+        with pytest.raises(ValueError,match='stale'):
+            e.accept(replace(ev,event_id=str(at),received_ms=at,exchange_ms=at),now_ms=at)
+    updated=ab_frame(last=900000);updated['received_ms']=boundary+10000
+    e.refresh_union_frame(updated,now_ms=boundary+10000)
+    at=boundary+10001
+    trigger,=e.accept(replace(ev,event_id='first-valid',received_ms=at,exchange_ms=at),now_ms=at)
+    assert trigger.plan.structure_bar==900000
+    assert not e.accept(replace(ev,event_id='second-valid',received_ms=at+1,exchange_ms=at+1),now_ms=at+1)
+    l.close()
+
+
 def test_exact_predecessor_policy_and_tamper():
     from htx_trend.realtime.regime_compatibility import REGIME_PREDECESSOR
     v=policy().to_dict();v['implementation_hashes']=dict(REGIME_PREDECESSOR);v.pop('hash');v['hash']=digest(v)
