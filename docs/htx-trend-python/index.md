@@ -1,5 +1,7 @@
 # HTX Python交付索引
 
+- [公共WS断连诊断增强](ws-diagnostics-20261106.md)：原因/现场/分通道恢复口径，保持策略；本地实现验证，未推送或部署。
+
 - [support_htx_python合并与COS部署](support-python-cos-deployment-20261105.md)：4fa6ccee已推送，19:32切独立数据服务，新数据COS下载验哈通过；旧LIVE/4H不变，行情新鲜度告警保留。
 
 - [A/B观察、实际成本对账与开启入口](regime-observation-cost-20261105.md)：只观察不阻断、显式开启包、PAPER开平仓与隔离MySQL验证；未部署真实账户。

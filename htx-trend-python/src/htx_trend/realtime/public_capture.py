@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from decimal import Decimal as D
 import fcntl
 import gzip
@@ -38,6 +39,7 @@ from .segment_codec import segment_events
 from ..research.store import canonical, digest, primitive
 from .feed import decode
 from .storage import SegmentRecorder
+from .ws_diagnostics import WsDiagnostics
 
 GIB = 1024**3
 CONTROL_RESERVE = 1024**2
@@ -625,6 +627,9 @@ class Capture:
         self.reconnect = ReconnectGovernor()
         self.catchup = DepthCatchup()
         self._monotonic = time.monotonic
+        self.ws_diagnostics = WsDiagnostics(self.contracts)
+        self.diagnostic_errors = 0
+        self.diagnostic_events_dropped = 0
         self.queue_depth_high_water = 0
         self._queue_warn_level = 0
         self._queue_hw_lock = threading.Lock()
@@ -676,6 +681,73 @@ class Capture:
 
     def now(self):
         return int(self.clock() * 1000)
+
+    def _diagnose(self, method, *args):
+        try:
+            return getattr(self.ws_diagnostics, method)(*args)
+        except Exception:
+            # Diagnostics must not terminate capture or replace its original error.
+            self.diagnostic_errors += 1
+            return None
+
+    @contextmanager
+    def _ws_operation(self, phase):
+        self._diagnose("start", phase, self._monotonic())
+        try:
+            yield
+        finally:
+            self._diagnose("end", phase, self._monotonic())
+
+    def _diagnostic_log(self, level, event):
+        try:
+            logger.log(level, "public capture ws %s", json.dumps(event, separators=(",", ":"), allow_nan=False))
+        except Exception:
+            self.diagnostic_errors += 1
+
+    def emit_diagnostic(self, event):
+        # Optional markers must never displace market data or trigger fail-closed.
+        # Keep one full consumer batch of headroom; original market emit is unchanged.
+        if self.events.qsize() >= max(0, self.events.maxsize - EVENT_DRAIN_BATCH):
+            self.diagnostic_events_dropped += 1
+            return
+        try:
+            self.events.put_nowait(event)
+        except queue.Full:
+            self.diagnostic_events_dropped += 1
+
+    def _ws_runtime_snapshot(self, at, mono):
+        with self.events.mutex:
+            oldest = self.events.queue[0].get("received_ms") if self.events.queue else None
+            depth = len(self.events.queue)
+        delay = self.reconnect.seconds_until_attempt(mono)
+        return dict(
+            queue_depth=depth, queue_maxsize=self.events.maxsize,
+            queue_oldest_received_age_ms=max(0, at - oldest) if oldest is not None else None,
+            queue_age_clock="WALL_RECEIVED_MS_NOT_ENQUEUE_TIME",
+            queue_depth_high_water=self.queue_depth_high_water,
+            last_flush_ms=self.last_flush_ms, last_seal_ms=self.last_seal_ms,
+            flush_ms_high_water=self.flush_ms_high_water, seal_ms_high_water=self.seal_ms_high_water,
+            backoff_seconds=delay, next_retry_at_ms=at + round(delay * 1000),
+            failure_count_scope="CONNECT_AND_ESTABLISHED_SESSION_ERRORS",
+            catchup_active=self.catchup.active, **self.reconnect.snapshot(),
+        )
+
+    def _ws_failure_diagnostic(self, error):
+        try:
+            at, mono = self.now(), self._monotonic()
+            runtime = self._ws_runtime_snapshot(at, mono)
+            diagnostic = self._diagnose("failure", error, at, mono, self.socket, runtime)
+            if diagnostic is not None:
+                self._diagnostic_log(logging.WARNING, diagnostic)
+                return diagnostic
+        except Exception:
+            self.diagnostic_errors += 1
+        fallback = dict(schema="public-ws-diagnostics-v1", diagnostic_unavailable=True,
+                        diagnostic_errors=self.diagnostic_errors,
+                        exception_type=type(error).__name__, epoch=self.ws_diagnostics.epoch,
+                        attempt=self.reconnect.attempts)
+        self._diagnostic_log(logging.WARNING, fallback)
+        return fallback
 
     def emit(self, event):
         if event.get("kind") == "DEPTH":
@@ -916,9 +988,10 @@ class Capture:
 
     def _send_subscription(self, sock, step):
         _offset, contract, channel = step
-        sock.send(
-            json.dumps({"sub": f"market.{contract}.{channel}", "id": f"{contract}:{channel}"})
-        )
+        with self._ws_operation("subscribe"):
+            sock.send(
+                json.dumps({"sub": f"market.{contract}.{channel}", "id": f"{contract}:{channel}"})
+            )
 
     def stream_loop(self):
         connect = self._ws_connect()
@@ -931,6 +1004,7 @@ class Capture:
             epoch = uuid.uuid4().hex
             self.reconnect.begin_attempt(self._monotonic())
             gap_started_ms = self.now()
+            self._diagnose("begin_attempt", epoch, self.reconnect.attempts, gap_started_ms, self._monotonic())
             self.emit(
                 dict(
                     kind="GAP",
@@ -952,22 +1026,28 @@ class Capture:
                     )
                 )
             try:
-                with connect(
-                    "wss://api.hbdm.com/linear-swap-ws",
-                    open_timeout=10,
-                    close_timeout=2,
-                    max_size=8 * 1024**2,
-                ) as sock:
+                with self._ws_operation("connect"):
+                    connection = connect(
+                        "wss://api.hbdm.com/linear-swap-ws",
+                        open_timeout=10,
+                        close_timeout=2,
+                        max_size=8 * 1024**2,
+                    )
+                with connection as sock:
                     self._pump_socket(sock, epoch, gap_started_ms)
+                    self._diagnose("start", "close", self._monotonic())
+                self._diagnose("end", "close", self._monotonic())
             except Exception as error:
                 if not self.stop.is_set():
                     transition = self.reconnect.note_failure(self._monotonic())
+                    diagnostic = self._ws_failure_diagnostic(error)
                     self.emit(
                         dict(
                             kind="GAP",
                             received_ms=self.now(),
                             reason=type(error).__name__,
                             epoch=epoch,
+                            diagnostic=diagnostic,
                         )
                     )
                     if transition == "opened":
@@ -998,6 +1078,7 @@ class Capture:
         would reconnect in the middle of the snapshot storm.
         """
         self.socket = sock
+        self._diagnose("connected", self._monotonic())
         depth_was_paused = self.reconnect.depth_paused
         self.open_catchup(epoch)
         steps = resubscribe_schedule(
@@ -1046,33 +1127,44 @@ class Capture:
                 pending_at.append(follow_origin + follow[follow_i][0])
             timeout = max(0.001, min(pending_at) - now_m) if pending_at else 1
             try:
-                raw = sock.recv(timeout=timeout)
+                with self._ws_operation("recv"):
+                    raw = sock.recv(timeout=timeout)
             except TimeoutError:
                 if self._monotonic() - last > 15:
                     raise
                 continue
             last = self._monotonic()
-            value = json.loads(
-                gzip.decompress(raw)
-                if isinstance(raw, bytes) and raw[:2] == b"\x1f\x8b"
-                else raw
-            )
-            received = self.now()
-            if value.get("status") == "error":
-                self.emit(
-                    dict(
-                        kind="SOURCE_ERROR",
-                        received_ms=received,
-                        source="SUBSCRIPTION",
-                        raw=value,
-                    )
+            self._diagnose("raw_received", self.now(), last)
+            with self._ws_operation("decode"):
+                value = json.loads(
+                    gzip.decompress(raw)
+                    if isinstance(raw, bytes) and raw[:2] == b"\x1f\x8b"
+                    else raw
                 )
-                continue  # one unavailable symbol does not erase the other 51
-            observations, pong = normalize_ws(value, epoch, received)
+                received = self.now()
+                if value.get("status") == "error":
+                    self.emit(
+                        dict(
+                            kind="SOURCE_ERROR",
+                            received_ms=received,
+                            source="SUBSCRIPTION",
+                            raw=value,
+                        )
+                    )
+                    continue  # one unavailable symbol does not erase the other 51
+                observations, pong = normalize_ws(value, epoch, received)
             if pong:
-                sock.send(json.dumps(pong))
+                self._diagnose("htx_ping", received, self._monotonic())
+                with self._ws_operation("pong_send"):
+                    sock.send(json.dumps(pong))
+                self._diagnose("htx_pong", self.now(), self._monotonic())
             for event in observations:
                 self.emit(event)
+                if not self.stop.is_set() and not self.failure:
+                    marker = self._diagnose("observe", event, self._monotonic())
+                    if marker is not None:
+                        self.emit_diagnostic(marker)
+                        self._diagnostic_log(logging.INFO, marker)
             if observations:
                 if not recovered and not self.stop.is_set() and not self.failure:
                     # First market observation in this connection attempt;
@@ -1168,11 +1260,18 @@ class Capture:
                 )
 
     def publish_status(self, *, detail="full", sync=True, final=False):
+        body = self.status(final=final, detail=detail)
         atomic_json(
             self.root / "status.json",
-            self.status(final=final, detail=detail),
+            body,
             sync=sync,
         )
+        if detail == "full" or final:
+            self._diagnostic_log(logging.INFO, dict(
+                kind="WS_DIAGNOSTIC_SUMMARY", ws=body["ws_diagnostics"],
+                queue_depth=body["queue_depth"], last_flush_ms=self.last_flush_ms,
+                last_seal_ms=self.last_seal_ms,
+            ))
 
     def maintain(self, now=None):
         """Flush often; seal and the full channel map on a slower cadence.
@@ -1277,6 +1376,10 @@ class Capture:
             depth_downsampled=self.catchup.downsampled,
         )
         body.update(self.reconnect.snapshot())
+        diagnostic = self._diagnose("snapshot", now, self._monotonic(), self.socket) or {}
+        diagnostic.update(diagnostic_errors=self.diagnostic_errors,
+                          diagnostic_events_dropped=self.diagnostic_events_dropped)
+        body["ws_diagnostics"] = diagnostic
         if full:
             body["channels"] = dict(self.channels)
         return body
@@ -1376,6 +1479,9 @@ def main():
         print(json.dumps(audit(args.input, args.export)))
         return
     os.umask(0o077)
+    # CLI only: enable lifecycle summaries, never websockets payload DEBUG logs.
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logger.setLevel(logging.INFO)
     source = json.loads(args.contracts_file.read_text())
     capture = Capture(
         args.output,

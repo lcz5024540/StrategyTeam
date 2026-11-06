@@ -1,0 +1,15 @@
+<mxfile host="app.diagrams.net"><diagram id="public-ws-diagnostics" name="Public WS diagnostics"><mxGraphModel dx="1100" dy="700" grid="1"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+<mxCell id="ws" value="HTX public WS&#xa;protocol Ping/Pong unchanged" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc" vertex="1" parent="1"><mxGeometry x="30" y="70" width="200" height="65" as="geometry"/></mxCell>
+<mxCell id="capture" value="Capture recv / decode / emit&#xa;original data &amp; retry policy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc" vertex="1" parent="1"><mxGeometry x="285" y="70" width="230" height="65" as="geometry"/></mxCell>
+<mxCell id="storage" value="Original queue + DEPTH catch-up&#xa;SegmentRecorder → COS pipeline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4" vertex="1" parent="1"><mxGeometry x="620" y="70" width="250" height="65" as="geometry"/></mxCell>
+<mxCell id="diag" value="WsDiagnostics (bounded memory)&#xa;phase / heartbeat / last-good&#xa;failure cannot stop capture" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc" vertex="1" parent="1"><mxGeometry x="285" y="235" width="230" height="85" as="geometry"/></mxCell>
+<mxCell id="error" value="Original GAP + diagnostic&#xa;WARN every failure&#xa;stack at most once/site/60s" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="35" y="410" width="230" height="90" as="geometry"/></mxCell>
+<mxCell id="recover" value="WS_CHANNEL_RECOVERED&#xa;last-good → next observation&#xa;includes backoff; per channel" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="315" y="410" width="230" height="90" as="geometry"/></mxCell>
+<mxCell id="status" value="status + periodic journal&#xa;pending channels / queue / IO&#xa;unknown timestamps = null" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="595" y="410" width="230" height="90" as="geometry"/></mxCell>
+<mxCell id="e1" edge="1" parent="1" source="ws" target="capture" style="endArrow=block"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e2" edge="1" parent="1" source="capture" target="storage" style="endArrow=block"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e3" edge="1" parent="1" source="capture" target="diag" style="dashed=1;endArrow=block" value="observation only"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e4" edge="1" parent="1" source="diag" target="error" style="endArrow=block"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e5" edge="1" parent="1" source="diag" target="recover" style="endArrow=block"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e6" edge="1" parent="1" source="diag" target="status" style="endArrow=block"><mxGeometry relative="1" as="geometry"/></mxCell>
+</root></mxGraphModel></diagram></mxfile>

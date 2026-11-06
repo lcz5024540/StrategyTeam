@@ -1,0 +1,17 @@
+{
+  "method": "Python AST + rg; codegraph unavailable",
+  "baseline": "e747f1fe",
+  "unchanged_functions": ["ReconnectGovernor", "DepthCatchup", "resubscribe_schedule", "normalize_ws", "Capture.emit", "Capture.write", "Capture.drain_batch", "Capture.poll_catchup", "Capture.open_catchup", "Capture.close_catchup"],
+  "unchanged_constants": ["DEPTH_CATCHUP_MAX_S", "DEPTH_CATCHUP_MIN_INTERVAL_MS", "DEPTH_CATCHUP_POLICY", "DEPTH_CATCHUP_WINDOW_S", "EVENT_DRAIN_BATCH", "EVENT_QUEUE_MAXSIZE", "RECONNECT_BACKOFF_INITIAL_S", "RECONNECT_BACKOFF_MAX_S", "RECONNECT_CIRCUIT_OPEN_S", "RECONNECT_FAILURE_CIRCUIT", "RECONNECT_HEALTHY_S", "RECONNECT_MIN_INTERVAL_S", "RESUBSCRIBE_CHUNK", "RESUBSCRIBE_CHUNK_PAUSE_S", "RESUBSCRIBE_INITIAL_DELAY_S", "RESUBSCRIBE_INTERVAL_S"],
+  "calls": {
+    "Capture.stream_loop": ["self._diagnose", "self._ws_failure_diagnostic", "self._ws_operation", "self.emit", "self.reconnect.begin_attempt", "self.reconnect.note_failure", "self.reconnect.seconds_until_attempt"],
+    "Capture._pump_socket": ["self._diagnose", "self._diagnostic_log", "self._ws_operation", "self.emit", "self.emit_diagnostic", "self.reconnect.note_observation", "self.reconnect.poll_health"],
+    "Capture._ws_failure_diagnostic": ["self._diagnose", "self._diagnostic_log", "self._ws_runtime_snapshot"],
+    "Capture.publish_status": ["self._diagnostic_log"],
+    "Capture.status": ["diagnostic.update", "self._diagnose", "self.reconnect.snapshot"]
+  },
+  "sha256": {
+    "htx-trend-python/src/htx_trend/realtime/public_capture.py": "1d3151706792f869bb98d414350d156eb84ca6aa0254e86f3dc656326c888898",
+    "htx-trend-python/src/htx_trend/realtime/ws_diagnostics.py": "096558677e67f5ee8e051ad6842546573f57798993399a969a711f0947ed4ac9"
+  }
+}
