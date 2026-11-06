@@ -1,8 +1,42 @@
-# LIVE capture 本地冷热保留候选
+# LIVE capture 本地冷热保留修复
 
 保留全部原始行情、原压缩字节和引用，释放应用热区配额；不上传 COS，不自动删除历史。
 
-作者：Codex；日期：2026-11-06；状态：本地候选，未合并、未部署。准确基线：`7a9620bfb5b3261b3bb88ba46d0ed85e43bd8729`；候选分支：`codex/htx-capture-local-archive`。
+作者：Codex；日期：2026-11-06；状态：已push修复分支、已部署主LIVE，未合并主分支。准确基线：`7a9620bfb5b3261b3bb88ba46d0ed85e43bd8729`；修复分支：`codex/htx-capture-local-archive`；线上运行源码：`73a43e665595a7df39506b0f9f3023f1700cbe28`。
+
+## 生产发布回执（北京时间2026-11-06）
+
+13:49:55预检交易所空仓、isolated/cross均无挂单。新旧包逐文件校验通过；Linux真实副本12段、33,384事件归档前后验读通过。13:50:10开始停止旧主实例，执行同trial审计升级并完成初始归档。13:52:53新LIVE启动，PID为`3376998`。13:54:09复验进程active/running、NRestarts=0，实际cwd/PYTHONPATH/source/package全部匹配。
+
+| 验收项 | 实测结果 |
+|---|---|
+| 热区占用 | 2,133,115,638 → 1,288,988,104字节，约99.33% → 60.02% |
+| 热区可用 | 858,495,544字节，约819MiB；上限仍为2GiB |
+| 本地冷payload | 846,062,403字节、16,194段；同盘保留，原路径仍可读 |
+| 历史完整性 | 原41,576条manifest前缀SHA不变；当前41,589条引用全部存在 |
+| 归档验读 | 归档前逐段验SHA；上线后抽查52段、90,508事件通过 |
+| 新行情 | 已新增13段，尾段包含BBO与TRADE，正常持续写入 |
+| trial | 同一trial；升级前后所有非版本/审计字段完全相同；revision 32447→32448，未重置、未续期 |
+| 物理磁盘 | 当时可用11,083,431,936字节（约10.32GiB）；显式保留5GiB |
+| 影响范围 | 仅主LIVE实例专属drop-in；共享current、原env、独立COS采集及4H未切换 |
+| 交易请求 | 切换工具只允许交易所GET查询；验收时没有新增订单 |
+
+新包：`htx-trend-python-0.1.7-realtime-live-73a43e66.tar.gz`；SHA256：`8fe339fca784a0b00ca0246143d0e6fdcb83de3fed2143881555f8322aef0d45`。
+
+线上release：`/opt/coinstrategy/htx-trend-py/releases/0.1.7-realtime-live-73a43e66`；发布材料：`/opt/coinstrategy/htx-trend-py-state/deploy-20261106-capture-73a43e66`。原环境文件保留，新增文件仅覆盖7个明确配置项；其余有效应用环境逐项比较不变。服务器凭据快照为0600，未下载或提交。
+
+最终完整回归再次通过：**1,443项，72.74秒，无跳过**，包含13项隔离MySQL测试；测试容器已恢复原停止状态并保留volume。
+
+13:55:44最后复验：同PID、NRestarts=0，新段由13增长至34；热区60.07%、可用857,507,202字节（约818MiB）；全部41,610条manifest引用仍存在。最近心跳无capture错误，仍有`STALE_BBO`。脱敏选录见`postdeploy-summary.json`。
+
+边界与未解决事项：
+
+- 容量修复已生效，但行情时效并未因此恢复：复验心跳仍为`DEGRADED/STALE_BBO`，不能称整体LIVE健康。
+- 停止旧writer到新worker的continuity gap为166.48秒；capture前后观测边界相隔169.09秒，已记录GAP，没有补造停机期间行情。
+- 冷区仍占服务器物理磁盘，且随历史增长；本次不是物理空间回收，也不是无限保留方案。5GiB余量保护仍会阻止继续写满磁盘。
+- 许可仍按原时间在**2026-11-06 22:26:45.361 CST**到期；没有自动续期。
+
+可审计脚本与脱敏回执位于[`evidence/capture-live-hotfix-20261106/`](evidence/capture-live-hotfix-20261106/)。`server_cutover.py`只针对本次确定旧版本的一次性切换，不是可随意重跑的通用部署脚本。
 
 ## 紧急发布补充：同trial版本衔接已实现
 
@@ -26,7 +60,7 @@ python -m htx_trend.realtime.trial_upgrade plan \
 
 55项定向含真实隔离MySQL通过；全套1,443项通过（含13项隔离MySQL），77.09秒，无跳过。覆盖升级/正常Trial重启、重复执行不重复审计、CAS拒绝旧writer、锁丢失拒绝写、回退保留升级后的运行状态，以及非版本字段变更/续期/新trial/篡改确认均拒绝。隔离环境为本机`colima-hot-deploy-tests/hot-deploy-mysql`，非生产数据库。
 
-生产切换严格限本实例：核对空仓/无未决、停旧writer、备份旧env和trial、生成最终持仓交接材料、执行有审计的版本升级、完成冷热归档，再通过实例专属systemd drop-in切换新release/env。共享`current`、独立COS采集与4H服务不动。失败时不得清空trial或重新激活；按同一receipt回退绑定与实例配置，旧包quota仍计冷payload，回退不代表容量问题已解决。
+生产切换严格限本实例：核对空仓/无未决、停旧writer、备份旧env和trial、生成最终持仓交接材料、执行有审计的版本升级、完成冷热归档，再通过实例专属systemd drop-in切换新release/env。共享`current`、独立COS采集与4H服务不动。失败时不得清空trial或重新激活；按同一receipt回退绑定与实例配置，旧包quota仍计冷payload，回退不代表容量问题已解决。以上流程已按本页生产回执执行。
 
 以下首轮记录中的“迁移未实现”已由本节实现取代；是否生产生效以独立部署回执为准。
 
@@ -34,7 +68,7 @@ python -m htx_trend.realtime.trial_upgrade plan \
 
 本地归档和无损编码优化已实现。历史 gzip 留在同盘冷目录，原 hash 路径作为相对软链接保持可读；热计量与冷保留量分别报告。它解决的是应用活动集持续累积，不减少磁盘上已有 gzip 的物理占用，也不证明行情消费积压已经修复。
 
-策略、2秒 fresh 标准、交易额度、退出逻辑、trial 身份和许可到期时间均未改动。生产仍运行旧包；本候选不能直接套用旧实盘许可。
+策略、2秒 fresh 标准、交易额度、退出逻辑、trial 身份和许可到期时间均未改动。生产已切换新包，使用同trial显式版本升级后的许可与账本绑定，并非直接套用旧版本许可。
 
 ## 架构与实现
 
@@ -80,7 +114,7 @@ python -m htx_trend.realtime.trial_upgrade plan \
 
 ```dotenv
 HTX_RT_CAPTURE_LOCAL_ARCHIVE=false
-# 只有显式开启时才必须设置。生产值待预算确认；5GiB为建议而非已设置。
+# 包内默认仍关闭；本次主LIVE已显式开启，且实际配置5GiB保留。
 # HTX_RT_CAPTURE_MIN_FREE_BYTES=5368709120
 ```
 
@@ -101,7 +135,7 @@ HTX_RT_CAPTURE_LOCAL_ARCHIVE=false
 - 无损优化：1000个真实BBO三轮序列化字节相等，编码速度中位为原来的1.305倍；基准仅覆盖本机编码，不包含网络、压缩、fsync或生产循环。
 - 影响图：`archive-graph/{input-manifest.json,extraction.json,graph.json,graph.html,GRAPH_REPORT.md}`。codegraph不可用，按Graphify skill生成9文件AST与显式边；图为导航，不冒充运行调用链。
 
-## 生产前必须解决的事项
+## 首轮生产前检查清单（本次已完成）
 
 1. 使用上述显式版本升级工具和操作者确认材料，保留原trial计数/时限/损失/限额；禁止直接改DB绕过审计、新建trial或自动续期。
 2. 明确总磁盘预算、保留余量及LIVE停止/切换窗口；切换前重新查交易所持仓和挂单，数据库旧状态不能代替交易所原子快照。
@@ -109,4 +143,4 @@ HTX_RT_CAPTURE_LOCAL_ARCHIVE=false
 
 现有 `Trial.__init__` 会对 saved binding/limits 全量比较；旧许可绑定source=7a9620bf及旧package，且北京时间2026-11-06 22:26:45.361到期。仅签发新approval也不能在同trial下绕过DB身份检查。候选构包不签发许可，不重置trial。
 
-本轮遵循 start-exec-plan / karpathy-guidelines / developer-mindset 的最小范围和可验证实施，并按 idempotency-state-machine 校验文件状态矩阵。M2消费延迟与M3历史补数未提前实施。
+首轮候选开发按当时治理指令完成文件状态矩阵检查；后续紧急发布未继续执行已撤销的治理流程。M2消费延迟与M3历史补数不属于此次容量热修复的完成结论。

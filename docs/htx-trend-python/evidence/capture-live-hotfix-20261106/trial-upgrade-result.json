@@ -1,0 +1,22 @@
+{
+  "trial_id": "primary-15m-sbox-20261105-7a9620bf",
+  "action": "APPLY",
+  "dry_run": false,
+  "changed": true,
+  "before_hash": "5915ddb5fedc3af220aead59978485004fac3830081ced9ed078f8a367881071",
+  "after_hash": "26aec94e5d2594aa4586c12dca8209b1da320467f09891dd0a2e58b4902702b4",
+  "before_revision": 32447,
+  "after_revision": 32448,
+  "receipt": "d48f3f65c417e740163005cddddddf37a123d10e1679cf127c2c4979fd1b08c3",
+  "started_ms": 1793889831846,
+  "expires_ms": 1793976231846,
+  "intent_count": 0,
+  "limits": {
+    "loss": "20",
+    "slots": 10,
+    "trades": 10,
+    "per_trade": "2",
+    "duration_ms": 86400000
+  },
+  "stop_reason": null
+}

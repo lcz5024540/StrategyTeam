@@ -1,0 +1,8 @@
+Final committed runtime source: 73a43e665595a7df39506b0f9f3023f1700cbe28
+Command: HTX_TEST_MYSQL_PORT=33319 .venv/bin/python -m pytest -q
+Result: 1443 passed in 72.74s (0:01:12)
+Includes 13 isolated MySQL tests; no skips.
+Database: local colima-hot-deploy-tests/hot-deploy-mysql, localhost:33319.
+The existing test container was returned to its initial stopped state.
+No production database was used for this test suite.
+Both deployment helper scripts passed AST syntax validation.

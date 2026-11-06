@@ -1,0 +1,14 @@
+{
+  "hot_bytes": 2133115638,
+  "manifest_bytes": 7056948,
+  "manifest_sha256": "6ee8810ee3ea9373c5503aa4e8bd824615f80e4ae8af49ba2365c0810f933142",
+  "manifest_records": 41576,
+  "last_record": {
+    "bytes": 19983,
+    "count": 630,
+    "first_received_ms": 1793944207143,
+    "hash": "099c0e23be2e27fab987e24495ae3d981bff7492e4621578fbae83b15329c5c6",
+    "last_received_ms": 1793944209727
+  },
+  "checked_at": "2026-11-06T13:50:14.747290+08:00"
+}

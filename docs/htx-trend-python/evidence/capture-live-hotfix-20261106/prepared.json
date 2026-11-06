@@ -1,0 +1,27 @@
+{
+  "phase": "PREPARED",
+  "pid": "3137835",
+  "old_release": "/opt/coinstrategy/htx-trend-py/releases/0.1.7-realtime-live-7a9620bf",
+  "new_release": "/opt/coinstrategy/htx-trend-py/releases/0.1.7-realtime-live-73a43e66",
+  "source": "73a43e665595a7df39506b0f9f3023f1700cbe28",
+  "package_sha256": "8fe339fca784a0b00ca0246143d0e6fdcb83de3fed2143881555f8322aef0d45",
+  "exchange": {
+    "positions": 0,
+    "isolated_orders": 0,
+    "cross_orders": 0,
+    "checked_at": "2026-11-06T13:49:55.426803+08:00"
+  },
+  "linux_smoke": {
+    "schema": "htx-capture-local-alias-v1",
+    "hot_bytes": 352919,
+    "hot_max_bytes": 655684,
+    "cold_payload_bytes": 237667,
+    "retained_bytes": 590586,
+    "min_free_bytes": 5368709120,
+    "moved_this_process": 5,
+    "max_member_lock_ms": 8.428049273788929,
+    "failure": null
+  },
+  "linux_events": 33384,
+  "prepared_at": "2026-11-06T13:49:58.232131+08:00"
+}

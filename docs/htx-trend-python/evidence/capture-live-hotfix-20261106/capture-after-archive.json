@@ -1,0 +1,11 @@
+{
+  "schema": "htx-capture-local-alias-v1",
+  "hot_bytes": 1288445959,
+  "hot_max_bytes": 2147483648,
+  "cold_payload_bytes": 846062403,
+  "retained_bytes": 2134508362,
+  "min_free_bytes": 5368709120,
+  "moved_this_process": 16194,
+  "max_member_lock_ms": 46.28490377217531,
+  "failure": null
+}
