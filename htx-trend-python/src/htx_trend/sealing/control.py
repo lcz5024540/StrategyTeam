@@ -77,6 +77,8 @@ def initialize(root, *, kind, contract, max_bytes=64*1024**2, max_files=20000,
                delivery_consumer=False, enroll_existing=False, writer_stopped=False):
     """Explicit local layout migration. Existing writers must be stopped by operator."""
     root = Path(root).absolute()
+    if (root / '.capture-cold').exists():
+        raise SealingError('local capture alias layout cannot be enrolled for segmented/COS release')
     if kind not in {'cas', 'capture'} or contract not in {'paper', 'collector', 'capture-public', 'capture-runtime'}:
         raise SealingError('unsupported sealing contract')
     if (kind == 'cas') != (contract in {'paper', 'collector'}):

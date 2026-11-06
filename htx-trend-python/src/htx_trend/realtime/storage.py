@@ -14,6 +14,7 @@ import sqlite3
 import tempfile
 import threading
 from .segment_codec import segment_events
+from .feed import MarketEvent
 from ..research.store import canonical, digest
 
 TERMINAL = frozenset(
@@ -130,9 +131,16 @@ class SegmentRecorder:
         json_ready=False,
         segmented=False,
         segment_contract="capture-public",
+        local_archive=False,
+        local_archive_min_free_bytes=None,
     ):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        self.local_archive = None
+        if (self.root / ".capture-cold").exists() and not local_archive:
+            raise ValueError("local capture archive requires explicit local-archive mode")
+        if local_archive and segmented:
+            raise ValueError("local capture archive cannot share the segmented/COS layout")
         self.segments = None
         marker = self.root / '.sealing/config.json'
         if marker.exists() and not segmented:
@@ -151,22 +159,38 @@ class SegmentRecorder:
         self.gzip_level, self.json_ready = gzip_level, json_ready
         self.pending_bytes = 0
         self.failure = None
+        self._closed = False
         self.lock = threading.RLock()
         self.last_ref = None
+        if local_archive:
+            from .local_archive import LocalCaptureArchive
+            self.local_archive = LocalCaptureArchive(
+                self, min_free_bytes=local_archive_min_free_bytes,
+            )
         manifest = self.root / "segments.jsonl"
-        self.records = (
-            [json.loads(line) for line in manifest.read_text().splitlines()]
-            if manifest.exists()
-            else []
-        )
-        if self.segments:
-            self.records = self.segments.local_records()
-            self.last_ref = self.records[-1]['hash'] if self.records else None
-        self.indexed = {record["hash"] for record in self.records}
+        try:
+            self.records = (
+                [json.loads(line) for line in manifest.read_text().splitlines()]
+                if manifest.exists()
+                else []
+            )
+            if self.segments:
+                self.records = self.segments.local_records()
+                self.last_ref = self.records[-1]['hash'] if self.records else None
+            self.indexed = {record["hash"] for record in self.records}
+            if self.local_archive:
+                self.last_ref = self.records[-1]["hash"] if self.records else None
+                self.local_archive.start()
+        except BaseException:
+            if self.local_archive:
+                self.local_archive.close()
+            raise
 
     @recorder_lease
     def append(self, event):
         with self.lock:
+            if self._closed:
+                return False
             self._refresh_released()
             if self.failure:
                 return False
@@ -179,7 +203,8 @@ class SegmentRecorder:
                     ensure_ascii=False,
                     allow_nan=False,
                 ).encode()
-                if self.json_ready
+                # MarketEvent.dump() already applies primitive() recursively.
+                if self.json_ready or type(event) is MarketEvent
                 else canonical(value)
             )
             self.pending.append(value)
@@ -216,14 +241,22 @@ class SegmentRecorder:
                 "last_received_ms": self.pending[-1].get("received_ms"),
             }
             line = canonical(record) + b"\n"
-            if self.used + len(packed) + len(line) > self.max_bytes:
+            path = self.root / (sha + ".json.gz")
+            needed = len(packed) + len(line)
+            if self.local_archive:
+                needed = (0 if path.exists() else len(packed)) + (
+                    0 if sha in self.indexed else len(line)
+                )
+            if self.used + needed > self.max_bytes:
                 self.failure = "CAPTURE_QUOTA_EXCEEDED"
                 self.pending.clear()
                 self.encoded.clear()
                 self.pending_bytes = 0
                 return None
-            path = self.root / (sha + ".json.gz")
             try:
+                if self.local_archive:
+                    self.local_archive.ensure_reserve(needed)
+                written = 0
                 if not path.exists():
                     with tempfile.NamedTemporaryFile(
                         dir=self.root, prefix=".pending-", delete=False
@@ -234,6 +267,7 @@ class SegmentRecorder:
                         os.fsync(f.fileno())
                     os.replace(temporary, path)
                     self.used += len(packed)
+                    written += len(packed)
                 if sha not in self.indexed:
                     # A crash after object rename but before manifest append is recoverable.
                     if sha256(gzip.decompress(path.read_bytes())).hexdigest() != sha:
@@ -250,6 +284,7 @@ class SegmentRecorder:
                         os.close(fd)
                     if not self.segments:
                         self.used += len(line)
+                        written += len(line)
                     self.indexed.add(sha)
                     self.records.append(record)
                 if self.segments:
@@ -259,6 +294,8 @@ class SegmentRecorder:
                 self.pending.clear()
                 self.encoded.clear()
                 self.pending_bytes = 0
+                if self.local_archive:
+                    self.local_archive.note_write(written)
                 return sha
             except (OSError, sqlite3.Error, ValueError) as error:
                 if self.segments:
@@ -266,6 +303,23 @@ class SegmentRecorder:
                     fence_failure(self.segments)
                 self.failure = 'CAPTURE_IO:' + type(error).__name__
                 return None
+
+    def storage_status(self):
+        if self.local_archive:
+            return self.local_archive.status()
+        return {"hot_bytes": self.used, "hot_max_bytes": self.max_bytes, "failure": self.failure}
+
+    def close(self):
+        with self.lock:
+            if self._closed:
+                return
+            # Block new appends before flushing and releasing the writer lease.
+            self._closed = True
+        try:
+            self.flush()
+        finally:
+            if self.local_archive:
+                self.local_archive.close()
 
     def _refresh_released(self):
         if not self.segments:

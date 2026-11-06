@@ -653,6 +653,14 @@ class RealtimeWorker:
                 + "; stop="
                 + str(status["stop_reason"])
             )
+        if getattr(self.recorder, "local_archive", None) is not None:
+            capture = self.recorder.storage_status()
+            detail += (
+                "; capture_hot=" + str(capture["hot_bytes"])
+                + "/" + str(capture["hot_max_bytes"])
+                + "; capture_cold=" + str(capture["cold_payload_bytes"])
+                + "; capture_retained=" + str(capture["retained_bytes"])
+            )
         self.failed = tuple(failures)
         count = (
             len(self.broker.ledger.active_positions(self.broker.account))
@@ -683,19 +691,24 @@ class RealtimeWorker:
             return
         self.stopped = True
         self.entry_enabled = False
-        if self.cost_observer is not None:
-            self.cost_observer.close()
-        self.stream.close()
-        self.loader.close()
-        self.recorder.flush()
-        if hasattr(self.broker, "close"):
-            self.broker.close()
-        if self.trial_monitor is not None:
-            self.trial_monitor.close()
-        if self.trial_connection is not None:
-            self.trial_connection.close()
-        if hasattr(self.management, "flush"):
-            self.management.flush()
-        if hasattr(self.broker, "ledger"):
-            self.broker.ledger.checkpoint()
-            self.broker.ledger.close()
+        try:
+            if self.cost_observer is not None:
+                self.cost_observer.close()
+            self.stream.close()
+            self.loader.close()
+            self.recorder.flush()
+            if hasattr(self.broker, "close"):
+                self.broker.close()
+            if self.trial_monitor is not None:
+                self.trial_monitor.close()
+            if self.trial_connection is not None:
+                self.trial_connection.close()
+            if hasattr(self.management, "flush"):
+                self.management.flush()
+            if hasattr(self.broker, "ledger"):
+                self.broker.ledger.checkpoint()
+                self.broker.ledger.close()
+        finally:
+            # Even an earlier shutdown failure must not strand the new mover/lease.
+            if hasattr(self.recorder, "close"):
+                self.recorder.close()
