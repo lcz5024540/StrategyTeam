@@ -4,6 +4,32 @@
 
 作者：Codex；日期：2026-11-06；状态：本地候选，未合并、未部署。准确基线：`7a9620bfb5b3261b3bb88ba46d0ed85e43bd8729`；候选分支：`codex/htx-capture-local-archive`。
 
+## 紧急发布补充：同trial版本衔接已实现
+
+用户要求打包解决LIVE容量问题后，新增`htx_trend.realtime.trial_upgrade`。不修改`trial.py`与`trial_admission.py`的正常准入检查，不伪装运行版本；工具在原全局MySQL单写锁下，通过原revision CAS只修改source/package绑定，附加`storage_upgrade_history`审计，原交易计数、风险、亏损、开始/到期、stop_reason与所有其他状态保持不变。
+
+新approval保留旧approval全部非版本授权字段，另绑定原approval哈希、操作者确认原文及包文件差异。`prepare`调用原package verifier，禁止脏源码或存储白名单之外的文件变化。seal用于完整性校验，不冒充签名或代替操作者授权。
+
+```bash
+python -m htx_trend.realtime.trial_upgrade prepare \
+  --old-approval /absolute/old/trial-approval.json \
+  --old-manifest /absolute/old-release/MANIFEST.json \
+  --archive /absolute/new-package.tar.gz \
+  --confirmation /absolute/operator-confirmation.txt \
+  --output /absolute/new-authority-directory
+# 旧writer停用后，在实际旧数据库环境内：
+python -m htx_trend.realtime.trial_upgrade plan \
+  --old-approval /absolute/new-authority-directory/old-approval.json \
+  --new-approval /absolute/new-authority-directory/approval.json
+# 核验plan后将plan改为apply；恢复旧包使用rollback，原状态不回退。
+```
+
+55项定向含真实隔离MySQL通过；全套1,443项通过（含13项隔离MySQL），77.09秒，无跳过。覆盖升级/正常Trial重启、重复执行不重复审计、CAS拒绝旧writer、锁丢失拒绝写、回退保留升级后的运行状态，以及非版本字段变更/续期/新trial/篡改确认均拒绝。隔离环境为本机`colima-hot-deploy-tests/hot-deploy-mysql`，非生产数据库。
+
+生产切换严格限本实例：核对空仓/无未决、停旧writer、备份旧env和trial、生成最终持仓交接材料、执行有审计的版本升级、完成冷热归档，再通过实例专属systemd drop-in切换新release/env。共享`current`、独立COS采集与4H服务不动。失败时不得清空trial或重新激活；按同一receipt回退绑定与实例配置，旧包quota仍计冷payload，回退不代表容量问题已解决。
+
+以下首轮记录中的“迁移未实现”已由本节实现取代；是否生产生效以独立部署回执为准。
+
 ## 结论
 
 本地归档和无损编码优化已实现。历史 gzip 留在同盘冷目录，原 hash 路径作为相对软链接保持可读；热计量与冷保留量分别报告。它解决的是应用活动集持续累积，不减少磁盘上已有 gzip 的物理占用，也不证明行情消费积压已经修复。
@@ -77,7 +103,7 @@ HTX_RT_CAPTURE_LOCAL_ARCHIVE=false
 
 ## 生产前必须解决的事项
 
-1. 用户选择许可衔接方式：实现并审核**同trial、保留原计数/时限/损失/限额的源码与包绑定迁移**，或等待旧trial结束后另行授权新trial。本次未实现前者，不能仅修改approval JSON或DB字段绕过。
+1. 使用上述显式版本升级工具和操作者确认材料，保留原trial计数/时限/损失/限额；禁止直接改DB绕过审计、新建trial或自动续期。
 2. 明确总磁盘预算、保留余量及LIVE停止/切换窗口；切换前重新查交易所持仓和挂单，数据库旧状态不能代替交易所原子快照。
 3. 确认后再整合目标分支、构建最终包、停旧writer并按批准流程切换；验收实际source/package、trial未重置、原引用、热/冷计量、新行情尾部和健康状态。
 
