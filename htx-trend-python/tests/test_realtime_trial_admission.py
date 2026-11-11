@@ -88,3 +88,29 @@ def test_unique_runtime_candidate_and_confirmation_required(tmp_path):
     (tmp_path / "confirmation.txt").write_text("changed")
     with pytest.raises(ValueError, match="hash"):
         validate(save(tmp_path, v), v, entry=True)
+
+
+def test_no_deadline_authority_is_explicit_and_still_checks_candidate(tmp_path):
+    v = artifact(tmp_path)
+    v.update(permission="TRIAL", candidate="ORIGINAL_20_32_V1", expires_at=None,
+             candidate_confirmation_ref=v["confirmation_ref"],
+             candidate_confirmation_sha256=v["confirmation_sha256"])
+    v["limits"]["duration_ms"] = None
+    later = datetime.now(UTC) + timedelta(days=365)
+    _, limits = validate(save(tmp_path, v), v, entry=True, now=later)
+    assert limits.duration_ms is None
+    with pytest.raises(ValueError, match="candidate"):
+        validate(save(tmp_path, {**v, "permission": "MANAGEMENT"}), v, entry=True, now=later)
+    v["issued_at"] = (later + timedelta(days=1)).isoformat()
+    with pytest.raises(ValueError, match="not yet valid"):
+        validate(save(tmp_path, v), v, entry=True, now=later)
+
+
+@pytest.mark.parametrize("expiry", ["missing", "timed"])
+def test_no_deadline_rejects_missing_or_timed_expiry(tmp_path, expiry):
+    v = artifact(tmp_path)
+    v["limits"]["duration_ms"] = None
+    if expiry == "missing":
+        del v["expires_at"]
+    with pytest.raises(ValueError, match="explicit|expires_at"):
+        validate(save(tmp_path, v), v, entry=True)

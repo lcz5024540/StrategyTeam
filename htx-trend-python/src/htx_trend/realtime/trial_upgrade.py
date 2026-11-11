@@ -146,7 +146,9 @@ def transition(saved, old, new, *, now_ms, rollback=False):
         raise ValueError("trial identity/limits mismatch")
     if saved.get("started_ms") is None:
         raise ValueError("cannot activate a trial during upgrade")
-    if not rollback and (saved.get("stop_reason") or now_ms >= saved["expires_ms"]):
+    if not rollback and (saved.get("stop_reason") or (
+        saved["expires_ms"] is not None and now_ms >= saved["expires_ms"]
+    )):
         raise ValueError("cannot renew or restart a stopped trial")
     before, after = (new, old) if rollback else (old, new)
     source = {key: before[key] for key in BINDINGS}

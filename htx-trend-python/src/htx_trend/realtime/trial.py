@@ -30,17 +30,22 @@ class Limits:
     loss: D = D(20)
     slots: int = 10
     trades: int = 10
-    duration_ms: int = 86400000
+    # None is an explicitly authorized no-deadline mode, not a legacy reset.
+    duration_ms: int | None = 86400000
 
     def __post_init__(self):
         if not (D(0) < number(self.per_trade) <= 2 and D(0) < number(self.loss) <= 20):
             raise ValueError("trial monetary limits exceed authorization")
         if any(
             type(v) is not int or v <= 0
-            for v in (self.slots, self.trades, self.duration_ms)
+            for v in (self.slots, self.trades)
         ):
             raise ValueError("trial count/duration must be positive integers")
-        if self.slots > 10 or self.trades > 10 or self.duration_ms > 86400000:
+        if self.duration_ms is not None and (
+            type(self.duration_ms) is not int or not 0 < self.duration_ms <= 86400000
+        ):
+            raise ValueError("trial duration must be null or a positive integer <=24h")
+        if self.slots > 10 or self.trades > 10:
             raise ValueError("trial count/duration exceeds authorization")
 
     def payload(self):
@@ -190,7 +195,10 @@ class Trial:
         new = deepcopy(self.state)
         new.update(
             started_ms=now_ms,
-            expires_ms=now_ms + self.limits.duration_ms,
+            expires_ms=(
+                None if self.limits.duration_ms is None
+                else now_ms + self.limits.duration_ms
+            ),
             last_clock_ms=now_ms,
         )
         self._save(new)
@@ -277,7 +285,7 @@ class Trial:
             raise ValueError("trial stopped: " + state["stop_reason"])
         if state["started_ms"] is None:
             raise ValueError("trial not activated")
-        if now_ms >= state["expires_ms"]:
+        if state["expires_ms"] is not None and now_ms >= state["expires_ms"]:
             self.stop("TIME_LIMIT")
             raise ValueError("trial expired")
         snap = state["snapshot"]

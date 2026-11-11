@@ -5,17 +5,20 @@ from hashlib import sha256
 import pytest
 
 from htx_trend.admission import canonical, seal
-from htx_trend.realtime.trial import SqliteTrialStore, Trial
+from htx_trend.realtime.trial import Limits, SqliteTrialStore, Trial
 from htx_trend.realtime.trial_admission import BINDINGS
 from htx_trend.realtime.trial_upgrade import execute, package_scope, transition, validate_pair
 from test_realtime_trial_admission import artifact
 
 
-def approvals(tmp_path):
+def approvals(tmp_path, *, no_deadline=False):
     old = artifact(tmp_path)
     old.update(permission="TRIAL", candidate="ORIGINAL_20_32_V1",
                candidate_confirmation_ref=old["confirmation_ref"],
                candidate_confirmation_sha256=old["confirmation_sha256"])
+    if no_deadline:
+        old["limits"]["duration_ms"] = None
+        old["expires_at"] = None
     old = seal(old)
     old_path = tmp_path / "old.json"
     old_path.write_text(canonical(old))
@@ -36,7 +39,8 @@ def approvals(tmp_path):
 
 
 def active(store, old):
-    trial = Trial(store, old["trial_id"], {key: old[key] for key in BINDINGS})
+    trial = Trial(store, old["trial_id"], {key: old[key] for key in BINDINGS},
+                  Limits(**old["limits"]))
     now_ms = int(datetime.now(UTC).timestamp() * 1000)
     trial.activate(now_ms)
     state = deepcopy(trial.state)
@@ -50,6 +54,27 @@ def active(store, old):
 def operational(state):
     return {k: v for k, v in state.items()
             if k not in {"binding", "revision", "storage_upgrade_history"}}
+
+
+def test_no_deadline_storage_upgrade_preserves_limits_and_stop_state(tmp_path):
+    old_path, new_path, old, new = approvals(tmp_path, no_deadline=True)
+    store = SqliteTrialStore(tmp_path / "trial.sqlite")
+    try:
+        original = deepcopy(active(store, old).state)
+        assert original["expires_ms"] is None
+        result = execute(store, lambda: None, old_path, new_path)
+        saved = store.load(old["trial_id"])
+        assert result["changed"] and operational(saved) == operational(original)
+        assert not execute(store, lambda: None, old_path, new_path)["changed"]
+        resumed = Trial(store, old["trial_id"], {key: new[key] for key in BINDINGS},
+                        Limits(duration_ms=None))
+        resumed.stop("OPERATOR_STOP")
+        with pytest.raises(ValueError, match="stopped"):
+            transition(resumed.state, old, new, now_ms=10**15)
+        execute(store, lambda: None, old_path, new_path, rollback=True)
+        assert store.load(old["trial_id"])["stop_reason"] == "OPERATOR_STOP"
+    finally:
+        store.db.close()
 
 
 def test_apply_restart_idempotence_rollback_never_resets_trial(tmp_path):
