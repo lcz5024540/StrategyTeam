@@ -246,6 +246,25 @@ def test_missing_stream_dependency_stops_before_partial_rest_only_capture(tmp_pa
     assert json.loads((c.root/'status.json').read_bytes())['final']
 
 
+@pytest.mark.parametrize("segmented,free,expected", [
+    (True, 5 * GIB, "STREAM_DEPENDENCY_UNAVAILABLE"),
+    (True, 6 * GIB, "STREAM_DEPENDENCY_UNAVAILABLE"),
+    (True, 5 * GIB - 1, "INSUFFICIENT_START_HEADROOM"),
+    (False, 6 * GIB, "INSUFFICIENT_START_HEADROOM"),
+    (False, 7 * GIB, "STREAM_DEPENDENCY_UNAVAILABLE"),
+])
+def test_segmented_start_does_not_reserve_whole_quota_again(tmp_path, monkeypatch, segmented, free, expected):
+    c = Capture(tmp_path / "capture", ["ETH-USDT"], segmented=segmented, seconds=1)
+    def missing():
+        raise ModuleNotFoundError("test dependency boundary")
+    monkeypatch.setattr(c, "stream_dependency_check", missing)
+    monkeypatch.setattr("htx_trend.realtime.public_capture.shutil.disk_usage", lambda _: SimpleNamespace(free=free))
+    c.run()
+    assert c.failure == expected
+    status = json.loads((c.root / "status.json").read_bytes())
+    assert status["startup_required_free_bytes"] == (5 if segmented else 7) * GIB
+
+
 def test_overflow_is_nonblocking_fail_closed_and_logs_high_water(tmp_path, caplog):
     c = Capture(tmp_path / "overflow", ["ETH-USDT"], seconds=1)
     try:

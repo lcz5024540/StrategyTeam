@@ -1,5 +1,7 @@
 # HTX Python交付索引
 
+- [COS有界保留、无固定期限与可恢复缓存清理](cos-retention-20261111.md)：显式null时限、分段启动预算和GET验哈缓存释放；不解除生产交易闸门，旧LIVE alias迁移仍待处理。
+
 - [LIVE capture本地冷热保留候选](capture-local-archive-20261106.md)：原gzip/hash/引用保留，应用冷热计量和无损编码优化；不上传/删历史，生产许可衔接待确认。
 
 - [support_htx_python合并与COS部署](support-python-cos-deployment-20261105.md)：4fa6ccee已推送，19:32切独立数据服务，新数据COS下载验哈通过；旧LIVE/4H不变，行情新鲜度告警保留。
