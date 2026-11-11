@@ -17,7 +17,7 @@ import argparse
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from decimal import Decimal as D
+from decimal import Decimal as D, InvalidOperation
 import fcntl
 import gzip
 import json
@@ -111,7 +111,23 @@ MISSING = [
 ]
 
 
+class InvalidPublicMarketData(ValueError):
+    """Rejected book payload, not a transport failure or a valid observation."""
+
+
 def normalize_ws(value, epoch, received_ms):
+    channel = value.get('ch', '')
+    if isinstance(channel, str) and re.fullmatch(r'market\.[A-Z0-9]+-USDT\.(bbo|depth\.step0)', channel):
+        try:
+            return _normalize_ws(value, epoch, received_ms)
+        except (KeyError, IndexError, TypeError, ValueError, InvalidOperation) as exc:
+            # Only the pure public book decoder is isolated. Socket, queue and
+            # storage failures retain their existing fail-closed paths.
+            raise InvalidPublicMarketData(str(exc)) from exc
+    return _normalize_ws(value, epoch, received_ms)
+
+
+def _normalize_ws(value, epoch, received_ms):
     """depth.step0 is a full snapshot, never treated as an incremental book."""
     channel = value.get("ch", "")
     match = re.fullmatch(r"market\.([A-Z0-9]+-USDT)\.depth\.step0", channel)
@@ -646,6 +662,8 @@ class Capture:
         self.socket = None
         self.counts, self.channels = Counter(), Counter()
         self.last_seen, self.errors = {}, Counter()
+        self.invalid_market_messages = Counter()
+        self._invalid_market_log_at = {}
         self.recorder = SegmentRecorder(
             self.root / "segments",
             max_bytes=max_bytes - CONTROL_RESERVE,
@@ -1152,7 +1170,11 @@ class Capture:
                         )
                     )
                     continue  # one unavailable symbol does not erase the other 51
-                observations, pong = normalize_ws(value, epoch, received)
+                try:
+                    observations, pong = normalize_ws(value, epoch, received)
+                except InvalidPublicMarketData as exc:
+                    self.record_invalid_book(value, exc, epoch, received)
+                    continue
             if pong:
                 self._diagnose("htx_ping", received, self._monotonic())
                 with self._ws_operation("pong_send"):
@@ -1181,6 +1203,29 @@ class Capture:
                     )
                     recovered = True
                 self.reconnect.note_observation(self._monotonic())
+
+    def record_invalid_book(self, value, error, epoch, received):
+        channel = value['ch']
+        code = channel.split('.')[1]
+        key = channel if code in self.contracts else 'UNSUBSCRIBED'
+        self.invalid_market_messages[key] += 1
+        now = self._monotonic()
+        if now - self._invalid_market_log_at.get(key, float('-inf')) < 60:
+            return  # Full count remains visible; at most one raw sample/min/channel.
+        self._invalid_market_log_at[key] = now
+        raw = json.dumps(value, ensure_ascii=False)
+        try:
+            json.dumps(value, allow_nan=False)
+            sample = value if len(raw) <= 4096 else {'truncated': True, 'sample': raw[:4096]}
+        except ValueError:
+            # json.loads accepts NaN/Infinity (including an overflowing 1e999).
+            # Keep a labelled text sample, never poison strict recorder JSON.
+            sample = {'non_json_numeric': True, 'parsed_sample': raw[:4096]}
+        self.emit(dict(kind='SOURCE_ERROR', source='INVALID_PUBLIC_BOOK',
+                       channel=channel, epoch=epoch, received_ms=received,
+                       error_type=type(error.__cause__).__name__, message=str(error)[:256],
+                       rejected_count=self.invalid_market_messages[key],
+                       raw=sample))
 
     def write(self, event):
         if not self.recorder.append(event):
@@ -1353,6 +1398,7 @@ class Capture:
             stale_price_channels=stale_price,
             stale_kline_channels=stale_kline,
             errors=dict(self.errors),
+            invalid_market_messages=dict(self.invalid_market_messages),
             bytes=self.recorder.used,
             min_free_bytes=self.min_free_bytes,
             startup_required_free_bytes=self.startup_required_free_bytes,

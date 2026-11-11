@@ -44,6 +44,18 @@ def outstanding(control, descriptor, namespace, epoch):
     return False
 
 
+def blocked_without_new_plan(control, epoch):
+    """An unchanged pinned tail needs no new immutable approval database."""
+    with control.lease(), control.guard:
+        _, pinned = control.pin_snapshot()  # Includes handoff/failure fences.
+        local = {r[0] for r in control.db.execute(
+            'SELECT o.key FROM objects o JOIN members m ON o.path=m.path '
+            'WHERE m.generation=? AND o.local=1', (epoch,))}
+        if local - pinned:
+            return None  # New preview must revalidate bytes, pins and COS.
+        return 'PINNED' if local else 'NO_LOCAL'
+
+
 def tick(backend, policy, work, *, budget_seconds=180, max_generations=12, retries=3,
          min_free=5 * 1024**3):
     if policy.get('enabled') is not True:
@@ -84,8 +96,6 @@ def tick(backend, policy, work, *, budget_seconds=180, max_generations=12, retri
                 atomic(cursor_path, encoded(epoch))  # avoid starvation by pinned old generations
                 descriptor_path = state_dir / f'epoch-{epoch}.json'
                 descriptor = json.loads(descriptor_path.read_bytes()) if descriptor_path.exists() else None
-                if descriptor and not outstanding(control, descriptor, backend.identity, epoch):
-                    descriptor = None
                 before = control.db.execute(
                     'SELECT coalesce(sum(o.size),0) FROM objects o JOIN members m ON o.path=m.path '
                     'WHERE m.generation=? AND o.local=1', (epoch,)).fetchone()[0]
@@ -94,6 +104,12 @@ def tick(backend, policy, work, *, budget_seconds=180, max_generations=12, retri
                     if time.monotonic() >= deadline:
                         break
                     try:
+                        if descriptor and not outstanding(control, descriptor, backend.identity, epoch):
+                            blocked = blocked_without_new_plan(control, epoch)
+                            if blocked:
+                                result = {'epoch': epoch, 'status': blocked}
+                                break
+                            descriptor = None
                         if descriptor is None:
                             plan = state_dir / f'epoch-{epoch}-{uuid.uuid4().hex}.sqlite3'
                             descriptor = preview_release(backend, root, epoch, plan, work=work, min_free=min_free)

@@ -47,6 +47,20 @@ def test_release_keeps_active_pin_and_writer_continues(setup):
     assert maintenance.tick(backend, policy, work, min_free=0)['released_bytes'] == 0
 
 
+def test_pinned_preview_does_not_grow_on_repeated_ticks_or_unrelated_revision(setup):
+    writer, backend, policy, work = setup
+    maintenance.tick(backend, policy, work, min_free=0)
+    plans = sorted((work / 'release-control').glob('epoch-*.sqlite3'))
+    for _ in range(100):
+        writer.segments.checkpoint_changed()
+        result = maintenance.tick(backend, policy, work, min_free=0)
+        assert result['released_bytes'] == 0
+        assert sorted((work / 'release-control').glob('epoch-*.sqlite3')) == plans
+    writer.append({'kind': 'DEPTH', 'received_ms': 4, 'data': [4]})
+    writer.segment_boundary()
+    assert maintenance.tick(backend, policy, work, min_free=0)['released_bytes'] > 0
+
+
 @pytest.mark.parametrize('change', ['disabled', 'namespace', 'root', 'contract'])
 def test_authorization_boundaries(setup, change):
     writer, backend, policy, work = setup
