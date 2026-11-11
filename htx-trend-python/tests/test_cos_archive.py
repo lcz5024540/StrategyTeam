@@ -168,6 +168,50 @@ def test_archive_still_rejects_below_minimum_free_space(tmp_path, monkeypatch):
     assert backend.puts == 0
 
 
+class ShortWriter:
+    def __init__(self, stream):
+        self.stream = stream
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+    def write(self, data):
+        return self.stream.write(data[:-1])
+
+
+def test_archive_short_write_does_not_publish_manifest(tmp_path, monkeypatch):
+    spec, _, _ = cas_fixture(tmp_path)
+    backend = MemoryBackend()
+    original_open = Path.open
+    def opened(path, *args, **kwargs):
+        stream = original_open(path, *args, **kwargs)
+        mode = args[0] if args else kwargs.get('mode', 'r')
+        return ShortWriter(stream) if path.name == 'pack.pending' and mode == 'wb' else stream
+    monkeypatch.setattr(Path, 'open', opened)
+    with pytest.raises(ArchiveError, match='short archive pack write'):
+        archive(backend, tmp_path / 'work', 'small', spec, min_free=0)
+    assert backend.puts == 0
+
+
+def test_restore_short_write_has_no_completion_marker(tmp_path, monkeypatch):
+    from htx_trend.archive import transfer
+    spec, _, _ = cas_fixture(tmp_path)
+    backend = MemoryBackend()
+    work = tmp_path / 'work'
+    result = archive(backend, work, 'small', spec, min_free=0)
+    original_tempfile = transfer.tempfile.TemporaryFile
+    @contextmanager
+    def temporary_file(*args, **kwargs):
+        with original_tempfile(*args, **kwargs) as stream:
+            yield ShortWriter(stream)
+    monkeypatch.setattr(transfer.tempfile, 'TemporaryFile', temporary_file)
+    target = tmp_path / 'verify'
+    with pytest.raises(ArchiveError, match='short restore pack write'):
+        restore(backend, result['manifest'], target, scratch=work,
+                all_files=True, verify_only=True, min_free=0)
+    assert not list(target.glob('.cos-restore-complete-*'))
+
+
 def test_cas_full_restore_and_reference_range_restore(tmp_path):
     spec, a, b = cas_fixture(tmp_path)
     backend = MemoryBackend()

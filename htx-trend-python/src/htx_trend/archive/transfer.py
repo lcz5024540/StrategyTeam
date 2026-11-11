@@ -192,7 +192,8 @@ def _archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
                                 # max_member bounds accepted input, not required scratch space.
                                 # Check actual bytes before each unbuffered write instead.
                                 free_guard(work, min_free, len(stored))
-                                pack.write(stored)
+                                if pack.write(stored) != len(stored):
+                                    raise ArchiveError('short archive pack write')
                                 pending_blobs[raw_hash] = (offset, length, encoding, stored_hash)
                             pending.append((row['path'], raw_hash, len(data), offset, length, encoding, stored_hash, refs))
                             if len(pending) >= 10000:
@@ -421,7 +422,8 @@ def restore(backend, manifest_key, destination, *, scratch, paths=(), cas=(),
                                     raise ArchiveError('pack exceeds reader limit')
                                 free_guard(scratch, min_free, len(block))
                                 h.update(block)
-                                pack_cache.write(block)
+                                if pack_cache.write(block) != len(block):
+                                    raise ArchiveError('short restore pack write')
                         if h.hexdigest() != Path(row['pack']).stem:
                             raise ArchiveError('pack hash mismatch')
                         cached_pack = row['pack']
