@@ -122,40 +122,47 @@ def _common(
         max_bytes=int(os.environ.get("HTX_RT_CAPTURE_MAX_BYTES", str(2 * 1024**3))),
         segmented=os.environ.get("HTX_RT_CAPTURE_SEGMENTED", "").lower() == "true",
         segment_contract="capture-runtime",
+        local_archive=os.environ.get("HTX_RT_CAPTURE_LOCAL_ARCHIVE", "").lower() == "true",
+        local_archive_min_free_bytes=(
+            int(os.environ["HTX_RT_CAPTURE_MIN_FREE_BYTES"])
+            if "HTX_RT_CAPTURE_MIN_FREE_BYTES" in os.environ else None
+        ),
     )
-    if isinstance(management, LiveManagement):
-        management.coverage_recorder = recorder
-        management.coverage_evidence = evidence
-    periods = ("15min", "60min") if engine.parameters.candidate == "REGIME_AB_V1" else ("15min", "60min", "4hour")
-    loader = FrameLoader(public, contracts, frames, periods=periods)
-    stream = PublicStream(contracts)
-    if isinstance(management, LiveManagement):
-        management.coverage_stream = stream
-    worker = RealtimeWorker(
-        instance,
-        engine,
-        broker,
-        management,
-        stream,
-        loader,
-        public,
-        frames,
-        recorder,
-        evidence,
-        parameters=parameters(),
-        execution=execution,
-        leverage=leverage,
-        entry_enabled=os.environ.get("HTX_RT_ENTRY_ENABLED", "").lower() == "true",
-        guard=guard,
-        admission_guard=admission_guard,
-        holding_parameters=policy.to_dict(),
-        entry_config=entry_config,
-    )
-    if engine.parameters.candidate == "REGIME_AB_V1" and hasattr(broker, 'ledger'):
-        from .cost_observation import CostObserver
-        from .cost_sources import PaperCostReader
-        worker.cost_observer = CostObserver(PaperCostReader(broker.ledger, broker.account), evidence, asynchronous=False)
-    return worker
+    loader = stream = None
+    try:
+        if isinstance(management, LiveManagement):
+            management.coverage_recorder = recorder
+            management.coverage_evidence = evidence
+        periods = ("15min", "60min") if engine.parameters.candidate == "REGIME_AB_V1" else ("15min", "60min", "4hour")
+        loader = FrameLoader(public, contracts, frames, periods=periods)
+        stream = PublicStream(contracts)
+        if isinstance(management, LiveManagement):
+            management.coverage_stream = stream
+        worker = RealtimeWorker(
+            instance, engine, broker, management, stream, loader, public, frames,
+            recorder, evidence,
+            parameters=parameters(),
+            execution=execution,
+            leverage=leverage,
+            entry_enabled=os.environ.get("HTX_RT_ENTRY_ENABLED", "").lower() == "true",
+            guard=guard,
+            admission_guard=admission_guard,
+            holding_parameters=policy.to_dict(),
+            entry_config=entry_config,
+        )
+        if engine.parameters.candidate == "REGIME_AB_V1" and hasattr(broker, 'ledger'):
+            from .cost_observation import CostObserver
+            from .cost_sources import PaperCostReader
+            worker.cost_observer = CostObserver(PaperCostReader(broker.ledger, broker.account), evidence, asynchronous=False)
+        return worker
+    except BaseException:
+        # A failed assembly must not leave a background mover or writer lease.
+        recorder.close()
+        if stream is not None:
+            stream.close()
+        if loader is not None:
+            loader.close()
+        raise
 
 
 def paper(

@@ -104,6 +104,74 @@ def test_expiry_does_not_reset_on_restart(tmp_path):
     assert trial(tmp_path).state["stop_reason"] == "TIME_LIMIT"
 
 
+def test_explicit_no_deadline_survives_restart_but_keeps_loss_gate(tmp_path):
+    store = SqliteTrialStore(tmp_path / "unlimited.sqlite")
+    binding = {"account_id": 7, "instance_key": "15m"}
+    t = Trial(store, "unlimited", binding, Limits(duration_ms=None))
+    t.activate(1000)
+    later = 365 * 86400000
+    snapshot(t, later)
+    assert budget(t, later) == D("1.5")
+    assert t.state["expires_ms"] is None
+    resumed = Trial(store, "unlimited", binding, Limits(duration_ms=None))
+    assert resumed.state == t.state
+    assert resumed.status(later)["remaining_ms"] is None
+    snapshot(resumed, later + 1, realized="-20")
+    assert resumed.state["stop_reason"] == "LOSS_LIMIT"
+    with pytest.raises(ValueError, match="stopped"):
+        budget(resumed, later + 1)
+
+
+def test_no_deadline_does_not_migrate_or_clear_a_stopped_timed_trial(tmp_path):
+    t = trial(tmp_path)
+    t.activate(1000)
+    snapshot(t, 86401000)
+    assert t.state["stop_reason"] == "TIME_LIMIT"
+    with pytest.raises(ValueError, match="identity/limits"):
+        Trial(t.store, "one", t.state["binding"], Limits(duration_ms=None))
+    assert trial(tmp_path).state["stop_reason"] == "TIME_LIMIT"
+
+
+def test_no_deadline_keeps_slots_trade_count_coverage_and_budget(tmp_path):
+    t = Trial(SqliteTrialStore(tmp_path / "unlimited.sqlite"), "unlimited", {},
+              Limits(duration_ms=None))
+    t.activate(1000)
+    later = 365 * 86400000
+    snapshot(t, later, coverage=False)
+    with pytest.raises(ValueError, match="coverage"):
+        budget(t, later)
+    snapshot(t, later)
+    with pytest.raises(ValueError, match="exceeds"):
+        reserve(t, "oversized", at=later, risk="2")
+    for n in range(10):
+        reserve(t, n, at=later, risk="1")
+    with pytest.raises(ValueError, match="slots"):
+        reserve(t, 10, at=later)
+    snapshot(t, later + 1, statuses={str(n): "CLOSED" for n in range(10)})
+    assert t.state["stop_reason"] == "TRADE_LIMIT"
+
+
+def test_no_deadline_keeps_clock_snapshot_and_stale_writer_guards(tmp_path):
+    store = SqliteTrialStore(tmp_path / "unlimited.sqlite")
+    t = Trial(store, "unlimited", {}, Limits(duration_ms=None))
+    other = Trial(store, "unlimited", {}, Limits(duration_ms=None))
+    t.activate(1000)
+    with pytest.raises(ValueError, match="stale"):
+        other.activate(1000)
+    snapshot(t, 1000)
+    with pytest.raises(ValueError, match="stale"):
+        budget(t, 4000)
+    with pytest.raises(ValueError, match="regressed"):
+        snapshot(t, 999)
+    assert t.state["stop_reason"] == "CLOCK_REGRESSION"
+
+
+@pytest.mark.parametrize("duration", [True, False, 0, -1, 1.5, "none", "0"])
+def test_duration_requires_explicit_null_or_valid_integer(duration):
+    with pytest.raises(ValueError):
+        Limits(duration_ms=duration)
+
+
 def test_partial_exit_not_complete_and_terminal_counts_once(tmp_path):
     t = trial(tmp_path)
     t.activate(1000)

@@ -1355,6 +1355,7 @@ class Capture:
             errors=dict(self.errors),
             bytes=self.recorder.used,
             min_free_bytes=self.min_free_bytes,
+            startup_required_free_bytes=self.startup_required_free_bytes,
             disk_free_bytes=shutil.disk_usage(self.root).free,
             queue_depth=self.events.qsize(),
             queue_depth_high_water=self.queue_depth_high_water,
@@ -1389,10 +1390,17 @@ class Capture:
         from websockets.sync.client import connect
         return connect
 
+    @property
+    def startup_required_free_bytes(self):
+        # A segmented source reclaims GET-verified payloads through COS release.
+        # Do not reserve the full 2GiB again at each restart. Preserve the
+        # configured low-disk floor and the recorder's bounded local quota.
+        return self.min_free_bytes + (0 if self.recorder.segments else self.max_bytes)
+
     def run(self):
         threads = []
         try:
-            if shutil.disk_usage(self.root).free < self.min_free_bytes + self.max_bytes:
+            if shutil.disk_usage(self.root).free < self.startup_required_free_bytes:
                 self.failure = "INSUFFICIENT_START_HEADROOM"
                 return
             try:

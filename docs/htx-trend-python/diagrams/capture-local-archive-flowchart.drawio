@@ -1,0 +1,43 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="归档耐久流程" id="capture-flow">
+    <mxGraphModel dx="1200" dy="850" grid="1" gridSize="10" page="1" pageWidth="1169" pageHeight="827"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+      <mxCell id="a" value="热用量达到80%&#xa;后台逐段处理，目标60%" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc" vertex="1" parent="1"><mxGeometry x="40" y="70" width="210" height="70" as="geometry"/></mxCell>
+      <mxCell id="b" value="持 Recorder 锁&#xa;校验原gzip / SHA / 大小&#xa;同文件系统与磁盘余量" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="320" y="60" width="220" height="90" as="geometry"/></mxCell>
+      <mxCell id="c" value="hardlink 冷payload&#xa;文件与冷目录 fsync&#xa;原热路径始终存在" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="620" y="60" width="220" height="90" as="geometry"/></mxCell>
+      <mxCell id="d" value="原子替换：原hash路径 → 相对alias&#xa;原目录与冷目录 fsync" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="620" y="220" width="260" height="80" as="geometry"/></mxCell>
+      <mxCell id="e" value="完成后才减少热计量&#xa;冷payload、原hash与引用保留&#xa;释放锁，让出后处理下一段" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4" vertex="1" parent="1"><mxGeometry x="300" y="220" width="250" height="90" as="geometry"/></mxCell>
+      <mxCell id="f" value="任一异常：锁存CAPTURE_*失败&#xa;不自动删数据 / 清失败 / 补历史&#xa;重启按磁盘实际布局重算" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc" vertex="1" parent="1"><mxGeometry x="300" y="400" width="300" height="90" as="geometry"/></mxCell>
+      <mxCell id="ab" edge="1" parent="1" source="a" target="b" style="endArrow=block"><mxGeometry relative="1" as="geometry"/></mxCell>
+      <mxCell id="bc" edge="1" parent="1" source="b" target="c" style="endArrow=block"><mxGeometry relative="1" as="geometry"/></mxCell>
+      <mxCell id="cd" edge="1" parent="1" source="c" target="d" style="endArrow=block"><mxGeometry relative="1" as="geometry"/></mxCell>
+      <mxCell id="de" edge="1" parent="1" source="d" target="e" style="endArrow=block"><mxGeometry relative="1" as="geometry"/></mxCell>
+      <mxCell id="bf" edge="1" parent="1" source="b" target="f" style="endArrow=block;dashed=1"><mxGeometry relative="1" as="geometry"/></mxCell>
+    </root></mxGraphModel>
+  </diagram>
+  <diagram name="模块与边界" id="capture-arch">
+    <mxGraphModel dx="1200" dy="850" grid="1" gridSize="10" page="1" pageWidth="1169" pageHeight="827"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+      <mxCell id="a" value="Factory&#xa;LOCAL_ARCHIVE显式开关&#xa;MIN_FREE_BYTES必须明确" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="30" y="70" width="220" height="90" as="geometry"/></mxCell>
+      <mxCell id="b" value="SegmentRecorder&#xa;追加 / gzip9 / manifest / fsync&#xa;专用冷热计量" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc" vertex="1" parent="1"><mxGeometry x="320" y="70" width="240" height="90" as="geometry"/></mxCell>
+      <mxCell id="c" value="LocalCaptureArchive&#xa;同FS、单writer、后台迁移&#xa;不上传、不删冷payload" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="660" y="70" width="240" height="90" as="geometry"/></mxCell>
+      <mxCell id="d" value="Coverage / 公共reader / 审计&#xa;原hash路径读取内容不变" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4" vertex="1" parent="1"><mxGeometry x="320" y="250" width="260" height="70" as="geometry"/></mxCell>
+      <mxCell id="e" value="旧包reader仍可读&#xa;旧quota仍计冷数据，不保证续写&#xa;旧writer不认新锁，切换必须停旧进程" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc" vertex="1" parent="1"><mxGeometry x="660" y="250" width="280" height="90" as="geometry"/></mxCell>
+      <mxCell id="f" value="保持隔离：COS/segmented拒绝本地alias布局&#xa;Trial仍绑定源码+包hash，未实现许可迁移&#xa;候选包 ≠ 已上线" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc" vertex="1" parent="1"><mxGeometry x="300" y="420" width="480" height="100" as="geometry"/></mxCell>
+      <mxCell id="ab" edge="1" parent="1" source="a" target="b" style="endArrow=block"><mxGeometry relative="1" as="geometry"/></mxCell>
+      <mxCell id="bc" edge="1" parent="1" source="b" target="c" style="endArrow=block"><mxGeometry relative="1" as="geometry"/></mxCell>
+      <mxCell id="db" edge="1" parent="1" source="d" target="b" style="endArrow=block"><mxGeometry relative="1" as="geometry"/></mxCell>
+    </root></mxGraphModel>
+  </diagram>
+  <diagram name="并发读取与发布顺序" id="capture-sequence">
+    <mxGraphModel dx="1200" dy="850" grid="1" gridSize="10" page="1" pageWidth="1169" pageHeight="827"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+      <mxCell id="a" value="归档线程" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="70" y="30" width="160" height="50" as="geometry"/></mxCell>
+      <mxCell id="b" value="文件系统" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="410" y="30" width="160" height="50" as="geometry"/></mxCell>
+      <mxCell id="c" value="并发reader" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="750" y="30" width="160" height="50" as="geometry"/></mxCell>
+      <mxCell id="e1" value="1. 原路径读验哈" edge="1" parent="1" style="endArrow=block"><mxGeometry relative="1" as="geometry"><mxPoint x="150" y="140" as="sourcePoint"/><mxPoint x="490" y="140" as="targetPoint"/></mxGeometry></mxCell>
+      <mxCell id="e2" value="2. 冷hardlink + fsync" edge="1" parent="1" style="endArrow=block"><mxGeometry relative="1" as="geometry"><mxPoint x="150" y="210" as="sourcePoint"/><mxPoint x="490" y="210" as="targetPoint"/></mxGeometry></mxCell>
+      <mxCell id="e3" value="3. 原路径仍读原inode" edge="1" parent="1" style="endArrow=block"><mxGeometry relative="1" as="geometry"><mxPoint x="830" y="245" as="sourcePoint"/><mxPoint x="490" y="245" as="targetPoint"/></mxGeometry></mxCell>
+      <mxCell id="e4" value="4. 原子alias替换 + 两目录fsync" edge="1" parent="1" style="endArrow=block"><mxGeometry relative="1" as="geometry"><mxPoint x="150" y="320" as="sourcePoint"/><mxPoint x="490" y="320" as="targetPoint"/></mxGeometry></mxCell>
+      <mxCell id="e5" value="5. 同一路径跟随alias读同一payload" edge="1" parent="1" style="endArrow=block"><mxGeometry relative="1" as="geometry"><mxPoint x="830" y="380" as="sourcePoint"/><mxPoint x="490" y="380" as="targetPoint"/></mxGeometry></mxCell>
+      <mxCell id="n" value="已打开的原FD保持可读；不出现原路径缺失窗口。&#xa;进程故障注入已验；真实断电/生产慢盘不在本轮证明范围。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc" vertex="1" parent="1"><mxGeometry x="230" y="460" width="600" height="70" as="geometry"/></mxCell>
+    </root></mxGraphModel>
+  </diagram>
+</mxfile>

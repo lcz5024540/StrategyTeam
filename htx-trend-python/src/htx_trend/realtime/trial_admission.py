@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..admission import file_hash, read_sealed, window
 from ..execution import ExecutionConfig
+from ..live_approval import _time
 from ..research.store import digest
 from . import VERSION
 from .plans import EVENT_LOCAL, ORIGINAL, SBOX
@@ -81,7 +82,17 @@ def validate(path, current, *, entry=False, now=None, candidate=ORIGINAL):
         Path(path).parent, value["confirmation_ref"], value["confirmation_sha256"]
     )
     if entry:
-        window(value, now)
+        if limits.duration_ms is None:
+            # Both fields must explicitly declare no expiry. Missing fields and
+            # a timed approval must never silently become perpetual authority.
+            if "duration_ms" not in value["limits"] or "expires_at" not in value:
+                raise ValueError("no-deadline authorization must be explicit")
+            if value["expires_at"] is not None:
+                raise ValueError("no-deadline trial requires expires_at=null")
+            if _time(value["issued_at"]) > now:
+                raise ValueError("artifact not yet valid")
+        else:
+            window(value, now)
         if (
             value["permission"] != "TRIAL"
             or candidate not in (ORIGINAL, EVENT_LOCAL, SBOX)

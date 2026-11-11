@@ -20,10 +20,12 @@ from ..timeframes import TimeframeProfile
 
 
 def from_observation(observed: dict) -> HoldingAdoption:
-    if not supports_observed_implementation(observed['implementation_hashes']):
+    holdings = observed['holdings']
+    pending_orders = observed.get('pending_orders', [])
+    if (holdings or pending_orders) and not supports_observed_implementation(observed['implementation_hashes']):
         raise HoldingPolicyError('old decision implementation is not supported by this package')
-    holdings=[]
-    for item in observed['holdings']:
+    policies=[]
+    for item in holdings:
         state=item['state']; identity=holding_identity(item['identity'],mode=observed['mode'])
         profile=TimeframeProfile(identity['timeframe_profile'] if observed['mode']=='LIVE' else item['profile'])
         if state.get('holding_policy') is not None:
@@ -38,10 +40,10 @@ def from_observation(observed: dict) -> HoldingAdoption:
                 entry_config=_decode_config(JavaEntryConfig,effective['entry']),
                 exit_config=(_decode_config(ExitConfig,effective['exit']) if observed['mode']=='LIVE' else paper_exit_config()),
                 continuation_version=state.get('continuation_version',BASELINE))
-        holdings.append(dict(identity=identity,policy=policy.to_dict()))
+        policies.append(dict(identity=identity,policy=policy.to_dict()))
     return HoldingAdoption.create(instance_key=observed['instance_key'],account_id=observed['account_id'],
         mode=observed['mode'],observed_at=observed['observed_at'],source_commit=observed['source_commit'],
-        source_package=observed['source_package'],holdings=holdings)
+        source_package=observed['source_package'],holdings=policies)
 
 
 def _probe(package: Path, environment: dict, instance_key: str) -> dict:

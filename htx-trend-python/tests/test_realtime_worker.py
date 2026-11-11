@@ -164,6 +164,35 @@ def test_same_batch_net_r_priority_and_budget_rechecked(worker):
     ]  # stable preflight order, ranked submit order
 
 
+def test_trial_facts_are_refreshed_immediately_before_trigger_preflight(worker):
+    w, events, _ = worker
+    w.entry_enabled = True
+    events.extend(
+        [
+            book(1, "98.3", "98.4"),
+            trade(2, "98"),
+            trade(3, "100"),
+            trade(4, "98.5"),
+            trade(5, "98.4"),
+        ]
+    )
+    calls = []
+    w.trial_monitor = SimpleNamespace(tick=lambda now: calls.append(now))
+    w._preflight = lambda _: (
+        SimpleNamespace(reason="TEST"),
+        None,
+        None,
+        None,
+        100,
+    )
+
+    w.tick()
+
+    # One refresh happens at the cycle boundary and another after the BBO
+    # batch, immediately before the candidate's first preflight.
+    assert len(calls) == 2
+
+
 def test_drain_between_candidates_blocks_submission(worker):
     w, events, management = worker
     w.entry_enabled = True
