@@ -13,6 +13,7 @@ import time
 
 SCHEMA = 'htx-local-sealing-v1'
 HASH = re.compile(r'[0-9a-f]{64}')
+PUBLIC_GENERATION_MAX_AGE_SECONDS = 15 * 60
 
 
 class SealingError(ValueError):
@@ -327,7 +328,14 @@ class Control:
             self._require_handoff()
             current = self.db.execute("SELECT value FROM state WHERE name='current'").fetchone()[0]
             count, size = self.db.execute('SELECT count(*),coalesce(sum(o.size),0) FROM members m JOIN objects o ON m.path=o.path WHERE generation=?', (current,)).fetchone()
-            if not count or (not force and count < self.config['max_files'] and size < self.config['max_bytes']):
+            created = self.db.execute('SELECT created FROM generations WHERE id=?', (current,)).fetchone()[0]
+            # Legacy initial generations used zero, not an actual creation time.
+            if count and created == 0 and self.config['contract'] == 'capture-public':
+                created = time.time()
+                self.db.execute('UPDATE generations SET created=? WHERE id=?', (created, current))
+            age_due = (self.config['contract'] == 'capture-public' and
+                       time.time() - created >= PUBLIC_GENERATION_MAX_AGE_SECONDS)
+            if not count or (not force and not age_due and count < self.config['max_files'] and size < self.config['max_bytes']):
                 return None
             self.db.execute("UPDATE generations SET state='SEALED',created=? WHERE id=?", (time.time(), current))
             self.db.execute("INSERT INTO generations VALUES(?,'OPEN',?,NULL)", (current+1,time.time()))
