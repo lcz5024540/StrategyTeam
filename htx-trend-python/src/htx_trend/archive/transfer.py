@@ -91,7 +91,7 @@ def _archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
             if completed['namespace'] != backend.identity:
                 raise ArchiveError('archive cache belongs to another COS namespace')
             return completed
-        free_guard(work, min_free, max_member)
+        free_guard(work, min_free)
         with sqlite3.connect(work / 'blobs.sqlite3') as cache:
             cache.execute('CREATE TABLE IF NOT EXISTS scope(identity TEXT PRIMARY KEY)')
             old = cache.execute('SELECT identity FROM scope').fetchone()
@@ -114,7 +114,7 @@ def _archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
                 pending_blobs = {}
                 verified_packs = set()
                 pack_path = job / 'pack.pending'
-                pack = pack_path.open('wb')
+                pack = pack_path.open('wb', buffering=0)
                 done = db.execute('SELECT count(*) FROM files WHERE raw_hash IS NOT NULL').fetchone()[0]
                 total = db.execute('SELECT count(*) FROM files').fetchone()[0]
 
@@ -143,8 +143,8 @@ def _archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
                     pending_blobs.clear()
                     if progress:
                         progress({'job': name, 'processed': done, 'total': total, 'verified_pack': key})
-                    pack = pack_path.open('wb')
-                    free_guard(work, min_free, max_member)
+                    pack = pack_path.open('wb', buffering=0)
+                    free_guard(work, min_free)
 
                 try:
                     while True:
@@ -189,6 +189,9 @@ def _archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
                                 offset, length, encoding, stored_hash = pending_blobs[raw_hash]
                             else:
                                 offset, length, stored_hash = pack.tell(), len(stored), digest(stored)
+                                # max_member bounds accepted input, not required scratch space.
+                                # Check actual bytes before each unbuffered write instead.
+                                free_guard(work, min_free, len(stored))
                                 pack.write(stored)
                                 pending_blobs[raw_hash] = (offset, length, encoding, stored_hash)
                             pending.append((row['path'], raw_hash, len(data), offset, length, encoding, stored_hash, refs))
@@ -233,6 +236,8 @@ def _archive(backend, work, name, spec, *, pack_bytes=32 * 1024**2,
                 if previous:
                     catalogue_source, parent_meta = delta_catalogue(backend, previous, db, job, work, min_free)
                 catalogue = job / 'catalogue.sqlite3.gz'
+                # Gzip can slightly expand incompressible bytes; reserve a conservative bound.
+                free_guard(work, min_free, catalogue_source.stat().st_size * 2 + 1024)
                 with catalogue_source.open('rb') as src, catalogue.open('wb') as dst:
                     with gzip.GzipFile(fileobj=dst, mode='wb', mtime=0, compresslevel=6) as z:
                         shutil.copyfileobj(src, z, 1024 * 1024)
@@ -358,7 +363,7 @@ def restore(backend, manifest_key, destination, *, scratch, paths=(), cas=(),
         raise ArchiveError('restore destination cannot contain symlinks')
     if not (all_files or paths or cas):
         raise ArchiveError('explicit --all, --path or --cas is required')
-    with open_catalogue(backend, manifest_key, scratch, min_free) as (manifest, db), tempfile.TemporaryFile(dir=scratch) as pack_cache:
+    with open_catalogue(backend, manifest_key, scratch, min_free) as (manifest, db), tempfile.TemporaryFile(dir=scratch, buffering=0) as pack_cache:
         if all_files:
             rows = db.execute('SELECT * FROM files ORDER BY pack,offset,path')
         else:
@@ -404,7 +409,6 @@ def restore(backend, manifest_key, destination, *, scratch, paths=(), cas=(),
                 temp = Path(temp)
                 if all_files:
                     if cached_pack != row['pack']:
-                        free_guard(scratch, min_free, 512 * 1024**2)
                         check_hash(Path(row['pack']).stem)
                         with backend.stream(row['pack']) as src:
                             from hashlib import sha256
@@ -415,11 +419,15 @@ def restore(backend, manifest_key, destination, *, scratch, paths=(), cas=(),
                                 size += len(block)
                                 if size > 512 * 1024**2:
                                     raise ArchiveError('pack exceeds reader limit')
+                                free_guard(scratch, min_free, len(block))
                                 h.update(block)
                                 pack_cache.write(block)
                         if h.hexdigest() != Path(row['pack']).stem:
                             raise ArchiveError('pack hash mismatch')
                         cached_pack = row['pack']
+                    # The full pack may share the destination filesystem. Recheck after
+                    # downloading it, before allocating the member and decoded bytes.
+                    free_guard(destination, min_free, row['raw_size'] + row['length'])
                     pack_cache.seek(row['offset'])
                     with (temp / 'member').open('wb') as dst:
                         remaining = row['length']

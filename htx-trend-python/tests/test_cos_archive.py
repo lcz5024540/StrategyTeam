@@ -4,6 +4,7 @@ from io import BytesIO
 import json
 from pathlib import Path
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 
@@ -49,6 +50,122 @@ def cas_fixture(tmp_path):
         b = store.put('decision_trace', {'bar': 123}, refs=(a,))
         store.checkpoint('progress', {'at': 5})
     return {'kind': 'cas', 'root': str(root)}, a, b
+
+
+def test_small_archive_and_full_verify_with_less_than_max_member_headroom(tmp_path, monkeypatch):
+    from htx_trend.archive import transfer
+    floor = 5 * 1024**3
+    monkeypatch.setattr(transfer.shutil, 'disk_usage', lambda _: SimpleNamespace(free=floor + 8 * 1024**2))
+    spec, _, _ = cas_fixture(tmp_path)
+    backend = MemoryBackend()
+    work = tmp_path / 'work'
+    result = archive(backend, work, 'small', spec, min_free=floor)
+    outcome = restore(backend, result['manifest'], tmp_path / 'verify', scratch=work,
+                      all_files=True, verify_only=True, min_free=floor)
+    assert outcome['restored'] == result['files']
+    assert outcome['scope'] == 'verification_only'
+
+
+def test_archive_checks_actual_pack_write_before_publishing(tmp_path, monkeypatch):
+    from htx_trend.archive import transfer
+    spec, _, _ = cas_fixture(tmp_path)
+    backend = MemoryBackend()
+    original_guard = transfer.free_guard
+    writes = []
+    def guard(path, minimum, needed=0):
+        if needed and needed < 1024**2:
+            writes.append(needed)
+            raise ArchiveError('archive workspace free-space guard')
+        return original_guard(path, minimum, needed)
+    monkeypatch.setattr(transfer, 'free_guard', guard)
+    with pytest.raises(ArchiveError, match='free-space guard'):
+        archive(backend, tmp_path / 'work', 'small', spec, min_free=0)
+    assert writes
+    assert backend.puts == 0
+
+
+def test_full_verify_checks_space_during_pack_download(tmp_path, monkeypatch):
+    from htx_trend.archive import transfer
+    spec, _, _ = cas_fixture(tmp_path)
+    backend = MemoryBackend()
+    work = tmp_path / 'work'
+    result = archive(backend, work, 'small', spec, min_free=0)
+    original_guard = transfer.free_guard
+    pack_started = False
+    original_stream = backend.stream
+    @contextmanager
+    def stream(key, start=None, length=None):
+        nonlocal pack_started
+        if key.startswith('packs/'):
+            pack_started = True
+        try:
+            with original_stream(key, start, length) as source:
+                yield source
+        finally:
+            pack_started = False
+    def guard(path, minimum, needed=0):
+        if pack_started and needed:
+            raise ArchiveError('archive workspace free-space guard')
+        return original_guard(path, minimum, needed)
+    monkeypatch.setattr(backend, 'stream', stream)
+    monkeypatch.setattr(transfer, 'free_guard', guard)
+    target = tmp_path / 'verify'
+    with pytest.raises(ArchiveError, match='free-space guard'):
+        restore(backend, result['manifest'], target, scratch=work,
+                all_files=True, verify_only=True, min_free=0)
+    assert not list(target.glob('.cos-restore-complete-*'))
+
+
+def test_full_verify_rechecks_destination_after_pack_download(tmp_path, monkeypatch):
+    from htx_trend.archive import transfer
+    spec, _, _ = cas_fixture(tmp_path)
+    backend = MemoryBackend()
+    work = tmp_path / 'work'
+    result = archive(backend, work, 'small', spec, min_free=0)
+    original_guard, original_stream = transfer.free_guard, backend.stream
+    downloaded = False
+    target = tmp_path / 'verify'
+    @contextmanager
+    def stream(key, start=None, length=None):
+        nonlocal downloaded
+        with original_stream(key, start, length) as source:
+            yield source
+        if key.startswith('packs/'):
+            downloaded = True
+    def guard(path, minimum, needed=0):
+        if downloaded and Path(path) == target:
+            raise ArchiveError('archive workspace free-space guard')
+        return original_guard(path, minimum, needed)
+    monkeypatch.setattr(backend, 'stream', stream)
+    monkeypatch.setattr(transfer, 'free_guard', guard)
+    with pytest.raises(ArchiveError, match='free-space guard'):
+        restore(backend, result['manifest'], target, scratch=work,
+                all_files=True, min_free=0)
+    assert not list(target.rglob('*.json'))
+
+
+def test_full_verify_hashes_bytes_outside_catalogued_member(tmp_path):
+    spec, _, _ = cas_fixture(tmp_path)
+    backend = MemoryBackend()
+    work = tmp_path / 'work'
+    result = archive(backend, work, 'small', spec, min_free=0)
+    for key in backend.objects:
+        if key.startswith('packs/'):
+            backend.objects[key] += b'uncatalogued-tail'
+    with pytest.raises(ArchiveError, match='pack hash mismatch'):
+        restore(backend, result['manifest'], tmp_path / 'verify', scratch=work,
+                all_files=True, verify_only=True, min_free=0)
+
+
+def test_archive_still_rejects_below_minimum_free_space(tmp_path, monkeypatch):
+    from htx_trend.archive import transfer
+    spec, _, _ = cas_fixture(tmp_path)
+    floor = 5 * 1024**3
+    monkeypatch.setattr(transfer.shutil, 'disk_usage', lambda _: SimpleNamespace(free=floor - 1))
+    backend = MemoryBackend()
+    with pytest.raises(ArchiveError, match='free-space guard'):
+        archive(backend, tmp_path / 'work', 'small', spec, min_free=floor)
+    assert backend.puts == 0
 
 
 def test_cas_full_restore_and_reference_range_restore(tmp_path):
