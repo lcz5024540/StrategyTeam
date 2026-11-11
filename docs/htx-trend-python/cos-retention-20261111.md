@@ -65,3 +65,17 @@ python -m htx_trend.archive.catalogue_cache \
 | catalogue_cache.restore | COS GET → hash/size → fsync → no-clobber link | 同上 |
 
 流程：[draw.io](diagrams/cos-retention-20261111.drawio)。现场执行、实际容量和COS进展另附于治理仓当日报告；本文件不把测试结果冒充生产结果。
+
+## 现场交付补充（12:30 CST）
+
+源码检查点bec308f2、ebf92875；最终1461测试通过/13隔离集成用例跳过，159Python文件编译检查通过。干净ebf92875构建candidate和LIVE双包；candidate SHA256 `df4c183a4f769f095a124e3e354ecacc6e639f4a3450cd306cab536a0c1fa0ac` 两端verify，LIVE SHA256 `83711a9f0e55d05b64f3c0020c4fd7f0009ce4525947525d7271bbba6789f164` 只在本地验证、未部署。
+
+12:22:18独立采集切至candidate-ebf92875/PID1111538；累计NRestarts=1000在观测窗口内保持不变。LIVE仍73a43e66/PID3412311，TIME_LIMIT未清；4H PAPER705510不变，无本轮新增订单或仓位。独立data旧env/unit/current目标备份在服务器`/home/ubuntu/coinstrategy-cos-archive/deploy-20261111-ebf92875/backup/`。
+
+清理3份已完成job的catalogue缓存583,175,161字节（paper-4h、paper-15m、shared-klines，均20261103）；每份先GET完整验哈，paper-4h实测恢复后再释放。另用pip自带purge清260份下载缓存约150.6MB，不改已安装依赖。根盘空闲由5.00GiB增至约5.68GiB，使用率92%→90%。冻结index和来源分析/交易数据保留。
+
+第857代新数据12:24:59归档，manifest `manifests/126073c68b9ee82635dd3dde07572720f72dc9c3b5a9f8ef8eddc94efe8722fa.json`；原释放流程RETIRED后，从COS完整恢复29文件/3,378,232字节，26段解压hash均匹配，原位置成员剩余0。包含12:22:19.073—12:24:48.558的新数据，9050 BBO、218 DEPTH、582 TRADE、52 FRAME。858代OPEN/pin保留。
+
+**仍未全部完成**：采集虽有数据推进但DEGRADED，TypeError/ValueError触发重连熔断，DEPTH暂停。隔离真实30秒探针复现`invalid depth snapshot`；TypeError未归因。WS解析/重连/catchup与旧4fa6ccee零差异，不把预算修复当已证实根因，也不顺带放宽解析校验。旧LIVE `.capture-cold`仍在本地，需要用户确认停写迁移窗口再做逐对象COS映射/恢复；本次没有做到全服务器“只留分析结果”。
+
+下一步：运维补异常原始报文定位；用户决定LIVE停写留证迁移窗口；账户持有人在数据/账户覆盖恢复后自行执行匹配的无时限准入与最终启用。治理仓计划保留active，历史H-10阻断根提交，不冒称关闭。
