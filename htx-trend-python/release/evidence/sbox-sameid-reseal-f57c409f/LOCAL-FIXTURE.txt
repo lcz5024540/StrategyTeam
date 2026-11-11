@@ -1,0 +1,6 @@
+LOCAL FIXTURE ONLY. This is not the live trial-approval.json.
+Do not copy these files onto a host or use them as PROC_ENV.
+confirmation.txt is synthetic. Digests other than source_commit and
+package_sha256 are placeholders. The real trial-id and the old/new
+tip bindings are the authorized values, so trial_admission.validate
+can show old FAIL and target PASS without SSH.
